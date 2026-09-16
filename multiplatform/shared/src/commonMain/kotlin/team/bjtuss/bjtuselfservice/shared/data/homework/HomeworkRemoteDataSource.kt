@@ -219,8 +219,13 @@ class SchoolHomeworkRemoteDataSource(
                     ),
                 ),
             )
-            when (val parsed = parseHomeworkUploadReceipt(upload.bodyText())) {
+            val uploadBody = upload.bodyText()
+            when (val parsed = parseHomeworkUploadReceipt(uploadBody)) {
                 is HomeworkJsonParseResult.Failure -> {
+                    if (uploadResponseLooksLikeSessionExpired(uploadBody)) {
+                        invalidateSmartSession()
+                        sessionExpired()
+                    }
                     println(
                         "Homework upload receipt rejected: field=${parsed.field}, " +
                             uploadReceiptShape(upload),
@@ -447,8 +452,17 @@ class SchoolHomeworkRemoteDataSource(
             secureChannelUnavailable()
         }
         if (response.statusCode !in 200..299) network()
-        if (!endpoint.acceptsApiUrl(response.finalUrl)) sessionExpired()
+        if (!endpoint.acceptsApiUrl(response.finalUrl)) {
+            invalidateSmartSession()
+            sessionExpired()
+        }
         return response
+    }
+
+    private fun invalidateSmartSession() {
+        initialized = false
+        sessionId = null
+        courses = emptyList()
     }
 
     private suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse = try {
@@ -552,6 +566,29 @@ private fun uploadReceiptShape(response: SchoolHttpResponse): String {
         .orEmpty()
         .ifBlank { "unknown" }
     return "status=${response.statusCode},bytes=${response.body.size},contentType=$contentType,keys=$keys"
+}
+
+/** 老接口把会话失效混成 HTTP 200 的 STATUS/MSG 或登录 HTML，不能按普通 JSON 缺字段处理。 */
+private fun uploadResponseLooksLikeSessionExpired(body: String): Boolean {
+    val normalized = body.lowercase()
+    if (listOf(
+            "会话结束",
+            "会话失效",
+            "未登录",
+            "重新登录",
+            "session expired",
+            "session timeout",
+            "not logged",
+        ).any(normalized::contains)
+    ) {
+        return true
+    }
+    val keys = parseStrictJsonObject(body.trim())?.keys
+        ?.map(String::uppercase)
+        ?.toSet()
+        .orEmpty()
+    return "STATUS" in keys && ("MSG" in keys || "MESSAGE" in keys) &&
+        keys.none { it in setOf("FILENAMENOEXT", "FILEEXTNAME", "FILESIZE", "VISITNAME") }
 }
 
 private fun List<HomeworkUploadReceipt>.toUploadFileListJson(): String = joinToString(

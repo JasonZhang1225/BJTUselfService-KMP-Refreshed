@@ -196,6 +196,28 @@ class HomeworkRemoteDataSourceTest {
     }
 
     @Test
+    fun classifiesStatusMessageUploadResponseAsSessionExpired() = runBlocking {
+        val transport = QueueTransport(
+            smartResponse("<html></html>"),
+            smartResponse("""{"sessionId":"session-value"}"""),
+            smartResponse("""{"STATUS":"0","result":[{"xqCode":"2026-1"}]}"""),
+            smartResponse("""{"STATUS":"0","courseList":[{"id":17,"name":"程序设计","teacher_id":28}]}"""),
+            smartResponse("""{"STATUS":"1","MSG":"会话结束，请重新登录"}"""),
+        )
+        val remote = SchoolHomeworkRemoteDataSource(transport, requestDelayMillis = 0)
+
+        val error = assertFailsWith<HomeworkRemoteException> {
+            remote.submitHomework(
+                homework = homework(),
+                content = "提交说明",
+                files = listOf(HomeworkFileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
+            )
+        }
+
+        assertEquals(HomeworkRemoteFailure.SESSION_EXPIRED, error.reason)
+    }
+
+    @Test
     fun reportsMalformedHomeworkListSoTheRepositoryCanKeepItsCache() = runBlocking {
         val transport = QueueTransport(
             smartResponse("<html></html>"),

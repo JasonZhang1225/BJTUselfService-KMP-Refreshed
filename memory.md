@@ -1,7 +1,7 @@
 # BJTUselfService KMP 迁移工作记忆
 
 > 最后更新：2026-09-16
-> 当前分支：`main`；显示/打包版本 **`1.7.6-debug-1`**。主体提交 `eca1a3a`、`25947a9`、`591c905`、`d5b1029`、`40e7f9b`、`fa1e1d6`、`d8a89e9`、`20e08d6`、`64e1956` 已推送；本轮普通作业提交协议头修复待提交。Windows 本地 MSI 已成功生成，远端普通打包未触发，未打 tag、未建 Release。Windows 本机无法打 IPA，由用户在 Mac 打包。
+> 当前分支：`main`；显示/打包版本 **`1.7.6-debug-1`**。主体提交 `eca1a3a`、`25947a9`、`591c905`、`d5b1029`、`40e7f9b`、`fa1e1d6`、`d8a89e9`、`20e08d6`、`64e1956`、`2891dbd` 已推送；本轮普通作业会话失效识别待提交。Windows 本地 MSI 已成功生成，远端普通打包未触发，未打 tag、未建 Release。Windows 本机无法打 IPA，由用户在 Mac 打包。
 > 阶段状态：**173B 基座已同步；M13 代码层初步开发完成。校历入口已移除失效下载接口并改为公众号文章。M15 邮箱已完成 Coremail 只读文件夹/列表/详情扩展，宽屏三栏与紧凑端文件夹选择/二级阅读 UI 按 Apple Mail 方向重做；紧凑端邮箱主页、邮件详情和写信/回复现统一采用平台原生页面层级（Android Activity、iOS UIKit push），与两个教室查询入口保持一致；根页面转场期间不再先显示内嵌详情，避免重复视觉跳转。紧凑端当前文件夹 banner 负责文件夹切换，邮箱右上角胶囊显示“刷新”；HTML 表格正文已结构化渲染。当前已补上写信/回复首版和 `MAILBOX_COMPOSE` 原生编辑页，发送前确认但未实际发送，详情返回统一到左上角。Windows 与 Android x86_64 模拟器均已用真实登录态核对邮箱主页、当前文件夹 banner、刷新控件和编辑页，Android 另核对普通刷新、邮件详情、回复预填和发送确认。Mac 已有真实登录态列表/详情证据，真实发送/删除/附件下载和真实登录后的 iOS 邮箱验收未完成。M16 VPN 仅保留调研，当前不开发。PR #3 已合入。Android 已改为本地/CI 共用上传签名（证书 SHA-256 `5d0dabc3…c773`）。`v1.7.4-KMP` Release Android 包为仅 `arm64-v8a`、无 debug 文件名（142,270,345 字节）。本轮已在 `C:\Users\zjg\Android\Sdk` 恢复 Android SDK/`adb`/模拟器；Android x86_64 debug 构建、安装、登录和邮箱视觉回归均完成，实体 iPhone 仍缺 provisioning profile。当前版本为 `1.7.5-KMP`。**
 > 分支创建点：`9d8da18`；上游对照基线：`v1.7.0@419313d`；KMP 自身基线：**`v1.7.3-KMP-B` (`a342615`)**；当前调试版本 **`1.7.6-debug-1`**（本轮只打普通 CI artifacts，不打 tag、不建 Release）；上一发布 `v1.7.4-KMP` 保留。
 > 完整历史与已归档的验收细节：见 `history_full.md`（按里程碑归档，只读）
@@ -49,6 +49,7 @@
 - **2026-09-16 首页周分页竞态**：同步刷新时 `currentWeek` 与分页器页码映射可能互相覆盖，造成跳回第 1 周、左右按钮像失效；现区分自动跟随与手动选周，分页器只在 settled page 且非程序滚动时回写，周映射变化和数据刷新时重新对齐。首页/作业回归测试、Windows 编译和 Android x86_64 构建通过；模拟器已验证第 2→3→2→4 周按钮、目标周高度和同步完成后仍停留第 4 周。
 - **2026-09-16 普通作业提交协议对齐 Android 1.7.0**：`rpUpload.shtml` multipart 文件 MIME 固定为 `application/octet-stream`；`sendStuHomeWorks` 只依赖 HTTP 2xx，不再强制正文出现 `success`，并保留原作者的上传回执字段和 `fileList` 字段。共享作业测试、Android 构建通过；最新版已覆盖安装到已登录模拟器，目标 `.docx` 已选到最终提交按钮前，真实提交尚未再次点击确认。
 - **2026-09-16 普通作业上传回执定位**：诊断包确认旧 KMP 写请求附带 AJAX/`sessionid`/Referer 头时，`rpUpload.shtml` 返回 HTTP 200 的 `STATUS/MSG` 错误 JSON，而不是四字段上传回执；网页手动上传后 App 重新同步已显示目标作业“提交状态 · 已提交”。现按 Android 1.7.0 去掉两个写请求的智慧平台查询头，只保留 Cookie；共享回归测试、Windows 编译、Android x86_64 构建通过，修复包已覆盖安装。因目标作业已提交，未重复执行第二次真实提交。
+- **2026-09-16 普通作业会话失效误判**：进一步用 Chrome 同源 GET 复现学校接口返回“会话结束”；App 的 HTTP 200 `STATUS/MSG` 上传回执也按会话失效处理，清空智慧平台初始化状态，交由右上角刷新/既有重新认证最多两次后重试，不再显示“回执格式错误”。共享会话回归测试、Windows 编译和 Android x86_64 构建通过；`1.7.6-debug-1` 修复包已覆盖安装到模拟器，目标作业已由网页提交，不重复提交。
 - **2026-08-30 小米平板 HyperOS 刷新率**：`25091RP04C` / HyperOS 3 上 KMP 前台曾被 PowerKeeper 锁到 60Hz，设置页显示「跟随应用内设置」。根因是 `SWITCHING_TYPE_NONE` 会忽略窗口 `preferredRefreshRate`，启动预热 WebView 或声明 120Hz 反而会让小米按应用内 60Hz 投票。现已清掉窗口刷新率声明、关闭 ARR 省电降帧、去掉 `MainActivity` WebView 预热。实机 `dumpsys display`：KMP 前台 `mActiveRenderFrameRate=120.00001`，与原版切换往返后仍是 120。
 - **2026-08-30 平板宽屏课表横滑**：横屏走桌面课表布局。第一版自定义滑一下再播 `AnimatedContent`，不跟手、不能连滑、没有边缘拉伸。现 Android/iOS 宽屏表格改用和竖屏相同的 `HorizontalPager`（跟手、可连滑、边缘 Stretch）；Mac/Windows 仍是触摸板 + `AnimatedContent`。课表模型测试与 Android debug 构建通过，包已装到小米平板。
 - **2026-08-30 Windows 课表连滑**：精密触摸板惯性尾流在 180ms 节流结束后会被当成第二次翻页。累加器改为翻页后丢掉同方向惯性，直到滚动事件停顿才接受下一次滑动；反向立即解锁。Mac 原生 AppKit 路径未改。
