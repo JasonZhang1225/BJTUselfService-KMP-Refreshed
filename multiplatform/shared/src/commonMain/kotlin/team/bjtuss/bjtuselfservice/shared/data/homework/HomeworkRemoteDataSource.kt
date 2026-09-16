@@ -204,6 +204,10 @@ class SchoolHomeworkRemoteDataSource(
                 method = SchoolHttpMethod.POST,
                 path = UPLOAD_PATH,
                 query = linkedMapOf(),
+                // 原 Android 1.7.0 的 HomeworkUploader 直接用 OkHttp Request，
+                // 不附加 X-Requested-With / sessionid / Referer 业务头，只让 CookieJar
+                // 携带登录 Cookie。旧上传接口会因 AJAX 头得到 STATUS/MSG 错误回执。
+                includeSmartHeaders = false,
                 multipartFiles = listOf(
                     SchoolMultipartFile(
                         fieldName = "file",
@@ -216,7 +220,13 @@ class SchoolHomeworkRemoteDataSource(
                 ),
             )
             when (val parsed = parseHomeworkUploadReceipt(upload.bodyText())) {
-                is HomeworkJsonParseResult.Failure -> malformed()
+                is HomeworkJsonParseResult.Failure -> {
+                    println(
+                        "Homework upload receipt rejected: field=${parsed.field}, " +
+                            uploadReceiptShape(upload),
+                    )
+                    malformed()
+                }
                 is HomeworkJsonParseResult.Success -> parsed.value
             }
         }
@@ -224,6 +234,9 @@ class SchoolHomeworkRemoteDataSource(
             method = SchoolHttpMethod.POST,
             path = GRADE_PATH,
             query = linkedMapOf("method" to "sendStuHomeWorks"),
+            // 与原作者 Android 1.7.0 的 FormBody 请求保持一致：写请求不附加
+            // 智慧平台查询接口专用的 AJAX 和 sessionid 头。
+            includeSmartHeaders = false,
             formFields = linkedMapOf(
                 // v1.7.0 在 FormBody 编码前先做一次 URLEncoder；服务端按两层解码处理。
                 "content" to content.formValuePreEncode(),
@@ -400,15 +413,21 @@ class SchoolHomeworkRemoteDataSource(
         formFields: LinkedHashMap<String, String> = linkedMapOf(),
         multipartFiles: List<SchoolMultipartFile> = emptyList(),
         includeSession: Boolean = true,
+        includeSmartHeaders: Boolean = true,
     ): SchoolHttpResponse {
-        val headers = linkedMapOf(
-            "Accept" to "application/json, text/javascript, */*; q=0.01",
-            "Accept-Language" to "zh-CN,zh;q=0.9,en;q=0.8",
-            "Referer" to endpoint.apiOrigin,
-            "X-Requested-With" to "XMLHttpRequest",
-        )
-        if (includeSession) {
-            sessionId?.let { headers["sessionid"] = it }
+        val headers = if (includeSmartHeaders) {
+            linkedMapOf(
+                "Accept" to "application/json, text/javascript, */*; q=0.01",
+                "Accept-Language" to "zh-CN,zh;q=0.9,en;q=0.8",
+                "Referer" to endpoint.apiOrigin,
+                "X-Requested-With" to "XMLHttpRequest",
+            ).also {
+                if (includeSession) {
+                    sessionId?.let { session -> it["sessionid"] = session }
+                }
+            }
+        } else {
+            linkedMapOf()
         }
         val response = execute(
             SchoolHttpRequest(
@@ -517,6 +536,22 @@ private fun SchoolHttpResponse.toFileContent(suggestedName: String): HomeworkFil
         contentType = contentType.ifBlank { "application/octet-stream" },
         bytes = body,
     )
+}
+
+/** 只记录上传回执的结构，避免把文件名、路径、正文或会话值写入日志。 */
+private fun uploadReceiptShape(response: SchoolHttpResponse): String {
+    val body = response.bodyText().trim()
+    val keys = parseStrictJsonObject(body)?.keys
+        ?.sorted()
+        ?.joinToString(",")
+        ?: "non-json"
+    val contentType = response.header("Content-Type")
+        ?.substringBefore(';')
+        ?.trim()
+        ?.take(80)
+        .orEmpty()
+        .ifBlank { "unknown" }
+    return "status=${response.statusCode},bytes=${response.body.size},contentType=$contentType,keys=$keys"
 }
 
 private fun List<HomeworkUploadReceipt>.toUploadFileListJson(): String = joinToString(
