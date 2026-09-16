@@ -1,4 +1,5 @@
 import BJTUShared
+import Foundation
 import SwiftUI
 import UIKit
 
@@ -14,6 +15,7 @@ private let appBackgroundColor = Color(
 
 private final class NativeNavigationController: UINavigationController, UINavigationControllerDelegate, UIGestureRecognizerDelegate {
     private var authenticatedSession: AuthenticatedSession?
+    private var appActiveObserver: NSObjectProtocol?
 
     /// 本项目暂不开放实验性的 Compose iOS 无障碍语义树。iOS 26 的辅助功能客户端（含
     /// 各类自动化查询）会在原生 push/pop 移除宿主控制器后继续查询已失效的 Compose
@@ -42,6 +44,13 @@ private final class NativeNavigationController: UINavigationController, UINaviga
         delegate = self
         setNavigationBarHidden(true, animated: false)
         configureInteractivePopGesture()
+        appActiveObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.authenticatedSession?.notifyAppBecameActive()
+        }
         let rootController = MainViewControllerKt.NativeMainViewController(
             onAuthenticatedSessionChanged: { [weak self] session in
                 self?.authenticatedSession = session
@@ -57,6 +66,12 @@ private final class NativeNavigationController: UINavigationController, UINaviga
         hideComposeAccessibilitySubtree(in: rootController)
         setViewControllers([rootController], animated: false)
         updateInteractivePopEnabled()
+    }
+
+    deinit {
+        if let appActiveObserver {
+            NotificationCenter.default.removeObserver(appActiveObserver)
+        }
     }
 
     @available(*, unavailable)

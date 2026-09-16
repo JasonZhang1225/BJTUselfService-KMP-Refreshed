@@ -193,7 +193,7 @@ class PhyVlabScreenModel(
             val syncedAt = Clock.System.now().toEpochMilliseconds()
             mutableState.value = mutableState.value.copy(
                 courses = courses,
-                events = eventsForMonth(scheduleEvents, monthStart),
+                events = eventsForSelectedCourse(selectedCourse, monthStart),
                 agendaEvents = scheduleEvents,
                 monthLabel = monthLabelFor(monthStart),
                 activities = selectedCourse?.let { activitiesByCourse[it.id].orEmpty() }.orEmpty(),
@@ -232,6 +232,10 @@ class PhyVlabScreenModel(
         mutableState.value = mutableState.value.copy(
             selectedCourse = course,
             activities = activitiesByCourse[course.id].orEmpty(),
+            events = eventsForSelectedCourse(
+                course,
+                lastRequestedMonthSeconds ?: currentBeijingMonthStartSeconds(),
+            ),
         )
     }
 
@@ -370,7 +374,7 @@ class PhyVlabScreenModel(
                 is PhyVlabEventsResult.Success -> {
                     scheduleEvents = mergeEvents(scheduleEvents, result.events)
                     mutableState.value = mutableState.value.copy(
-                        events = eventsForMonth(scheduleEvents, next),
+                        events = eventsForSelectedCourse(mutableState.value.selectedCourse, next),
                         agendaEvents = scheduleEvents,
                         monthLabel = monthLabelFor(next),
                         failure = null,
@@ -404,7 +408,7 @@ class PhyVlabScreenModel(
                     val refreshedAt = Clock.System.now().toEpochMilliseconds()
                     mutableState.value = mutableState.value.copy(
                         activities = result.activities,
-                        events = eventsForMonth(scheduleEvents, month),
+                        events = eventsForSelectedCourse(course, month),
                         agendaEvents = scheduleEvents,
                         // 单门按需刷新不能宣称整份物理在线快照都已同步。
                         contentSource = if (mutableState.value.contentSource == PhyVlabContentSource.CACHE) {
@@ -468,7 +472,7 @@ class PhyVlabScreenModel(
         val selectedCourse = snapshot.courses.firstOrNull()
         mutableState.value = mutableState.value.copy(
             courses = snapshot.courses,
-            events = eventsForMonth(scheduleEvents, monthStart),
+            events = eventsForSelectedCourse(selectedCourse, monthStart),
             agendaEvents = scheduleEvents,
             monthLabel = monthLabelFor(monthStart),
             activities = selectedCourse?.let { activitiesByCourse[it.id].orEmpty() }.orEmpty(),
@@ -524,6 +528,24 @@ class PhyVlabScreenModel(
         if (mutableState.value.isLoading) {
             mutableState.value = mutableState.value.copy(isLoading = false)
         }
+    }
+
+    /** 物理在线页的“安排”只显示当前选中课程；首页 agendaEvents 仍保留全部课程。 */
+    private fun eventsForSelectedCourse(
+        course: PhyVlabCourse?,
+        monthStart: Long,
+    ): List<PhyVlabEvent> {
+        val visible = course?.let { selected ->
+            val activityUrls = activitiesByCourse[selected.id]
+                .orEmpty()
+                .mapTo(mutableSetOf(), PhyVlabActivity::activityUrl)
+            scheduleEvents.filter { event ->
+                event.id.startsWith("activity-${selected.id}-") ||
+                    event.eventUrl in activityUrls ||
+                    event.title.startsWith("${selected.name} · ")
+            }
+        } ?: scheduleEvents
+        return eventsForMonth(visible, monthStart)
     }
 
     private suspend fun establishSessionWithRecovery(): PhyVlabSessionResult {

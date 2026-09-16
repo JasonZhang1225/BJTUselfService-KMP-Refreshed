@@ -98,7 +98,14 @@ actual fun SchoolWebView(
 }
 
 actual fun openExternalUrl(url: String) {
-    NSURL(string = url).takeIf { it.scheme == "https" }?.let {
-        UIApplication.sharedApplication.openURL(it)
-    }
+    val target = NSURL(string = url)
+        ?.takeIf { it.scheme?.equals("https", ignoreCase = true) == true }
+        ?: return
+    // 使用 iOS 10+ 的 options/completion API。旧的 openURL(NSURL) 在新系统上虽然
+    // 仍可能编译通过，但从 Compose 点击回调触发时可能只被静默忽略。
+    UIApplication.sharedApplication.openURL(
+        target,
+        options = emptyMap<Any?, Any>(),
+        completionHandler = null,
+    )
 }

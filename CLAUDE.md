@@ -39,7 +39,7 @@
 - 验证码使用 `pytorch_android` 加载 `app/src/main/assets/model.pt`。
 - 目标架构是 Kotlin Multiplatform + Compose Multiplatform，支持 Android、iOS、macOS。
 - 新实现必须放在独立 `multiplatform/` Gradle 工程中；不要修改 `app/`、现有根 `build.gradle.kts`、`settings.gradle.kts`、`gradle/`、Android Manifest、资源或现有测试。
-- 当前 KMP 三端发布基线为 pre-release `1.7.5-KMP`；上一发布 `v1.7.4-KMP` 保留。功能源代码基线为 `v1.7.3-KMP-B@a342615`，上游 Android 对照基线保留 `v1.7.0@419313d`；`ZJG@9d8da18` 只是迁移分支创建点。
+- 当前 KMP 调试构建版本为 `1.7.6-debug-1`；上一发布 `v1.7.4-KMP` 保留。功能源代码基线为 `v1.7.3-KMP-B@a342615`，上游 Android 对照基线保留 `v1.7.0@419313d`；`ZJG@9d8da18` 只是迁移分支创建点。
 - 当前冻结 Android 工作树不是完整的 1.7.0 源码参考。需要查看 1.7.0 时使用隔离的只读参考目录或独立工作树，不把发布提交混入冻结根工程或 `multiplatform/`。
 
 > 动态进度（当前做到哪一步、近期计划）见 `memory.md`；历史验收与验证证据见 `history_full.md`；本文件只讲原则与边界。

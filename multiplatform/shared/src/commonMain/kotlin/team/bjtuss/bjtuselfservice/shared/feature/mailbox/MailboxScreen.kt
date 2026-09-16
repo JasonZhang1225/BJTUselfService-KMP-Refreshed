@@ -92,6 +92,8 @@ fun MailboxWorkspace(
     expanded: Boolean,
     nativeDetail: Boolean = false,
     onReauthenticate: (suspend () -> Boolean)? = null,
+    /** 由应用壳提供会话感知刷新；独立预览/测试时回退到模型刷新。 */
+    onRefresh: (() -> Unit)? = null,
     onOpenNativeDetail: (() -> Unit)? = null,
     onOpenNativeCompose: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -101,12 +103,14 @@ fun MailboxWorkspace(
     val uriHandler = LocalUriHandler.current
     var isSessionRetrying by remember(model) { mutableStateOf(false) }
 
-    val refreshMailbox: () -> Unit = {
+    val refreshMailbox: () -> Unit = onRefresh ?: {
         scope.launch { model.refresh() }
     }
     val retryAfterSessionFailure: () -> Unit = {
         val reauthenticate = onReauthenticate
-        if (reauthenticate == null) {
+        if (onRefresh != null) {
+            refreshMailbox()
+        } else if (reauthenticate == null) {
             refreshMailbox()
         } else if (!isSessionRetrying) {
             scope.launch {
@@ -162,7 +166,11 @@ fun MailboxWorkspace(
             onOpenNativeDetail = onOpenNativeDetail,
             onStartReply = { message -> openCompose(message.id) },
             onRefresh = refreshMailbox,
-            onRetrySession = if (onReauthenticate != null) retryAfterSessionFailure else null,
+            onRetrySession = if (onReauthenticate != null || onRefresh != null) {
+                retryAfterSessionFailure
+            } else {
+                null
+            },
             isSessionRetrying = isSessionRetrying,
             onLoadMore = { scope.launch { model.loadMore() } },
             onSelectFolder = { folderId -> scope.launch { model.selectFolder(folderId) } },
@@ -217,7 +225,7 @@ internal fun MailboxComposeScreen(
                 ) {
                     Text(
                         if (compose.failure == MailboxFailure.SESSION_EXPIRED) {
-                            "邮箱登录会话已失效，请返回后重试登录。"
+                            "邮箱登录会话已失效，请点击右上角刷新重试登录。"
                         } else {
                             "写信页面暂时无法打开，请稍后重试。"
                         },
@@ -286,7 +294,7 @@ internal fun MailboxComposeScreen(
         compose.failure?.let { failure ->
             Text(
                 if (failure == MailboxFailure.SESSION_EXPIRED) {
-                    "邮箱登录会话已失效，请返回后重试登录。"
+                    "邮箱登录会话已失效，请点击右上角刷新重试登录。"
                 } else {
                     "邮件暂时无法发送，请检查网络后重试。"
                 },
@@ -387,7 +395,7 @@ private fun MailboxSessionUnavailable(
         )
         Text(
             if (canReauthenticate) "邮箱会话已失效，请重试登录后再拉取邮件。"
-            else "请退出后重新登录，再尝试打开邮箱。",
+            else "请稍后点击右上角刷新重试登录，再尝试打开邮箱。",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 6.dp),
@@ -1457,7 +1465,7 @@ private fun MailboxEmptyState(modifier: Modifier = Modifier) {
 private fun mailboxFailureMessage(failure: MailboxFailure): String = when (failure) {
     MailboxFailure.NETWORK -> "邮箱暂时无法连接，请检查网络。"
     MailboxFailure.PARSE -> "邮箱返回的数据无法读取，请稍后重试。"
-    MailboxFailure.SESSION_EXPIRED -> "邮箱登录会话已失效，请重新登录。"
+    MailboxFailure.SESSION_EXPIRED -> "邮箱登录会话已失效，请点击右上角刷新重试登录。"
 }
 
 private fun formatMailboxDate(value: String): String {

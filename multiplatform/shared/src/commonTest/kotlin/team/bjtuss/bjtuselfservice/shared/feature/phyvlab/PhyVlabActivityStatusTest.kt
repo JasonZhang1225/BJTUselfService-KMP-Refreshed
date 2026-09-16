@@ -54,11 +54,59 @@ class PhyVlabActivityStatusTest {
     }
 
     @Test
-    fun detailSubmissionDateIsATrustedSubmissionSignal() {
+    fun submissionDateAloneDoesNotClaimSubmission() {
+        assertEquals(
+            false,
+            phyVlabAssignmentDetailHasSubmission(
+                PhyVlabAssignmentDetail(submissionDateText = "2026年06月15日 22:00"),
+            ),
+        )
+    }
+
+    @Test
+    fun explicitSubmittedStatusIsATrustedSubmissionSignal() {
         assertEquals(
             true,
             phyVlabAssignmentDetailHasSubmission(
-                PhyVlabAssignmentDetail(submissionDateText = "2026年06月15日 22:00"),
+                PhyVlabAssignmentDetail(
+                    submissionStatus = "已提交",
+                    submissionDateText = "2026年06月15日 22:00",
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun gradingTextDoesNotAppearAsSubmissionStatus() {
+        assertEquals(
+            "未提交",
+            phyVlabSubmissionStatusLabel(
+                PhyVlabAssignmentDetail(submissionStatus = "尚未批改"),
+            ),
+        )
+    }
+
+    @Test
+    fun submissionTimingUsesDueTimeAndRealSubmissionTime() {
+        val activity = activity(dueTimestamp = 2_000L)
+        assertEquals(
+            "按时提交",
+            phyVlabSubmissionTimingLabel(
+                activity,
+                PhyVlabAssignmentDetail(
+                    submissionStatus = "已提交",
+                    submissionDateTimestamp = 2_000L,
+                ),
+            ),
+        )
+        assertEquals(
+            "逾期提交",
+            phyVlabSubmissionTimingLabel(
+                activity,
+                PhyVlabAssignmentDetail(
+                    submittedFiles = listOf(team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabSubmissionFile("报告.pdf")),
+                    submissionDateTimestamp = 2_001L,
+                ),
             ),
         )
     }

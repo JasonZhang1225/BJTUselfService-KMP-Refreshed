@@ -71,9 +71,9 @@ compose.desktop {
             // 本机中文显示名。GitHub Actions 英文代码页下 WiX light 会把中文打成
             // `?????` 并报 311，因此 CI 用 WINDOWS_PACKAGE_NAME=BJTUselfServiceKMP。
             packageName = windowsPackageDisplayName
-            // jpackage 版本必须是三段数字。1.7.5 覆盖已装的 1.7.4；
-            // 之后再打同为 1.7.5 的包，靠 main.wxs IncludeMaximum=yes 覆盖。
-            packageVersion = "1.7.5"
+            // jpackage 版本必须是三段数字。应用内显示版本仍为 1.7.6-debug-1；
+            // 安装器使用数值版本 1.7.6，靠 main.wxs IncludeMaximum=yes 覆盖同一大版本。
+            packageVersion = "1.7.6"
             // 英文代码页下 WiX light 311：中文 description 进不了 MSI 字符串表。
             description = windowsPackageDescription
             vendor = "BJTUselfService Contributors"

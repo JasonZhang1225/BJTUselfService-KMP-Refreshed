@@ -131,7 +131,15 @@ class SchoolCoursewareRemoteDataSource(
             ),
         )
         val ticket = when (val parsed = parseCoursewareDownloadTicket(ticketResponse.bodyText())) {
-            is CoursewareJsonParseResult.Failure -> malformed()
+            is CoursewareJsonParseResult.Failure -> {
+                // 会话过期时智慧教学接口有时仍返回 200，但正文已经是登录页；
+                // 若只按 JSON 解析失败处理，界面会误报“无效的文件信息”。
+                if (ticketResponse.looksLikeHtmlPage()) {
+                    invalidateSession()
+                    sessionExpired()
+                }
+                malformed()
+            }
             is CoursewareJsonParseResult.Success -> parsed.value
         }
         if (!endpoint.acceptsResourceUrl(ticket.url)) secureChannelUnavailable()
@@ -330,9 +338,22 @@ class SchoolCoursewareRemoteDataSource(
         ) {
             secureChannelUnavailable()
         }
+        if (response.statusCode == 401 || response.statusCode == 403) {
+            invalidateSession()
+            sessionExpired()
+        }
         if (response.statusCode !in 200..299) network()
-        if (!endpoint.acceptsApiUrl(response.finalUrl)) sessionExpired()
+        if (!endpoint.acceptsApiUrl(response.finalUrl)) {
+            invalidateSession()
+            sessionExpired()
+        }
         return response
+    }
+
+    private fun invalidateSession() {
+        initialized = false
+        sessionId = null
+        courses = emptyList()
     }
 
     private fun buildHeaders(includeSession: Boolean = true): Map<String, String> = linkedMapOf(
@@ -376,6 +397,15 @@ private fun SchoolHttpResponse.contentTypeOrDefault(): String = headers.entries
     ?.value?.firstOrNull()?.substringBefore(';')?.trim()
     ?.takeIf(String::isNotBlank)
     ?: "application/octet-stream"
+
+private fun SchoolHttpResponse.looksLikeHtmlPage(): Boolean {
+    val contentType = contentTypeOrDefault()
+    if (contentType.equals("text/html", ignoreCase = true)) return true
+    val prefix = bodyText().trimStart().take(160)
+    return prefix.startsWith("<!doctype html", ignoreCase = true) ||
+        prefix.startsWith("<html", ignoreCase = true) ||
+        prefix.startsWith("<form", ignoreCase = true)
+}
 
 private fun network(): Nothing = throw CoursewareRemoteException(CoursewareRemoteFailure.NETWORK)
 private fun sessionExpired(): Nothing = throw CoursewareRemoteException(CoursewareRemoteFailure.SESSION_EXPIRED)

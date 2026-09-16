@@ -5,6 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabActivitiesResult
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabAssignmentDetailResult
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabCacheSnapshot
@@ -128,6 +129,63 @@ class PhyVlabScreenModelTest {
         model.dismissActivityDetails()
         assertEquals(PhyVlabSyncFailure.NETWORK, model.state.value.failure)
     }
+
+    @Test
+    fun assignmentScheduleFollowsSelectedCourseWhileHomeAgendaKeepsBothCourses() = runBlocking {
+        val physics = PhyVlabCourse(
+            id = 76,
+            name = "大学物理II_(2026秋)",
+            category = "",
+            progressPercent = 0,
+            courseUrl = "https://phyvlab.bjtu.edu.cn/course/view.php?id=76",
+        )
+        val laboratory = PhyVlabCourse(
+            id = 78,
+            name = "物理实验II_(2026秋)",
+            category = "",
+            progressPercent = 0,
+            courseUrl = "https://phyvlab.bjtu.edu.cn/course/view.php?id=78",
+        )
+        val local = MemoryLocalDataSource(
+            PhyVlabCacheSnapshot(
+                courses = listOf(physics, laboratory),
+                activities = listOf(activity(physics, 3963), activity(laboratory, 3947)),
+                events = emptyList(),
+                savedAtEpochMillis = 123L,
+            ),
+        )
+        val model = PhyVlabScreenModel(
+            repository = FailingRepository,
+            sessionProtocol = PhyVlabSessionProtocol(UnavailableTransport),
+            localDataSource = local,
+            accountScope = "25531058",
+        )
+
+        model.initialize(refreshFromNetwork = false)
+
+        assertEquals(2, model.state.value.events.size)
+        assertTrue(model.state.value.events.all { it.title.startsWith("${physics.name} · ") })
+        assertEquals(4, model.state.value.agendaEvents.size)
+
+        model.selectCourse(laboratory)
+
+        assertEquals(2, model.state.value.events.size)
+        assertTrue(model.state.value.events.all { it.title.startsWith("${laboratory.name} · ") })
+        assertEquals(4, model.state.value.agendaEvents.size)
+    }
+
+    private fun activity(course: PhyVlabCourse, id: Int) = PhyVlabActivity(
+        id = id,
+        courseId = course.id,
+        courseName = course.name,
+        title = "作业 $id",
+        activityType = "作业",
+        activityUrl = "https://phyvlab.bjtu.edu.cn/mod/assign/view.php?id=$id",
+        openText = "2026年09月23日 00:00",
+        openTimestamp = 1790092800L,
+        dueText = "2026年09月24日 00:00",
+        dueTimestamp = 1790179200L,
+    )
 
     private class MemoryLocalDataSource(
         private val snapshot: PhyVlabCacheSnapshot,

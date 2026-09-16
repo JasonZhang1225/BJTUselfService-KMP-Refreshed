@@ -135,6 +135,34 @@ class CoursewareRemoteDataSourceTest {
     }
 
     @Test
+    fun treatsHtmlDownloadTicketAsExpiredSessionAndReinitializesBeforeRetry() = runBlocking {
+        val transport = QueueTransport(
+            *initializationResponses(),
+            smartResponse("<html><form action=\"/auth/login/\"></form></html>"),
+            *initializationResponses(),
+            smartResponse(
+                """{"flag":true,"rpUrl":"https://bksycenter.bjtu.edu.cn/resource/recovered","download_type":"file"}""",
+            ),
+            SchoolHttpResponse(
+                statusCode = 200,
+                finalUrl = "https://bksycenter.bjtu.edu.cn/resource/recovered",
+                body = "recovered".encodeToByteArray(),
+            ),
+        )
+        val remote = SchoolCoursewareRemoteDataSource(transport, requestDelayMillis = 0)
+
+        val error = assertFailsWith<CoursewareRemoteException> {
+            remote.downloadResource(resource())
+        }
+        assertEquals(CoursewareRemoteFailure.SESSION_EXPIRED, error.reason)
+
+        val recovered = remote.downloadResource(resource())
+
+        assertEquals("recovered", recovered.bytes.decodeToString())
+        assertEquals(2, transport.requests.count { it.url == "https://mis.bjtu.edu.cn/module/module/28/" })
+    }
+
+    @Test
     fun downloadsTeachingCalendarOnlyFromSchoolHttpsFrame() = runBlocking {
         val transport = QueueTransport(
             *initializationResponses(),

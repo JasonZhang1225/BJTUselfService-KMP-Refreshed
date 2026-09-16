@@ -270,8 +270,10 @@ internal fun parsePhyVlabAssignmentPage(
             else -> null
         }
         ?: ""
-    val submissionDate = rowValue("最后修改", "Last modified", "提交时间", "Submitted")
-        ?: phyVlabDatePattern.find(bodyText)?.value
+    // 只能从带有明确提交语义的表格行读取提交时间。
+    // 不能用正文里的第一个日期兜底：详情页正文通常先出现开放时间，
+    // 这会把“开放”误显示成“提交”，并进一步把未提交作业判成已完成。
+    val submissionDateCandidate = rowValue("最后修改", "Last modified", "提交时间", "Submitted")
     val numericGradePattern = Regex(
         "成绩\\s*([0-9]+(?:\\.[0-9]+)?\\s*/\\s*[0-9]+(?:\\.[0-9]+)?)",
         RegexOption.IGNORE_CASE,
@@ -310,6 +312,11 @@ internal fun parsePhyVlabAssignmentPage(
     ).mapNotNull { link ->
         cleanPhyVlabText(link.text()).takeIf(String::isNotBlank)?.let(::PhyVlabSubmissionFile)
     }.distinctBy(PhyVlabSubmissionFile::fileName)
+    val submissionDate = submissionDateCandidate?.takeIf {
+        activity.completed ||
+            submittedFiles.isNotEmpty() ||
+            submissionStatusIndicatesSubmission(submissionStatus)
+    }
 
     val form = document.select("form").firstOrNull { form ->
         val action = form.attr("action")
@@ -561,6 +568,12 @@ private fun normalizePhyVlabDayText(value: String): String = value
 
 private fun normalizePhyVlabDatesInText(value: String): String =
     phyVlabDatePattern.replace(value) { match -> normalizePhyVlabDateText(match.value) }
+
+private fun submissionStatusIndicatesSubmission(value: String): Boolean {
+    val status = value.trim().lowercase()
+    return status.contains("已提交") ||
+        (status.contains("submitted") && !status.contains("not submitted"))
+}
 
 private fun parsePhyVlabDateTimestamp(value: String): Long? = runCatching {
     val match = phyVlabDatePattern.find(value) ?: return null

@@ -25,5 +25,9 @@ object AndroidAuthenticatedSessionRegistry {
         observer(session)
         return { synchronized(this) { observers -= observer } }
     }
+
+    fun notifyAppBecameActive() {
+        session?.notifyAppBecameActive()
+    }
 }
 

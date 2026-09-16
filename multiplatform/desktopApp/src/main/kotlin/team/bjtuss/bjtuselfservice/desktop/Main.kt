@@ -4,6 +4,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyShortcut
@@ -15,9 +16,12 @@ import androidx.compose.ui.window.rememberWindowState
 import java.awt.Dimension
 import java.awt.Desktop
 import java.awt.desktop.AppReopenedListener
+import java.awt.event.WindowEvent
+import java.awt.event.WindowFocusListener
 import java.io.File
 import kotlinx.coroutines.runBlocking
 import team.bjtuss.bjtuselfservice.shared.App
+import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
 import team.bjtuss.bjtuselfservice.shared.registerDesktopCredentialWindowHandle
 import team.bjtuss.bjtuselfservice.shared.auth.CaptchaRecognitionResult
 import team.bjtuss.bjtuselfservice.shared.auth.DesktopCoreMlCaptchaRecognizer
@@ -61,8 +65,12 @@ fun main(args: Array<String>) {
             val desktop = remember {
                 if (Desktop.isDesktopSupported()) Desktop.getDesktop() else null
             }
+            val authenticatedSession = remember { mutableStateOf<AuthenticatedSession?>(null) }
             val reopenListener = remember(lifecycle) {
-                AppReopenedListener { lifecycle.reopenWindow() }
+                AppReopenedListener {
+                    lifecycle.reopenWindow()
+                    authenticatedSession.value?.notifyAppBecameActive()
+                }
             }
 
             DisposableEffect(desktop, reopenListener) {
@@ -92,6 +100,19 @@ fun main(args: Array<String>) {
                 DisposableEffect(lifecycle, windowHandle) {
                     lifecycle.attach(windowHandle)
                     onDispose { lifecycle.detach(windowHandle) }
+                }
+                val focusListener = remember(window) {
+                    object : WindowFocusListener {
+                        override fun windowGainedFocus(event: WindowEvent) {
+                            authenticatedSession.value?.notifyAppBecameActive()
+                        }
+
+                        override fun windowLostFocus(event: WindowEvent) = Unit
+                    }
+                }
+                DisposableEffect(window, focusListener) {
+                    window.addWindowFocusListener(focusListener)
+                    onDispose { window.removeWindowFocusListener(focusListener) }
                 }
                 LaunchedEffect(window) {
                     registerDesktopCredentialWindowHandle(window.windowHandle)
@@ -144,6 +165,7 @@ fun main(args: Array<String>) {
                         systemCalendarGateway = systemCalendarGateway,
                         appCommandBus = appCommandBus,
                         captchaRecognizer = captchaRecognizer,
+                        onAuthenticatedSessionChanged = { authenticatedSession.value = it },
                     )
             }
         }

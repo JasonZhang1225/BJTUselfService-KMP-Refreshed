@@ -82,6 +82,7 @@ import team.bjtuss.bjtuselfservice.shared.auth.LoginEvent
 import team.bjtuss.bjtuselfservice.shared.auth.LoginFailure
 import team.bjtuss.bjtuselfservice.shared.auth.LoginState
 import team.bjtuss.bjtuselfservice.shared.auth.SchoolLoginProtocol
+import team.bjtuss.bjtuselfservice.shared.auth.SchoolSessionRecovery
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
 import team.bjtuss.bjtuselfservice.shared.auth.reduceLoginState
 import team.bjtuss.bjtuselfservice.shared.cache.CacheOpenState
@@ -108,7 +109,6 @@ import team.bjtuss.bjtuselfservice.shared.data.otherfunction.SchoolOtherFunction
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.CacheStorePhyVlabLocalDataSource
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.DefaultPhyVlabRepository
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSessionProtocol
-import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSessionRecovery
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.SchoolPhyVlabRemoteDataSource
 import team.bjtuss.bjtuselfservice.shared.data.classroom.DefaultClassroomRepository
 import team.bjtuss.bjtuselfservice.shared.data.classroom.SchoolClassroomRemoteDataSource
@@ -579,9 +579,6 @@ fun LoginRoute(
                 ),
             )
         }
-        val coursewareModel = remember(coursewareRepository) {
-            CoursewareScreenModel(coursewareRepository)
-        }
         val otherFunctionRepository = remember {
             DefaultOtherFunctionRepository(
                 remote = SchoolOtherFunctionRemoteDataSource(transport.value),
@@ -620,17 +617,23 @@ fun LoginRoute(
         val mailboxModel = remember(shellProfile.studentId) {
             MailboxScreenModel(transport.value)
         }
-        // 物理在线 Moodle 会话可能比 MIS/CAS 会话更早过期。保留当前登录
-        // 凭据的内存引用，让物理在线页面可以在 App 内自动恢复一次 CAS，
+        // 各学校业务会话的 Cookie 有不同生命周期。保留当前登录凭据的内存引用，
+        // 让刷新发现会话过期时可以在 App 内自动恢复 CAS/教务链路，
         // 不把用户推到无法回传 Cookie 的系统浏览器。
         val latestCredentials = rememberUpdatedState(Credentials(username.trim(), password))
-        val phyVlabSessionRecovery = remember(protocol.value, captchaRecognizer) {
-            PhyVlabSessionRecovery(
+        val sessionRecovery = remember(protocol.value, captchaRecognizer) {
+            SchoolSessionRecovery(
                 protocol = protocol.value,
                 captchaRecognizer = captchaRecognizer,
                 credentialsProvider = {
                     latestCredentials.value.takeIf(Credentials::isValid)
                 },
+            )
+        }
+        val coursewareModel = remember(coursewareRepository, sessionRecovery) {
+            CoursewareScreenModel(
+                repository = coursewareRepository,
+                reauthenticate = sessionRecovery::attempt,
             )
         }
         val phyVlabRepository = remember {
@@ -645,14 +648,14 @@ fun LoginRoute(
         val phyVlabModel = remember(
             phyVlabRepository,
             phyVlabSessionProtocol,
-            phyVlabSessionRecovery,
+            sessionRecovery,
             phyVlabLocalDataSource,
             shellProfile.studentId,
         ) {
             PhyVlabScreenModel(
                 repository = phyVlabRepository,
                 sessionProtocol = phyVlabSessionProtocol,
-                reauthenticate = phyVlabSessionRecovery::attempt,
+                reauthenticate = sessionRecovery::attempt,
                 localDataSource = phyVlabLocalDataSource,
                 accountScope = shellProfile.studentId,
             )
@@ -707,7 +710,7 @@ fun LoginRoute(
                 coursewareDirectoryGateway = coursewareDirectoryGateway,
                 systemCalendarGateway = systemCalendarGateway,
                 onLogout = { logout(shellProfile.studentId) },
-                reauthenticateSession = phyVlabSessionRecovery::attempt,
+                reauthenticateSession = sessionRecovery::attempt,
             )
         }
         SideEffect {

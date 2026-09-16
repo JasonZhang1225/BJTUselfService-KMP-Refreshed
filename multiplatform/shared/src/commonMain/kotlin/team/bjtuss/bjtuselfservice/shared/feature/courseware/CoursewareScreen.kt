@@ -871,7 +871,7 @@ private fun CoursewareFileFailureBanner(failure: CoursewareSyncFailure, onDismis
     AppErrorBanner(
         message = when (failure) {
             CoursewareSyncFailure.NETWORK -> "文件下载失败，请检查网络后重试。"
-            CoursewareSyncFailure.SESSION_EXPIRED -> "登录会话已失效，请退出后重新登录。"
+            CoursewareSyncFailure.SESSION_EXPIRED -> "登录会话已失效，请点击右上角刷新重试登录。"
             CoursewareSyncFailure.MALFORMED_RESPONSE -> "学校平台返回了无效的文件信息。"
             CoursewareSyncFailure.SECURE_CHANNEL_UNAVAILABLE -> "该资源地址不在允许的学校通道范围内。"
             CoursewareSyncFailure.CACHE -> "本地课件缓存不可用。"
@@ -886,7 +886,7 @@ private fun failureMessage(failure: CoursewareSyncFailure, hasContent: Boolean):
     } else {
         "无法连接智慧教学平台，请检查网络后重试。"
     }
-    CoursewareSyncFailure.SESSION_EXPIRED -> "智慧教学平台会话已失效，请退出后重新登录。"
+    CoursewareSyncFailure.SESSION_EXPIRED -> "智慧教学平台会话已失效，请点击右上角刷新重试登录。"
     CoursewareSyncFailure.MALFORMED_RESPONSE -> "学校课件数据结构已变化，暂时无法解析。"
     // 已授权明文后勿再写「没有 HTTPS」，与顶部授权 banner 矛盾。
     CoursewareSyncFailure.SECURE_CHANNEL_UNAVAILABLE -> "该资源地址不在允许的学校通道范围内。"

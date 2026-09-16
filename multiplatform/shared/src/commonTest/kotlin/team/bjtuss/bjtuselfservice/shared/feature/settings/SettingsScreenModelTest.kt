@@ -60,6 +60,21 @@ class SettingsScreenModelTest {
     }
 
     @Test
+    fun physicalOnlineBottomNavTogglePersists() {
+        val saved = mutableListOf<AppPreferences>()
+        val model = model(
+            initialPreferences = AppPreferences(showPhyVlabInBottomNav = true),
+            persistPreferences = { saved += it; true },
+        )
+
+        model.setShowPhyVlabInBottomNav(false)
+
+        assertEquals(1, saved.size)
+        assertFalse(model.state.value.preferences.showPhyVlabInBottomNav)
+        assertFalse(model.state.value.saveFailed)
+    }
+
+    @Test
     fun failedAutoSyncSaveKeepsPreviousValueAndReportsFailure() {
         val model = model(persistPreferences = { false })
 

@@ -188,14 +188,18 @@ internal fun decodePhyVlabCache(value: String): PhyVlabCacheSnapshot? = runCatch
     require(events.map(PhyVlabEvent::id).distinct().size == events.size)
 
     val assignmentDetails = payload.assignmentDetails.map { cached ->
+        // 旧版本可能已经把开放时间误存成了“提交时间”。缓存不能凭一个孤立日期
+        // 继续证明作业已提交；必须有提交文件或明确的已提交状态。
+        val hasTrustedSubmission = cached.submittedFiles.isNotEmpty() ||
+            cached.submissionStatusIndicatesSubmission()
         PhyVlabCachedAssignmentDetail(
             courseId = cached.courseId,
             activityId = cached.activityId,
             detail = PhyVlabAssignmentDetail(
                 description = cached.description,
                 submissionStatus = cached.submissionStatus,
-                submissionDateText = cached.submissionDateText,
-                submissionDateTimestamp = cached.submissionDateTimestamp,
+                submissionDateText = cached.submissionDateText.takeIf { hasTrustedSubmission },
+                submissionDateTimestamp = cached.submissionDateTimestamp.takeIf { hasTrustedSubmission },
                 gradingStatus = cached.gradingStatus,
                 gradeText = cached.gradeText,
                 feedbackText = cached.feedbackText,
@@ -215,3 +219,9 @@ internal fun decodePhyVlabCache(value: String): PhyVlabCacheSnapshot? = runCatch
         savedAtEpochMillis = payload.savedAtEpochMillis,
     )
 }.getOrNull()
+
+private fun AssignmentDetailPayload.submissionStatusIndicatesSubmission(): Boolean {
+    val status = submissionStatus.trim().lowercase()
+    return status.contains("已提交") ||
+        (status.contains("submitted") && !status.contains("not submitted"))
+}

@@ -77,10 +77,15 @@ fun ClassroomWorkspace(
     onDismissIntroBanner: () -> Unit = {},
     // compact 下选中教学楼后由 shell 原生 push 出详情页；expanded 列表-详情并排，用不到。
     onOpenBuilding: () -> Unit = {},
+    /** 由应用壳提供会话感知刷新；独立预览/测试时回退到模型刷新。 */
+    onRefresh: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val refresh: () -> Unit = onRefresh ?: fun() {
+        scope.launch { model.refresh() }
+    }
 
     if (expanded) {
         Row(
@@ -99,7 +104,7 @@ fun ClassroomWorkspace(
             ClassroomDetail(
                 state = state,
                 model = model,
-                onRefresh = { scope.launch { model.refresh() } },
+                onRefresh = refresh,
                 showBuildingHeader = true,
                 modifier = Modifier.weight(0.68f).fillMaxHeight(),
             )
@@ -132,14 +137,19 @@ fun ClassroomWorkspace(
 @Composable
 fun ClassroomBuildingWorkspace(
     model: ClassroomScreenModel,
+    /** 由应用壳提供会话感知刷新；独立预览/测试时回退到模型刷新。 */
+    onRefresh: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val refresh: () -> Unit = onRefresh ?: fun() {
+        scope.launch { model.refresh() }
+    }
     ClassroomDetail(
         state = state,
         model = model,
-        onRefresh = { scope.launch { model.refresh() } },
+        onRefresh = refresh,
         // 楼名与刷新在顶栏；页内只保留数据窗口说明与筛选列表。
         showBuildingHeader = false,
         emptyMessage = "正在打开教学楼…",

@@ -107,4 +107,29 @@ class PhyVlabCacheCodecTest {
         val duplicate = base.copy(activities = listOf(activity, activity))
         assertNull(decodePhyVlabCache(encodePhyVlabCache(duplicate)))
     }
+
+    @Test
+    fun dropsUntrustedCachedSubmissionDate() {
+        val snapshot = PhyVlabCacheSnapshot(
+            courses = emptyList(),
+            activities = emptyList(),
+            events = emptyList(),
+            assignmentDetails = listOf(
+                PhyVlabCachedAssignmentDetail(
+                    courseId = 72,
+                    activityId = 3689,
+                    detail = PhyVlabAssignmentDetail(
+                        submissionStatus = "尚未批改",
+                        submissionDateText = "2026年09月16日 00:00",
+                        submissionDateTimestamp = 1789488000L,
+                    ),
+                ),
+            ),
+        )
+
+        val decoded = decodePhyVlabCache(encodePhyVlabCache(snapshot))
+        val detail = decoded?.assignmentDetails?.single()?.detail
+        assertNull(detail?.submissionDateText)
+        assertNull(detail?.submissionDateTimestamp)
+    }
 }

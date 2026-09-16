@@ -64,6 +64,27 @@ class AcademicCalendarExportTest {
     }
 
     @Test
+    fun exportingOnlyWeekFourKeepsOctoberFifthAndTeachingWeekNumber() {
+        val result = generateAcademicCalendarIcs(
+            courses = listOf(course("第4周")),
+            exams = emptyList(),
+            academicWeeks = listOf(
+                // 2026 秋季第 4 教学周由学校校历映射到 10 月 5 日，而不是自然周 9 月 28 日。
+                week(4, LocalDate(2026, 10, 5)),
+            ),
+            weekRange = 4..4,
+            generatedAt = Instant.parse("2026-09-16T00:00:00Z"),
+        )
+
+        assertEquals(1, result.courseEventCount)
+        assertEquals("2026-10-05T08:00:00", result.events.single().startLocal)
+        assertTrue("DTSTART;TZID=Asia/Shanghai:20261005T080000" in result.ics)
+        assertTrue("教学周：4" in result.ics)
+        assertFalse("20260928" in result.ics)
+        assertFalse("RRULE:" in result.ics)
+    }
+
+    @Test
     fun reportsUnparseableExamsInsteadOfCreatingAllDayEvents() {
         val result = generateAcademicCalendarIcs(
             courses = emptyList(),

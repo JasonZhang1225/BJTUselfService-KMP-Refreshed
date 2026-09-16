@@ -36,11 +36,35 @@ internal fun phyVlabActivityDeadlineState(
     else -> PhyVlabActivityDeadlineState.OVERDUE
 }
 
-/** 详情页的提交状态比课程列表完成标记更具体，优先使用这些明确的提交信号。 */
+/** 详情页只接受明确的提交状态或已提交文件，不把孤立日期当成提交信号。 */
 internal fun phyVlabAssignmentDetailHasSubmission(detail: PhyVlabAssignmentDetail): Boolean {
     val status = detail.submissionStatus.trim().lowercase()
-    return detail.submissionDateText?.isNotBlank() == true ||
-        detail.submittedFiles.isNotEmpty() ||
+    return detail.submittedFiles.isNotEmpty() ||
         status.contains("已提交") ||
         (status.contains("submitted") && !status.contains("not submitted"))
+}
+
+/** 详情页展示用的提交状态；批改文案（如“尚未批改”）不能冒充提交状态。 */
+internal fun phyVlabSubmissionStatusLabel(detail: PhyVlabAssignmentDetail): String {
+    if (!phyVlabAssignmentDetailHasSubmission(detail)) return "未提交"
+    val status = detail.submissionStatus.trim()
+    return if (
+        status.contains("已提交") ||
+            (status.lowercase().contains("submitted") && !status.lowercase().contains("not submitted"))
+    ) {
+        status
+    } else {
+        "已提交"
+    }
+}
+
+/** 只有同时存在截止时间和真实提交时间时，才标注按时/逾期。 */
+internal fun phyVlabSubmissionTimingLabel(
+    activity: PhyVlabActivity,
+    detail: PhyVlabAssignmentDetail?,
+): String? {
+    if (detail == null || !phyVlabAssignmentDetailHasSubmission(detail)) return null
+    val submittedAt = detail.submissionDateTimestamp ?: return null
+    val dueAt = activity.dueTimestamp ?: return null
+    return if (submittedAt > dueAt) "逾期提交" else "按时提交"
 }

@@ -345,7 +345,7 @@ private class HomeworkTransferState(
                 is HomeworkOperationResult.Failure -> {
                     uploadFeedback = when (result.reason) {
                         HomeworkSyncFailure.NETWORK -> "上传失败，请检查网络后重试。"
-                        HomeworkSyncFailure.SESSION_EXPIRED -> "登录会话已失效，请重新登录。"
+                        HomeworkSyncFailure.SESSION_EXPIRED -> "登录会话已失效，请点击右上角刷新重试登录。"
                         HomeworkSyncFailure.MALFORMED_RESPONSE -> "学校平台没有确认提交成功，请稍后重试。"
                         HomeworkSyncFailure.SECURE_CHANNEL_UNAVAILABLE -> "该资源地址不在允许的学校通道范围内。"
                         HomeworkSyncFailure.CACHE -> "提交已停止，本地缓存不可用。"
@@ -1315,7 +1315,7 @@ private fun HomeworkFailureBanner(
             } else {
                 "无法连接智慧教学平台，请检查网络后重试。"
             }
-            HomeworkSyncFailure.SESSION_EXPIRED -> "智慧教学平台会话已失效，请退出后重新登录。"
+            HomeworkSyncFailure.SESSION_EXPIRED -> "智慧教学平台会话已失效，请点击右上角刷新重试登录。"
             HomeworkSyncFailure.MALFORMED_RESPONSE -> "智慧教学平台响应结构已变化，暂时无法解析。"
             // 已授权明文后仍可能因 URL 白名单失败；勿再写「没有 HTTPS」与顶栏授权提示打架。
             HomeworkSyncFailure.SECURE_CHANNEL_UNAVAILABLE ->

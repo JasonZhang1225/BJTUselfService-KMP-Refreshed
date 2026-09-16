@@ -89,10 +89,15 @@ fun ClassroomOccupancyWorkspace(
     expanded: Boolean,
     /** compact 下选中教学楼后由 shell 原生 push 出详情页；expanded 并排布局用不到。 */
     onOpenBuilding: () -> Unit = {},
+    /** 由应用壳提供会话感知刷新；独立预览/测试时回退到模型刷新。 */
+    onRefresh: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val refresh: () -> Unit = onRefresh ?: fun() {
+        scope.launch { model.refresh() }
+    }
 
     // 进页面只写默认周/星期（幂等、无网络）；未选楼不查询，查询由选楼触发。
     LaunchedEffect(model) {
@@ -109,7 +114,7 @@ fun ClassroomOccupancyWorkspace(
     LaunchedEffect(state.selectedBuilding) {
         val building = state.selectedBuilding
         if (building != null && state.queryState == ClassroomOccupancyQueryState.Idle) {
-            model.refresh()
+            refresh()
         }
     }
 
@@ -127,7 +132,7 @@ fun ClassroomOccupancyWorkspace(
             OccupancyDetail(
                 state = state,
                 model = model,
-                onRefresh = { scope.launch { model.refresh() } },
+                onRefresh = refresh,
                 showBuildingHeader = true,
                 emptyMessage = "从左侧选择教学楼",
                 emptyHint = "选择后显示该楼教室的排课/调课/考试占用。",
@@ -156,10 +161,15 @@ fun ClassroomOccupancyWorkspace(
 @Composable
 fun ClassroomOccupancyBuildingWorkspace(
     model: ClassroomOccupancyScreenModel,
+    /** 由应用壳提供会话感知刷新；独立预览/测试时回退到模型刷新。 */
+    onRefresh: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val refresh: () -> Unit = onRefresh ?: fun() {
+        scope.launch { model.refresh() }
+    }
     LaunchedEffect(model) {
         // 详情页可能是原生二级页直接重建（initialize 幂等、无网络）。
         model.initialize()
@@ -172,13 +182,13 @@ fun ClassroomOccupancyBuildingWorkspace(
     LaunchedEffect(state.selectedBuilding) {
         val building = state.selectedBuilding
         if (building != null && state.queryState == ClassroomOccupancyQueryState.Idle) {
-            model.refresh()
+            refresh()
         }
     }
     OccupancyDetail(
         state = state,
         model = model,
-        onRefresh = { scope.launch { model.refresh() } },
+        onRefresh = refresh,
         // 楼名与刷新在顶栏；页内只保留数据窗口说明与筛选。
         showBuildingHeader = false,
         emptyMessage = "正在打开教学楼…",
@@ -396,14 +406,10 @@ private fun OccupancyDetail(
                 AppErrorBanner(
                     message = when (query.reason) {
                         ClassroomOccupancySyncFailure.NETWORK -> "无法连接教务系统，请检查网络后重试。"
-                        ClassroomOccupancySyncFailure.SESSION_EXPIRED -> "教务登录已过期，请退出后重新登录。"
+                        ClassroomOccupancySyncFailure.SESSION_EXPIRED -> "教务会话已过期，请点击右上角刷新重试登录。"
                         ClassroomOccupancySyncFailure.MALFORMED_RESPONSE -> "教务教室页面结构已变化，暂时无法解析。"
                     },
-                    onRetry = if (query.reason != ClassroomOccupancySyncFailure.SESSION_EXPIRED) {
-                        onRefresh
-                    } else {
-                        null
-                    },
+                    onRetry = onRefresh,
                 )
             }
             is ClassroomOccupancyQueryState.Loaded -> {

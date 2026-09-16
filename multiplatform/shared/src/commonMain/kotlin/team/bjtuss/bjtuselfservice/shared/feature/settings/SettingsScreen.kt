@@ -137,6 +137,25 @@ fun SettingsWorkspace(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                Text("底栏显示", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "物理在线关闭后仍可从“更多”进入；开启后会作为作业右侧的独立入口显示。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                AutoSyncSettingRow(
+                    "显示物理在线入口",
+                    state.preferences.showPhyVlabInBottomNav,
+                    model::setShowPhyVlabInBottomNav,
+                )
+            }
+        }
+
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Text("自动同步", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
                     "打开后，每次登录成功会先显示离线数据，再自动拉取最新数据；物理在线会复用当前 CAS 会话建立 Moodle 会话，首次失败会自动重试一次。",

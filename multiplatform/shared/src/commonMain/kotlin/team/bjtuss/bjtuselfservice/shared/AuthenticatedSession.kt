@@ -1,5 +1,11 @@
 package team.bjtuss.bjtuselfservice.shared
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.data.home.HomeChangeFeedRepository
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
@@ -47,9 +53,30 @@ class AuthenticatedSession(
     val coursewareDirectoryGateway: CoursewareDirectoryGateway,
     val systemCalendarGateway: SystemCalendarGateway,
     val onLogout: () -> Unit,
-    /** 业务会话失效时，在 App 内复用当前内存中的 CAS 凭据恢复一次。 */
+    /** 业务会话失效时，在 App 内复用当前内存中的 CAS 凭据恢复。 */
     val reauthenticateSession: (suspend () -> Boolean)? = null,
 ) {
+    private val appResumeGenerationState = MutableStateFlow(0L)
+    private val appResumeMutex = Mutex()
+    private var claimedAppResumeGeneration = 0L
+
+    /** 平台回到前台时递增；应用壳会针对当前页面的失效请求自动重试一次。 */
+    val appResumeGeneration: StateFlow<Long> = appResumeGenerationState.asStateFlow()
+
+    /** Android/iOS 宿主调用；同一前台事件只允许一个 Compose 壳消费。 */
+    fun notifyAppBecameActive() {
+        appResumeGenerationState.update { it + 1L }
+    }
+
+    internal suspend fun claimAppResume(generation: Long): Boolean = appResumeMutex.withLock {
+        if (generation <= 0L || generation <= claimedAppResumeGeneration) {
+            false
+        } else {
+            claimedAppResumeGeneration = generation
+            true
+        }
+    }
+
     /**
      * 智慧教学明文 HTTP 风险提示是否已在本登录态关闭。
      * 必须挂在 session 上：原生 push 的二级页会新建 Compose 树，

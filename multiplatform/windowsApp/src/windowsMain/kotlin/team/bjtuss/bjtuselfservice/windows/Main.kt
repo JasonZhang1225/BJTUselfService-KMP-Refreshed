@@ -2,7 +2,9 @@ package team.bjtuss.bjtuselfservice.windows
 
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
@@ -15,10 +17,13 @@ import com.sun.jna.Native
 import java.awt.Dimension
 import java.awt.Image
 import java.awt.Toolkit
+import java.awt.event.WindowEvent
+import java.awt.event.WindowFocusListener
 import java.io.File
 import javax.imageio.ImageIO
 import kotlinx.coroutines.runBlocking
 import team.bjtuss.bjtuselfservice.shared.App
+import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
 import team.bjtuss.bjtuselfservice.shared.auth.CaptchaRecognitionResult
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
 
@@ -62,6 +67,7 @@ fun main(args: Array<String>) {
             val state = rememberWindowState(width = 1080.dp, height = 720.dp)
             val appCommandBus = remember { AppCommandBus() }
             val shellSubscribers by appCommandBus.subscriptionCount.collectAsState()
+            val authenticatedSession = remember { mutableStateOf<AuthenticatedSession?>(null) }
 
             Window(
                 onCloseRequest = ::exitApplication,
@@ -77,6 +83,19 @@ fun main(args: Array<String>) {
                         window.iconImages = images
                     }
                 }
+                val focusListener = remember(window) {
+                    object : WindowFocusListener {
+                        override fun windowGainedFocus(event: WindowEvent) {
+                            authenticatedSession.value?.notifyAppBecameActive()
+                        }
+
+                        override fun windowLostFocus(event: WindowEvent) = Unit
+                    }
+                }
+                DisposableEffect(window, focusListener) {
+                    window.addWindowFocusListener(focusListener)
+                    onDispose { window.removeWindowFocusListener(focusListener) }
+                }
                 val homeworkFileGateway = remember { WindowsHomeworkFileGateway() }
                 App(
                     accountSecurityStore = accountSecurityStore,
@@ -85,6 +104,7 @@ fun main(args: Array<String>) {
                     coursewareDirectoryGateway = homeworkFileGateway,
                     appCommandBus = appCommandBus,
                     captchaRecognizer = captchaRecognizer,
+                    onAuthenticatedSessionChanged = { authenticatedSession.value = it },
                 )
             }
         }

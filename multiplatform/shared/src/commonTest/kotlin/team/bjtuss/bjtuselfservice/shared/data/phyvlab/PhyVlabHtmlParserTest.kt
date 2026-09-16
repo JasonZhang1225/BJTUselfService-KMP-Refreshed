@@ -3,6 +3,7 @@ package team.bjtuss.bjtuselfservice.shared.data.phyvlab
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 
@@ -162,6 +163,37 @@ class PhyVlabHtmlParserTest {
         assertEquals("client-3700", result.value.submissionContext?.clientId)
         assertEquals("4", result.value.submissionContext?.repositoryId)
         assertTrue(result.value.detail.canSubmit)
+    }
+
+    @Test
+    fun doesNotUseUnrelatedActivityDateAsSubmissionDate() {
+        val activity = PhyVlabActivity(
+            id = 3703,
+            courseId = 72,
+            courseName = "大学物理I_(2026春)",
+            title = "Chap-2-6",
+            activityType = "作业",
+            activityUrl = "https://phyvlab.bjtu.edu.cn/mod/assign/view.php?id=3703",
+        )
+        val result = assertIs<PhyVlabParseResult.Success<PhyVlabParsedAssignmentPage>>(
+            parsePhyVlabAssignmentPage(
+                """
+                <main>
+                  <div data-region="activity-dates">
+                    <div><strong>打开：</strong>2026年09月16日 Wednesday 00:00</div>
+                    <div><strong>到期日：</strong>2026年09月24日 Thursday 00:00</div>
+                  </div>
+                  <div class="submissionstatustable"><table>
+                    <tr><th>作业状态</th><td>尚未批改</td></tr>
+                  </table></div>
+                </main>
+                """.trimIndent(),
+                activity,
+            ),
+        )
+
+        assertNull(result.value.detail.submissionDateText)
+        assertNull(result.value.detail.submissionDateTimestamp)
     }
 
     @Test

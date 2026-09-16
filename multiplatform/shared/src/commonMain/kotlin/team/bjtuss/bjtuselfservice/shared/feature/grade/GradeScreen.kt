@@ -76,6 +76,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -113,9 +114,14 @@ import team.bjtuss.bjtuselfservice.shared.data.grade.formatGradeDetailForDisplay
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.usesLegacySmartTransportFor
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
-import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.data.grade.GradeSyncFailure
+import team.bjtuss.bjtuselfservice.shared.data.home.HomeStatusFailure
 import team.bjtuss.bjtuselfservice.shared.data.home.HomeChangeFeedRepository
+import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkSyncFailure
+import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareSyncFailure
+import team.bjtuss.bjtuselfservice.shared.data.course.CourseScheduleSyncFailure
+import team.bjtuss.bjtuselfservice.shared.data.exam.ExamScheduleSyncFailure
+import team.bjtuss.bjtuselfservice.shared.data.classroomoccupancy.ClassroomOccupancySyncFailure
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleContentSource
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleWorkspace
@@ -139,18 +145,22 @@ import team.bjtuss.bjtuselfservice.shared.feature.classroom.ClassroomBuildingWor
 import team.bjtuss.bjtuselfservice.shared.feature.classroom.ClassroomUiState
 import team.bjtuss.bjtuselfservice.shared.feature.classroom.ClassroomWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.classroomoccupancy.ClassroomOccupancyBuildingWorkspace
+import team.bjtuss.bjtuselfservice.shared.feature.classroomoccupancy.ClassroomOccupancyQueryState
 import team.bjtuss.bjtuselfservice.shared.feature.classroomoccupancy.ClassroomOccupancyWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.settings.AppUpdateResultDialog
 import team.bjtuss.bjtuselfservice.shared.feature.settings.SettingsScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.settings.SettingsWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxUiState
+import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxFailure
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxTopBarActions
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxComposeScreen
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabDetailWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabContentSource
+import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSyncFailure
+import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeWorkspace
@@ -305,13 +315,14 @@ private enum class AppSection(
 }
 
 /** 紧凑布局底部导航直接暴露的一级入口；其余入口收进“更多”页。 */
-private val BottomNavSections = listOf(
-    AppSection.HOME,
-    AppSection.SCHEDULE,
-    AppSection.GRADES,
-    AppSection.HOMEWORK,
-    AppSection.MORE,
-)
+private fun bottomNavSections(showPhyVlab: Boolean): List<AppSection> = buildList {
+    add(AppSection.HOME)
+    add(AppSection.SCHEDULE)
+    add(AppSection.GRADES)
+    add(AppSection.HOMEWORK)
+    if (showPhyVlab) add(AppSection.PHYVLAB)
+    add(AppSection.MORE)
+}
 
 /** 在底部导航中归属“更多”高亮的入口。 */
 private val MoreGroupSections = setOf(
@@ -403,7 +414,11 @@ fun AuthenticatedAppShell(
     val phyVlabState by phyVlabModel.state.collectAsState()
     val homeState by homeModel.state.collectAsState()
     val settingsState by settingsModel.state.collectAsState()
+    val compactBottomNavSections = remember(settingsState.preferences.showPhyVlabInBottomNav) {
+        bottomNavSections(settingsState.preferences.showPhyVlabInBottomNav)
+    }
     val homeChanges by homeChangeFeed.records.collectAsState()
+    var sessionRecoveryInProgress by remember(session) { mutableStateOf(false) }
     val homeSyncItems = buildHomeSyncItems(
         isLoggingIn = entryLoggingIn,
         homeBusy = homeState.isRefreshing,
@@ -428,7 +443,7 @@ fun AuthenticatedAppShell(
     val homeSyncFailureItems = homeSyncItems
         .filter { it.state == HomeSyncItemState.FAILED }
         .map(HomeSyncItem::title)
-    val homeSyncInProgress = entryLoggingIn || homeSyncItems.any {
+    val homeSyncInProgress = entryLoggingIn || sessionRecoveryInProgress || homeSyncItems.any {
         it.state == HomeSyncItemState.SYNCING
     }
     var homeSyncDialogVisible by remember { mutableStateOf(false) }
@@ -554,38 +569,229 @@ fun AuthenticatedAppShell(
         scope.launch {
             // 静默自动登录期间会话未就绪，忽略刷新；登录完成后各模块会按自动同步设置初始化。
             if (entryLoggingIn) return@launch
+            if (currentRoute == PhyVlabDetailRoute) {
+                // 物理在线详情模型自身已在幂等读取失败时恢复一次 CAS；不要在这里重复
+                // 套一层全量刷新，否则会清空当前作业选择并重复发起验证码。
+                phyVlabModel.loadSelectedActivityDetail(force = true)
+                return@launch
+            }
+            val sessionRefresh = SessionRefreshCoordinator(
+                reauthenticate = reauthenticateSession,
+                onRecoveryStateChanged = { sessionRecoveryInProgress = it },
+            )
+            suspend fun refreshModule(
+                operation: suspend () -> Unit,
+                sessionExpired: () -> Boolean,
+            ) {
+                sessionRefresh.run(operation, sessionExpired)
+            }
             when (section) {
                 AppSection.HOME -> coroutineScope {
-                    launch { homeModel.refresh() }
-                    launch { homeworkModel.refresh() }
-                    launch { examScheduleModel.refresh() }
-                    launch { courseScheduleModel.refresh() }
+                    launch {
+                        refreshModule(
+                            operation = homeModel::refresh,
+                            sessionExpired = { homeModel.state.value.failure == HomeStatusFailure.SESSION_EXPIRED },
+                        )
+                    }
+                    launch {
+                        refreshModule(
+                            operation = homeworkModel::refresh,
+                            sessionExpired = { homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED },
+                        )
+                    }
+                    launch {
+                        refreshModule(
+                            operation = examScheduleModel::refresh,
+                            sessionExpired = { examScheduleModel.state.value.failure == ExamScheduleSyncFailure.SESSION_EXPIRED },
+                        )
+                    }
+                    launch {
+                        refreshModule(
+                            operation = courseScheduleModel::refresh,
+                            sessionExpired = { courseScheduleModel.state.value.failure == CourseScheduleSyncFailure.SESSION_EXPIRED },
+                        )
+                    }
                     // 这是用户明确点下首页刷新/失败胶囊后的主动重试，不受自动同步开关限制。
                     launch { phyVlabModel.refresh() }
                     launch {
+                        refreshModule(
+                            operation = gradeModel::refresh,
+                            sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
+                        )
                         if (gradeModel.state.value.courseTypesByCode == null) {
                             gradeModel.ensureProgramCourseTypes()
                         }
                     }
                 }
-                AppSection.GRADES -> gradeModel.refresh()
+                AppSection.GRADES -> refreshModule(
+                    operation = gradeModel::refresh,
+                    sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
+                )
                 AppSection.SCHEDULE -> {
-                    courseScheduleModel.refresh()
+                    refreshModule(
+                        operation = courseScheduleModel::refresh,
+                        sessionExpired = { courseScheduleModel.state.value.failure == CourseScheduleSyncFailure.SESSION_EXPIRED },
+                    )
                     if (gradeModel.state.value.courseTypesByCode == null) {
                         gradeModel.ensureProgramCourseTypes()
                     }
                 }
-                AppSection.EXAMS -> examScheduleModel.refresh()
-                AppSection.HOMEWORK -> homeworkModel.refresh()
-                AppSection.COURSEWARE -> coursewareModel.refresh()
+                AppSection.EXAMS -> refreshModule(
+                    operation = examScheduleModel::refresh,
+                    sessionExpired = { examScheduleModel.state.value.failure == ExamScheduleSyncFailure.SESSION_EXPIRED },
+                )
+                AppSection.HOMEWORK -> refreshModule(
+                    operation = homeworkModel::refresh,
+                    sessionExpired = { homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED },
+                )
+                AppSection.COURSEWARE -> refreshModule(
+                    operation = coursewareModel::refresh,
+                    sessionExpired = { coursewareModel.state.value.failure == CoursewareSyncFailure.SESSION_EXPIRED },
+                )
                 AppSection.CLASSROOMS -> classroomModel.refresh()
-                AppSection.CLASSROOM_OCCUPANCY -> classroomOccupancyModel.refresh()
-                AppSection.MAILBOX -> mailboxModel.refresh()
+                AppSection.CLASSROOM_OCCUPANCY -> refreshModule(
+                    operation = classroomOccupancyModel::refresh,
+                    sessionExpired = {
+                        (classroomOccupancyModel.state.value.queryState as? ClassroomOccupancyQueryState.Failed)
+                            ?.reason == ClassroomOccupancySyncFailure.SESSION_EXPIRED
+                    },
+                )
+                AppSection.MAILBOX -> refreshModule(
+                    operation = mailboxModel::refresh,
+                    sessionExpired = {
+                        when (val current = mailboxModel.state.value) {
+                            MailboxUiState.SessionUnavailable -> true
+                            is MailboxUiState.Ready -> current.failure == MailboxFailure.SESSION_EXPIRED
+                            else -> false
+                        }
+                    },
+                )
                 AppSection.PHYVLAB -> phyVlabModel.refresh()
                 AppSection.CALENDAR -> Unit
                 AppSection.REPORT_CARD_DOWNLOAD -> Unit
                 AppSection.SETTINGS -> Unit
                 AppSection.MORE -> Unit
+            }
+        }
+    }
+    val retryPhyVlabDetail: () -> Unit = {
+        scope.launch {
+            phyVlabModel.loadSelectedActivityDetail(force = true)
+        }
+    }
+
+    // 回到前台时只对已经明确处于 SESSION_EXPIRED 的当前页面自动重试一次；
+    // 失败后保留当前错误页，不弹回登录页，把再次恢复的主动权交给右上角刷新。
+    val latestRoute = rememberUpdatedState(currentRoute)
+    LaunchedEffect(session) {
+        suspend fun retryIfExpired(
+            operation: suspend () -> Unit,
+            sessionExpired: () -> Boolean,
+        ) {
+            if (sessionExpired()) operation()
+        }
+
+        session.appResumeGeneration.collect { generation ->
+            if (!session.claimAppResume(generation) || entryLoggingIn) return@collect
+            when (latestRoute.value) {
+                PhyVlabDetailRoute -> retryIfExpired(
+                    operation = { phyVlabModel.loadSelectedActivityDetail(force = true) },
+                    sessionExpired = {
+                        phyVlabModel.state.value.detailFailure == PhyVlabSyncFailure.SESSION_EXPIRED
+                    },
+                )
+                AppSection.HOME -> coroutineScope {
+                    launch {
+                        retryIfExpired(
+                            operation = homeModel::refresh,
+                            sessionExpired = { homeModel.state.value.failure == HomeStatusFailure.SESSION_EXPIRED },
+                        )
+                    }
+                    launch {
+                        retryIfExpired(
+                            operation = homeworkModel::refresh,
+                            sessionExpired = { homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED },
+                        )
+                    }
+                    launch {
+                        retryIfExpired(
+                            operation = examScheduleModel::refresh,
+                            sessionExpired = { examScheduleModel.state.value.failure == ExamScheduleSyncFailure.SESSION_EXPIRED },
+                        )
+                    }
+                    launch {
+                        retryIfExpired(
+                            operation = courseScheduleModel::refresh,
+                            sessionExpired = { courseScheduleModel.state.value.failure == CourseScheduleSyncFailure.SESSION_EXPIRED },
+                        )
+                    }
+                    launch {
+                        retryIfExpired(
+                            operation = phyVlabModel::refresh,
+                            sessionExpired = {
+                                val current = phyVlabModel.state.value
+                                current.failure == PhyVlabSyncFailure.SESSION_EXPIRED || current.casLoginRequired
+                            },
+                        )
+                    }
+                    launch {
+                        retryIfExpired(
+                            operation = gradeModel::refresh,
+                            sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
+                        )
+                    }
+                }
+                AppSection.GRADES -> retryIfExpired(
+                    operation = gradeModel::refresh,
+                    sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
+                )
+                AppSection.SCHEDULE -> retryIfExpired(
+                    operation = courseScheduleModel::refresh,
+                    sessionExpired = { courseScheduleModel.state.value.failure == CourseScheduleSyncFailure.SESSION_EXPIRED },
+                )
+                AppSection.EXAMS -> retryIfExpired(
+                    operation = examScheduleModel::refresh,
+                    sessionExpired = { examScheduleModel.state.value.failure == ExamScheduleSyncFailure.SESSION_EXPIRED },
+                )
+                AppSection.HOMEWORK -> retryIfExpired(
+                    operation = homeworkModel::refresh,
+                    sessionExpired = { homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED },
+                )
+                AppSection.COURSEWARE -> retryIfExpired(
+                    operation = coursewareModel::refresh,
+                    sessionExpired = { coursewareModel.state.value.failure == CoursewareSyncFailure.SESSION_EXPIRED },
+                )
+                AppSection.CLASSROOMS -> Unit
+                AppSection.CLASSROOM_OCCUPANCY -> retryIfExpired(
+                    operation = classroomOccupancyModel::refresh,
+                    sessionExpired = {
+                        (classroomOccupancyModel.state.value.queryState as? ClassroomOccupancyQueryState.Failed)
+                            ?.reason == ClassroomOccupancySyncFailure.SESSION_EXPIRED
+                    },
+                )
+                AppSection.MAILBOX -> retryIfExpired(
+                    operation = mailboxModel::refresh,
+                    sessionExpired = {
+                        when (val current = mailboxModel.state.value) {
+                            MailboxUiState.SessionUnavailable -> true
+                            is MailboxUiState.Ready -> current.failure == MailboxFailure.SESSION_EXPIRED
+                            else -> false
+                        }
+                    },
+                )
+                AppSection.PHYVLAB -> retryIfExpired(
+                    operation = phyVlabModel::refresh,
+                    sessionExpired = {
+                        val current = phyVlabModel.state.value
+                        current.failure == PhyVlabSyncFailure.SESSION_EXPIRED || current.casLoginRequired
+                    },
+                )
+                AppSection.CALENDAR,
+                AppSection.REPORT_CARD_DOWNLOAD,
+                AppSection.SETTINGS,
+                AppSection.MORE,
+                -> Unit
+                else -> Unit
             }
         }
     }
@@ -756,7 +962,7 @@ fun AuthenticatedAppShell(
                 }
                 CompactAppTopBar(
                     title = title,
-                    isRefreshing = isRefreshing,
+                    isRefreshing = isRefreshing || sessionRecoveryInProgress,
                     isLoggingIn = entryLoggingIn,
                     idleStatusText = idleStatusText,
                     action = topBarAction,
@@ -770,7 +976,7 @@ fun AuthenticatedAppShell(
                     },
                 )
                 // 同步进度条钉在顶栏下方。
-                if (isRefreshing) {
+                if (isRefreshing || sessionRecoveryInProgress) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
                 // 列表仅平台原生滚动/过滚，无下拉刷新包裹层。
@@ -1038,6 +1244,7 @@ fun AuthenticatedAppShell(
                             backStack.add(ClassroomDetailRoute)
                         }
                     },
+                    onRefresh = refresh,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -1060,6 +1267,7 @@ fun AuthenticatedAppShell(
                             backStack.add(ClassroomOccupancyDetailRoute)
                         }
                     },
+                    onRefresh = refresh,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -1075,6 +1283,7 @@ fun AuthenticatedAppShell(
             ) {
                 ClassroomBuildingWorkspace(
                     model = classroomModel,
+                    onRefresh = refresh,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -1089,6 +1298,7 @@ fun AuthenticatedAppShell(
             ) {
                 ClassroomOccupancyBuildingWorkspace(
                     model = classroomOccupancyModel,
+                    onRefresh = refresh,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -1146,6 +1356,7 @@ fun AuthenticatedAppShell(
                 MailboxWorkspace(
                     model = mailboxModel,
                     expanded = expanded,
+                    onRefresh = refresh,
                     onReauthenticate = reauthenticateSession,
                     onOpenNativeDetail = if (useNativeSecondaryRoutes) {
                         { onOpenNativeRoute(MAILBOX_DETAIL_ROUTE_ID) }
@@ -1172,6 +1383,7 @@ fun AuthenticatedAppShell(
                     model = mailboxModel,
                     expanded = false,
                     nativeDetail = true,
+                    onRefresh = refresh,
                     onReauthenticate = reauthenticateSession,
                     onOpenNativeCompose = { onOpenNativeRoute(MAILBOX_COMPOSE_ROUTE_ID) },
                     modifier = Modifier.fillMaxSize(),
@@ -1218,6 +1430,7 @@ fun AuthenticatedAppShell(
                     model = phyVlabModel,
                     holdNetwork = entryLoggingIn,
                     fileGateway = homeworkFileGateway,
+                    onRefresh = refresh,
                     showDetailSheet = !useNativeSecondaryRoutes,
                     onOpenCourse = { url -> onOpenExternalUrl(url.replace("http://", "https://")) },
                     onOpenActivity = { url -> onOpenExternalUrl(url.replace("http://", "https://")) },
@@ -1230,20 +1443,22 @@ fun AuthenticatedAppShell(
                         }
                     },
                     onLogout = onLogout,
+                    onRetryDetail = retryPhyVlabDetail,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
             PhyVlabDetailRoute -> DestinationPage(
                 title = "物理作业详情",
                 expanded = expanded,
-                refreshable = false,
-                isRefreshing = false,
+                refreshable = true,
+                isRefreshing = phyVlabState.isDetailLoading,
                 showBack = true,
                 modifier = modifier,
             ) {
                 PhyVlabDetailWorkspace(
                     model = phyVlabModel,
                     fileGateway = homeworkFileGateway,
+                    onRetry = retryPhyVlabDetail,
                     onOpenActivity = { url -> onOpenExternalUrl(url.replace("http://", "https://")) },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -1374,7 +1589,7 @@ fun AuthenticatedAppShell(
         )
 
         // 仅五个一级 tab 显示底栏；更多子页与详情路由隐藏。底栏在 NavDisplay 外，tab 切换不重建。
-        val showsCompactBottomBar = currentRoute in BottomNavSections
+        val showsCompactBottomBar = currentRoute in compactBottomNavSections
 
         Box(modifier = Modifier.fillMaxSize()) {
             // Android 使用 Navigation 3 的 seekable 场景内核，并按 Google full-screen surface
@@ -1544,6 +1759,7 @@ fun AuthenticatedAppShell(
             if (showsCompactBottomBar && compactBottomBarOverlayPadding > 0.dp) {
                 CompactBottomNavigation(
                     section = section,
+                    sections = compactBottomNavSections,
                     onSectionSelected = navigateToSection,
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
@@ -1651,7 +1867,7 @@ private fun AppSidebar(
                     )
                 }
             }
-            // 与移动端底栏一致：只暴露五个一级入口，其余收进「更多」。
+            // 宽屏侧栏保持原有五个一级入口；物理在线仍从「更多」进入。
             // 退出登录放在设置页，侧栏不再重复。
             Column(
                 modifier = Modifier
@@ -1660,7 +1876,7 @@ private fun AppSidebar(
                     .desktopTouchScroll(sidebarScrollState),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                BottomNavSections.forEach { item ->
+                bottomNavSections(showPhyVlab = false).forEach { item ->
                     val selected = if (item == AppSection.MORE) {
                         section in MoreGroupSections
                     } else {
@@ -2215,6 +2431,7 @@ private fun BackChevron() {
 @Composable
 private fun CompactBottomNavigation(
     section: AppSection,
+    sections: List<AppSection>,
     onSectionSelected: (AppSection) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -2222,7 +2439,7 @@ private fun CompactBottomNavigation(
         modifier = modifier.fillMaxWidth(),
         windowInsets = WindowInsets.navigationBars,
     ) {
-        BottomNavSections.forEach { item ->
+        sections.forEach { item ->
             val selected =
                 if (item == AppSection.MORE) section in MoreGroupSections else section == item
             NavigationBarItem(
@@ -2347,6 +2564,28 @@ private fun CompactTabIcon(section: AppSection) {
                     strokeWidth,
                     cap = StrokeCap.Round,
                 )
+            }
+            AppSection.PHYVLAB -> {
+                // 物理在线：简化烧杯/实验瓶图标。
+                val left = 5.dp.toPx()
+                val right = size.width - left
+                val top = 4.dp.toPx()
+                val neckBottom = 9.dp.toPx()
+                val bottom = size.height - 4.dp.toPx()
+                drawLine(color, Offset(9.dp.toPx(), top), Offset(9.dp.toPx(), neckBottom), strokeWidth)
+                drawLine(color, Offset(15.dp.toPx(), top), Offset(15.dp.toPx(), neckBottom), strokeWidth)
+                drawLine(color, Offset(7.dp.toPx(), top), Offset(17.dp.toPx(), top), strokeWidth, cap = StrokeCap.Round)
+                drawLine(color, Offset(9.dp.toPx(), neckBottom), Offset(left, bottom), strokeWidth, cap = StrokeCap.Round)
+                drawLine(color, Offset(15.dp.toPx(), neckBottom), Offset(right, bottom), strokeWidth, cap = StrokeCap.Round)
+                drawLine(color, Offset(left, bottom), Offset(right, bottom), strokeWidth, cap = StrokeCap.Round)
+                drawLine(
+                    color,
+                    Offset(6.5.dp.toPx(), 15.dp.toPx()),
+                    Offset(17.5.dp.toPx(), 15.dp.toPx()),
+                    strokeWidth,
+                    cap = StrokeCap.Round,
+                )
+                drawCircle(color, radius = 1.2.dp.toPx(), center = Offset(12.dp.toPx(), 12.dp.toPx()))
             }
             else -> {
                 // 更多：三个圆点
@@ -3365,7 +3604,7 @@ private fun GradeFailureBanner(
             } else {
                 "无法连接教务系统，请检查网络后重试。"
             }
-            GradeSyncFailure.SESSION_EXPIRED -> "教务会话已失效，请退出后重新登录。"
+            GradeSyncFailure.SESSION_EXPIRED -> "教务会话已失效，请点击右上角刷新重试登录。"
             GradeSyncFailure.MALFORMED_RESPONSE -> "教务成绩页面结构已变化，暂时无法解析。"
             GradeSyncFailure.CACHE -> "本地成绩缓存操作失败，当前选择可能未保存。"
         },

@@ -1494,7 +1494,7 @@ private fun CourseFailureBanner(
             } else {
                 "无法连接教务系统，请检查网络后重试。"
             }
-            CourseScheduleSyncFailure.SESSION_EXPIRED -> "教务会话已失效，请退出后重新登录。"
+            CourseScheduleSyncFailure.SESSION_EXPIRED -> "教务会话已失效，请点击右上角刷新重试登录。"
             CourseScheduleSyncFailure.MALFORMED_RESPONSE -> "教务课表页面结构已变化，暂时无法解析。"
             CourseScheduleSyncFailure.CACHE -> "本地课表缓存操作失败。"
         },

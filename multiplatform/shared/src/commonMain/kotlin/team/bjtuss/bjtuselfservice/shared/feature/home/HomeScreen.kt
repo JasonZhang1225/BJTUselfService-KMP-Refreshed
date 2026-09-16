@@ -536,15 +536,26 @@ private fun AgendaDayCell(
     onClick: () -> Unit,
     modifier: Modifier,
 ) {
+    val hasDeadline = day.homeworkDue.isNotEmpty() || day.phyVlabEvents.any {
+        it.kind == PhyVlabEventKind.DEADLINE
+    }
+    val cellColor = when {
+        hasDeadline -> MaterialTheme.colorScheme.errorContainer
+        selected -> MaterialTheme.colorScheme.primaryContainer
+        isToday -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val cellContentColor = if (hasDeadline) {
+        MaterialTheme.colorScheme.onErrorContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
     Surface(
         onClick = onClick,
         modifier = modifier,
         shape = MaterialTheme.shapes.medium,
-        color = when {
-            selected -> MaterialTheme.colorScheme.primaryContainer
-            isToday -> MaterialTheme.colorScheme.secondaryContainer
-            else -> MaterialTheme.colorScheme.surfaceVariant
-        },
+        color = cellColor,
+        contentColor = cellContentColor,
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 8.dp),
@@ -557,7 +568,11 @@ private fun AgendaDayCell(
                 if (day.eventCount == 0) "—" else "${day.eventCount}项",
                 style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (hasDeadline) {
+                    MaterialTheme.colorScheme.onErrorContainer
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
         }
     }
@@ -602,6 +617,7 @@ private fun AgendaEventRow(
     detail: String,
     onClick: () -> Unit,
 ) {
+    val isDeadline = type.contains("截止")
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -613,7 +629,11 @@ private fun AgendaEventRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(type, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+            Text(
+                type,
+                color = if (isDeadline) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+            )
             Column(modifier = Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                 Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -801,7 +821,11 @@ private fun changeCountSummary(changes: List<HomeChangeRecord>): String = buildL
 
 private fun HomeStatusFailure.message(hasCache: Boolean): String = when (this) {
     HomeStatusFailure.NETWORK -> if (hasCache) "网络不可用，正在显示上次状态。" else "无法连接 MIS 状态服务。"
-    HomeStatusFailure.SESSION_EXPIRED -> if (hasCache) "登录会话已失效，正在显示上次状态。" else "登录会话已失效，请重新登录。"
+    HomeStatusFailure.SESSION_EXPIRED -> if (hasCache) {
+        "登录会话已失效，正在显示上次状态；请点击右上角刷新重试登录。"
+    } else {
+        "登录会话已失效，请点击右上角刷新重试登录。"
+    }
     HomeStatusFailure.PARSE -> if (hasCache) "学校返回格式变化，正在显示上次状态。" else "无法读取学校返回的状态。"
     HomeStatusFailure.CACHE -> if (hasCache) "最新状态未能写入本地，仍显示上次状态。" else "无法保存最新状态。"
 }

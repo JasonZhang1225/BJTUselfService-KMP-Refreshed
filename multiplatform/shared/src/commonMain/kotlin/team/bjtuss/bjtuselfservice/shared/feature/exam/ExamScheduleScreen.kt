@@ -559,7 +559,7 @@ private fun ExamFailureBanner(
             } else {
                 "无法连接教务系统，请检查网络后重试。"
             }
-            ExamScheduleSyncFailure.SESSION_EXPIRED -> "教务会话已失效，请退出后重新登录。"
+            ExamScheduleSyncFailure.SESSION_EXPIRED -> "教务会话已失效，请点击右上角刷新重试登录。"
             ExamScheduleSyncFailure.MALFORMED_RESPONSE -> "教务考试页面结构已变化，暂时无法解析。"
             ExamScheduleSyncFailure.CACHE -> "本地考试缓存操作失败。"
         },

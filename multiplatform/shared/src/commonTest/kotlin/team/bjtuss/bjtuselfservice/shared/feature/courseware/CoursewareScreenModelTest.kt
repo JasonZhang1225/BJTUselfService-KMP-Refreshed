@@ -13,6 +13,7 @@ import kotlin.test.assertTrue
 import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareOperationResult
 import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareRefreshResult
 import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareRepository
+import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareSyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareCourse
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNode
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNodeKind
@@ -38,6 +39,24 @@ class CoursewareScreenModelTest {
         assertEquals(listOf("第一讲.pdf"), model.state.value.compactNodes.map { it.name })
         assertTrue(model.navigateCompactBack())
         assertFalse(model.navigateCompactBack())
+    }
+
+    @Test
+    fun refreshReloadsTopLevelResourcesWithoutReSelectingTheCourse() = runBlocking {
+        val repository = FakeRepository(
+            loaded = snapshot("旧课件"),
+            refreshed = snapshot("旧课件"),
+            rootSnapshot = snapshot("新课件"),
+        )
+        val model = CoursewareScreenModel(repository)
+
+        model.initialize()
+
+        assertEquals(
+            "新课件",
+            model.state.value.selectedCourse?.children?.first()?.children?.single()?.name,
+        )
+        assertEquals(1, repository.rootLoadCount)
     }
 
     @Test
@@ -101,6 +120,85 @@ class CoursewareScreenModelTest {
 
         assertEquals(file, assertIs<CoursewareOperationResult.Success<HomeworkFileContent>>(result).value)
         assertFalse(model.state.value.isDownloading)
+    }
+
+    @Test
+    fun resourceDownloadRetriesTemporaryInvalidResponse() = runBlocking {
+        var calls = 0
+        val file = HomeworkFileContent("第一讲.pdf", "application/pdf", "body".encodeToByteArray())
+        val repository = object : CoursewareRepository {
+            override fun load(): CoursewareSnapshot = snapshot()
+            override suspend fun refresh(): CoursewareRefreshResult = CoursewareRefreshResult.Success(snapshot())
+            override suspend fun loadCoursesConcurrently(
+                snapshot: CoursewareSnapshot,
+                courseIds: List<Int>,
+                concurrency: Int,
+            ): CoursewareOperationResult<CoursewareSnapshot> = CoursewareOperationResult.Success(snapshot())
+            override suspend fun downloadResource(
+                node: CoursewareNode,
+            ): CoursewareOperationResult<HomeworkFileContent> {
+                calls++
+                return if (calls == 1) {
+                    CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
+                } else {
+                    CoursewareOperationResult.Success(file)
+                }
+            }
+            override suspend fun downloadTeachingCalendar(
+                course: CoursewareCourse,
+            ): CoursewareOperationResult<HomeworkFileContent> = CoursewareOperationResult.Success(file)
+        }
+        val model = CoursewareScreenModel(repository)
+        model.initialize()
+
+        val result = model.downloadResource(resource().stableKey)
+
+        assertEquals(file, assertIs<CoursewareOperationResult.Success<HomeworkFileContent>>(result).value)
+        assertEquals(2, calls)
+        assertFalse(model.state.value.isDownloading)
+    }
+
+    @Test
+    fun resourceDownloadReauthenticatesOnceAfterSessionExpiry() = runBlocking {
+        var calls = 0
+        var recoveryCalls = 0
+        val file = HomeworkFileContent("第一讲.pdf", "application/pdf", "body".encodeToByteArray())
+        val repository = object : CoursewareRepository {
+            override fun load(): CoursewareSnapshot = snapshot()
+            override suspend fun refresh(): CoursewareRefreshResult = CoursewareRefreshResult.Success(snapshot())
+            override suspend fun loadCoursesConcurrently(
+                snapshot: CoursewareSnapshot,
+                courseIds: List<Int>,
+                concurrency: Int,
+            ): CoursewareOperationResult<CoursewareSnapshot> = CoursewareOperationResult.Success(snapshot())
+            override suspend fun downloadResource(
+                node: CoursewareNode,
+            ): CoursewareOperationResult<HomeworkFileContent> {
+                calls++
+                return if (calls == 1) {
+                    CoursewareOperationResult.Failure(CoursewareSyncFailure.SESSION_EXPIRED)
+                } else {
+                    CoursewareOperationResult.Success(file)
+                }
+            }
+            override suspend fun downloadTeachingCalendar(
+                course: CoursewareCourse,
+            ): CoursewareOperationResult<HomeworkFileContent> = CoursewareOperationResult.Success(file)
+        }
+        val model = CoursewareScreenModel(
+            repository = repository,
+            reauthenticate = {
+                recoveryCalls++
+                true
+            },
+        )
+        model.initialize()
+
+        val result = model.downloadResource(resource().stableKey)
+
+        assertIs<CoursewareOperationResult.Success<HomeworkFileContent>>(result)
+        assertEquals(2, calls)
+        assertEquals(1, recoveryCalls)
     }
 
     @Test
@@ -231,6 +329,11 @@ class CoursewareScreenModelTest {
         val repository = object : CoursewareRepository {
             override fun load(): CoursewareSnapshot = snapshot()
             override suspend fun refresh(): CoursewareRefreshResult = CoursewareRefreshResult.Success(snapshot())
+            override suspend fun loadCoursesConcurrently(
+                snapshot: CoursewareSnapshot,
+                courseIds: List<Int>,
+                concurrency: Int,
+            ): CoursewareOperationResult<CoursewareSnapshot> = CoursewareOperationResult.Success(snapshot())
             override suspend fun downloadResource(
                 node: CoursewareNode,
             ): CoursewareOperationResult<HomeworkFileContent> = gatedFile(node.name)
@@ -261,9 +364,11 @@ class CoursewareScreenModelTest {
         private val file: HomeworkFileContent = HomeworkFileContent("file.bin", "application/octet-stream", byteArrayOf(1)),
         private val events: MutableList<String>? = null,
         private val loadedFolderSnapshot: CoursewareSnapshot? = null,
+        private val rootSnapshot: CoursewareSnapshot = refreshed,
     ) : CoursewareRepository {
         var courseLoadCount = 0
         var folderLoadCount = 0
+        var rootLoadCount = 0
         override fun load(): CoursewareSnapshot = loaded
         override suspend fun refresh(): CoursewareRefreshResult = CoursewareRefreshResult.Success(refreshed)
         override suspend fun loadCourse(
@@ -272,6 +377,14 @@ class CoursewareScreenModelTest {
         ): CoursewareOperationResult<CoursewareSnapshot> {
             courseLoadCount += 1
             return CoursewareOperationResult.Success(refreshed)
+        }
+        override suspend fun loadCoursesConcurrently(
+            snapshot: CoursewareSnapshot,
+            courseIds: List<Int>,
+            concurrency: Int,
+        ): CoursewareOperationResult<CoursewareSnapshot> {
+            rootLoadCount++
+            return CoursewareOperationResult.Success(rootSnapshot)
         }
         override suspend fun loadFolder(
             snapshot: CoursewareSnapshot,
@@ -331,7 +444,7 @@ class CoursewareScreenModelTest {
         }
     }
 
-    private fun snapshot() = CoursewareSnapshot(
+    private fun snapshot(resourceName: String = "第一讲.pdf") = CoursewareSnapshot(
         listOf(
             CoursewareCourse(
                 id = 17,
@@ -340,7 +453,7 @@ class CoursewareScreenModelTest {
                 groupId = "G1",
                 semesterCode = "2026-1",
                 teacherId = 28,
-                children = listOf(folder(), description()),
+                children = listOf(folder(resourceName), description()),
             ),
         ),
     )
@@ -357,18 +470,18 @@ class CoursewareScreenModelTest {
         )
     }
 
-    private fun folder() = CoursewareNode(
+    private fun folder(resourceName: String = "第一讲.pdf") = CoursewareNode(
         id = 1,
         courseId = 17,
         name = "第一章",
         kind = CoursewareNodeKind.FOLDER,
-        children = listOf(resource()),
+        children = listOf(resource(resourceName)),
     )
 
-    private fun resource() = CoursewareNode(
+    private fun resource(name: String = "第一讲.pdf") = CoursewareNode(
         id = 2,
         courseId = 17,
-        name = "第一讲.pdf",
+        name = name,
         kind = CoursewareNodeKind.RESOURCE,
         rpId = "rp-2",
     )

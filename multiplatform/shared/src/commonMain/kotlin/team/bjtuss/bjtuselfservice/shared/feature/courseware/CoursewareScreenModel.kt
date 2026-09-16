@@ -2,6 +2,7 @@ package team.bjtuss.bjtuselfservice.shared.feature.courseware
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,6 +73,8 @@ data class CoursewareUiState(
 
 class CoursewareScreenModel(
     private val repository: CoursewareRepository,
+    /** 会话过期时在当前 App 会话内重新建立学校登录态，不跳回登录页。 */
+    private val reauthenticate: (suspend () -> Boolean)? = null,
 ) {
     private val mutableState = MutableStateFlow(CoursewareUiState())
     val state: StateFlow<CoursewareUiState> = mutableState.asStateFlow()
@@ -116,7 +119,15 @@ class CoursewareScreenModel(
                     when (val result = repository.refresh()) {
                         is CoursewareRefreshResult.Success -> {
                             freshCourseIds.clear()
-                            applySnapshot(result.snapshot, CoursewareContentSource.NETWORK, null)
+                            // 课程目录刷新成功不等于课件树也已刷新。远端 catalog 会与旧缓存
+                            // 合并以便页面先保留内容；这里必须把每门课的顶层树重新标记为未加载，
+                            // 让 refresh 后的 ensureCourseRootsLoaded 真正请求最新课件列表。
+                            applySnapshot(
+                                result.snapshot.invalidateCourseRoots(),
+                                CoursewareContentSource.NETWORK,
+                                null,
+                                resetNavigation = true,
+                            )
                         }
                         is CoursewareRefreshResult.Failure -> applySnapshot(
                             result.snapshot,
@@ -166,6 +177,7 @@ class CoursewareScreenModel(
 
     suspend fun openCompactNode(stableKey: String) {
         var state = mutableState.value
+        if (state.selectedCourse?.childrenLoaded != true) return
         val node = state.compactNodes.firstOrNull { it.stableKey == stableKey } ?: return
         if (node.isFolder && !node.childrenLoaded && !loadFolder(stableKey)) return
         state = mutableState.value
@@ -210,6 +222,7 @@ class CoursewareScreenModel(
 
     fun selectNode(stableKey: String) {
         val course = mutableState.value.selectedCourse ?: return
+        if (!course.childrenLoaded || course.id in mutableState.value.loadingCourseIds) return
         if (stableKey.isBlank()) {
             mutableState.value = mutableState.value.copy(selectedNodeKey = null, fileFailure = null)
             return
@@ -223,6 +236,9 @@ class CoursewareScreenModel(
     ): CoursewareOperationResult<HomeworkFileContent> = operationMutex.withLock {
         val course = mutableState.value.selectedCourse
             ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
+        if (!course.childrenLoaded || course.id in mutableState.value.loadingCourseIds) {
+            return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.NETWORK)
+        }
         val node = findCoursewareNode(course.children, stableKey)
             ?.takeIf { !it.isFolder }
             ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
@@ -232,7 +248,7 @@ class CoursewareScreenModel(
             fileFailure = null,
         )
         try {
-            repository.downloadResource(node).also { result ->
+            downloadFileWithRecovery { repository.downloadResource(node) }.also { result ->
                 if (result is CoursewareOperationResult.Failure) {
                     mutableState.value = mutableState.value.copy(fileFailure = result.reason)
                 }
@@ -294,7 +310,7 @@ class CoursewareScreenModel(
         val nameAllocator = CoursewareExportNameAllocator()
         return try {
             for ((index, item) in resources.withIndex()) {
-                val downloaded = when (val result = repository.downloadResource(item.node)) {
+                val downloaded = when (val result = downloadFileWithRecovery { repository.downloadResource(item.node) }) {
                     is CoursewareOperationResult.Failure -> {
                         mutableState.value = mutableState.value.copy(fileFailure = result.reason)
                         return result
@@ -330,7 +346,7 @@ class CoursewareScreenModel(
             ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
         mutableState.value = mutableState.value.copy(isDownloading = true, fileFailure = null)
         try {
-            repository.downloadTeachingCalendar(course).also { result ->
+            downloadFileWithRecovery { repository.downloadTeachingCalendar(course) }.also { result ->
                 if (result is CoursewareOperationResult.Failure) {
                     mutableState.value = mutableState.value.copy(fileFailure = result.reason)
                 }
@@ -357,6 +373,38 @@ class CoursewareScreenModel(
 
     fun dismissFileFailure() {
         mutableState.value = mutableState.value.copy(fileFailure = null)
+    }
+
+    /**
+     * 文件下载只包含取票和 GET，不会重复提交用户数据，因此可以安全地做一次恢复/重试：
+     * - 会话失效：恢复学校登录态后再取一次下载票；
+     * - 网络切换或临时无效响应：短暂等待后再请求一次。
+     */
+    private suspend fun downloadFileWithRecovery(
+        operation: suspend () -> CoursewareOperationResult<HomeworkFileContent>,
+    ): CoursewareOperationResult<HomeworkFileContent> {
+        var result = operation()
+        if (result is CoursewareOperationResult.Failure &&
+            result.reason == CoursewareSyncFailure.SESSION_EXPIRED
+        ) {
+            val recovered = try {
+                reauthenticate?.invoke() == true
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                false
+            }
+            if (recovered) {
+                result = operation()
+            }
+        }
+        if (result is CoursewareOperationResult.Failure &&
+            result.reason in setOf(CoursewareSyncFailure.NETWORK, CoursewareSyncFailure.MALFORMED_RESPONSE)
+        ) {
+            delay(COURSEWARE_DOWNLOAD_RETRY_DELAY_MILLIS)
+            result = operation()
+        }
+        return result
     }
 
     private suspend fun loadFolder(stableKey: String): Boolean = operationMutex.withLock {
@@ -492,8 +540,9 @@ class CoursewareScreenModel(
                     )
                 }
                 is CoursewareOperationResult.Failure -> {
-                    // 预加载失败不弹整页错误；选课列表仍显示「数量未同步」，
-                    // 打开选课 sheet / 再次同步时会重试；点单课仍走 loadCourse。
+                    // 课件目录刷新失败时保留旧内容，但必须明确提示用户，避免把旧目录
+                    // 误认为已经同步成功；再次刷新或重新选择课程都会重试。
+                    mutableState.value = mutableState.value.copy(failure = result.reason)
                 }
             }
         } finally {
@@ -507,6 +556,7 @@ class CoursewareScreenModel(
         snapshot: CoursewareSnapshot,
         source: CoursewareContentSource?,
         failure: CoursewareSyncFailure?,
+        resetNavigation: Boolean = false,
     ) {
         val current = mutableState.value
         val selectedCourseId = current.selectedCourseId
@@ -518,9 +568,21 @@ class CoursewareScreenModel(
         mutableState.value = current.copy(
             courses = snapshot.courses,
             selectedCourseId = selectedCourseId,
-            compactFolderPath = current.compactFolderPath.takeIf { validPath }.orEmpty(),
-            expandedFolderKeys = current.expandedFolderKeys.filterTo(mutableSetOf()) { it in allKeys.orEmpty() },
-            selectedNodeKey = current.selectedNodeKey?.takeIf { it in allKeys.orEmpty() },
+            compactFolderPath = if (resetNavigation) {
+                emptyList()
+            } else {
+                current.compactFolderPath.takeIf { validPath }.orEmpty()
+            },
+            expandedFolderKeys = if (resetNavigation) {
+                emptySet()
+            } else {
+                current.expandedFolderKeys.filterTo(mutableSetOf()) { it in allKeys.orEmpty() }
+            },
+            selectedNodeKey = if (resetNavigation) {
+                null
+            } else {
+                current.selectedNodeKey?.takeIf { it in allKeys.orEmpty() }
+            },
             loadingCourseIds = current.loadingCourseIds.filterTo(mutableSetOf()) { id ->
                 snapshot.courses.any { it.id == id }
             },
@@ -532,6 +594,14 @@ class CoursewareScreenModel(
         )
     }
 }
+
+private fun CoursewareSnapshot.invalidateCourseRoots(): CoursewareSnapshot = copy(
+    courses = courses.map { course ->
+        course.copy(childrenLoaded = false)
+    },
+)
+
+private const val COURSEWARE_DOWNLOAD_RETRY_DELAY_MILLIS = 250L
 
 private fun List<CoursewareNode>.firstUnloadedFolder(): CoursewareNode? {
     for (node in this) {

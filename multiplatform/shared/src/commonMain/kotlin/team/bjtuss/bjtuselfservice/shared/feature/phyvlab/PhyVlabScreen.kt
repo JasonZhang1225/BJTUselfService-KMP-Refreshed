@@ -89,9 +89,19 @@ fun PhyVlabWorkspace(
     onOpenActivityDetail: (PhyVlabActivity) -> Unit = { model.showActivityDetails(it) },
     onOpenEvent: (String) -> Unit = {},
     onLogout: () -> Unit = {},
+    /** 由应用壳提供会话感知刷新；独立预览/测试时回退到模型刷新。 */
+    onRefresh: (() -> Unit)? = null,
+    /** 详情失败时只重试详情请求，不重新清空整页选择状态。 */
+    onRetryDetail: (() -> Unit)? = null,
 ) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val refresh: () -> Unit = onRefresh ?: fun() {
+        scope.launch { model.refresh() }
+    }
+    val retryDetail: () -> Unit = onRetryDetail ?: fun() {
+        scope.launch { model.loadSelectedActivityDetail(force = true) }
+    }
     var showUpload by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var showUploadConfirm by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var uploadFiles by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<List<HomeworkFileContent>>(emptyList()) }
@@ -144,21 +154,21 @@ fun PhyVlabWorkspace(
                 failure = failure,
                 hasCachedContent = state.contentSource == PhyVlabContentSource.CACHE,
                 cachedAtEpochMillis = state.cachedAtEpochMillis,
-                onRetry = { scope.launch { model.refresh() } },
+                onRetry = refresh,
             )
         }
         // CAS 失效时如果仍有本地快照，继续展示只读缓存；用户可从右上角重试，
         // 不让校园网外的离线场景退化成空白/登录阻断页。
         if (state.casLoginRequired && state.contentSource != PhyVlabContentSource.CACHE) {
             PhyVlabCasLoginRequiredState(
-                onRetry = { scope.launch { model.refresh() } },
+                onRetry = refresh,
                 onLogout = onLogout,
             )
             return
         }
         if (state.courses.isEmpty()) {
             PhyVlabEmptyState(
-                onRetry = { scope.launch { model.refresh() } },
+                onRetry = refresh,
                 onOpenWeb = { onOpenCourse("https://phyvlab.bjtu.edu.cn/my/courses.php") },
             )
             return
@@ -177,12 +187,6 @@ fun PhyVlabWorkspace(
                 contentPadding = PaddingValues(horizontal = horizontalInset, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                item(key = "schedule") {
-                    PhyVlabScheduleCard(state = state, onPrev = { scope.launch { model.changeMonth(-1) } }, onNext = { scope.launch { model.changeMonth(1) } })
-                }
-                items(state.events, key = { "event-${it.id}" }) { event ->
-                    PhyVlabEventRow(event = event, onOpen = { event.eventUrl?.let(onOpenEvent) })
-                }
                 item(key = "courses") {
                     Text("我的课程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 }
@@ -230,6 +234,16 @@ fun PhyVlabWorkspace(
                         onOpen = { onOpenActivityDetail(activity) },
                     )
                 }
+                item(key = "schedule") {
+                    PhyVlabScheduleCard(
+                        state = state,
+                        onPrev = { scope.launch { model.changeMonth(-1) } },
+                        onNext = { scope.launch { model.changeMonth(1) } },
+                    )
+                }
+                items(state.events, key = { "event-${it.id}" }) { event ->
+                    PhyVlabEventRow(event = event, onOpen = { event.eventUrl?.let(onOpenEvent) })
+                }
             }
         }
     }
@@ -250,7 +264,7 @@ fun PhyVlabWorkspace(
                 feedback = state.submissionFeedback,
                 fileGatewayAvailable = fileGateway.isAvailable,
                 nowEpochSeconds = nowEpochSeconds,
-                onRetry = { scope.launch { model.loadSelectedActivityDetail(force = true) } },
+                onRetry = retryDetail,
                 onUpload = {
                     uploadFiles = emptyList()
                     uploadFeedback = null
@@ -312,10 +326,15 @@ fun PhyVlabDetailWorkspace(
     model: PhyVlabScreenModel,
     fileGateway: HomeworkFileGateway,
     onOpenActivity: (String) -> Unit,
+    /** 由应用壳提供会话感知的详情重试；独立预览/测试时回退到模型重试。 */
+    onRetry: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val retryDetail: () -> Unit = onRetry ?: fun() {
+        scope.launch { model.loadSelectedActivityDetail(force = true) }
+    }
     var showUpload by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var showUploadConfirm by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var uploadFiles by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<List<HomeworkFileContent>>(emptyList()) }
@@ -347,7 +366,7 @@ fun PhyVlabDetailWorkspace(
             nowEpochSeconds = nowEpochSeconds,
             fullScreen = true,
             modifier = modifier,
-            onRetry = { scope.launch { model.loadSelectedActivityDetail(force = true) } },
+            onRetry = retryDetail,
             onUpload = {
                 uploadFiles = emptyList()
                 uploadFeedback = null
@@ -415,7 +434,7 @@ private fun PhyVlabScheduleCard(state: PhyVlabUiState, onPrev: () -> Unit, onNex
                 if (maxWidth < 500.dp) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("安排", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                            Text("作业时间安排", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                             Text(
                                 state.monthLabel.ifBlank { "本月" },
                                 style = MaterialTheme.typography.titleMedium,
@@ -432,7 +451,7 @@ private fun PhyVlabScheduleCard(state: PhyVlabUiState, onPrev: () -> Unit, onNex
                     }
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("安排", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text("作业时间安排", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         Text(
                             state.monthLabel.ifBlank { "本月" },
                             style = MaterialTheme.typography.titleMedium,
@@ -445,7 +464,7 @@ private fun PhyVlabScheduleCard(state: PhyVlabUiState, onPrev: () -> Unit, onNex
                 }
             }
             if (state.events.isEmpty()) {
-                Text("本月暂无安排", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("本月暂无作业时间安排", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -710,6 +729,7 @@ private fun PhyVlabAssignmentDetailContent(
     val dueAt = activity.dueText?.let(::formatPhyVlabDateTime)
     val submittedAt = detail?.submissionDateText?.let(::formatPhyVlabDateTime)
     val submitted = activity.completed || detail?.let(::phyVlabAssignmentDetailHasSubmission) == true
+    val submissionTiming = phyVlabSubmissionTimingLabel(activity, detail)
     val deadlineState = phyVlabActivityDeadlineState(
         activity = activity,
         nowEpochSeconds = nowEpochSeconds,
@@ -742,6 +762,8 @@ private fun PhyVlabAssignmentDetailContent(
                             openedAt = openedAt,
                             dueAt = dueAt,
                             submittedAt = submittedAt,
+                            submitted = submitted,
+                            submissionTiming = submissionTiming,
                             deadlineState = deadlineState,
                             modifier = Modifier.weight(1f),
                         )
@@ -760,6 +782,8 @@ private fun PhyVlabAssignmentDetailContent(
                                 openedAt = openedAt,
                                 dueAt = dueAt,
                                 submittedAt = submittedAt,
+                                submitted = submitted,
+                                submissionTiming = submissionTiming,
                                 deadlineState = deadlineState,
                             )
                         }
@@ -794,7 +818,7 @@ private fun PhyVlabAssignmentDetailContent(
                         when (it) {
                             PhyVlabSyncFailure.NETWORK -> "详情读取失败，请检查网络。"
                             PhyVlabSyncFailure.PARSE -> "详情页面结构变化，暂时无法读取。"
-                            PhyVlabSyncFailure.SESSION_EXPIRED -> "物理在线会话已失效，请重新登录。"
+                            PhyVlabSyncFailure.SESSION_EXPIRED -> "物理在线会话已失效，请点击右上角刷新重试登录。"
                         },
                         modifier = Modifier.weight(1f),
                         color = MaterialTheme.colorScheme.onErrorContainer,
@@ -845,6 +869,8 @@ private fun PhyVlabTimeDetailSection(
     openedAt: String?,
     dueAt: String?,
     submittedAt: String?,
+    submitted: Boolean,
+    submissionTiming: String?,
     deadlineState: PhyVlabActivityDeadlineState,
     modifier: Modifier = Modifier,
 ) {
@@ -859,7 +885,7 @@ private fun PhyVlabTimeDetailSection(
         dueAt?.let {
             PhyVlabDetailLine(
                 label = "截止",
-                value = it,
+                value = if (submitted) it else "$it（未提交）",
                 valueColor = statusPalette.content,
                 valueFontWeight = if (
                     deadlineState == PhyVlabActivityDeadlineState.OVERDUE ||
@@ -871,7 +897,25 @@ private fun PhyVlabTimeDetailSection(
                 },
             )
         }
-        submittedAt?.let { PhyVlabDetailLine("提交", it) }
+        submittedAt?.let {
+            PhyVlabDetailLine(
+                label = "提交",
+                value = buildString {
+                    append(it)
+                    submissionTiming?.let { timing ->
+                        append("（")
+                        append(timing)
+                        append("）")
+                    }
+                },
+                valueColor = statusPalette.content,
+                valueFontWeight = if (deadlineState == PhyVlabActivityDeadlineState.LATE_SUBMITTED) {
+                    FontWeight.Bold
+                } else {
+                    FontWeight.Normal
+                },
+            )
+        }
     }
 }
 
@@ -886,7 +930,7 @@ private fun PhyVlabSubmissionDetailSection(
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     ) {
-        PhyVlabDetailLine("提交状态", page.submissionStatus.ifBlank { "未提供" })
+        PhyVlabDetailLine("提交状态", phyVlabSubmissionStatusLabel(page))
         page.gradingStatus?.let { PhyVlabDetailLine("批改状态", it) }
         PhyVlabDetailLine("批改成绩", page.gradeText?.ifBlank { "未批改" } ?: "未批改")
         if (!page.feedbackText.isNullOrBlank()) {
@@ -1065,7 +1109,7 @@ private fun PhyVlabFailureBanner(
                     "失败原因：${when (failure) {
                         PhyVlabSyncFailure.NETWORK -> "网络问题。请确认已连接到校园网。"
                         PhyVlabSyncFailure.PARSE -> "页面结构变化，暂时无法读取。"
-                        PhyVlabSyncFailure.SESSION_EXPIRED -> "会话失效，请重新登录。"
+                        PhyVlabSyncFailure.SESSION_EXPIRED -> "会话失效，请点击右上角刷新重试登录。"
                     }}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer,
@@ -1136,7 +1180,7 @@ private fun PhyVlabCasLoginRequiredState(onRetry: () -> Unit, onLogout: () -> Un
             Text("需要完成统一身份认证", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(
                 "物理在线需要单独建立 Moodle 会话。App 会先尝试复用当前统一身份认证；" +
-                    "如果仍未成功，请退出并重新登录主账号。不会自动跳转浏览器。",
+                    "如果仍未成功，请点击右上角刷新再次尝试。不会自动跳转浏览器。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,

@@ -19,6 +19,7 @@ data class AppPreferences(
     val checkUpdate: Boolean = true,
     val dynamicColor: Boolean = true,
     val theme: String = "System",
+    val showPhyVlabInBottomNav: Boolean = true,
 )
 
 enum class CacheOpenState {
@@ -298,6 +299,7 @@ class CacheStore(
         checkUpdate = booleanSetting(SettingKey.CHECK_UPDATE, true),
         dynamicColor = booleanSetting(SettingKey.DYNAMIC_COLOR, true),
         theme = setting(SettingKey.THEME)?.takeIf(String::isNotBlank) ?: "System",
+        showPhyVlabInBottomNav = booleanSetting(SettingKey.SHOW_PHYVLAB_IN_BOTTOM_NAV, true),
     )
 
     fun savePreferences(preferences: AppPreferences) {
@@ -311,6 +313,7 @@ class CacheStore(
             putSetting(SettingKey.CHECK_UPDATE, preferences.checkUpdate.toString())
             putSetting(SettingKey.DYNAMIC_COLOR, preferences.dynamicColor.toString())
             putSetting(SettingKey.THEME, preferences.theme.ifBlank { "System" })
+            putSetting(SettingKey.SHOW_PHYVLAB_IN_BOTTOM_NAV, preferences.showPhyVlabInBottomNav.toString())
         }
     }
 
@@ -459,6 +462,7 @@ private object SettingKey {
     const val CHECK_UPDATE = "check_update"
     const val DYNAMIC_COLOR = "dynamic_color"
     const val THEME = "theme"
+    const val SHOW_PHYVLAB_IN_BOTTOM_NAV = "show_phyvlab_in_bottom_nav"
 }
 
 private const val COURSE_CURRENT_WEEK_KEY = "course_current_week"
