@@ -962,7 +962,7 @@ private fun CompactViewModeSelector(
             onClick = { onSelect(CourseCompactViewMode.WEEK) },
             label = {
                 CompactViewModeLabel(
-                    text = "色块-概览",
+                    text = "色块概览-点击展开",
                     icon = { CompactTableIcon(Modifier.size(17.dp)) },
                 )
             },
@@ -973,7 +973,7 @@ private fun CompactViewModeSelector(
             onClick = { onSelect(CourseCompactViewMode.DAY) },
             label = {
                 CompactViewModeLabel(
-                    text = "课程名-列表",
+                    text = "课程详情-列表展示",
                     icon = { CompactListIcon(Modifier.size(17.dp)) },
                 )
             },

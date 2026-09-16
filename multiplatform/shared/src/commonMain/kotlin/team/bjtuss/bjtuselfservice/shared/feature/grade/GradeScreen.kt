@@ -892,8 +892,10 @@ fun AuthenticatedAppShell(
 
     // 物理在线总开关关闭时不读取网络；打开后在当前登录会话中主动同步一次。
     // 这样开关同时控制“是否同步”和“是否显示底栏入口”，不会留下隐藏的后台请求。
-    LaunchedEffect(phyVlabModel, phyVlabEnabled, entryLoggingIn) {
-        if (entryLoggingIn || !phyVlabEnabled) return@LaunchedEffect
+    LaunchedEffect(phyVlabModel, phyVlabEnabled, entryLoggingIn, forcedRouteId) {
+        // 原生作业详情页复用同一个模型，但不能在这里重新刷新整份课程数据；
+        // refresh 成功会清空 selectedActivity，导致详情页退化成“未选择物理在线作业”。
+        if (entryLoggingIn || !phyVlabEnabled || forcedRouteId != null) return@LaunchedEffect
         phyVlabModel.initialize(refreshFromNetwork = false)
         phyVlabModel.refresh()
     }
