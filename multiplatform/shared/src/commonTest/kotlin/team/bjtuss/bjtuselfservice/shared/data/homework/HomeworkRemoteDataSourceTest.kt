@@ -163,7 +163,8 @@ class HomeworkRemoteDataSourceTest {
             smartResponse(
                 """{"fileNameNoExt":"answer","fileExtName":"pdf","fileSize":"11","visitName":"server-visit"}""",
             ),
-            smartResponse("success"),
+            // The original Android 1.7.0 client accepts any successful HTTP response here.
+            smartResponse("{\"STATUS\":\"5\",\"message\":\"网关回执不稳定\"}"),
         )
         val remote = SchoolHomeworkRemoteDataSource(transport, requestDelayMillis = 0)
         val homework = homework()
@@ -183,6 +184,7 @@ class HomeworkRemoteDataSourceTest {
         val uploadRequest = transport.requests[7]
         assertEquals("POST", uploadRequest.method.name)
         assertEquals("我的答案.pdf", uploadRequest.multipartFiles.single().fileName)
+        assertEquals("application/octet-stream", uploadRequest.multipartFiles.single().contentType)
         assertFalse("我的答案.pdf" in uploadRequest.toString())
         val submitRequest = transport.requests[8]
         assertEquals("%E6%8F%90%E4%BA%A4%E8%AF%B4%E6%98%8E", submitRequest.formFields["content"])

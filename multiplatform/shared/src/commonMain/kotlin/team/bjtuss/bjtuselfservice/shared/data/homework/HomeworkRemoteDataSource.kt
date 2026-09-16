@@ -208,7 +208,9 @@ class SchoolHomeworkRemoteDataSource(
                     SchoolMultipartFile(
                         fieldName = "file",
                         fileName = file.fileName,
-                        contentType = file.contentType,
+                        // 与原作者 Android 1.7.0 的 HomeworkUploader 一致：
+                        // rpUpload.shtml 按通用二进制流接收文件，不使用系统推断的 MIME。
+                        contentType = "application/octet-stream",
                         bytes = file.bytes,
                     ),
                 ),
@@ -237,7 +239,9 @@ class SchoolHomeworkRemoteDataSource(
                 "isTeacher" to "0",
             ),
         )
-        if (!submit.bodyText().contains("success", ignoreCase = true)) malformed()
+        // 原作者 Android 1.7.0 的实现只依赖 HTTP 成功。这个老接口的 2xx 响应正文
+        // 在不同网关上可能为空、返回中文，或返回不稳定的文本；不能把正文关键字
+        // 当成提交失败依据，否则服务端已接收时客户端会误报失败。
     }
 
     override fun attachmentDownloadUrl(homeworkId: Int, attachmentId: Int): String = endpoint.apiUrl(

@@ -35,6 +35,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,6 +62,7 @@ import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.coroutines.flow.collect
 import kotlin.time.Instant
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.PlatformInfo
@@ -449,7 +452,8 @@ private fun HomeAgendaSection(
     // currentWeek == 0 means today is in a holiday/non-teaching gap. Keep a
     // dedicated page 0 for that natural week instead of guessing teaching week 1.
     val initialWeek = currentWeek.takeIf { it in 1..HOME_MAX_TEACHING_WEEK } ?: 0
-    var selectedWeek by remember(currentWeek) { mutableStateOf(initialWeek) }
+    var selectedWeek by remember { mutableStateOf(initialWeek) }
+    var weekWasManuallySelected by remember { mutableStateOf(false) }
     val weekScrollAccumulator = remember { CourseWeekScrollAccumulator() }
     val useFingerWeekPager = platform.family == PlatformFamily.Android ||
         platform.family == PlatformFamily.IOS
@@ -466,8 +470,11 @@ private fun HomeAgendaSection(
             weekStartDate
         }
     }
-    val selectWeek: (Int) -> Unit = { week ->
-        if (week in 0..HOME_MAX_TEACHING_WEEK) selectedWeek = week
+    val selectWeekFromUser: (Int) -> Unit = { week ->
+        if (week in 0..HOME_MAX_TEACHING_WEEK) {
+            weekWasManuallySelected = true
+            selectedWeek = week
+        }
     }
     val adjacentWeekFor: (Int, Int) -> Int? = { week, offset ->
         if (week == 0) {
@@ -482,6 +489,21 @@ private fun HomeAgendaSection(
             }
         } else {
             (week + offset).takeIf { it in 1..HOME_MAX_TEACHING_WEEK }
+        }
+    }
+
+    // 登录后/校历刷新可能先给出缓存周，再给出校历校准周；只有用户没有手动选周时，
+    // 才让首页自动跟随这个更新，避免把用户正在看的周强行跳回第 1 周。
+    val automaticWeek = when {
+        currentWeek in 1..HOME_MAX_TEACHING_WEEK -> currentWeek
+        currentWeek == 0 && academicWeeks.isNotEmpty() -> 0
+        else -> null
+    }
+    LaunchedEffect(currentWeek, academicWeeks) {
+        if (!weekWasManuallySelected) {
+            automaticWeek?.let { week ->
+                if (selectedWeek != week) selectedWeek = week
+            }
         }
     }
 
@@ -519,10 +541,12 @@ private fun HomeAgendaSection(
         val density = LocalDensity.current
         // When today is a holiday gap, insert the natural-week page at its
         // calendar position (e.g. week 3 -> 非教学周 -> week 4), not before week 1.
-        val pagerWeeks = if (currentWeek == 0) {
-            (0..HOME_MAX_TEACHING_WEEK).sortedBy(weekStartFor)
-        } else {
-            (1..HOME_MAX_TEACHING_WEEK).toList()
+        val pagerWeeks = remember(currentWeek, academicWeeks, today) {
+            if (currentWeek == 0) {
+                (0..HOME_MAX_TEACHING_WEEK).sortedBy(weekStartFor)
+            } else {
+                (1..HOME_MAX_TEACHING_WEEK).toList()
+            }
         }
         val pageForWeek: (Int) -> Int = { week ->
             pagerWeeks.indexOf(week).coerceAtLeast(0)
@@ -533,13 +557,41 @@ private fun HomeAgendaSection(
         val pagerState = rememberPagerState(initialPage = pageForWeek(initialWeek)) {
             pagerWeeks.size
         }
-        LaunchedEffect(pagerState.currentPage) {
-            selectWeek(weekForPage(pagerState.currentPage))
+        var pagerProgrammaticTargetPage by remember { mutableStateOf<Int?>(null) }
+        val latestPagerWeeks by rememberUpdatedState(pagerWeeks)
+        val latestSelectedWeek by rememberUpdatedState(selectedWeek)
+        LaunchedEffect(pagerState) {
+            snapshotFlow { pagerState.settledPage }
+                .collect { page ->
+                    val programmaticTarget = pagerProgrammaticTargetPage
+                    if (programmaticTarget != null) {
+                        if (page == programmaticTarget) {
+                            pagerProgrammaticTargetPage = null
+                        }
+                        return@collect
+                    }
+                    val weeks = latestPagerWeeks
+                    if (weeks.isEmpty()) return@collect
+                    val week = weeks[page.coerceIn(weeks.indices)]
+                    if (latestSelectedWeek != week) {
+                        weekWasManuallySelected = true
+                        selectedWeek = week
+                    }
+                }
         }
-        LaunchedEffect(selectedWeek) {
+        LaunchedEffect(selectedWeek, pagerWeeks) {
             val targetPage = pageForWeek(selectedWeek)
             if (targetPage != pagerState.currentPage && !pagerState.isScrollInProgress) {
+                // This scroll is caused by an arrow click, a current-week refresh,
+                // or a changed holiday/week mapping; it must not be interpreted as
+                // a new manual swipe by the settled-page observer above.
+                pagerProgrammaticTargetPage = targetPage
                 pagerState.animateScrollToPage(targetPage)
+                if (pagerState.settledPage == targetPage) {
+                    pagerProgrammaticTargetPage = null
+                }
+            } else if (targetPage == pagerState.currentPage) {
+                pagerProgrammaticTargetPage = null
             }
         }
         val selectedWeekStart = weekStartFor(selectedWeek)
@@ -576,7 +628,7 @@ private fun HomeAgendaSection(
                 onOpenPhyVlab = onOpenPhyVlab,
                 previousWeek = adjacentWeekFor(week, -1),
                 nextWeek = adjacentWeekFor(week, 1),
-                onSelectWeek = selectWeek,
+                onSelectWeek = selectWeekFromUser,
                 onSelectDate = { date -> selectedDates[week] = date },
                 onMeasuredHeight = { date, heightPx -> pageHeights[week to date] = heightPx },
                 modifier = Modifier.fillMaxWidth(),
@@ -599,14 +651,14 @@ private fun HomeAgendaSection(
             onOpenPhyVlab = onOpenPhyVlab,
             previousWeek = adjacentWeekFor(selectedWeek, -1),
             nextWeek = adjacentWeekFor(selectedWeek, 1),
-            onSelectWeek = selectWeek,
+            onSelectWeek = selectWeekFromUser,
             onSelectDate = { date -> selectedDates[selectedWeek] = date },
             modifier = Modifier
                 .fillMaxWidth()
                 .courseWeekScrollNavigation(weekScrollAccumulator) { direction ->
                     when (direction) {
-                        CourseWeekScrollDirection.PREVIOUS -> adjacentWeekFor(selectedWeek, -1)?.let(selectWeek)
-                        CourseWeekScrollDirection.NEXT -> adjacentWeekFor(selectedWeek, 1)?.let(selectWeek)
+                        CourseWeekScrollDirection.PREVIOUS -> adjacentWeekFor(selectedWeek, -1)?.let(selectWeekFromUser)
+                        CourseWeekScrollDirection.NEXT -> adjacentWeekFor(selectedWeek, 1)?.let(selectWeekFromUser)
                     }
                 },
         )
