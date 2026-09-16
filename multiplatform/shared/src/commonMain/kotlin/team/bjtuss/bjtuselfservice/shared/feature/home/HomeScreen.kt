@@ -456,6 +456,16 @@ private fun HomeAgendaSection(
     val weekStartFor: (Int) -> LocalDate = { week ->
         resolveHomeAgendaWeekStart(currentWeek, week, today, academicWeeks)
     }
+    val selectedDates = remember { mutableStateMapOf<Int, LocalDate>() }
+    val selectedDateFor: (Int, LocalDate) -> LocalDate = { week, weekStartDate ->
+        selectedDates[week]?.takeIf { date ->
+            date >= weekStartDate && date <= weekStartDate.plus(6, DateTimeUnit.DAY)
+        } ?: if (today >= weekStartDate && today <= weekStartDate.plus(6, DateTimeUnit.DAY)) {
+            today
+        } else {
+            weekStartDate
+        }
+    }
     val selectWeek: (Int) -> Unit = { week ->
         if (week in 0..HOME_MAX_TEACHING_WEEK) selectedWeek = week
     }
@@ -501,7 +511,7 @@ private fun HomeAgendaSection(
     }
 
     if (useFingerWeekPager) {
-        val pageHeights = remember { mutableStateMapOf<Int, Int>() }
+        val pageHeights = remember { mutableStateMapOf<Pair<Int, LocalDate>, Int>() }
         val density = LocalDensity.current
         // When today is a holiday gap, insert the natural-week page at its
         // calendar position (e.g. week 3 -> 非教学周 -> week 4), not before week 1.
@@ -528,7 +538,9 @@ private fun HomeAgendaSection(
                 pagerState.animateScrollToPage(targetPage)
             }
         }
-        val selectedPageHeight = pageHeights[selectedWeek]?.let { heightPx ->
+        val selectedWeekStart = weekStartFor(selectedWeek)
+        val selectedDate = selectedDateFor(selectedWeek, selectedWeekStart)
+        val selectedPageHeight = pageHeights[selectedWeek to selectedDate]?.let { heightPx ->
             with(density) { heightPx.toDp() }
         }
         val pagerModifier = Modifier
@@ -544,12 +556,14 @@ private fun HomeAgendaSection(
             pageSpacing = 12.dp,
         ) { page ->
             val week = weekForPage(page)
+            val weekStartDate = weekStartFor(week)
             HomeAgendaWeekCard(
                 homework = homework,
                 exams = exams,
                 phyVlabEvents = phyVlabEvents,
                 week = week,
-                weekStartDate = weekStartFor(week),
+                weekStartDate = weekStartDate,
+                selectedDate = selectedDateFor(week, weekStartDate),
                 now = now,
                 timeZone = timeZone,
                 isLoading = isLoading,
@@ -559,17 +573,20 @@ private fun HomeAgendaSection(
                 previousWeek = adjacentWeekFor(week, -1),
                 nextWeek = adjacentWeekFor(week, 1),
                 onSelectWeek = selectWeek,
-                onMeasuredHeight = { heightPx -> pageHeights[week] = heightPx },
+                onSelectDate = { date -> selectedDates[week] = date },
+                onMeasuredHeight = { date, heightPx -> pageHeights[week to date] = heightPx },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
     } else {
+        val weekStartDate = weekStartFor(selectedWeek)
         HomeAgendaWeekCard(
             homework = homework,
             exams = exams,
             phyVlabEvents = phyVlabEvents,
             week = selectedWeek,
-            weekStartDate = weekStartFor(selectedWeek),
+            weekStartDate = weekStartDate,
+            selectedDate = selectedDateFor(selectedWeek, weekStartDate),
             now = now,
             timeZone = timeZone,
             isLoading = isLoading,
@@ -579,6 +596,7 @@ private fun HomeAgendaSection(
             previousWeek = adjacentWeekFor(selectedWeek, -1),
             nextWeek = adjacentWeekFor(selectedWeek, 1),
             onSelectWeek = selectWeek,
+            onSelectDate = { date -> selectedDates[selectedWeek] = date },
             modifier = Modifier
                 .fillMaxWidth()
                 .courseWeekScrollNavigation(weekScrollAccumulator) { direction ->
@@ -598,6 +616,7 @@ private fun HomeAgendaWeekCard(
     phyVlabEvents: List<PhyVlabEvent>,
     week: Int,
     weekStartDate: LocalDate,
+    selectedDate: LocalDate,
     now: LocalDateTime,
     timeZone: TimeZone,
     isLoading: Boolean,
@@ -607,7 +626,8 @@ private fun HomeAgendaWeekCard(
     previousWeek: Int?,
     nextWeek: Int?,
     onSelectWeek: (Int) -> Unit,
-    onMeasuredHeight: ((Int) -> Unit)? = null,
+    onSelectDate: (LocalDate) -> Unit,
+    onMeasuredHeight: ((LocalDate, Int) -> Unit)? = null,
     modifier: Modifier,
 ) {
     val today = now.date
@@ -622,21 +642,12 @@ private fun HomeAgendaWeekCard(
             weekStartDate = weekStartDate,
         )
     }
-    var selectedDate by remember(week, today, weekStartDate) {
-        mutableStateOf(
-            if (today >= weekStartDate && today <= weekStartDate.plus(6, DateTimeUnit.DAY)) {
-                today
-            } else {
-                weekStartDate
-            },
-        )
-    }
     val selectedDay = weekAgenda.days.firstOrNull { it.date == selectedDate } ?: weekAgenda.days.first()
 
     val measuredModifier = if (onMeasuredHeight == null) {
         modifier
     } else {
-        modifier.onSizeChanged { size -> onMeasuredHeight(size.height) }
+        modifier.onSizeChanged { size -> onMeasuredHeight(selectedDay.date, size.height) }
     }
     ElevatedCard(modifier = measuredModifier) {
         Column(
@@ -683,7 +694,7 @@ private fun HomeAgendaWeekCard(
                         day = day,
                         selected = day.date == selectedDay.date,
                         isToday = day.date == today,
-                        onClick = { selectedDate = day.date },
+                        onClick = { onSelectDate(day.date) },
                         modifier = Modifier.weight(1f),
                     )
                 }
