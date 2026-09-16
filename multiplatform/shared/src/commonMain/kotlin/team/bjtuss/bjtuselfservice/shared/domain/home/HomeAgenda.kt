@@ -11,6 +11,7 @@ import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
+import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkDueSoon
@@ -19,6 +20,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEventKind
 
 private val PHYVLAB_TIME_ZONE = TimeZone.of("Asia/Shanghai")
+const val HOME_MAX_TEACHING_WEEK = 30
 
 data class HomeAgendaDay(
     val date: LocalDate,
@@ -52,8 +54,9 @@ fun buildHomeAgenda(
     now: LocalDateTime,
     timeZone: TimeZone,
     phyVlabEvents: List<PhyVlabEvent> = emptyList(),
+    weekStartDate: LocalDate? = null,
 ): HomeAgenda {
-    val monday = today.minus(today.dayOfWeek.isoDayNumber - 1, DateTimeUnit.DAY)
+    val monday = weekStartDate ?: today.minus(today.dayOfWeek.isoDayNumber - 1, DateTimeUnit.DAY)
     val days = (0..6).map { offset ->
         val date = monday.plus(offset, DateTimeUnit.DAY)
         HomeAgendaDay(
@@ -72,6 +75,33 @@ fun buildHomeAgenda(
         .sortedWith(compareBy<Homework> { parseSchoolLocalDateTime(it.endTime) == null }
             .thenBy { parseSchoolLocalDateTime(it.endTime) })
     return HomeAgenda(days, dueSoon)
+}
+
+/**
+ * Resolves the Monday shown by the home agenda for a selected teaching week.
+ *
+ * The school calendar is authoritative when it contains the requested week;
+ * this matters across holidays, where teaching week 4 may start later than
+ * seven days after teaching week 3. If the calendar is unavailable, keep a
+ * predictable fallback relative to the current week's Monday.
+ */
+fun resolveHomeAgendaWeekStart(
+    currentWeek: Int,
+    selectedWeek: Int,
+    today: LocalDate,
+    weekDates: List<OccupancyWeekDate> = emptyList(),
+): LocalDate {
+    // 0 表示当前日期落在教学周之间的假期/非教学周，仍要展示自然周日程。
+    if (selectedWeek == 0) {
+        return today.minus(today.dayOfWeek.isoDayNumber - 1, DateTimeUnit.DAY)
+    }
+    require(selectedWeek in 1..HOME_MAX_TEACHING_WEEK)
+    weekDates.firstOrNull { it.week == selectedWeek }?.startDate?.let { return it }
+
+    val anchorWeek = currentWeek.takeIf { it in 1..HOME_MAX_TEACHING_WEEK } ?: selectedWeek
+    val fallbackMonday = today.minus(today.dayOfWeek.isoDayNumber - 1, DateTimeUnit.DAY)
+    val anchorStart = weekDates.firstOrNull { it.week == anchorWeek }?.startDate ?: fallbackMonday
+    return anchorStart.plus(selectedWeek - anchorWeek, DateTimeUnit.DAY)
 }
 
 fun homeworkStartDate(homework: Homework): LocalDate? =

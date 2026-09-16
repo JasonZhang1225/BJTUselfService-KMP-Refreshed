@@ -7,12 +7,63 @@ import kotlinx.datetime.toInstant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEventKind
 
 class HomeAgendaTest {
+    @Test
+    fun nonTeachingWeekKeepsNaturalWeekAndShowsOctoberFirstDeadline() {
+        val today = LocalDate(2026, 10, 1)
+        val deadline = homework(
+            title = "国庆期间截止作业",
+            openDate = "2026-09-20 08:00",
+            endTime = "2026-10-01 12:00",
+        )
+        val agenda = buildHomeAgenda(
+            homework = listOf(deadline),
+            exams = emptyList(),
+            today = today,
+            now = LocalDateTime(2026, 10, 1, 10, 0),
+            timeZone = TimeZone.UTC,
+            weekStartDate = resolveHomeAgendaWeekStart(
+                currentWeek = 0,
+                selectedWeek = 0,
+                today = today,
+            ),
+        )
+
+        assertEquals(LocalDate(2026, 9, 28), agenda.days.first().date)
+        assertEquals(listOf(deadline), agenda.days.single { it.date == today }.homeworkDue)
+    }
+
+    @Test
+    fun requestedTeachingWeekUsesCalendarDateAcrossHolidayGap() {
+        val weekStart = resolveHomeAgendaWeekStart(
+            currentWeek = 3,
+            selectedWeek = 4,
+            today = LocalDate(2026, 9, 23),
+            weekDates = listOf(
+                OccupancyWeekDate(3, "9/21", "9/27", LocalDate(2026, 9, 21)),
+                OccupancyWeekDate(4, "10/5", "10/11", LocalDate(2026, 10, 5)),
+            ),
+        )
+
+        assertEquals(LocalDate(2026, 10, 5), weekStart)
+        val agenda = buildHomeAgenda(
+            homework = emptyList(),
+            exams = emptyList(),
+            today = LocalDate(2026, 9, 23),
+            now = LocalDateTime(2026, 9, 23, 10, 0),
+            timeZone = TimeZone.UTC,
+            weekStartDate = weekStart,
+        )
+        assertEquals(LocalDate(2026, 10, 5), agenda.days.first().date)
+        assertEquals(LocalDate(2026, 10, 11), agenda.days.last().date)
+    }
+
     @Test
     fun agendaAlwaysCoversTheCurrentMondayToSunday() {
         val agenda = buildHomeAgenda(

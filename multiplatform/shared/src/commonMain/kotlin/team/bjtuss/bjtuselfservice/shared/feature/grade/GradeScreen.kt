@@ -1064,6 +1064,7 @@ fun AuthenticatedAppShell(
                     exams = examState.exams,
                     phyVlabEvents = if (phyVlabEnabled) phyVlabState.agendaEvents else emptyList(),
                     currentWeek = courseState.currentWeek,
+                    academicWeeks = courseState.academicWeeks,
                     now = homeworkState.now,
                     timeZone = homeworkState.timeZone,
                     isAgendaLoading = homeworkState.isLoading || examState.isLoading ||

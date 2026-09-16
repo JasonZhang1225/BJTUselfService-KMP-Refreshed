@@ -2,6 +2,7 @@ package team.bjtuss.bjtuselfservice.shared.feature.home
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -44,16 +47,20 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.isoDayNumber
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.PlatformInfo
 import team.bjtuss.bjtuselfservice.shared.data.home.HomeStatusFailure
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeKind
+import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeAgendaDay
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeDomain
@@ -63,6 +70,11 @@ import team.bjtuss.bjtuselfservice.shared.domain.home.buildHomeAgenda
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEventKind
+import team.bjtuss.bjtuselfservice.shared.feature.course.CourseWeekScrollAccumulator
+import team.bjtuss.bjtuselfservice.shared.feature.course.CourseWeekScrollDirection
+import team.bjtuss.bjtuselfservice.shared.feature.course.courseWeekScrollNavigation
+import team.bjtuss.bjtuselfservice.shared.domain.home.HOME_MAX_TEACHING_WEEK
+import team.bjtuss.bjtuselfservice.shared.domain.home.resolveHomeAgendaWeekStart
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 
 @Composable
@@ -74,6 +86,7 @@ fun HomeWorkspace(
     exams: List<ExamSchedule>,
     phyVlabEvents: List<PhyVlabEvent> = emptyList(),
     currentWeek: Int,
+    academicWeeks: List<OccupancyWeekDate> = emptyList(),
     now: LocalDateTime,
     timeZone: TimeZone,
     isAgendaLoading: Boolean,
@@ -219,10 +232,12 @@ fun HomeWorkspace(
             }
             item(key = "home-agenda") {
                 HomeAgendaSection(
+                    platform = platform,
                     homework = homework,
                     exams = exams,
                     phyVlabEvents = phyVlabEvents,
                     currentWeek = currentWeek,
+                    academicWeeks = academicWeeks,
                     now = now,
                     timeZone = timeZone,
                     isLoading = isAgendaLoading,
@@ -237,10 +252,12 @@ fun HomeWorkspace(
             // 尽量不用滚动就能看全（2026-08-04 真机反馈）。
             item(key = "home-agenda") {
                 HomeAgendaSection(
+                    platform = platform,
                     homework = homework,
                     exams = exams,
                     phyVlabEvents = phyVlabEvents,
                     currentWeek = currentWeek,
+                    academicWeeks = academicWeeks,
                     now = now,
                     timeZone = timeZone,
                     isLoading = isAgendaLoading,
@@ -405,10 +422,12 @@ private fun StatusCard(
 
 @Composable
 private fun HomeAgendaSection(
+    platform: PlatformInfo,
     homework: List<Homework>,
     exams: List<ExamSchedule>,
     phyVlabEvents: List<PhyVlabEvent>,
     currentWeek: Int,
+    academicWeeks: List<OccupancyWeekDate>,
     now: LocalDateTime,
     timeZone: TimeZone,
     isLoading: Boolean,
@@ -418,13 +437,40 @@ private fun HomeAgendaSection(
     onOpenPhyVlab: () -> Unit,
 ) {
     val today = now.date
-    val agenda = remember(homework, exams, phyVlabEvents, today, now, timeZone) {
+    val dueSoonHomework = remember(homework, exams, phyVlabEvents, today, now, timeZone) {
         buildHomeAgenda(homework, exams, today, now, timeZone, phyVlabEvents)
+            .dueSoonHomework
     }
-    var selectedDate by remember(today) { mutableStateOf(today) }
-    val selectedDay = agenda.days.firstOrNull { it.date == selectedDate } ?: agenda.days.first()
+    // currentWeek == 0 means today is in a holiday/non-teaching gap. Keep a
+    // dedicated page 0 for that natural week instead of guessing teaching week 1.
+    val initialWeek = currentWeek.takeIf { it in 1..HOME_MAX_TEACHING_WEEK } ?: 0
+    var selectedWeek by remember(currentWeek) { mutableStateOf(initialWeek) }
+    val weekScrollAccumulator = remember { CourseWeekScrollAccumulator() }
+    val useFingerWeekPager = platform.family == PlatformFamily.Android ||
+        platform.family == PlatformFamily.IOS
+    val weekStartFor: (Int) -> LocalDate = { week ->
+        resolveHomeAgendaWeekStart(currentWeek, week, today, academicWeeks)
+    }
+    val selectWeek: (Int) -> Unit = { week ->
+        if (week in 0..HOME_MAX_TEACHING_WEEK) selectedWeek = week
+    }
+    val adjacentWeekFor: (Int, Int) -> Int? = { week, offset ->
+        if (week == 0) {
+            val currentStart = weekStartFor(0)
+            val datedWeeks = academicWeeks
+                .filter { it.week in 1..HOME_MAX_TEACHING_WEEK && it.startDate != null }
+                .sortedBy { it.startDate }
+            if (offset < 0) {
+                datedWeeks.lastOrNull { it.startDate!! < currentStart }?.week
+            } else {
+                datedWeeks.firstOrNull { it.startDate!! > currentStart }?.week ?: 1
+            }
+        } else {
+            (week + offset).takeIf { it in 1..HOME_MAX_TEACHING_WEEK }
+        }
+    }
 
-    if (agenda.dueSoonHomework.isNotEmpty()) {
+    if (dueSoonHomework.isNotEmpty()) {
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             if (expanded) {
                 Row(
@@ -432,7 +478,7 @@ private fun HomeAgendaSection(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    DueSoonHomeworkSummary(agenda.dueSoonHomework, Modifier.weight(1f))
+                    DueSoonHomeworkSummary(dueSoonHomework, Modifier.weight(1f))
                     OutlinedButton(onClick = onOpenHomework) { Text("查看作业") }
                 }
             } else {
@@ -440,7 +486,7 @@ private fun HomeAgendaSection(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    DueSoonHomeworkSummary(agenda.dueSoonHomework)
+                    DueSoonHomeworkSummary(dueSoonHomework)
                     OutlinedButton(onClick = onOpenHomework, modifier = Modifier.fillMaxWidth()) {
                         Text("查看作业")
                     }
@@ -449,7 +495,127 @@ private fun HomeAgendaSection(
         }
     }
 
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+    if (useFingerWeekPager) {
+        // When today is a holiday gap, insert the natural-week page at its
+        // calendar position (e.g. week 3 -> 非教学周 -> week 4), not before week 1.
+        val pagerWeeks = if (currentWeek == 0) {
+            (0..HOME_MAX_TEACHING_WEEK).sortedBy(weekStartFor)
+        } else {
+            (1..HOME_MAX_TEACHING_WEEK).toList()
+        }
+        val pageForWeek: (Int) -> Int = { week ->
+            pagerWeeks.indexOf(week).coerceAtLeast(0)
+        }
+        val weekForPage: (Int) -> Int = { page ->
+            pagerWeeks[page.coerceIn(pagerWeeks.indices)]
+        }
+        val pagerState = rememberPagerState(initialPage = pageForWeek(initialWeek)) {
+            pagerWeeks.size
+        }
+        LaunchedEffect(pagerState.currentPage) {
+            selectWeek(weekForPage(pagerState.currentPage))
+        }
+        LaunchedEffect(selectedWeek) {
+            val targetPage = pageForWeek(selectedWeek)
+            if (targetPage != pagerState.currentPage && !pagerState.isScrollInProgress) {
+                pagerState.animateScrollToPage(targetPage)
+            }
+        }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxWidth(),
+            beyondViewportPageCount = 1,
+            pageSpacing = 12.dp,
+        ) { page ->
+            val week = weekForPage(page)
+            HomeAgendaWeekCard(
+                homework = homework,
+                exams = exams,
+                phyVlabEvents = phyVlabEvents,
+                week = week,
+                weekStartDate = weekStartFor(week),
+                now = now,
+                timeZone = timeZone,
+                isLoading = isLoading,
+                onOpenHomework = onOpenHomework,
+                onOpenExams = onOpenExams,
+                onOpenPhyVlab = onOpenPhyVlab,
+                previousWeek = adjacentWeekFor(week, -1),
+                nextWeek = adjacentWeekFor(week, 1),
+                onSelectWeek = selectWeek,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    } else {
+        HomeAgendaWeekCard(
+            homework = homework,
+            exams = exams,
+            phyVlabEvents = phyVlabEvents,
+            week = selectedWeek,
+            weekStartDate = weekStartFor(selectedWeek),
+            now = now,
+            timeZone = timeZone,
+            isLoading = isLoading,
+            onOpenHomework = onOpenHomework,
+            onOpenExams = onOpenExams,
+            onOpenPhyVlab = onOpenPhyVlab,
+            previousWeek = adjacentWeekFor(selectedWeek, -1),
+            nextWeek = adjacentWeekFor(selectedWeek, 1),
+            onSelectWeek = selectWeek,
+            modifier = Modifier
+                .fillMaxWidth()
+                .courseWeekScrollNavigation(weekScrollAccumulator) { direction ->
+                    when (direction) {
+                        CourseWeekScrollDirection.PREVIOUS -> adjacentWeekFor(selectedWeek, -1)?.let(selectWeek)
+                        CourseWeekScrollDirection.NEXT -> adjacentWeekFor(selectedWeek, 1)?.let(selectWeek)
+                    }
+                },
+        )
+    }
+}
+
+@Composable
+private fun HomeAgendaWeekCard(
+    homework: List<Homework>,
+    exams: List<ExamSchedule>,
+    phyVlabEvents: List<PhyVlabEvent>,
+    week: Int,
+    weekStartDate: LocalDate,
+    now: LocalDateTime,
+    timeZone: TimeZone,
+    isLoading: Boolean,
+    onOpenHomework: () -> Unit,
+    onOpenExams: () -> Unit,
+    onOpenPhyVlab: () -> Unit,
+    previousWeek: Int?,
+    nextWeek: Int?,
+    onSelectWeek: (Int) -> Unit,
+    modifier: Modifier,
+) {
+    val today = now.date
+    val weekAgenda = remember(homework, exams, phyVlabEvents, today, now, timeZone, weekStartDate) {
+        buildHomeAgenda(
+            homework = homework,
+            exams = exams,
+            today = today,
+            now = now,
+            timeZone = timeZone,
+            phyVlabEvents = phyVlabEvents,
+            weekStartDate = weekStartDate,
+        )
+    }
+    var selectedDate by remember(week, today, weekStartDate) {
+        mutableStateOf(
+            if (today >= weekStartDate && today <= weekStartDate.plus(6, DateTimeUnit.DAY)) {
+                today
+            } else {
+                weekStartDate
+            },
+        )
+    }
+    val selectedDay = weekAgenda.days.firstOrNull { it.date == selectedDate } ?: weekAgenda.days.first()
+
+    ElevatedCard(modifier = modifier) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -457,12 +623,14 @@ private fun HomeAgendaSection(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        if (currentWeek in 1..30) "第 $currentWeek 教学周" else "本周日程",
+                        if (week == 0) "非教学周" else "第 $week 教学周",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        if (phyVlabEvents.isEmpty()) {
+                        if (week == 0) {
+                            "当前日期不在教学周内，仍显示本周日程"
+                        } else if (phyVlabEvents.isEmpty()) {
                             "作业开始、截止与考试安排"
                         } else {
                             "作业开始、截止与考试安排（含物理在线）"
@@ -471,15 +639,23 @@ private fun HomeAgendaSection(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (isLoading && homework.isEmpty() && exams.isEmpty()) {
-                    Text("同步中", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(horizontalAlignment = Alignment.End) {
+                    HomeWeekNavigationControls(
+                        previousWeek = previousWeek,
+                        nextWeek = nextWeek,
+                        onPrevious = { previousWeek?.let(onSelectWeek) },
+                        onNext = { nextWeek?.let(onSelectWeek) },
+                    )
+                    if (isLoading && homework.isEmpty() && exams.isEmpty() && phyVlabEvents.isEmpty()) {
+                        Text("同步中", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                agenda.days.forEach { day ->
+                weekAgenda.days.forEach { day ->
                     AgendaDayCell(
                         day = day,
                         selected = day.date == selectedDay.date,
@@ -495,6 +671,55 @@ private fun HomeAgendaSection(
                 fontWeight = FontWeight.SemiBold,
             )
             AgendaDayDetails(selectedDay, onOpenHomework, onOpenExams, onOpenPhyVlab)
+        }
+    }
+}
+
+@Composable
+private fun HomeWeekNavigationControls(
+    previousWeek: Int?,
+    nextWeek: Int?,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HomeWeekNavigationButton(
+            label = "‹",
+            contentDescription = previousWeek?.let { "切换到第${it}教学周" } ?: "没有更早的教学周",
+            enabled = previousWeek != null,
+            onClick = onPrevious,
+        )
+        HomeWeekNavigationButton(
+            label = "›",
+            contentDescription = nextWeek?.let { "切换到第${it}教学周" } ?: "没有更晚的教学周",
+            enabled = nextWeek != null,
+            onClick = onNext,
+        )
+    }
+}
+
+@Composable
+private fun HomeWeekNavigationButton(
+    label: String,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier
+            .size(34.dp)
+            .semantics { this.contentDescription = contentDescription },
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium)
         }
     }
 }
