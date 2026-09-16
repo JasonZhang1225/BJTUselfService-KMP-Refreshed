@@ -185,12 +185,12 @@ class HomeworkRemoteDataSourceTest {
         assertEquals("POST", uploadRequest.method.name)
         assertEquals("我的答案.pdf", uploadRequest.multipartFiles.single().fileName)
         assertEquals("application/octet-stream", uploadRequest.multipartFiles.single().contentType)
-        assertTrue(uploadRequest.headers.isEmpty())
+        assertEquals(mapOf("sessionid" to "session-value"), uploadRequest.headers)
         assertFalse("我的答案.pdf" in uploadRequest.toString())
         val submitRequest = transport.requests[8]
         assertEquals("%E6%8F%90%E4%BA%A4%E8%AF%B4%E6%98%8E", submitRequest.formFields["content"])
         assertTrue("sendStuHomeWorks" in submitRequest.url)
-        assertTrue(submitRequest.headers.isEmpty())
+        assertEquals(mapOf("sessionid" to "session-value"), submitRequest.headers)
         assertFalse("提交说明" in submitRequest.toString())
         assertFalse("%E6%8F%90" in submitRequest.toString())
     }

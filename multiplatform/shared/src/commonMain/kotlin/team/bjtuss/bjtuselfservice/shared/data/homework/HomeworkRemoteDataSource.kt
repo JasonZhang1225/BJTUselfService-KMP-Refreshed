@@ -205,9 +205,11 @@ class SchoolHomeworkRemoteDataSource(
                 path = UPLOAD_PATH,
                 query = linkedMapOf(),
                 // 原 Android 1.7.0 的 HomeworkUploader 直接用 OkHttp Request，
-                // 不附加 X-Requested-With / sessionid / Referer 业务头，只让 CookieJar
+                // 不附加 X-Requested-With / Referer 业务头，只让 CookieJar
                 // 携带登录 Cookie。旧上传接口会因 AJAX 头得到 STATUS/MSG 错误回执。
                 includeSmartHeaders = false,
+                // sessionid 是旧平台区别于 JSESSIONID 的教学平台会话标识，上传接口也需要它。
+                includeSessionHeader = true,
                 multipartFiles = listOf(
                     SchoolMultipartFile(
                         fieldName = "file",
@@ -240,8 +242,9 @@ class SchoolHomeworkRemoteDataSource(
             path = GRADE_PATH,
             query = linkedMapOf("method" to "sendStuHomeWorks"),
             // 与原作者 Android 1.7.0 的 FormBody 请求保持一致：写请求不附加
-            // 智慧平台查询接口专用的 AJAX 和 sessionid 头。
+            // 智慧平台查询接口专用的 AJAX 头，但保留教学平台 sessionid。
             includeSmartHeaders = false,
+            includeSessionHeader = true,
             formFields = linkedMapOf(
                 // v1.7.0 在 FormBody 编码前先做一次 URLEncoder；服务端按两层解码处理。
                 "content" to content.formValuePreEncode(),
@@ -318,23 +321,21 @@ class SchoolHomeworkRemoteDataSource(
             }
         }
 
-        // 智慧平台会话经握手最后一跳的 Set-Cookie: JSESSIONID 下发（见 settled 响应）；
-        // 优先从 transport Cookie 存储读取，旧版 article JSON 解析仅作回退。
-        // Cookie 同时被 transport 自动携带，sessionid 自定义头沿用原 Android 协议语义。
-        sessionId = transport.sessionCookiesFor(endpoint.apiOrigin)
+        // 智慧平台会话经握手最后一跳的 Set-Cookie: JSESSIONID 下发（见 settled 响应）。
+        // 但旧版 Android 还会从 getArticleList 取得一个不同的教学平台 sessionId，
+        // 后续接口（尤其上传）依赖这个自定义头；不能因为已有 JSESSIONID 就跳过解析。
+        val cookieSessionId = transport.sessionCookiesFor(endpoint.apiOrigin)
             .firstOrNull { it.name.equals("JSESSIONID", ignoreCase = true) }
             ?.value
 
         val article = smartGet(
             path = ARTICLE_PATH,
             query = linkedMapOf("method" to "getArticleList"),
-            includeSession = sessionId != null,
+            includeSession = false,
         )
-        if (sessionId == null) {
-            sessionId = when (val parsed = parseSmartSessionId(article.bodyText())) {
-                is HomeworkJsonParseResult.Failure -> malformed()
-                is HomeworkJsonParseResult.Success -> parsed.value
-            }
+        sessionId = when (val parsed = parseSmartSessionId(article.bodyText())) {
+            is HomeworkJsonParseResult.Failure -> cookieSessionId ?: malformed()
+            is HomeworkJsonParseResult.Success -> parsed.value
         }
 
         val semester = smartGet(
@@ -419,6 +420,7 @@ class SchoolHomeworkRemoteDataSource(
         multipartFiles: List<SchoolMultipartFile> = emptyList(),
         includeSession: Boolean = true,
         includeSmartHeaders: Boolean = true,
+        includeSessionHeader: Boolean = includeSmartHeaders,
     ): SchoolHttpResponse {
         val headers = if (includeSmartHeaders) {
             linkedMapOf(
@@ -433,6 +435,9 @@ class SchoolHomeworkRemoteDataSource(
             }
         } else {
             linkedMapOf()
+        }
+        if (!includeSmartHeaders && includeSessionHeader && includeSession) {
+            sessionId?.let { session -> headers["sessionid"] = session }
         }
         val response = execute(
             SchoolHttpRequest(
