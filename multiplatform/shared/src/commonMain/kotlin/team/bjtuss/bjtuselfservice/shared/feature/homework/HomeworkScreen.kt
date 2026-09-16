@@ -85,6 +85,7 @@ import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.safeExportFileName
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LegacySmartTransportWarning
+import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -96,13 +97,14 @@ fun HomeworkWorkspace(
     onDismissLegacyWarning: () -> Unit = {},
     model: HomeworkScreenModel,
     fileGateway: HomeworkFileGateway,
+    onReauthenticate: (suspend () -> Boolean)? = null,
     onRefresh: () -> Unit,
     onOpenDetail: () -> Unit,
     modifier: Modifier,
 ) {
     val scope = rememberCoroutineScope()
     // 附件下载/上传状态与详情二级页共用同一套实现，见 HomeworkTransferState。
-    val transfer = rememberHomeworkTransferState(model, fileGateway)
+    val transfer = rememberHomeworkTransferState(model, fileGateway, onReauthenticate)
     var showFilterSheet by remember { mutableStateOf(false) }
 
     // 只灌缓存；网络自动同步由 shell 在登录成功后触发。
@@ -232,6 +234,7 @@ fun HomeworkWorkspace(
 private class HomeworkTransferState(
     private val model: HomeworkScreenModel,
     private val fileGateway: HomeworkFileGateway,
+    private val reauthenticate: (suspend () -> Boolean)?,
     private val scope: CoroutineScope,
     private val copyText: (String) -> Unit,
 ) {
@@ -240,6 +243,7 @@ private class HomeworkTransferState(
     var uploadContent by mutableStateOf("")
     var uploadFeedback by mutableStateOf<String?>(null)
     var fileFeedback by mutableStateOf<String?>(null)
+    var isRecoveringSession by mutableStateOf(false)
 
     fun copyMarkdown(markdown: String) {
         copyText(markdown)
@@ -341,9 +345,24 @@ private class HomeworkTransferState(
         }
         scope.launch {
             uploadFeedback = null
-            when (val result = model.submitHomework(uploadContent, uploadFiles)) {
+            var result: HomeworkOperationResult<Unit>? = null
+            var sessionExpired = false
+            val recovery = SessionRefreshCoordinator(
+                reauthenticate = reauthenticate,
+                onRecoveryStateChanged = { isRecoveringSession = it },
+            )
+            recovery.run(
+                operation = {
+                    val attemptResult = model.submitHomework(uploadContent, uploadFiles)
+                    result = attemptResult
+                    sessionExpired = attemptResult is HomeworkOperationResult.Failure &&
+                        attemptResult.reason == HomeworkSyncFailure.SESSION_EXPIRED
+                },
+                sessionExpired = { sessionExpired },
+            )
+            when (val finalResult = result ?: HomeworkOperationResult.Failure(HomeworkSyncFailure.NETWORK)) {
                 is HomeworkOperationResult.Failure -> {
-                    uploadFeedback = when (result.reason) {
+                    uploadFeedback = when (finalResult.reason) {
                         HomeworkSyncFailure.NETWORK -> "上传失败，请检查网络后重试。"
                         HomeworkSyncFailure.SESSION_EXPIRED -> "登录会话已失效，请点击右上角刷新重试登录。"
                         HomeworkSyncFailure.MALFORMED_RESPONSE -> "学校平台没有确认提交成功，请稍后重试。"
@@ -366,13 +385,15 @@ private class HomeworkTransferState(
 private fun rememberHomeworkTransferState(
     model: HomeworkScreenModel,
     fileGateway: HomeworkFileGateway,
+    reauthenticate: (suspend () -> Boolean)?,
 ): HomeworkTransferState {
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
-    return remember(model, fileGateway, clipboard) {
+    return remember(model, fileGateway, clipboard, reauthenticate) {
         HomeworkTransferState(
             model = model,
             fileGateway = fileGateway,
+            reauthenticate = reauthenticate,
             scope = scope,
             copyText = { text -> clipboard.setText(AnnotatedString(text)) },
         )
@@ -403,8 +424,8 @@ private fun HomeworkUploadDialog(
         confirmButton = {
             Button(
                 onClick = transfer::submitUpload,
-                enabled = transfer.uploadFiles.isNotEmpty() && !isSubmitting,
-            ) { Text(if (isSubmitting) "正在提交" else "提交") }
+                enabled = transfer.uploadFiles.isNotEmpty() && !isSubmitting && !transfer.isRecoveringSession,
+            ) { Text(if (isSubmitting || transfer.isRecoveringSession) "正在提交" else "提交") }
         },
         dismissButton = {
             TextButton(onClick = transfer::closeUpload, enabled = !isSubmitting) { Text("取消") }
@@ -421,10 +442,11 @@ private fun HomeworkUploadDialog(
 fun HomeworkDetailWorkspace(
     model: HomeworkScreenModel,
     fileGateway: HomeworkFileGateway,
+    onReauthenticate: (suspend () -> Boolean)? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by model.state.collectAsState()
-    val transfer = rememberHomeworkTransferState(model, fileGateway)
+    val transfer = rememberHomeworkTransferState(model, fileGateway, onReauthenticate)
     val detailScrollState = rememberScrollState()
     Column(
         modifier = modifier

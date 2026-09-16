@@ -1187,6 +1187,7 @@ fun AuthenticatedAppShell(
                     onDismissLegacyWarning = dismissLegacyWarning,
                     model = homeworkModel,
                     fileGateway = homeworkFileGateway,
+                    onReauthenticate = reauthenticateSession,
                     onRefresh = refresh,
                     onOpenDetail = {
                         // 先写完选中再 push（onOpen 里已 selectHomework），避免详情页打开时为空。
@@ -1347,6 +1348,7 @@ fun AuthenticatedAppShell(
                 HomeworkDetailWorkspace(
                     model = homeworkModel,
                     fileGateway = homeworkFileGateway,
+                    onReauthenticate = reauthenticateSession,
                     modifier = Modifier.fillMaxSize(),
                 )
             }

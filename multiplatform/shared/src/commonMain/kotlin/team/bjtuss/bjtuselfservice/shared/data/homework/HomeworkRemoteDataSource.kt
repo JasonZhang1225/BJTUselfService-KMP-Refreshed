@@ -222,7 +222,7 @@ class SchoolHomeworkRemoteDataSource(
             val uploadBody = upload.bodyText()
             when (val parsed = parseHomeworkUploadReceipt(uploadBody)) {
                 is HomeworkJsonParseResult.Failure -> {
-                    if (uploadResponseLooksLikeSessionExpired(uploadBody)) {
+                    if (uploadResponseLooksLikeSessionExpired(upload)) {
                         invalidateSmartSession()
                         sessionExpired()
                     }
@@ -569,13 +569,16 @@ private fun uploadReceiptShape(response: SchoolHttpResponse): String {
 }
 
 /** 老接口把会话失效混成 HTTP 200 的 STATUS/MSG 或登录 HTML，不能按普通 JSON 缺字段处理。 */
-private fun uploadResponseLooksLikeSessionExpired(body: String): Boolean {
-    val normalized = body.lowercase()
+private fun uploadResponseLooksLikeSessionExpired(response: SchoolHttpResponse): Boolean {
+    val normalized = (response.bodyText() + "\n" + response.bodyTextGbk()).lowercase()
     if (listOf(
             "会话结束",
             "会话失效",
             "未登录",
+            "登录失效",
+            "登录超时",
             "重新登录",
+            "请退出系统",
             "session expired",
             "session timeout",
             "not logged",
@@ -583,12 +586,7 @@ private fun uploadResponseLooksLikeSessionExpired(body: String): Boolean {
     ) {
         return true
     }
-    val keys = parseStrictJsonObject(body.trim())?.keys
-        ?.map(String::uppercase)
-        ?.toSet()
-        .orEmpty()
-    return "STATUS" in keys && ("MSG" in keys || "MESSAGE" in keys) &&
-        keys.none { it in setOf("FILENAMENOEXT", "FILEEXTNAME", "FILESIZE", "VISITNAME") }
+    return false
 }
 
 private fun List<HomeworkUploadReceipt>.toUploadFileListJson(): String = joinToString(
