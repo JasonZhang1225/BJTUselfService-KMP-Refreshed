@@ -1,7 +1,7 @@
 # BJTUselfService KMP 迁移工作记忆
 
 > 最后更新：2026-09-16
-> 当前分支：`main`；显示/打包版本 **`1.7.6-debug-1`**。主体提交 `eca1a3a`、`25947a9`、`591c905`、`d5b1029`、`40e7f9b`、`fa1e1d6`、`d8a89e9`、`20e08d6`、`64e1956`、`2891dbd`、`bca28b2` 已推送；本轮普通作业自动会话恢复待提交。Windows 本地 MSI 已成功生成，远端普通打包未触发，未打 tag、未建 Release。Windows 本机无法打 IPA，由用户在 Mac 打包。
+> 当前分支：`main`；显示/打包版本 **`1.7.6-debug-1`**。主体提交 `eca1a3a`、`25947a9`、`591c905`、`d5b1029`、`40e7f9b`、`fa1e1d6`、`d8a89e9`、`20e08d6`、`64e1956`、`2891dbd`、`bca28b2`、`dbd37e0` 已推送；本轮普通作业自动会话恢复待提交。Windows 本地 MSI 已成功生成，远端普通打包未触发，未打 tag、未建 Release。Windows 本机无法打 IPA，由用户在 Mac 打包。
 > 阶段状态：**173B 基座已同步；M13 代码层初步开发完成。校历入口已移除失效下载接口并改为公众号文章。M15 邮箱已完成 Coremail 只读文件夹/列表/详情扩展，宽屏三栏与紧凑端文件夹选择/二级阅读 UI 按 Apple Mail 方向重做；紧凑端邮箱主页、邮件详情和写信/回复现统一采用平台原生页面层级（Android Activity、iOS UIKit push），与两个教室查询入口保持一致；根页面转场期间不再先显示内嵌详情，避免重复视觉跳转。紧凑端当前文件夹 banner 负责文件夹切换，邮箱右上角胶囊显示“刷新”；HTML 表格正文已结构化渲染。当前已补上写信/回复首版和 `MAILBOX_COMPOSE` 原生编辑页，发送前确认但未实际发送，详情返回统一到左上角。Windows 与 Android x86_64 模拟器均已用真实登录态核对邮箱主页、当前文件夹 banner、刷新控件和编辑页，Android 另核对普通刷新、邮件详情、回复预填和发送确认。Mac 已有真实登录态列表/详情证据，真实发送/删除/附件下载和真实登录后的 iOS 邮箱验收未完成。M16 VPN 仅保留调研，当前不开发。PR #3 已合入。Android 已改为本地/CI 共用上传签名（证书 SHA-256 `5d0dabc3…c773`）。`v1.7.4-KMP` Release Android 包为仅 `arm64-v8a`、无 debug 文件名（142,270,345 字节）。本轮已在 `C:\Users\zjg\Android\Sdk` 恢复 Android SDK/`adb`/模拟器；Android x86_64 debug 构建、安装、登录和邮箱视觉回归均完成，实体 iPhone 仍缺 provisioning profile。当前版本为 `1.7.5-KMP`。**
 > 分支创建点：`9d8da18`；上游对照基线：`v1.7.0@419313d`；KMP 自身基线：**`v1.7.3-KMP-B` (`a342615`)**；当前调试版本 **`1.7.6-debug-1`**（本轮只打普通 CI artifacts，不打 tag、不建 Release）；上一发布 `v1.7.4-KMP` 保留。
 > 完整历史与已归档的验收细节：见 `history_full.md`（按里程碑归档，只读）

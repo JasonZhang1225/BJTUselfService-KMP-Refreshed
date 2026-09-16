@@ -555,18 +555,23 @@ private fun SchoolHttpResponse.toFileContent(suggestedName: String): HomeworkFil
 /** 只记录上传回执的结构，避免把文件名、路径、正文或会话值写入日志。 */
 private fun uploadReceiptShape(response: SchoolHttpResponse): String {
     val body = response.bodyText().trim()
-    val keys = parseStrictJsonObject(body)?.keys
+    val root = parseStrictJsonObject(body)
+    val keys = root?.keys
         ?.sorted()
         ?.joinToString(",")
         ?: "non-json"
+    val status = root?.string("STATUS").orEmpty().safeLogValue()
+    val message = (root?.string("MSG") ?: root?.string("MESSAGE")).orEmpty().safeLogValue()
     val contentType = response.header("Content-Type")
         ?.substringBefore(';')
         ?.trim()
         ?.take(80)
         .orEmpty()
         .ifBlank { "unknown" }
-    return "status=${response.statusCode},bytes=${response.body.size},contentType=$contentType,keys=$keys"
+    return "status=${response.statusCode},bytes=${response.body.size},contentType=$contentType,keys=$keys,statusValue=$status,message=$message"
 }
+
+private fun String.safeLogValue(): String = replace(Regex("[\\r\\n\\t]"), " ").take(80)
 
 /** 老接口把会话失效混成 HTTP 200 的 STATUS/MSG 或登录 HTML，不能按普通 JSON 缺字段处理。 */
 private fun uploadResponseLooksLikeSessionExpired(response: SchoolHttpResponse): Boolean {
