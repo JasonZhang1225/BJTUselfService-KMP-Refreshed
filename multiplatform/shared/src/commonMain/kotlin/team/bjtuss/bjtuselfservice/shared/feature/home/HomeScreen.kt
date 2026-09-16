@@ -511,7 +511,11 @@ private fun HomeAgendaSection(
     }
 
     if (useFingerWeekPager) {
-        val pageHeights = remember { mutableStateMapOf<Pair<Int, LocalDate>, Int>() }
+        // 数据刷新后旧高度可能对应“空日程”页面；作业/考试/物理在线或加载态变化时必须丢弃，
+        // 否则新事件会被旧的固定高度裁掉。
+        val pageHeights = remember(homework, exams, phyVlabEvents, isLoading) {
+            mutableStateMapOf<Pair<Int, LocalDate>, Int>()
+        }
         val density = LocalDensity.current
         // When today is a holiday gap, insert the natural-week page at its
         // calendar position (e.g. week 3 -> 非教学周 -> week 4), not before week 1.
