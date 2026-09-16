@@ -10,9 +10,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -30,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,6 +41,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -496,6 +501,8 @@ private fun HomeAgendaSection(
     }
 
     if (useFingerWeekPager) {
+        val pageHeights = remember { mutableStateMapOf<Int, Int>() }
+        val density = LocalDensity.current
         // When today is a holiday gap, insert the natural-week page at its
         // calendar position (e.g. week 3 -> 非教学周 -> week 4), not before week 1.
         val pagerWeeks = if (currentWeek == 0) {
@@ -521,9 +528,18 @@ private fun HomeAgendaSection(
                 pagerState.animateScrollToPage(targetPage)
             }
         }
+        val selectedPageHeight = pageHeights[selectedWeek]?.let { heightPx ->
+            with(density) { heightPx.toDp() }
+        }
+        val pagerModifier = Modifier
+            .fillMaxWidth()
+            .then(
+                selectedPageHeight?.let { Modifier.height(it) }
+                    ?: Modifier.wrapContentHeight(),
+            )
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = pagerModifier,
             beyondViewportPageCount = 1,
             pageSpacing = 12.dp,
         ) { page ->
@@ -543,6 +559,7 @@ private fun HomeAgendaSection(
                 previousWeek = adjacentWeekFor(week, -1),
                 nextWeek = adjacentWeekFor(week, 1),
                 onSelectWeek = selectWeek,
+                onMeasuredHeight = { heightPx -> pageHeights[week] = heightPx },
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -590,6 +607,7 @@ private fun HomeAgendaWeekCard(
     previousWeek: Int?,
     nextWeek: Int?,
     onSelectWeek: (Int) -> Unit,
+    onMeasuredHeight: ((Int) -> Unit)? = null,
     modifier: Modifier,
 ) {
     val today = now.date
@@ -615,7 +633,12 @@ private fun HomeAgendaWeekCard(
     }
     val selectedDay = weekAgenda.days.firstOrNull { it.date == selectedDate } ?: weekAgenda.days.first()
 
-    ElevatedCard(modifier = modifier) {
+    val measuredModifier = if (onMeasuredHeight == null) {
+        modifier
+    } else {
+        modifier.onSizeChanged { size -> onMeasuredHeight(size.height) }
+    }
+    ElevatedCard(modifier = measuredModifier) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
