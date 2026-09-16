@@ -215,60 +215,77 @@ private fun buildHomeSyncItems(
     courseBusy: Boolean,
     courseFailed: Boolean,
     courseReady: Boolean,
+    phyVlabEnabled: Boolean,
     phyVlabBusy: Boolean,
     phyVlabFailed: Boolean,
     phyVlabReady: Boolean,
-): List<HomeSyncItem> = listOf(
-    homeSyncItem(
-        title = "统一身份认证",
-        busy = isLoggingIn,
-        failed = false,
-        ready = !isLoggingIn,
-        busyDetail = "正在检查登录状态",
-    ),
-    homeSyncItem(
-        title = "首页账户状态",
-        busy = homeBusy,
-        failed = homeFailed,
-        ready = homeReady,
-        busyDetail = "正在读取邮箱与校园账户状态",
-    ),
-    homeSyncItem(
-        title = "成绩",
-        busy = gradeBusy,
-        failed = gradeFailed,
-        ready = gradeReady,
-        busyDetail = "正在同步成绩",
-    ),
-    homeSyncItem(
-        title = "课程表与校历周数",
-        busy = courseBusy,
-        failed = courseFailed,
-        ready = courseReady,
-        busyDetail = "正在同步课表并校准教学周",
-    ),
-    homeSyncItem(
-        title = "作业",
-        busy = homeworkBusy,
-        failed = homeworkFailed,
-        ready = homeworkReady,
-        busyDetail = "正在同步作业",
-    ),
-    homeSyncItem(
-        title = "考试安排",
-        busy = examBusy,
-        failed = examFailed,
-        ready = examReady,
-        busyDetail = "正在同步考试安排",
-    ),
-    homeSyncItem(
-        title = "物理在线",
-        busy = phyVlabBusy,
-        failed = phyVlabFailed,
-        ready = phyVlabReady,
-        busyDetail = "正在同步物理在线安排",
-    ),
-)
+): List<HomeSyncItem> = buildList {
+    add(
+        homeSyncItem(
+            title = "统一身份认证",
+            busy = isLoggingIn,
+            failed = false,
+            ready = !isLoggingIn,
+            busyDetail = "正在检查登录状态",
+        ),
+    )
+    add(
+        homeSyncItem(
+            title = "首页账户状态",
+            busy = homeBusy,
+            failed = homeFailed,
+            ready = homeReady,
+            busyDetail = "正在读取邮箱与校园账户状态",
+        ),
+    )
+    add(
+        homeSyncItem(
+            title = "成绩",
+            busy = gradeBusy,
+            failed = gradeFailed,
+            ready = gradeReady,
+            busyDetail = "正在同步成绩",
+        ),
+    )
+    add(
+        homeSyncItem(
+            title = "课程表与校历周数",
+            busy = courseBusy,
+            failed = courseFailed,
+            ready = courseReady,
+            busyDetail = "正在同步课表并校准教学周",
+        ),
+    )
+    add(
+        homeSyncItem(
+            title = "作业",
+            busy = homeworkBusy,
+            failed = homeworkFailed,
+            ready = homeworkReady,
+            busyDetail = "正在同步作业",
+        ),
+    )
+    add(
+        homeSyncItem(
+            title = "考试安排",
+            busy = examBusy,
+            failed = examFailed,
+            ready = examReady,
+            busyDetail = "正在同步考试安排",
+        ),
+    )
+    if (phyVlabEnabled) {
+        add(
+            homeSyncItem(
+                title = "物理在线",
+                busy = phyVlabBusy,
+                failed = phyVlabFailed,
+                ready = phyVlabReady,
+                busyDetail = "正在同步物理在线安排",
+            ),
+        )
+    }
+}
 
 private fun homeSyncItem(
     title: String,
@@ -331,7 +348,6 @@ private val MoreGroupSections = setOf(
     AppSection.CLASSROOMS,
     AppSection.CLASSROOM_OCCUPANCY,
     AppSection.MAILBOX,
-    AppSection.PHYVLAB,
     AppSection.CALENDAR,
     AppSection.REPORT_CARD_DOWNLOAD,
     AppSection.SETTINGS,
@@ -414,8 +430,9 @@ fun AuthenticatedAppShell(
     val phyVlabState by phyVlabModel.state.collectAsState()
     val homeState by homeModel.state.collectAsState()
     val settingsState by settingsModel.state.collectAsState()
-    val compactBottomNavSections = remember(settingsState.preferences.showPhyVlabInBottomNav) {
-        bottomNavSections(settingsState.preferences.showPhyVlabInBottomNav)
+    val phyVlabEnabled = settingsState.preferences.isPhyVlabEnabled
+    val compactBottomNavSections = remember(phyVlabEnabled) {
+        bottomNavSections(phyVlabEnabled)
     }
     val homeChanges by homeChangeFeed.records.collectAsState()
     var sessionRecoveryInProgress by remember(session) { mutableStateOf(false) }
@@ -436,9 +453,11 @@ fun AuthenticatedAppShell(
         courseBusy = courseState.isLoading || courseState.isRefreshing || courseState.isCalendarLoading,
         courseFailed = courseState.failure != null,
         courseReady = courseState.source != null,
-        phyVlabBusy = phyVlabState.isLoading,
-        phyVlabFailed = phyVlabState.failure != null || phyVlabState.casLoginRequired,
-        phyVlabReady = phyVlabState.courses.isNotEmpty() || phyVlabState.agendaEvents.isNotEmpty(),
+        phyVlabEnabled = phyVlabEnabled,
+        phyVlabBusy = phyVlabEnabled && phyVlabState.isLoading,
+        phyVlabFailed = phyVlabEnabled && (phyVlabState.failure != null || phyVlabState.casLoginRequired),
+        phyVlabReady = phyVlabEnabled &&
+            (phyVlabState.courses.isNotEmpty() || phyVlabState.agendaEvents.isNotEmpty()),
     )
     val homeSyncFailureItems = homeSyncItems
         .filter { it.state == HomeSyncItemState.FAILED }
@@ -542,7 +561,8 @@ fun AuthenticatedAppShell(
         }
         scope.launch { mailboxModel.startCompose() }
     }
-    val navigateToSection: (AppSection) -> Unit = { target ->
+    fun navigateToSection(target: AppSection) {
+        if (target == AppSection.PHYVLAB && !phyVlabEnabled) return
         if (backStack.lastOrNull() != target) {
             // 先 yield 一帧：让 NavigationBarItem 的 press/ripple 先上屏，
             // 再替换 destination，避免首次点 tab 时内容重组抢掉按压反馈。
@@ -553,8 +573,7 @@ fun AuthenticatedAppShell(
                     onOpenNativeRoute(target.name)
                 } else if (
                     target in MoreGroupSections &&
-                        target != AppSection.MORE &&
-                        target != AppSection.PHYVLAB
+                        target != AppSection.MORE
                 ) {
                     // 「更多」子页：固定为 [更多, 子页]，返回一定回到更多目录。
                     backStack.clear()
@@ -615,8 +634,10 @@ fun AuthenticatedAppShell(
                             sessionExpired = { courseScheduleModel.state.value.failure == CourseScheduleSyncFailure.SESSION_EXPIRED },
                         )
                     }
-                    // 这是用户明确点下首页刷新/失败胶囊后的主动重试，不受自动同步开关限制。
-                    launch { phyVlabModel.refresh() }
+                    // 这是用户明确点下首页刷新/失败胶囊后的主动重试；功能关闭时不访问物理在线。
+                    if (phyVlabEnabled) {
+                        launch { phyVlabModel.refresh() }
+                    }
                     launch {
                         refreshModule(
                             operation = gradeModel::refresh,
@@ -670,7 +691,7 @@ fun AuthenticatedAppShell(
                         }
                     },
                 )
-                AppSection.PHYVLAB -> phyVlabModel.refresh()
+                AppSection.PHYVLAB -> if (phyVlabEnabled) phyVlabModel.refresh()
                 AppSection.CALENDAR -> Unit
                 AppSection.REPORT_CARD_DOWNLOAD -> Unit
                 AppSection.SETTINGS -> Unit
@@ -729,14 +750,16 @@ fun AuthenticatedAppShell(
                             sessionExpired = { courseScheduleModel.state.value.failure == CourseScheduleSyncFailure.SESSION_EXPIRED },
                         )
                     }
-                    launch {
-                        retryIfExpired(
-                            operation = phyVlabModel::refresh,
-                            sessionExpired = {
-                                val current = phyVlabModel.state.value
-                                current.failure == PhyVlabSyncFailure.SESSION_EXPIRED || current.casLoginRequired
-                            },
-                        )
+                    if (phyVlabEnabled) {
+                        launch {
+                            retryIfExpired(
+                                operation = phyVlabModel::refresh,
+                                sessionExpired = {
+                                    val current = phyVlabModel.state.value
+                                    current.failure == PhyVlabSyncFailure.SESSION_EXPIRED || current.casLoginRequired
+                                },
+                            )
+                        }
                     }
                     launch {
                         retryIfExpired(
@@ -783,13 +806,15 @@ fun AuthenticatedAppShell(
                         }
                     },
                 )
-                AppSection.PHYVLAB -> retryIfExpired(
-                    operation = phyVlabModel::refresh,
-                    sessionExpired = {
-                        val current = phyVlabModel.state.value
-                        current.failure == PhyVlabSyncFailure.SESSION_EXPIRED || current.casLoginRequired
-                    },
-                )
+                AppSection.PHYVLAB -> if (phyVlabEnabled) {
+                    retryIfExpired(
+                        operation = phyVlabModel::refresh,
+                        sessionExpired = {
+                            val current = phyVlabModel.state.value
+                            current.failure == PhyVlabSyncFailure.SESSION_EXPIRED || current.casLoginRequired
+                        },
+                    )
+                }
                 AppSection.CALENDAR,
                 AppSection.REPORT_CARD_DOWNLOAD,
                 AppSection.SETTINGS,
@@ -836,8 +861,6 @@ fun AuthenticatedAppShell(
         homeworkModel,
         examScheduleModel,
         courseScheduleModel,
-        phyVlabModel,
-        loginSyncPreferences.autoSyncPhyVlab,
         entryLoggingIn,
     ) {
         if (entryLoggingIn) return@LaunchedEffect
@@ -864,15 +887,15 @@ fun AuthenticatedAppShell(
                     courseScheduleModel.initialize(refreshFromNetwork = true)
                 }
             }
-            launch {
-                // 物理在线先从本地快照恢复首页安排；开启自动同步时再建立 Moodle 会话并拉取最新数据。
-                phyVlabModel.initialize(loginSyncPreferences.autoSyncPhyVlab)
-                if (loginSyncPreferences.autoSyncPhyVlab && phyVlabModel.state.value.failure != null) {
-                    delay(LOGIN_SYNC_RETRY_DELAY_MILLIS)
-                    phyVlabModel.refresh()
-                }
-            }
         }
+    }
+
+    // 物理在线总开关关闭时不读取网络；打开后在当前登录会话中主动同步一次。
+    // 这样开关同时控制“是否同步”和“是否显示底栏入口”，不会留下隐藏的后台请求。
+    LaunchedEffect(phyVlabModel, phyVlabEnabled, entryLoggingIn) {
+        if (entryLoggingIn || !phyVlabEnabled) return@LaunchedEffect
+        phyVlabModel.initialize(refreshFromNetwork = false)
+        phyVlabModel.refresh()
     }
 
     // 进入主界面后静默检查一次更新（对齐原安卓启动时自动检测）：
@@ -1016,13 +1039,16 @@ fun AuthenticatedAppShell(
                     homeworkFailed = homeworkState.failure != null,
                     examFailed = examState.failure != null,
                     courseFailed = courseState.failure != null,
-                    phyVlabFailed = phyVlabState.failure != null || phyVlabState.casLoginRequired,
+                    phyVlabFailed = phyVlabEnabled &&
+                        (phyVlabState.failure != null || phyVlabState.casLoginRequired),
                     hasAnySource = homeworkState.source != null ||
                         examState.source != null ||
                         courseState.source != null ||
                         homeState.status != null ||
-                        phyVlabState.courses.isNotEmpty() ||
-                    phyVlabState.agendaEvents.isNotEmpty(),
+                        (phyVlabEnabled && (
+                            phyVlabState.courses.isNotEmpty() ||
+                                phyVlabState.agendaEvents.isNotEmpty()
+                            )),
                 ),
                 onStatusClick = { homeSyncDialogVisible = true },
                 syncFailureItems = homeSyncFailureItems,
@@ -1034,12 +1060,12 @@ fun AuthenticatedAppShell(
                     holdNetwork = entryLoggingIn,
                     homework = homeworkState.homework,
                     exams = examState.exams,
-                    phyVlabEvents = phyVlabState.agendaEvents,
+                    phyVlabEvents = if (phyVlabEnabled) phyVlabState.agendaEvents else emptyList(),
                     currentWeek = courseState.currentWeek,
                     now = homeworkState.now,
                     timeZone = homeworkState.timeZone,
                     isAgendaLoading = homeworkState.isLoading || examState.isLoading ||
-                        courseState.isLoading || phyVlabState.isLoading,
+                        courseState.isLoading || (phyVlabEnabled && phyVlabState.isLoading),
                     isRefreshing = homeSyncInProgress,
                     onRefresh = refresh,
                     onOpenMailbox = { navigateToSection(AppSection.MAILBOX) },
@@ -1418,7 +1444,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = true,
                 isRefreshing = phyVlabState.isLoading,
-                // 物理在线与首页、课表、作业同为一级页面；底栏/更多入口都替换到这里。
+                // 物理在线只从底栏进入，是与首页、课表、作业平级的一级页面。
                 showBack = false,
                 modifier = modifier,
                 idleStatusText = when {
@@ -1476,7 +1502,9 @@ fun AuthenticatedAppShell(
                 modifier = modifier,
             ) {
                 MoreWorkspace(
-                    onOpenSection = navigateToSection,
+                    phyVlabEnabled = phyVlabEnabled,
+                    onPhyVlabEnabledChange = settingsModel::setPhyVlabEnabled,
+                    onOpenSection = { target -> navigateToSection(target) },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -1498,7 +1526,7 @@ fun AuthenticatedAppShell(
             AppSidebar(
                 profile = profile,
                 section = section,
-                onSectionSelected = navigateToSection,
+                onSectionSelected = { target -> navigateToSection(target) },
                 // 随窗口比例伸缩，避免小窗时侧栏仍占固定 236dp 挤掉内容区。
                 modifier = Modifier.weight(0.22f).fillMaxHeight(),
             )
@@ -1764,7 +1792,7 @@ fun AuthenticatedAppShell(
                 CompactBottomNavigation(
                     section = section,
                     sections = compactBottomNavSections,
-                    onSectionSelected = navigateToSection,
+                    onSectionSelected = { target -> navigateToSection(target) },
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
@@ -1823,8 +1851,7 @@ internal fun shouldOpenNativeSectionRoute(
     useNativeSecondaryRoutes: Boolean,
 ): Boolean = useNativeSecondaryRoutes &&
     MoreGroupSections.any { it.name == targetRouteId } &&
-    targetRouteId != AppSection.MORE.name &&
-    targetRouteId != AppSection.PHYVLAB.name
+    targetRouteId != AppSection.MORE.name
 
 private fun HomeChangeDomain.toAppSection(): AppSection = when (this) {
     HomeChangeDomain.GRADES -> AppSection.GRADES
@@ -2606,22 +2633,20 @@ private fun CompactTabIcon(section: AppSection) {
 
 /**
  * 「更多」页：iOS 设置式分块列表。
- * - 学业：物理在线、考试、课件
+ * - 学业：物理在线总开关、考试、课件
  * - 校园：教室占用查询、教室人数估计、邮箱
  * - 信息与下载：校历文章、成绩单
  * - 设置单独一块垫底
  */
 @Composable
 private fun MoreWorkspace(
+    phyVlabEnabled: Boolean,
+    onPhyVlabEnabledChange: (Boolean) -> Unit,
     onOpenSection: (AppSection) -> Unit,
     modifier: Modifier,
 ) {
     val pageScrollState = rememberScrollState()
     val sections = listOf(
-        MoreListSection(
-            header = "学业",
-            items = listOf(AppSection.PHYVLAB, AppSection.EXAMS, AppSection.COURSEWARE),
-        ),
         MoreListSection(
             header = "校园",
             items = listOf(AppSection.CLASSROOM_OCCUPANCY, AppSection.CLASSROOMS, AppSection.MAILBOX),
@@ -2642,11 +2667,62 @@ private fun MoreWorkspace(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
+        Text(
+            "学业",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 12.dp),
+        )
+        MorePhyVlabToggleRow(
+            enabled = phyVlabEnabled,
+            onEnabledChange = onPhyVlabEnabledChange,
+        )
+        MoreGroupedSection(
+            header = null,
+            items = listOf(AppSection.EXAMS, AppSection.COURSEWARE),
+            onOpenSection = onOpenSection,
+        )
         sections.forEach { section ->
             MoreGroupedSection(
                 header = section.header,
                 items = section.items,
                 onOpenSection = onOpenSection,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MorePhyVlabToggleRow(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    AppSection.PHYVLAB.moreTitle,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Normal,
+                )
+                Text(
+                    "开启后同步物理在线，并在底栏显示入口；关闭后不参与同步。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = onEnabledChange,
             )
         }
     }

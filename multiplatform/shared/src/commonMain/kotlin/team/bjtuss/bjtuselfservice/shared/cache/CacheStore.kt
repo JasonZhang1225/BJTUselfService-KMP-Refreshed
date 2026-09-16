@@ -20,7 +20,11 @@ data class AppPreferences(
     val dynamicColor: Boolean = true,
     val theme: String = "System",
     val showPhyVlabInBottomNav: Boolean = true,
-)
+) {
+    /** 物理在线只有一个总开关：关闭时不自动同步，也不显示入口。 */
+    val isPhyVlabEnabled: Boolean
+        get() = autoSyncPhyVlab && showPhyVlabInBottomNav
+}
 
 enum class CacheOpenState {
     OPENED,

@@ -25,6 +25,19 @@ class SettingsScreenModelTest {
     )
 
     @Test
+    fun freshPreferencesEnableEveryAutomaticSync() {
+        val preferences = AppPreferences()
+
+        assertTrue(preferences.autoSyncGrades)
+        assertTrue(preferences.autoSyncHomework)
+        assertTrue(preferences.autoSyncSchedule)
+        assertTrue(preferences.autoSyncExams)
+        assertTrue(preferences.autoSyncPhyVlab)
+        assertTrue(preferences.showPhyVlabInBottomNav)
+        assertTrue(preferences.isPhyVlabEnabled)
+    }
+
+    @Test
     fun autoSyncOptionsPersistAndUpdateVisiblePreferences() {
         val saved = mutableListOf<AppPreferences>()
         val model = model(persistPreferences = { saved += it; true })
@@ -60,17 +73,19 @@ class SettingsScreenModelTest {
     }
 
     @Test
-    fun physicalOnlineBottomNavTogglePersists() {
+    fun physicalOnlineMasterToggleControlsSyncAndBottomNav() {
         val saved = mutableListOf<AppPreferences>()
         val model = model(
             initialPreferences = AppPreferences(showPhyVlabInBottomNav = true),
             persistPreferences = { saved += it; true },
         )
 
-        model.setShowPhyVlabInBottomNav(false)
+        model.setPhyVlabEnabled(false)
 
         assertEquals(1, saved.size)
+        assertFalse(model.state.value.preferences.autoSyncPhyVlab)
         assertFalse(model.state.value.preferences.showPhyVlabInBottomNav)
+        assertFalse(model.state.value.preferences.isPhyVlabEnabled)
         assertFalse(model.state.value.saveFailed)
     }
 
