@@ -121,10 +121,10 @@ jobs:
       - name: Build MSI
         env:
           WINDOWS_PACKAGE_JAVA_HOME: ${{ env.JAVA_HOME }}
-          WINDOWS_PACKAGE_NAME: BJTUselfServiceKMP
-          WINDOWS_PACKAGE_DESCRIPTION: BJTU Self Service KMP
           JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8
-        run: .\gradlew.bat :windowsApp:packageMsi --stacktrace
+        run: |
+          chcp 65001 | Out-Null
+          .\gradlew.bat :windowsApp:packageMsi --stacktrace
 
       - name: Print jpackage logs
         if: failure()

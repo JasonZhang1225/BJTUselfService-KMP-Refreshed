@@ -1,7 +1,7 @@
 # BJTUselfService KMP 迁移工作记忆
 
 > 最后更新：2026-09-16
-> 当前分支：`main`；显示/打包版本 **`1.7.6-debug-1`**。主体提交 `eca1a3a`、`25947a9`、`591c905`、`d5b1029` 已推送；本轮物理在线详情状态传递与课表文案修订待提交，打包已暂停，未打 tag、未建 Release。Windows 本机无法打 IPA，由用户在 Mac 打包。
+> 当前分支：`main`；显示/打包版本 **`1.7.6-debug-1`**。主体提交 `eca1a3a`、`25947a9`、`591c905`、`d5b1029` 已推送；本轮物理在线详情状态传递、课表文案、桌面侧栏和 Windows 安装器中文元数据待提交。Windows 本地 MSI 已成功生成，远端普通打包未触发，未打 tag、未建 Release。Windows 本机无法打 IPA，由用户在 Mac 打包。
 > 阶段状态：**173B 基座已同步；M13 代码层初步开发完成。校历入口已移除失效下载接口并改为公众号文章。M15 邮箱已完成 Coremail 只读文件夹/列表/详情扩展，宽屏三栏与紧凑端文件夹选择/二级阅读 UI 按 Apple Mail 方向重做；紧凑端邮箱主页、邮件详情和写信/回复现统一采用平台原生页面层级（Android Activity、iOS UIKit push），与两个教室查询入口保持一致；根页面转场期间不再先显示内嵌详情，避免重复视觉跳转。紧凑端当前文件夹 banner 负责文件夹切换，邮箱右上角胶囊显示“刷新”；HTML 表格正文已结构化渲染。当前已补上写信/回复首版和 `MAILBOX_COMPOSE` 原生编辑页，发送前确认但未实际发送，详情返回统一到左上角。Windows 与 Android x86_64 模拟器均已用真实登录态核对邮箱主页、当前文件夹 banner、刷新控件和编辑页，Android 另核对普通刷新、邮件详情、回复预填和发送确认。Mac 已有真实登录态列表/详情证据，真实发送/删除/附件下载和真实登录后的 iOS 邮箱验收未完成。M16 VPN 仅保留调研，当前不开发。PR #3 已合入。Android 已改为本地/CI 共用上传签名（证书 SHA-256 `5d0dabc3…c773`）。`v1.7.4-KMP` Release Android 包为仅 `arm64-v8a`、无 debug 文件名（142,270,345 字节）。本轮已在 `C:\Users\zjg\Android\Sdk` 恢复 Android SDK/`adb`/模拟器；Android x86_64 debug 构建、安装、登录和邮箱视觉回归均完成，实体 iPhone 仍缺 provisioning profile。当前版本为 `1.7.5-KMP`。**
 > 分支创建点：`9d8da18`；上游对照基线：`v1.7.0@419313d`；KMP 自身基线：**`v1.7.3-KMP-B` (`a342615`)**；当前调试版本 **`1.7.6-debug-1`**（本轮只打普通 CI artifacts，不打 tag、不建 Release）；上一发布 `v1.7.4-KMP` 保留。
 > 完整历史与已归档的验收细节：见 `history_full.md`（按里程碑归档，只读）
@@ -41,6 +41,7 @@
 - **2026-09-16 课件刷新/下载**：修复课件页刷新只更新课程目录、却沿用缓存 `childrenLoaded=true` 导致新课件必须重新选课才出现的问题；刷新后会使各课程顶层课件失效并自动重新拉取，重新进入页面也保持最新列表。下载票返回 HTML 登录页时改判为会话失效并清空课件数据源会话；网络切换/临时无效响应对只读下载自动恢复或重试一次。共享 `desktopTest` 课件测试通过；Android debug 安装到已登录模拟器后实际看到新 `Chap17&18-ThermoGas-2020-9-5`，刷新、退出再进入仍显示，点击下载成功进入系统保存面板，未保存本地文件。
 - **2026-09-16 物理在线总开关与详情路由**：移除“更多”中的物理在线页面入口，改为总开关；开启同时启用自动同步和“作业 → 物理在线 → 更多”底栏入口，关闭则不自动同步、不显示首页物理日程和底栏入口；开关固定放在“更多”的物理在线行，设置页的两处旧开关已移除。Android 模拟器已验证关闭/开启后底栏分别为 5/6 项，开关状态持久化；根页面自动同步不会在 `NativeDetailActivity` 重跑，作业详情保留 `selectedActivity`，已显示“未提交/未评分”等详情内容。
 - **2026-09-16 课表模式文案**：课表切换按钮改为“色块概览-点击展开”和“课程详情-列表展示”，Android 模拟器已核对新文案。
+- **2026-09-16 Windows 侧栏与安装器中文名**：宽屏侧栏现在复用物理在线总开关，开启时显示物理在线一级入口，关闭时隐藏且保留“更多”中的开关入口。Windows `packageName`、描述和菜单组改回固定中文，CI 以 UTF-8 代码页构建，不再注入英文环境变量；本地 MSI `交大自由行 KMP-1.7.6.msi` 已构建成功（113,700,673 字节，SHA-256 `666604A399DE27438E7C912FEC3A088383CDFB17FBC6926F6B659C0985BC8757`）。未触发远端打包。
 - **2026-08-30 小米平板 HyperOS 刷新率**：`25091RP04C` / HyperOS 3 上 KMP 前台曾被 PowerKeeper 锁到 60Hz，设置页显示「跟随应用内设置」。根因是 `SWITCHING_TYPE_NONE` 会忽略窗口 `preferredRefreshRate`，启动预热 WebView 或声明 120Hz 反而会让小米按应用内 60Hz 投票。现已清掉窗口刷新率声明、关闭 ARR 省电降帧、去掉 `MainActivity` WebView 预热。实机 `dumpsys display`：KMP 前台 `mActiveRenderFrameRate=120.00001`，与原版切换往返后仍是 120。
 - **2026-08-30 平板宽屏课表横滑**：横屏走桌面课表布局。第一版自定义滑一下再播 `AnimatedContent`，不跟手、不能连滑、没有边缘拉伸。现 Android/iOS 宽屏表格改用和竖屏相同的 `HorizontalPager`（跟手、可连滑、边缘 Stretch）；Mac/Windows 仍是触摸板 + `AnimatedContent`。课表模型测试与 Android debug 构建通过，包已装到小米平板。
 - **2026-08-30 Windows 课表连滑**：精密触摸板惯性尾流在 180ms 节流结束后会被当成第二次翻页。累加器改为翻页后丢掉同方向惯性，直到滚动事件停顿才接受下一次滑动；反向立即解锁。Mac 原生 AppKit 路径未改。
@@ -52,7 +53,7 @@
 - **Windows 安装器品牌化受限**：jpackage 安装向导 UI（横幅、右上角图标、进度框）无参数可定制；安装完成后的 EXE/快捷方式/窗口/任务栏图标已是品牌 logo。若用户要完全品牌化安装向导，需引入 Inno Setup 等替代打包管线（未授权、未规划）。
 - **构建环境**：compose 1.12.0-beta03 要求 compileSdk 37；Android SDK/`adb`/模拟器已恢复到 `C:\Users\zjg\Android\Sdk`，x86_64 debug 验证通过构建、安装、登录和邮箱页面视觉回归。Mac 侧 Xcode 27.0、iOS Simulator/iphoneos arm64 构建和 macOS arm64 分发构建均通过；实体机和登录后的 iOS 邮箱仍待设备/签名条件。
 - **打包 JDK**：JBR 无 jlink/jpackage，需完整 JDK（本机 Microsoft JDK 21 `C:/Users/zjg/jdk21/jdk-21.0.8+9`，`WINDOWS_PACKAGE_JAVA_HOME` 可覆盖）。
-- **Windows MSI**：曾 `light.exe 311`（中文 description 进 MSI 字符串表）。KMP Android 共用上传签名已写入 GitHub Secrets（`BJTU_ANDROID_KEYSTORE_BASE64` 等四项），与本机 `~/.android/bjtu-kmp-upload.keystore` 同一把钥匙。
+- **Windows MSI**：旧版曾遇到 `light.exe 311`（中文 description 进 MSI 字符串表）；当前本地与 CI 均改为 UTF-8 中文安装器元数据，仍需在下一次远端普通打包中实际确认 GitHub runner 的 WiX 环境。KMP Android 共用上传签名已写入 GitHub Secrets（`BJTU_ANDROID_KEYSTORE_BASE64` 等四项），与本机 `~/.android/bjtu-kmp-upload.keystore` 同一把钥匙。
 - **Windows 卸载清凭据待复测**：请装带卸载清理的 MSI 后再卸，确认 AppData 缓存和注册表凭据被删。
 - **iOS 真机签名/连接**：generic iPhoneOS unsigned 构建通过，但当前 Bundle ID 没有匹配 provisioning profile；实体 iPhone 在 `devicectl` 中为 `unavailable`，合法签名、安装、Keychain 往返仍未取得证据。
 - **验证码发布级准确率仍待扩样**；课件深层变化仍缺自然样本；官方 1.7.0 / KMP PyTorch 2.1 在 API 37.1 有 16 KB page-size 提示。
@@ -61,7 +62,7 @@
 
 ## 3. 接下来 1～3 个阶段
 
-1. **验收 `1.7.6-debug-1`**：当前 Android 模拟器验收已覆盖；普通 CI artifacts 打包按用户要求暂停，待确认后再恢复；本轮不打 tag、不建 GitHub Release。
+1. **验收 `1.7.6-debug-1`**：当前 Android 模拟器验收已覆盖，Windows 本地 MSI 已构建；普通 CI artifacts 打包按用户要求暂停，待确认后再恢复；本轮不打 tag、不建 GitHub Release。
 2. **M15 邮箱读写验收与扩展**：真实发送、删除、移动、附件下载仍待单独切片。
 3. **M13 Apple 端补验**：实体 iPhone 取得合法 provisioning profile 后安装；真实上传仍需用户明确确认。
 

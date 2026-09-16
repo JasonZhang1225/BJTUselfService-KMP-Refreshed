@@ -1528,6 +1528,7 @@ fun AuthenticatedAppShell(
             AppSidebar(
                 profile = profile,
                 section = section,
+                showPhyVlab = phyVlabEnabled,
                 onSectionSelected = { target -> navigateToSection(target) },
                 // 随窗口比例伸缩，避免小窗时侧栏仍占固定 236dp 挤掉内容区。
                 modifier = Modifier.weight(0.22f).fillMaxHeight(),
@@ -1866,6 +1867,7 @@ private fun HomeChangeDomain.toAppSection(): AppSection = when (this) {
 private fun AppSidebar(
     profile: StudentProfile,
     section: AppSection,
+    showPhyVlab: Boolean,
     onSectionSelected: (AppSection) -> Unit,
     modifier: Modifier,
 ) {
@@ -1901,7 +1903,7 @@ private fun AppSidebar(
                     )
                 }
             }
-            // 宽屏侧栏保持原有五个一级入口；物理在线仍从「更多」进入。
+            // 宽屏侧栏与紧凑底栏共享物理在线总开关；关闭后由「更多」里的开关重新启用。
             // 退出登录放在设置页，侧栏不再重复。
             Column(
                 modifier = Modifier
@@ -1910,7 +1912,7 @@ private fun AppSidebar(
                     .desktopTouchScroll(sidebarScrollState),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                bottomNavSections(showPhyVlab = false).forEach { item ->
+                bottomNavSections(showPhyVlab = showPhyVlab).forEach { item ->
                     val selected = if (item == AppSection.MORE) {
                         section in MoreGroupSections
                     } else {
