@@ -530,7 +530,7 @@ class PhyVlabScreenModel(
         }
     }
 
-    /** 物理在线页的“安排”只显示当前选中课程；首页 agendaEvents 仍保留全部课程。 */
+    /** 首页 agendaEvents 保留全部课程；页面列表不再展示单独的“安排”区块。 */
     private fun eventsForSelectedCourse(
         course: PhyVlabCourse?,
         monthStart: Long,

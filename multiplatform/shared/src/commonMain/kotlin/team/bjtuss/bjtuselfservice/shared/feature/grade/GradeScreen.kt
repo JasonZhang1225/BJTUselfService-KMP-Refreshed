@@ -551,7 +551,11 @@ fun AuthenticatedAppShell(
                 if (backStack.lastOrNull() == target) return@launch
                 if (shouldOpenNativeSectionRoute(target.name, useNativeSecondaryRoutes)) {
                     onOpenNativeRoute(target.name)
-                } else if (target in MoreGroupSections && target != AppSection.MORE) {
+                } else if (
+                    target in MoreGroupSections &&
+                        target != AppSection.MORE &&
+                        target != AppSection.PHYVLAB
+                ) {
                     // 「更多」子页：固定为 [更多, 子页]，返回一定回到更多目录。
                     backStack.clear()
                     backStack.add(AppSection.MORE)
@@ -1414,7 +1418,8 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = true,
                 isRefreshing = phyVlabState.isLoading,
-                showBack = true,
+                // 物理在线与首页、课表、作业同为一级页面；底栏/更多入口都替换到这里。
+                showBack = false,
                 modifier = modifier,
                 idleStatusText = when {
                     (phyVlabState.failure != null || phyVlabState.casLoginRequired) &&
@@ -1434,7 +1439,6 @@ fun AuthenticatedAppShell(
                     showDetailSheet = !useNativeSecondaryRoutes,
                     onOpenCourse = { url -> onOpenExternalUrl(url.replace("http://", "https://")) },
                     onOpenActivity = { url -> onOpenExternalUrl(url.replace("http://", "https://")) },
-                    onOpenEvent = { url -> onOpenExternalUrl(url.replace("http://", "https://")) },
                     onOpenActivityDetail = { activity ->
                         // 先写入选中作业再 push，详情页会基于同一 session model 读取并加载详情。
                         phyVlabModel.showActivityDetails(activity)
@@ -1819,7 +1823,8 @@ internal fun shouldOpenNativeSectionRoute(
     useNativeSecondaryRoutes: Boolean,
 ): Boolean = useNativeSecondaryRoutes &&
     MoreGroupSections.any { it.name == targetRouteId } &&
-    targetRouteId != AppSection.MORE.name
+    targetRouteId != AppSection.MORE.name &&
+    targetRouteId != AppSection.PHYVLAB.name
 
 private fun HomeChangeDomain.toAppSection(): AppSection = when (this) {
     HomeChangeDomain.GRADES -> AppSection.GRADES

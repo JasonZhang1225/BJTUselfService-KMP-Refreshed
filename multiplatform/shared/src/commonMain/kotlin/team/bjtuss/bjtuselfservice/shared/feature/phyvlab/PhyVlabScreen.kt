@@ -66,8 +66,6 @@ import team.bjtuss.bjtuselfservice.shared.accessibleAlpha
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
-import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
-import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEventKind
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
@@ -87,7 +85,6 @@ fun PhyVlabWorkspace(
     onOpenCourse: (String) -> Unit = {},
     onOpenActivity: (String) -> Unit = {},
     onOpenActivityDetail: (PhyVlabActivity) -> Unit = { model.showActivityDetails(it) },
-    onOpenEvent: (String) -> Unit = {},
     onLogout: () -> Unit = {},
     /** 由应用壳提供会话感知刷新；独立预览/测试时回退到模型刷新。 */
     onRefresh: (() -> Unit)? = null,
@@ -233,16 +230,6 @@ fun PhyVlabWorkspace(
                         nowEpochSeconds = nowEpochSeconds,
                         onOpen = { onOpenActivityDetail(activity) },
                     )
-                }
-                item(key = "schedule") {
-                    PhyVlabScheduleCard(
-                        state = state,
-                        onPrev = { scope.launch { model.changeMonth(-1) } },
-                        onNext = { scope.launch { model.changeMonth(1) } },
-                    )
-                }
-                items(state.events, key = { "event-${it.id}" }) { event ->
-                    PhyVlabEventRow(event = event, onOpen = { event.eventUrl?.let(onOpenEvent) })
                 }
             }
         }
@@ -416,75 +403,6 @@ fun PhyVlabDetailWorkspace(
             },
             dismissButton = { TextButton(onClick = { showUploadConfirm = false }) { Text("取消") } },
         )
-    }
-}
-
-@Composable
-private fun PhyVlabScheduleCard(state: PhyVlabUiState, onPrev: () -> Unit, onNext: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.accessibleAlpha(0.72f),
-    ) {
-        Column(
-            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                if (maxWidth < 500.dp) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("作业时间安排", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Text(
-                                state.monthLabel.ifBlank { "本月" },
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                        ) {
-                            OutlinedButton(onClick = onPrev) { Text("上月") }
-                            OutlinedButton(onClick = onNext, modifier = Modifier.padding(start = 8.dp)) { Text("下月") }
-                        }
-                    }
-                } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("作业时间安排", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        Text(
-                            state.monthLabel.ifBlank { "本月" },
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(end = 6.dp),
-                        )
-                        OutlinedButton(onClick = onPrev) { Text("上月") }
-                        OutlinedButton(onClick = onNext, modifier = Modifier.padding(start = 8.dp)) { Text("下月") }
-                    }
-                }
-            }
-            if (state.events.isEmpty()) {
-                Text("本月暂无作业时间安排", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
-
-@Composable
-private fun PhyVlabEventRow(event: PhyVlabEvent, onOpen: () -> Unit) {
-    ElevatedCard(onClick = onOpen, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    if (event.kind == PhyVlabEventKind.START) "开放" else "截止",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Text(event.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
-                Text(formatPhyVlabEventDate(event), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text("打开", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        }
     }
 }
 
@@ -1022,17 +940,6 @@ private fun formatPhyVlabDateTime(value: String): String {
     return normalized + " · " + date.dayOfWeek.chineseLabel()
 }
 
-private fun formatPhyVlabEventDate(event: PhyVlabEvent): String {
-    if (Regex("周[一二三四五六日]").containsMatchIn(event.dateText)) return event.dateText
-    val weekday = runCatching {
-        Instant.fromEpochSeconds(event.dayTimestamp)
-            .toLocalDateTime(TimeZone.of("Asia/Shanghai"))
-            .dayOfWeek
-            .chineseLabel()
-    }.getOrNull() ?: return event.dateText
-    return event.dateText + " · " + weekday
-}
-
 private fun kotlinx.datetime.DayOfWeek.chineseLabel(): String = when (this) {
     kotlinx.datetime.DayOfWeek.MONDAY -> "周一"
     kotlinx.datetime.DayOfWeek.TUESDAY -> "周二"
@@ -1162,7 +1069,7 @@ private fun PhyVlabEmptyState(onRetry: () -> Unit, onOpenWeb: () -> Unit) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("暂未找到物理在线课程", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(
-                "课程、作业和安排会在这里原生显示；如果尚未选课，可打开网页版完成选课。",
+                "课程和作业会在这里原生显示；如果尚未选课，可打开网页版完成选课。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
