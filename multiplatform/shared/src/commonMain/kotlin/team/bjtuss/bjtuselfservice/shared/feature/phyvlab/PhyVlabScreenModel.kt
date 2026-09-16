@@ -242,7 +242,9 @@ class PhyVlabScreenModel(
     fun showActivityDetails(activity: PhyVlabActivity) {
         mutableState.value = mutableState.value.copy(
             selectedActivity = activity,
-            assignmentDetail = null,
+            // 先把上次成功读取的详情放进页面；网络请求随后只负责更新它，
+            // 不让用户在等待会话/网络期间失去可用的作业要求和提交状态。
+            assignmentDetail = assignmentDetailsByActivity[activity.cacheKey()],
             isDetailLoading = false,
             detailFailure = null,
             submissionFeedback = null,
@@ -261,9 +263,13 @@ class PhyVlabScreenModel(
     }
 
     suspend fun loadSelectedActivityDetail(force: Boolean = false) {
-        val activity = mutableState.value.selectedActivity ?: return
-        if (!force && (mutableState.value.isDetailLoading || mutableState.value.assignmentDetail != null)) return
-        mutableState.value = mutableState.value.copy(
+        val before = mutableState.value
+        val activity = before.selectedActivity ?: return
+        if (!force && before.isDetailLoading) return
+        mutableState.value = before.copy(
+            // assignmentDetail 可能来自本地快照；保留它，只把本次网络请求标成后台刷新。
+            assignmentDetail = before.assignmentDetail
+                ?: assignmentDetailsByActivity[activity.cacheKey()],
             isDetailLoading = true,
             detailFailure = null,
         )

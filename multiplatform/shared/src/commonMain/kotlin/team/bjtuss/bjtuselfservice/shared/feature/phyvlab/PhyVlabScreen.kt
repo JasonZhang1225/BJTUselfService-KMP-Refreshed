@@ -720,10 +720,16 @@ private fun PhyVlabAssignmentDetailContent(
                 Text(it, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium)
             }
         }
-        if (isLoading && detail == null) {
+        if (isLoading) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 CircularProgressIndicator(modifier = Modifier.padding(2.dp))
-                Text("正在读取提交与批改状态…")
+                Text(
+                    if (detail == null) {
+                        "正在读取提交与批改状态…"
+                    } else {
+                        "正在更新提交与批改状态…"
+                    },
+                )
             }
         }
         failure?.let {
