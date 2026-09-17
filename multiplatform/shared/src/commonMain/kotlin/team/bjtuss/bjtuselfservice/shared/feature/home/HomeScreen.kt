@@ -1,11 +1,23 @@
 package team.bjtuss.bjtuselfservice.shared.feature.home
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,6 +54,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -67,6 +82,7 @@ import team.bjtuss.bjtuselfservice.shared.data.home.HomeStatusFailure
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeKind
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
+import team.bjtuss.bjtuselfservice.shared.domain.home.HomeAgenda
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeAgendaDay
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeDomain
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeRecord
@@ -458,7 +474,11 @@ private fun HomeAgendaSection(
     // currentWeek == 0 means today is in a holiday/non-teaching gap. Keep a
     // dedicated page 0 for that natural week instead of guessing teaching week 1.
     val initialWeek = currentWeek.takeIf { it in 1..HOME_MAX_TEACHING_WEEK } ?: 0
-    var selectedWeek by remember { mutableStateOf(initialWeek) }
+    // Keep the first visible week stable while the calendar is still being
+    // resolved. Otherwise a changing pager list can reuse the same page index
+    // for a different week and look like an unwanted swipe on launch.
+    val startupWeek = remember { initialWeek }
+    var selectedWeek by remember { mutableStateOf(startupWeek) }
     var weekWasManuallySelected by remember { mutableStateOf(false) }
     val weekScrollAccumulator = remember { CourseWeekScrollAccumulator() }
     val useFingerWeekPager = platform.family == PlatformFamily.Android ||
@@ -466,6 +486,7 @@ private fun HomeAgendaSection(
     val weekStartFor: (Int) -> LocalDate = { week ->
         resolveHomeAgendaWeekStart(currentWeek, week, today, academicWeeks)
     }
+    val startupWeekStartDate = remember { weekStartFor(startupWeek) }
     val selectedDates = remember { mutableStateMapOf<Int, LocalDate>() }
     val selectedDateFor: (Int, LocalDate) -> LocalDate = { week, weekStartDate ->
         selectedDates[week]?.takeIf { date ->
@@ -540,12 +561,35 @@ private fun HomeAgendaSection(
         }
     }
 
-    if (useFingerWeekPager) {
-        // 这里刻意不再手工锁定卡片高度：
-        // 卡片高度本身就是页面的测量约束，一旦形成“测量 → 写入高度 → 动画 → 再测量”的闭环，
-        // 就会持续重排（实测导致模拟器整体卡死、系统内存被吃满）。
-        // 交给分页器按当前页内容自适应，页面顶部对齐由外层 Box 保证。
-        val pagerModifier = Modifier.fillMaxWidth()
+    if (useFingerWeekPager && !isWeekResolved) {
+        // Do not expose an index-based pager while the calendar is still
+        // changing. A pager can keep its old index while the list behind that
+        // index is replaced, which is the source of the apparent week-1 swipe
+        // during startup. The final resolved pager is created below at once.
+        HomeAgendaWeekCard(
+            homework = homework,
+            exams = exams,
+            phyVlabEvents = phyVlabEvents,
+            week = startupWeek,
+            weekStartDate = startupWeekStartDate,
+            selectedDate = selectedDateFor(startupWeek, startupWeekStartDate),
+            now = now,
+            timeZone = timeZone,
+            isLoading = isLoading,
+            isWeekResolved = isWeekResolved,
+            isWeekPending = weekValueIsPending,
+            showWeekButtons = false,
+            animateAgendaMotion = false,
+            onOpenHomework = onOpenHomework,
+            onOpenExams = onOpenExams,
+            onOpenPhyVlab = onOpenPhyVlab,
+            previousWeek = null,
+            nextWeek = null,
+            onSelectWeek = selectWeekFromUser,
+            onSelectDate = { date -> selectedDates[startupWeek] = date },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    } else if (useFingerWeekPager) {
         // When today is a holiday gap, insert the natural-week page at its
         // calendar position (e.g. week 3 -> 非教学周 -> week 4), not before week 1.
         val pagerWeeks = remember(currentWeek, academicWeeks, today) {
@@ -561,7 +605,13 @@ private fun HomeAgendaSection(
         val weekForPage: (Int) -> Int = { page ->
             pagerWeeks[page.coerceIn(pagerWeeks.indices)]
         }
-        val pagerState = rememberPagerState(initialPage = pageForWeek(initialWeek)) {
+        val pagerTargetWeek = if (!weekWasManuallySelected) {
+            automaticWeek ?: selectedWeek
+        } else {
+            selectedWeek
+        }
+        val pagerTargetPage = pageForWeek(pagerTargetWeek)
+        val pagerState = rememberPagerState(initialPage = pagerTargetPage) {
             pagerWeeks.size
         }
         var pagerProgrammaticTargetPage by remember { mutableStateOf<Int?>(null) }
@@ -586,61 +636,217 @@ private fun HomeAgendaSection(
                     }
                 }
         }
-        LaunchedEffect(selectedWeek, pagerWeeks) {
-            val targetPage = pageForWeek(selectedWeek)
-            if (targetPage != pagerState.currentPage && !pagerState.isScrollInProgress) {
+        LaunchedEffect(pagerTargetPage, pagerWeeks) {
+            if (pagerTargetPage != pagerState.currentPage && !pagerState.isScrollInProgress) {
                 // This scroll is caused by an arrow click, a current-week refresh,
                 // or a changed holiday/week mapping; it must not be interpreted as
                 // a new manual swipe by the settled-page observer above.
-                pagerProgrammaticTargetPage = targetPage
-                pagerState.animateScrollToPage(targetPage)
-                if (pagerState.settledPage == targetPage) {
+                pagerProgrammaticTargetPage = pagerTargetPage
+                pagerState.scrollToPage(pagerTargetPage)
+                if (pagerState.settledPage == pagerTargetPage) {
                     pagerProgrammaticTargetPage = null
                 }
-            } else if (targetPage == pagerState.currentPage) {
-                pagerProgrammaticTargetPage = null
             }
         }
+        // The pager contains only the week header and the seven-day calendar.
+        // Its height is therefore stable while a horizontal gesture is in
+        // progress; the selected-day agenda below is the only part allowed to
+        // change height after the new week settles.
+        var calendarHeightPx by remember(pagerWeeks) { mutableStateOf(0) }
+        val density = LocalDensity.current
+        val calendarHeightModifier = calendarHeightPx.takeIf { it > 0 }?.let { heightPx ->
+            Modifier.height(with(density) { heightPx.toDp() })
+        } ?: Modifier
+        val settledPage = pagerState.settledPage.coerceIn(pagerWeeks.indices)
+        val settledWeek = weekForPage(settledPage)
+        val settledWeekStartDate = weekStartFor(settledWeek)
+        val settledDate = selectedDateFor(settledWeek, settledWeekStartDate)
+        val scheduleSwipeThresholdPx = with(density) { 56.dp.toPx() }
+        var scheduleSwipeTargetPage by remember { mutableStateOf<Int?>(null) }
+        LaunchedEffect(scheduleSwipeTargetPage) {
+            val targetPage = scheduleSwipeTargetPage ?: return@LaunchedEffect
+            if (
+                targetPage in pagerWeeks.indices &&
+                !pagerState.isScrollInProgress &&
+                targetPage != pagerState.settledPage
+            ) {
+                pagerState.animateScrollToPage(targetPage)
+            }
+            scheduleSwipeTargetPage = null
+        }
 
-        HorizontalPager(
-            state = pagerState,
-            modifier = pagerModifier,
-            // Do not let a neighboring week's taller agenda determine this
-            // page's cross-axis size. The pager still composes the page that
-            // is entering during a swipe; extra off-screen pages are not
-            // needed for this small, content-sized agenda.
-            beyondViewportPageCount = 0,
-            pageSpacing = 12.dp,
-            // A short agenda must stay at the top while the pager settles its
-            // own height from the selected page.
-            verticalAlignment = Alignment.Top,
-        ) { page ->
-            val week = weekForPage(page)
-            val weekStartDate = weekStartFor(week)
-            // 顶部对齐：短周从卡片顶部开始，不在锁定高度里居中留下大空地。
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-            HomeAgendaWeekCard(
-                homework = homework,
-                exams = exams,
-                phyVlabEvents = phyVlabEvents,
-                week = week,
-                weekStartDate = weekStartDate,
-                selectedDate = selectedDateFor(week, weekStartDate),
-                now = now,
-                timeZone = timeZone,
-                isLoading = isLoading,
-                isWeekResolved = isWeekResolved,
-                isWeekPending = weekValueIsPending,
-                showWeekButtons = !useFingerWeekPager,
-                onOpenHomework = onOpenHomework,
-                onOpenExams = onOpenExams,
-                onOpenPhyVlab = onOpenPhyVlab,
-                previousWeek = adjacentWeekFor(week, -1),
-                nextWeek = adjacentWeekFor(week, 1),
-                onSelectWeek = selectWeekFromUser,
-                onSelectDate = { date -> selectedDates[week] = date },
-                modifier = Modifier.fillMaxWidth(),
-            )
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxWidth().then(calendarHeightModifier),
+                    beyondViewportPageCount = 0,
+                    pageSpacing = 12.dp,
+                    verticalAlignment = Alignment.Top,
+                ) { page ->
+                    val week = weekForPage(page)
+                    val weekStartDate = weekStartFor(week)
+                    val weekAgenda = remember(
+                        homework,
+                        exams,
+                        phyVlabEvents,
+                        today,
+                        now,
+                        timeZone,
+                        weekStartDate,
+                    ) {
+                        buildHomeAgenda(
+                            homework = homework,
+                            exams = exams,
+                            today = today,
+                            now = now,
+                            timeZone = timeZone,
+                            phyVlabEvents = phyVlabEvents,
+                            weekStartDate = weekStartDate,
+                        )
+                    }
+                    HomeAgendaCalendarContent(
+                        week = week,
+                        weekAgenda = weekAgenda,
+                        today = today,
+                        homework = homework,
+                        exams = exams,
+                        phyVlabEvents = phyVlabEvents,
+                        isLoading = isLoading,
+                        isWeekPending = weekValueIsPending,
+                        showWeekButtons = false,
+                        previousWeek = adjacentWeekFor(week, -1),
+                        nextWeek = adjacentWeekFor(week, 1),
+                        onSelectWeek = selectWeekFromUser,
+                        selectedDate = selectedDateFor(week, weekStartDate),
+                        // A horizontal pager drag can end over a day cell. Do
+                        // not turn that release point into a date click while
+                        // the pager is still settling.
+                        onSelectDate = { date ->
+                            if (
+                                !pagerState.isScrollInProgress &&
+                                    pagerState.currentPage == pagerState.settledPage
+                            ) {
+                                selectedDates[week] = date
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onSizeChanged { size ->
+                                if (size.height > calendarHeightPx) {
+                                    calendarHeightPx = size.height
+                                }
+                            },
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // Keep the old affordance that a swipe can start in
+                        // the details area as well as on the calendar. The
+                        // pager still owns the calendar gesture; this handler
+                        // only runs below it and never changes layout size.
+                        .pointerInput(pagerState, pagerWeeks.size, scheduleSwipeThresholdPx) {
+                            var totalDrag = 0f
+                            detectHorizontalDragGestures(
+                                onDragStart = { totalDrag = 0f },
+                                onHorizontalDrag = { _, dragAmount ->
+                                    totalDrag += dragAmount
+                                },
+                                onDragEnd = {
+                                    val page = pagerState.settledPage
+                                    val targetPage = when {
+                                        totalDrag <= -scheduleSwipeThresholdPx -> page + 1
+                                        totalDrag >= scheduleSwipeThresholdPx -> page - 1
+                                        else -> page
+                                    }
+                                    if (targetPage in pagerWeeks.indices) {
+                                        scheduleSwipeTargetPage = targetPage
+                                    }
+                                },
+                                onDragCancel = { totalDrag = 0f },
+                            )
+                        },
+                ) {
+                    AnimatedContent(
+                        targetState = settledWeek to settledDate,
+                        transitionSpec = {
+                            val direction = if (
+                                targetState.first > initialState.first ||
+                                    (targetState.first == initialState.first &&
+                                        targetState.second >= initialState.second)
+                            ) 1 else -1
+                            (
+                                slideInVertically(
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = 420f,
+                                    ),
+                                ) { height -> direction * height / 3 } +
+                                    fadeIn(
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioNoBouncy,
+                                            stiffness = 420f,
+                                        ),
+                                    )
+                                ) togetherWith (
+                                slideOutVertically(
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = 420f,
+                                    ),
+                                ) { height -> -direction * height / 3 } +
+                                    fadeOut(
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioNoBouncy,
+                                            stiffness = 420f,
+                                        ),
+                                    )
+                                ) using SizeTransform(
+                                    clip = false,
+                                    sizeAnimationSpec = { _, _ ->
+                                        spring(
+                                            dampingRatio = Spring.DampingRatioNoBouncy,
+                                            stiffness = 320f,
+                                        )
+                                    },
+                                )
+                        },
+                        label = "home-agenda-selected-day-transition",
+                    ) { (week, date) ->
+                        val weekStartDate = weekStartFor(week)
+                        val weekAgenda = remember(
+                            homework,
+                            exams,
+                            phyVlabEvents,
+                            today,
+                            now,
+                            timeZone,
+                            weekStartDate,
+                        ) {
+                            buildHomeAgenda(
+                                homework = homework,
+                                exams = exams,
+                                today = today,
+                                now = now,
+                                timeZone = timeZone,
+                                phyVlabEvents = phyVlabEvents,
+                                weekStartDate = weekStartDate,
+                            )
+                        }
+                        val selectedDay = weekAgenda.days.firstOrNull { it.date == date }
+                            ?: weekAgenda.days.first()
+                        AgendaSelectedDayContent(
+                            day = selectedDay,
+                            onOpenHomework = onOpenHomework,
+                            onOpenExams = onOpenExams,
+                            onOpenPhyVlab = onOpenPhyVlab,
+                        )
+                    }
+                }
             }
         }
     } else {
@@ -697,6 +903,8 @@ private fun HomeAgendaWeekCard(
      * 移动端只保留手指横滑（与课表一致），按钮只留给宽屏/桌面。
      */
     showWeekButtons: Boolean = true,
+    /** 启动周数校准完成后才开启日程内容动画。 */
+    animateAgendaMotion: Boolean = true,
     onOpenHomework: () -> Unit,
     onOpenExams: () -> Unit,
     onOpenPhyVlab: () -> Unit,
@@ -720,36 +928,128 @@ private fun HomeAgendaWeekCard(
     }
     val selectedDay = weekAgenda.days.firstOrNull { it.date == selectedDate } ?: weekAgenda.days.first()
 
+    val weekIsPending = isWeekPending || !isWeekResolved
     ElevatedCard(modifier = modifier) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
+            HomeAgendaCalendarContent(
+                week = week,
+                weekAgenda = weekAgenda,
+                today = today,
+                homework = homework,
+                exams = exams,
+                phyVlabEvents = phyVlabEvents,
+                isLoading = isLoading,
+                isWeekPending = weekIsPending,
+                showWeekButtons = showWeekButtons,
+                previousWeek = previousWeek,
+                nextWeek = nextWeek,
+                onSelectWeek = onSelectWeek,
+                selectedDate = selectedDay.date,
+                onSelectDate = onSelectDate,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (animateAgendaMotion) {
+                AnimatedContent(
+                    targetState = selectedDay.date,
+                    transitionSpec = {
+                        val direction = if (targetState >= initialState) 1 else -1
+                        (
+                            slideInHorizontally(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = 420f,
+                                ),
+                            ) { width -> direction * width / 3 } +
+                                fadeIn(
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = 420f,
+                                    ),
+                                )
+                            ) togetherWith (
+                            slideOutHorizontally(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = 420f,
+                                ),
+                            ) { width -> -direction * width / 3 } +
+                                fadeOut(
+                                    animationSpec = spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = 420f,
+                                    ),
+                                )
+                            ) using SizeTransform(
+                                clip = false,
+                                sizeAnimationSpec = { _, _ ->
+                                    spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = 320f,
+                                    )
+                                },
+                            )
+                    },
+                    label = "home-agenda-day-transition",
+                ) { date ->
+                    val day = weekAgenda.days.firstOrNull { it.date == date } ?: selectedDay
+                    AgendaSelectedDayContent(day, onOpenHomework, onOpenExams, onOpenPhyVlab)
+                }
+            } else {
+                AgendaSelectedDayContent(selectedDay, onOpenHomework, onOpenExams, onOpenPhyVlab)
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeAgendaCalendarContent(
+    week: Int,
+    weekAgenda: HomeAgenda,
+    today: LocalDate,
+    homework: List<Homework>,
+    exams: List<ExamSchedule>,
+    phyVlabEvents: List<PhyVlabEvent>,
+    isLoading: Boolean,
+    isWeekPending: Boolean,
+    showWeekButtons: Boolean,
+    previousWeek: Int?,
+    nextWeek: Int?,
+    onSelectWeek: (Int) -> Unit,
+    selectedDate: LocalDate,
+    onSelectDate: (LocalDate) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    when {
+                        isWeekPending -> "日程加载中"
+                        week == 0 -> "非教学周"
+                        else -> "第 $week 教学周"
+                    },
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (!isWeekPending) {
                     Text(
-                        when {
-                            isWeekPending -> "日程加载中"
-                            week == 0 -> "非教学周"
-                            else -> "第 $week 教学周"
-                        },
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        if (isWeekPending) {
-                            "正在按校历确认当前教学周"
-                        } else if (week == 0) {
-                            "当前日期不在教学周内，仍显示本周日程"
-                        } else if (phyVlabEvents.isEmpty()) {
-                            "作业开始、截止与考试安排"
-                        } else {
-                            "作业开始、截止与考试安排（含物理在线）"
+                        text = when {
+                            week == 0 -> "当前日期不在教学周内，仍显示本周日程"
+                            phyVlabEvents.isEmpty() -> "作业开始、截止与考试安排"
+                            else -> "作业开始、截止与考试安排（含物理在线）"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+            if (!isWeekPending) {
                 Column(horizontalAlignment = Alignment.End) {
                     if (showWeekButtons) {
                         HomeWeekNavigationControls(
@@ -759,7 +1059,6 @@ private fun HomeAgendaWeekCard(
                             onNext = { nextWeek?.let(onSelectWeek) },
                         )
                     } else {
-                        // 移动端没有按钮，用一行浅色提示说明可用手势，避免用户找不到切周入口。
                         Text(
                             "左右滑动切周",
                             style = MaterialTheme.typography.labelSmall,
@@ -768,33 +1067,41 @@ private fun HomeAgendaWeekCard(
                     }
                     if (isLoading && homework.isEmpty() && exams.isEmpty() && phyVlabEvents.isEmpty()) {
                         Text("同步中", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else if (!isWeekResolved) {
-                        // 校历还没确认周数：给出明确文案，避免把中间周数当最终值。
-                        Text("日程加载中", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                weekAgenda.days.forEach { day ->
-                    AgendaDayCell(
-                        day = day,
-                        selected = day.date == selectedDay.date,
-                        isToday = day.date == today,
-                        onClick = { onSelectDate(day.date) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-            Text(
-                "${shortDate(selectedDay.date)} · ${weekdayName(selectedDay.date)}",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            AgendaDayDetails(selectedDay, onOpenHomework, onOpenExams, onOpenPhyVlab)
         }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            weekAgenda.days.forEach { day ->
+                AgendaDayCell(
+                    day = day,
+                    selected = day.date == selectedDate,
+                    isToday = day.date == today,
+                    onClick = { onSelectDate(day.date) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AgendaSelectedDayContent(
+    day: HomeAgendaDay,
+    onOpenHomework: () -> Unit,
+    onOpenExams: () -> Unit,
+    onOpenPhyVlab: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            "${shortDate(day.date)} · ${weekdayName(day.date)}",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        AgendaDayDetails(day, onOpenHomework, onOpenExams, onOpenPhyVlab)
     }
 }
 

@@ -17,7 +17,7 @@
 
 所有数据解析（包括验证码识别）均在**本地完成**，无需上传至第三方服务器，充分保障用户隐私安全。
 
-本 fork（[BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed)）在原作者 [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService) 安卓版基础上，用 **KMP + Compose Multiplatform** 做多端共享实现；根目录冻结原 Android 工程，**新实现在 `multiplatform/`**。当前调试构建版本号 **1.7.6-debug-1**。
+本 fork（[BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed)）在原作者 [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService) 安卓版基础上，用 **KMP + Compose Multiplatform** 做多端共享实现；根目录冻结原 Android 工程，**新实现在 `multiplatform/`**。当前正式版本号 **1.7.6-KMP**。
 
 相对原版新增/增强（节选）：
 - **教室占用查询**（教务 `room_view`，原 1.7.0 安卓无）
@@ -133,7 +133,7 @@ iOS 未签名 IPA 的自签与安装请参考 [iOS 自签与安装指南](docs/i
 | [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService) | 原作者安卓版与正式 Release |
 | [JasonZhang1225/BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed) | 本 KMP 多端 fork 与正式 Release |
 
-本 fork 的 `1.7.5-KMP` 正式包由 GitHub Actions 远端构建并上传到 [GitHub Release](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases/tag/v1.7.5-KMP)。
+本 fork 的 `1.7.6-KMP` 正式包由 GitHub Actions 远端构建并上传到 [GitHub Release](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases/tag/v1.7.6-KMP)。
 
 ## 📱 支持平台
 

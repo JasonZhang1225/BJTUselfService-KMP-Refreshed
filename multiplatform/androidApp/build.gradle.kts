@@ -16,7 +16,7 @@ android {
         minSdk = 28
         targetSdk = 35
         versionCode = 17
-        versionName = "1.7.6-debug-1"
+        versionName = "1.7.6-KMP"
     }
 
     buildFeatures {

@@ -61,7 +61,7 @@ compose.desktop {
             modules("java.sql")
             // Windows 桌面快捷方式、开始菜单项和「应用和功能」统一使用中文名。
             packageName = "交大自由行 KMP"
-            // jpackage 版本必须是三段数字。应用内显示版本仍为 1.7.6-debug-1；
+            // jpackage 版本必须是三段数字。应用内显示版本为 1.7.6-KMP；
             // 安装器使用数值版本 1.7.6，靠 main.wxs IncludeMaximum=yes 覆盖同一大版本。
             packageVersion = "1.7.6"
             description = "交大自由行 Kotlin Multiplatform Windows 应用"
