@@ -36,6 +36,9 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
+        with:
+          # v4 默认还会请求已从新版 SDK 移除的 legacy `tools` 包。
+          packages: platform-tools
 
       - name: Restore Android upload keystore
         env:
@@ -121,6 +124,8 @@ jobs:
       - name: Build MSI
         env:
           WINDOWS_PACKAGE_JAVA_HOME: ${{ env.JAVA_HOME }}
+          WINDOWS_PACKAGE_NAME: BJTUselfServiceKMP
+          WINDOWS_PACKAGE_DESCRIPTION: BJTU Self Service KMP
           JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8
         run: |
           chcp 65001 | Out-Null
@@ -302,7 +307,7 @@ jobs:
             - 物理在线改为统一总开关并接入作业/更多入口；详情优先显示本地缓存，后台刷新后再替换，作业状态和截止时间展示更明确。
             - 作业上传协议继续对齐原 Android 端，补充回执分类、瞬时网络重试和学校会话失效后的自动恢复，避免把有效结果误报为格式错误。
             - 修复课件刷新后沿用旧目录状态的问题；邮箱刷新也接入统一的会话感知恢复流程。
-            - 恢复桌面端物理在线入口，Windows 安装器保留中文应用元数据并固定 UTF-8 打包，减少中文 MSI 构建失败。
+            - 恢复桌面端物理在线入口，修复 Windows MSI CI 的 WiX 311：本地构建保留中文显示名，GitHub Actions 使用 ASCII 安装器元数据兜底，应用内仍显示中文品牌。
             - 针对小米 HyperOS 高刷新率和 Windows 精密触摸板惯性继续收口，避免错误降到 60Hz 或一次手势重复翻页。
 
             ### 版本

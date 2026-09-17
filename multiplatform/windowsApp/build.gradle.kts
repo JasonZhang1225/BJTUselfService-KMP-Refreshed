@@ -12,6 +12,15 @@ plugins {
 group = "team.bjtuss.bjtuselfservice"
 version = "0.1.0"
 
+val windowsPackageDisplayName = System.getenv("WINDOWS_PACKAGE_NAME")
+    ?.trim()
+    ?.takeIf(String::isNotEmpty)
+    ?: "交大自由行 KMP"
+val windowsPackageDescription = System.getenv("WINDOWS_PACKAGE_DESCRIPTION")
+    ?.trim()
+    ?.takeIf(String::isNotEmpty)
+    ?: "交大自由行 Kotlin Multiplatform Windows 应用"
+
 kotlin {
     jvm("windows") {
         compilerOptions {
@@ -59,12 +68,13 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)
             modules("java.sql")
-            // Windows 桌面快捷方式、开始菜单项和「应用和功能」统一使用中文名。
-            packageName = "交大自由行 KMP"
+            // 本机中文显示名。GitHub Actions 英文代码页下 WiX light 会把中文打成
+            // `?????` 并报 311，因此 CI 用 WINDOWS_PACKAGE_NAME/… 传入 ASCII 元数据。
+            packageName = windowsPackageDisplayName
             // jpackage 版本必须是三段数字。应用内显示版本为 1.7.6-KMP；
             // 安装器使用数值版本 1.7.6，靠 main.wxs IncludeMaximum=yes 覆盖同一大版本。
             packageVersion = "1.7.6"
-            description = "交大自由行 Kotlin Multiplatform Windows 应用"
+            description = windowsPackageDescription
             vendor = "BJTUselfService Contributors"
             windows {
                 // 系统级标准位置：C:\Program Files\<packageName>。
@@ -74,7 +84,7 @@ compose.desktop {
                 dirChooser = true
                 menu = true
                 shortcut = true
-                menuGroup = "交大自由行 KMP"
+                menuGroup = windowsPackageDisplayName
                 // 固定升级码，后续同范围安装才能覆盖升级。
                 upgradeUuid = "8f3a1c2e-7b64-4d91-a5e0-2c9b6f4d8a17"
                 iconFile.set(project.file("src/windowsMain/resources/BJTUselfServiceKMP.ico"))
