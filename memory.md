@@ -9,6 +9,12 @@
 
 ## 1. 本阶段已做到（≤10 行）
 
+- **2026-09-16 普通作业提交协议定位与修复（本轮）**：用 Chrome DevTools MCP 进入课程平台作业弹层源码，确认学生上传端点与老师不同——学生走 `homeworkUpload.shtml?noteId=<upId>`，`rpUpload.shtml` 是老师端点（学生调用回 `{"STATUS":"2","MSG":"学生角色无权限上传"}`），这是「学生角色无权限上传」的真正原因；同时确认提交端点 `sendStuHomeWorks` 回执是 `{"flag":"success"}`，且 `return_num` 会被服务端当整数解析，网页表单未初始化时的 `{}` 会得到 `{"flag":"bad"}` 并**连带清掉上一次提交记录**。已修复 `HomeworkRemoteDataSource`：改用学生端点 + noteId、上传回执改为校验 `STATUS=0` 与四字段、提交回执改为校验 `flag=success`、`return_num` 传 `0`，并给上传/提交各加一次瞬时网络重试。真实提交已在 `emulator-5554` 用新包端到端验证：服务端 `提交人数 93/99`、`subTime` 依次为 22:59:55 / 23:08:21 / 后续两次，详情页显示「已提交」与所选附件，docx 与中文名 PDF 均成功。
+- **新增失败类型与可诊断文案**：`HomeworkSyncFailure.SUBMIT_REJECTED` 携带服务端原文（如「上传文件类型不支持，请更换文件！」）；网络类失败在对话框追加一行底层异常链（类型+简短消息），便于把「请检查网络」定位到连接超时/连接被拒/传输中断，日志与文案均不含文件名、Cookie、正文。
+- **回归测试**：作业相关 44 项（含新增的上传回执校验、提交 flag 校验、瞬时网络重试、服务端回绝透传）全部通过；`:shared:desktopTest` 全量 501 项仅 `MacOsKeychainCredentialVaultTest` 1 项失败，为 Windows 上 `NoClassDefFoundError: SecuritySymbols` 的既有环境问题，与本轮无关。
+- **2026-09-16 首页教学周只显示「加载中 → 确切值」+ 移动端切周手势**：`CourseScheduleUiState` 新增 `weekResolved` / `hasCachedWeek`；远端 `getTimeList`/`room_view` 裸周数永不进 UI；校历确认前首页一律显示「日程加载中」，拿到确切周后一次性显示最终值（不再先显示缓存周，消除启动弹跳）；未确认的 0 不再覆盖缓存教学周的选中周（此前会多出「非教学周 → 第 2 周」跳变）。移动端首页与课表只保留手指横滑，上一周/下一周按钮仅在宽屏/桌面出现（`!useFingerWeekPager`），首页卡片右上角新增「左右滑动切周」提示。
+- **2026-09-17 首页日程卡高度反馈环移除（模拟器卡死根因）**：反复尝试「按页锁定高度 / 跟随当页高度 / 只向上棘轮」都会形成“测量 → 写入高度 → 动画 → 再测量”闭环，实测把模拟器拖到 `system_server` 单次调度阻塞 11.7 秒、Choreographer 掉 124 帧、2.3G 内存吃满并大量换页。现已彻底移除首页日程卡的手工高度锁定与高度动画，交回分页器按当前页内容自适应（页面用 `Box(contentAlignment = TopCenter)` 顶部对齐）。清理后的同一批滑动压力测试：掉帧 5 次且不再增长、无 ANR/OOM、内存稳定。
+- **清空模拟器状态的复测方法**：`adb emu kill` 后带 `-no-snapshot-load -no-snapshot-save` 冷启动，可排除多次安装/长时间运行造成的换页与内存残留；复测结果应与清理前一致才可认为修复有效。
 - **第一阶段收口 + `1.7.1-KMP`/`1.7.2-KMP` + M12 + `1.7.2-KMP-A` + M14 Windows**：细节见 `history_full.md`。
 - **2026-08-17 `1.7.3-KMP-B` 基座**：教学周改 `getTimeList`；作业容错对齐 1.7.0；CI、Windows MSI ASCII 修复、macOS JDK/iOS 任务拆分均已合入 `a342615`。2026-08-29 实测学期末 `getTimeList` 与 `room_view` 都可能误给第 1 周，现用当前学期校历按日期校正并把校正值写回缓存：只有当前日期命中当前学期校历时才允许覆盖；校历未确认时保留可追溯缓存，无缓存显示未知，禁止把远端裸第 1 周展示给用户。教学周范围统一为 1–30。
 - **Windows 移植（M14）**：DPAPI 凭据保险库、%LOCALAPPDATA% 缓存、AWT 文件网关、系统浏览器、Ktor CIO、GB18030、验证码推理、品牌图标与打包链路已实现；细节见 `history_full.md`。
@@ -51,7 +57,7 @@
 - **2026-09-16 普通作业上传回执定位**：诊断包确认旧 KMP 写请求附带 AJAX/`sessionid`/Referer 头时，`rpUpload.shtml` 返回 HTTP 200 的 `STATUS/MSG` 错误 JSON，而不是四字段上传回执；网页手动上传后 App 重新同步已显示目标作业“提交状态 · 已提交”。现按 Android 1.7.0 去掉两个写请求的智慧平台查询头，只保留 Cookie；共享回归测试、Windows 编译、Android x86_64 构建通过，修复包已覆盖安装。因目标作业已提交，未重复执行第二次真实提交。
 - **2026-09-16 普通作业会话失效误判**：进一步用 Chrome 同源 GET 复现学校接口返回“会话结束”；App 的 HTTP 200 `STATUS/MSG` 上传回执也按会话失效处理，清空智慧平台初始化状态，交由右上角刷新/既有重新认证最多两次后重试，不再显示“回执格式错误”。共享会话回归测试、Windows 编译和 Android x86_64 构建通过；`1.7.6-debug-1` 修复包已覆盖安装到模拟器，目标作业已由网页提交，不重复提交。
 - **2026-09-16 普通作业提交自动恢复**：确认提交流程此前没有接入 `SessionRefreshCoordinator`，所以会话问题不会自动重试；作业上传对话框现复用同一套重新认证逻辑，最多两次，恢复期间按钮显示“正在提交”并禁用重复点击。若回执没有明确会话失效文案则保留原错误分类，不再把所有 `STATUS/MSG` 当过期。共享作业测试、Windows 编译、Android x86_64 构建和模拟器覆盖安装通过；目标作业已提交，未重复真实提交。
-- **2026-09-16 普通作业提交权限回执定位与会话头修正**：最新模拟器日志确认失败响应为 HTTP 200 `STATUS=2，MSG=学生角色无权限上传`，不是两分钟会话过期，也不是重复提交限制。根因修正为初始化时始终解析 `getArticleList` 的教学平台专用 `sessionId`（不再被已有 `JSESSIONID` 短路），上传和最终提交只附带该 `sessionid`，不附带旧接口会触发异常的 AJAX 头。共享作业测试、Android/Windows 编译和 x86_64 APK 构建通过；`1.7.6-debug-1` 已于 22:29 覆盖安装到 `emulator-5554`，等待重新确认一次真实提交。
+- **2026-09-16 普通作业提交权限回执定位与会话头修正**：最新模拟器日志确认失败响应为 HTTP 200 `STATUS=2，MSG=学生角色无权限上传`，不是两分钟会话过期，也不是重复提交限制。已尝试始终解析 `getArticleList` 的教学平台专用 `sessionId`，并让上传/最终提交只附带该 `sessionid`、不附带旧接口会触发异常的 AJAX 头；共享作业测试、Android/Windows 编译和 x86_64 APK 构建通过，`1.7.6-debug-1` 已覆盖安装。2026-09-16 22:32 在模拟器实际点击提交后仍返回同一 STATUS=2，说明会话头修正不足以解决问题；下一步必须重新登录网页端并捕获网页实际上传接口/请求，确认学生上传使用的真实 endpoint 或额外参数后再改。
 - **2026-08-30 小米平板 HyperOS 刷新率**：`25091RP04C` / HyperOS 3 上 KMP 前台曾被 PowerKeeper 锁到 60Hz，设置页显示「跟随应用内设置」。根因是 `SWITCHING_TYPE_NONE` 会忽略窗口 `preferredRefreshRate`，启动预热 WebView 或声明 120Hz 反而会让小米按应用内 60Hz 投票。现已清掉窗口刷新率声明、关闭 ARR 省电降帧、去掉 `MainActivity` WebView 预热。实机 `dumpsys display`：KMP 前台 `mActiveRenderFrameRate=120.00001`，与原版切换往返后仍是 120。
 - **2026-08-30 平板宽屏课表横滑**：横屏走桌面课表布局。第一版自定义滑一下再播 `AnimatedContent`，不跟手、不能连滑、没有边缘拉伸。现 Android/iOS 宽屏表格改用和竖屏相同的 `HorizontalPager`（跟手、可连滑、边缘 Stretch）；Mac/Windows 仍是触摸板 + `AnimatedContent`。课表模型测试与 Android debug 构建通过，包已装到小米平板。
 - **2026-08-30 Windows 课表连滑**：精密触摸板惯性尾流在 180ms 节流结束后会被当成第二次翻页。累加器改为翻页后丢掉同方向惯性，直到滚动事件停顿才接受下一次滑动；反向立即解锁。Mac 原生 AppKit 路径未改。
@@ -60,6 +66,8 @@
 
 ## 2. 当前痛点（≤8 条）
 
+- **普通作业提交的瞬时网络抖动**：2026-09-16 在模拟器实测到一次「上传失败，请检查网络后重试」，同会话后续四次提交又全部成功，确认是瞬时失败而非重复提交限制。已加一次瞬时网络重试与底层异常文案；若后续仍偶发，需要按对话框里的「原因」行继续定位（连接超时 / 连接被拒 / 传输中断）。
+- **普通作业列表的提交人数口径待确认**：详情与已提交附件显示正确，但列表卡片「提交人数 · 0 / 63」与网页端 93/99 不一致，需单独核对 `submitCount` 字段来源。
 - **Windows 安装器品牌化受限**：jpackage 安装向导 UI（横幅、右上角图标、进度框）无参数可定制；安装完成后的 EXE/快捷方式/窗口/任务栏图标已是品牌 logo。若用户要完全品牌化安装向导，需引入 Inno Setup 等替代打包管线（未授权、未规划）。
 - **构建环境**：compose 1.12.0-beta03 要求 compileSdk 37；Android SDK/`adb`/模拟器已恢复到 `C:\Users\zjg\Android\Sdk`，x86_64 debug 验证通过构建、安装、登录和邮箱页面视觉回归。Mac 侧 Xcode 27.0、iOS Simulator/iphoneos arm64 构建和 macOS arm64 分发构建均通过；实体机和登录后的 iOS 邮箱仍待设备/签名条件。
 - **打包 JDK**：JBR 无 jlink/jpackage，需完整 JDK（本机 Microsoft JDK 21 `C:/Users/zjg/jdk21/jdk-21.0.8+9`，`WINDOWS_PACKAGE_JAVA_HOME` 可覆盖）。

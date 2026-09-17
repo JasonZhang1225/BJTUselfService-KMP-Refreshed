@@ -48,6 +48,8 @@ data class HomeworkUiState(
     val isSubmittedAttachmentsLoading: Boolean = false,
     val detailFailure: HomeworkSyncFailure? = null,
     val fileFailure: HomeworkSyncFailure? = null,
+    /** 服务端原文回绝原因，仅在 [fileFailure] 为 `SUBMIT_REJECTED` 时有值。 */
+    val fileFailureMessage: String? = null,
     val isFileTransferInProgress: Boolean = false,
     val isSubmitting: Boolean = false,
     val isLoading: Boolean = true,
@@ -410,7 +412,10 @@ class HomeworkScreenModel(
 
     private fun recordFileResult(result: HomeworkOperationResult<*>) {
         if (result is HomeworkOperationResult.Failure) {
-            mutableState.value = mutableState.value.copy(fileFailure = result.reason)
+            mutableState.value = mutableState.value.copy(
+                fileFailure = result.reason,
+                fileFailureMessage = result.serverMessage,
+            )
         }
     }
 }

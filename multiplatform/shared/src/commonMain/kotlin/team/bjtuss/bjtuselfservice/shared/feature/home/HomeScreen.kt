@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -43,8 +42,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -95,6 +92,8 @@ fun HomeWorkspace(
     phyVlabEvents: List<PhyVlabEvent> = emptyList(),
     currentWeek: Int,
     academicWeeks: List<OccupancyWeekDate> = emptyList(),
+    /** 周数是否已由本学期校历确认；未确认时首页显示「日程加载中」。 */
+    isWeekResolved: Boolean = true,
     now: LocalDateTime,
     timeZone: TimeZone,
     isAgendaLoading: Boolean,
@@ -250,6 +249,7 @@ fun HomeWorkspace(
                     timeZone = timeZone,
                     isLoading = isAgendaLoading,
                     expanded = expanded,
+                    isWeekResolved = isWeekResolved,
                     onOpenHomework = onOpenHomework,
                     onOpenExams = onOpenExams,
                     onOpenPhyVlab = onOpenPhyVlab,
@@ -270,6 +270,7 @@ fun HomeWorkspace(
                     timeZone = timeZone,
                     isLoading = isAgendaLoading,
                     expanded = expanded,
+                    isWeekResolved = isWeekResolved,
                     onOpenHomework = onOpenHomework,
                     onOpenExams = onOpenExams,
                     onOpenPhyVlab = onOpenPhyVlab,
@@ -440,11 +441,16 @@ private fun HomeAgendaSection(
     timeZone: TimeZone,
     isLoading: Boolean,
     expanded: Boolean,
+    /** 周数是否已由本学期校历确认；未确认时首页显示「日程加载中」。 */
+    isWeekResolved: Boolean = true,
     onOpenHomework: () -> Unit,
     onOpenExams: () -> Unit,
     onOpenPhyVlab: () -> Unit,
 ) {
     val today = now.date
+    // 校历确认之前不显示任何周数（含缓存值），统一显示「日程加载中」，
+    // 拿到确切结果后一次性显示最终周；这样卡片不会随中间值反复弹跳。
+    val weekValueIsPending = !isWeekResolved
     val dueSoonHomework = remember(homework, exams, phyVlabEvents, today, now, timeZone) {
         buildHomeAgenda(homework, exams, today, now, timeZone, phyVlabEvents)
             .dueSoonHomework
@@ -494,12 +500,14 @@ private fun HomeAgendaSection(
 
     // 登录后/校历刷新可能先给出缓存周，再给出校历校准周；只有用户没有手动选周时，
     // 才让首页自动跟随这个更新，避免把用户正在看的周强行跳回第 1 周。
+    // 周数尚未由校历确认时不自动跟随：否则会先跳到中间值、再跳到最终值。
     val automaticWeek = when {
+        !isWeekResolved -> null
         currentWeek in 1..HOME_MAX_TEACHING_WEEK -> currentWeek
         currentWeek == 0 && academicWeeks.isNotEmpty() -> 0
         else -> null
     }
-    LaunchedEffect(currentWeek, academicWeeks) {
+    LaunchedEffect(currentWeek, academicWeeks, isWeekResolved) {
         if (!weekWasManuallySelected) {
             automaticWeek?.let { week ->
                 if (selectedWeek != week) selectedWeek = week
@@ -533,12 +541,11 @@ private fun HomeAgendaSection(
     }
 
     if (useFingerWeekPager) {
-        // 数据刷新后旧高度可能对应“空日程”页面；作业/考试/物理在线或加载态变化时必须丢弃，
-        // 否则新事件会被旧的固定高度裁掉。
-        val pageHeights = remember(homework, exams, phyVlabEvents, isLoading) {
-            mutableStateMapOf<Pair<Int, LocalDate>, Int>()
-        }
-        val density = LocalDensity.current
+        // 这里刻意不再手工锁定卡片高度：
+        // 卡片高度本身就是页面的测量约束，一旦形成“测量 → 写入高度 → 动画 → 再测量”的闭环，
+        // 就会持续重排（实测导致模拟器整体卡死、系统内存被吃满）。
+        // 交给分页器按当前页内容自适应，页面顶部对齐由外层 Box 保证。
+        val pagerModifier = Modifier.fillMaxWidth()
         // When today is a holiday gap, insert the natural-week page at its
         // calendar position (e.g. week 3 -> 非教学周 -> week 4), not before week 1.
         val pagerWeeks = remember(currentWeek, academicWeeks, today) {
@@ -594,25 +601,24 @@ private fun HomeAgendaSection(
                 pagerProgrammaticTargetPage = null
             }
         }
-        val selectedWeekStart = weekStartFor(selectedWeek)
-        val selectedDate = selectedDateFor(selectedWeek, selectedWeekStart)
-        val selectedPageHeight = pageHeights[selectedWeek to selectedDate]?.let { heightPx ->
-            with(density) { heightPx.toDp() }
-        }
-        val pagerModifier = Modifier
-            .fillMaxWidth()
-            .then(
-                selectedPageHeight?.let { Modifier.height(it) }
-                    ?: Modifier.wrapContentHeight(),
-            )
+
         HorizontalPager(
             state = pagerState,
             modifier = pagerModifier,
-            beyondViewportPageCount = 1,
+            // Do not let a neighboring week's taller agenda determine this
+            // page's cross-axis size. The pager still composes the page that
+            // is entering during a swipe; extra off-screen pages are not
+            // needed for this small, content-sized agenda.
+            beyondViewportPageCount = 0,
             pageSpacing = 12.dp,
+            // A short agenda must stay at the top while the pager settles its
+            // own height from the selected page.
+            verticalAlignment = Alignment.Top,
         ) { page ->
             val week = weekForPage(page)
             val weekStartDate = weekStartFor(week)
+            // 顶部对齐：短周从卡片顶部开始，不在锁定高度里居中留下大空地。
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
             HomeAgendaWeekCard(
                 homework = homework,
                 exams = exams,
@@ -623,6 +629,9 @@ private fun HomeAgendaSection(
                 now = now,
                 timeZone = timeZone,
                 isLoading = isLoading,
+                isWeekResolved = isWeekResolved,
+                isWeekPending = weekValueIsPending,
+                showWeekButtons = !useFingerWeekPager,
                 onOpenHomework = onOpenHomework,
                 onOpenExams = onOpenExams,
                 onOpenPhyVlab = onOpenPhyVlab,
@@ -630,9 +639,9 @@ private fun HomeAgendaSection(
                 nextWeek = adjacentWeekFor(week, 1),
                 onSelectWeek = selectWeekFromUser,
                 onSelectDate = { date -> selectedDates[week] = date },
-                onMeasuredHeight = { date, heightPx -> pageHeights[week to date] = heightPx },
                 modifier = Modifier.fillMaxWidth(),
             )
+            }
         }
     } else {
         val weekStartDate = weekStartFor(selectedWeek)
@@ -646,6 +655,9 @@ private fun HomeAgendaSection(
             now = now,
             timeZone = timeZone,
             isLoading = isLoading,
+            isWeekResolved = isWeekResolved,
+            isWeekPending = weekValueIsPending,
+            showWeekButtons = !useFingerWeekPager,
             onOpenHomework = onOpenHomework,
             onOpenExams = onOpenExams,
             onOpenPhyVlab = onOpenPhyVlab,
@@ -676,6 +688,15 @@ private fun HomeAgendaWeekCard(
     now: LocalDateTime,
     timeZone: TimeZone,
     isLoading: Boolean,
+    /** 周数是否已由本学期校历确认；未确认时明确显示「日程加载中」。 */
+    isWeekResolved: Boolean = true,
+    /** 周数还没着落（未确认且无缓存值）：标签显示「日程加载中」。 */
+    isWeekPending: Boolean = false,
+    /**
+     * 是否显示「上一周 / 下一周」按钮。
+     * 移动端只保留手指横滑（与课表一致），按钮只留给宽屏/桌面。
+     */
+    showWeekButtons: Boolean = true,
     onOpenHomework: () -> Unit,
     onOpenExams: () -> Unit,
     onOpenPhyVlab: () -> Unit,
@@ -683,7 +704,6 @@ private fun HomeAgendaWeekCard(
     nextWeek: Int?,
     onSelectWeek: (Int) -> Unit,
     onSelectDate: (LocalDate) -> Unit,
-    onMeasuredHeight: ((LocalDate, Int) -> Unit)? = null,
     modifier: Modifier,
 ) {
     val today = now.date
@@ -700,12 +720,7 @@ private fun HomeAgendaWeekCard(
     }
     val selectedDay = weekAgenda.days.firstOrNull { it.date == selectedDate } ?: weekAgenda.days.first()
 
-    val measuredModifier = if (onMeasuredHeight == null) {
-        modifier
-    } else {
-        modifier.onSizeChanged { size -> onMeasuredHeight(selectedDay.date, size.height) }
-    }
-    ElevatedCard(modifier = measuredModifier) {
+    ElevatedCard(modifier = modifier) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -713,12 +728,18 @@ private fun HomeAgendaWeekCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        if (week == 0) "非教学周" else "第 $week 教学周",
+                        when {
+                            isWeekPending -> "日程加载中"
+                            week == 0 -> "非教学周"
+                            else -> "第 $week 教学周"
+                        },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        if (week == 0) {
+                        if (isWeekPending) {
+                            "正在按校历确认当前教学周"
+                        } else if (week == 0) {
                             "当前日期不在教学周内，仍显示本周日程"
                         } else if (phyVlabEvents.isEmpty()) {
                             "作业开始、截止与考试安排"
@@ -730,14 +751,26 @@ private fun HomeAgendaWeekCard(
                     )
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    HomeWeekNavigationControls(
-                        previousWeek = previousWeek,
-                        nextWeek = nextWeek,
-                        onPrevious = { previousWeek?.let(onSelectWeek) },
-                        onNext = { nextWeek?.let(onSelectWeek) },
-                    )
+                    if (showWeekButtons) {
+                        HomeWeekNavigationControls(
+                            previousWeek = previousWeek,
+                            nextWeek = nextWeek,
+                            onPrevious = { previousWeek?.let(onSelectWeek) },
+                            onNext = { nextWeek?.let(onSelectWeek) },
+                        )
+                    } else {
+                        // 移动端没有按钮，用一行浅色提示说明可用手势，避免用户找不到切周入口。
+                        Text(
+                            "左右滑动切周",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (isLoading && homework.isEmpty() && exams.isEmpty() && phyVlabEvents.isEmpty()) {
                         Text("同步中", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else if (!isWeekResolved) {
+                        // 校历还没确认周数：给出明确文案，避免把中间周数当最终值。
+                        Text("日程加载中", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

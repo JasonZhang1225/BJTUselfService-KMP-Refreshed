@@ -16,6 +16,9 @@ enum class HomeworkSyncFailure {
     MALFORMED_RESPONSE,
     SECURE_CHANNEL_UNAVAILABLE,
     CACHE,
+
+    /** 服务端明确拒绝了这次提交（如文件类型不支持、缺少作业 ID），与网络/解析失败区分。 */
+    SUBMIT_REJECTED,
 }
 
 sealed interface HomeworkRefreshResult {
@@ -33,7 +36,21 @@ sealed interface HomeworkDetailResult {
 
 sealed interface HomeworkOperationResult<out T> {
     data class Success<T>(val value: T) : HomeworkOperationResult<T>
-    data class Failure(val reason: HomeworkSyncFailure) : HomeworkOperationResult<Nothing>
+
+    data class Failure(
+        val reason: HomeworkSyncFailure,
+        /**
+         * 服务端原文回绝原因（仅 [HomeworkSyncFailure.SUBMIT_REJECTED] 会带值）。
+         * 其他失败保持 null，避免把内部解析标记带进界面。
+         */
+        val serverMessage: String? = null,
+        /**
+         * 网络类失败时的底层原因（异常类型 + 简短消息），用于让「检查网络」这类
+         * 模糊文案可定位到连接超时 / 连接被拒 / 传输中断等具体环节。
+         * 只包含异常类名与服务端错误文本，不含凭据、Cookie、文件名或正文。
+         */
+        val diagnostic: String? = null,
+    ) : HomeworkOperationResult<Nothing>
 }
 
 interface HomeworkLocalDataSource {
@@ -142,9 +159,27 @@ class DefaultHomeworkRepository(
         files: List<HomeworkFileContent>,
     ): HomeworkOperationResult<Unit> {
         if (files.isEmpty()) return HomeworkOperationResult.Failure(HomeworkSyncFailure.MALFORMED_RESPONSE)
-        return remoteOperation { remote.submitHomework(homework, content, files) }
+        return try {
+            remote.submitHomework(homework, content, files)
+            HomeworkOperationResult.Success(Unit)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: HomeworkRemoteException) {
+            val reason = error.reason.toSyncFailure()
+            HomeworkOperationResult.Failure(
+                reason = reason,
+                serverMessage = error.message?.takeIf {
+                    reason == HomeworkSyncFailure.SUBMIT_REJECTED
+                },
+                diagnostic = error.diagnosticChain(),
+            )
+        } catch (error: Exception) {
+            HomeworkOperationResult.Failure(
+                reason = HomeworkSyncFailure.NETWORK,
+                diagnostic = error.diagnosticChain(),
+            )
+        }
     }
-
     override fun attachmentDownloadUrl(homeworkId: Int, attachmentId: Int): String =
         remote.attachmentDownloadUrl(homeworkId, attachmentId)
 
@@ -164,4 +199,27 @@ private fun HomeworkRemoteFailure.toSyncFailure(): HomeworkSyncFailure = when (t
     HomeworkRemoteFailure.SESSION_EXPIRED -> HomeworkSyncFailure.SESSION_EXPIRED
     HomeworkRemoteFailure.MALFORMED_RESPONSE -> HomeworkSyncFailure.MALFORMED_RESPONSE
     HomeworkRemoteFailure.SECURE_CHANNEL_UNAVAILABLE -> HomeworkSyncFailure.SECURE_CHANNEL_UNAVAILABLE
+    HomeworkRemoteFailure.SUBMIT_REJECTED -> HomeworkSyncFailure.SUBMIT_REJECTED
+}
+
+/**
+ * 只取异常链的类名与简短消息，用来把「请检查网络」定位到具体环节
+ * （如 ConnectTimeoutException / SocketTimeoutException / SSLException）。
+ * 不含 URL、Cookie、文件名或请求正文。
+ */
+private fun Throwable.diagnosticChain(): String? {
+    val parts = mutableListOf<String>()
+    var current: Throwable? = this
+    var depth = 0
+    while (current != null && depth < 4) {
+        val label = current::class.simpleName.orEmpty()
+        val message = current.message
+            ?.replace(Regex("[\\r\\n\\t]"), " ")
+            ?.take(120)
+            ?.takeIf(String::isNotBlank)
+        parts += if (message == null) label else "$label: $message"
+        current = current.cause
+        depth += 1
+    }
+    return parts.filter(String::isNotBlank).joinToString(" <- ").takeIf(String::isNotEmpty)
 }

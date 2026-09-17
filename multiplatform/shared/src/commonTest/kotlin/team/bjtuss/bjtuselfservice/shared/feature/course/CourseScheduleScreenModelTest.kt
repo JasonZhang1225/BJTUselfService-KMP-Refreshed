@@ -23,6 +23,138 @@ import team.bjtuss.bjtuselfservice.shared.PlatformInfo
 
 class CourseScheduleScreenModelTest {
     @Test
+    fun startupShowsCachedWeekThenCalendarWeekWithoutPassingThroughRemoteWeek() = runBlocking {
+        // 2026-09-16 用户反馈：首页启动时周数会多次跳变。
+        // 真实链路是“缓存 5 → 远端裸值 1 → 校历校准 2”，其中远端裸值必须永远不进 UI。
+        val today = LocalDate(2026, 9, 16)
+        val cachedWeek = 5
+        val calendarWeek = 2
+        val remoteBareWeek = 1
+        val cached = CourseScheduleSnapshot(listOf(course(1, week = cachedWeek)), cachedWeek)
+        val refreshed = CourseScheduleSnapshot(listOf(course(1, week = calendarWeek)), remoteBareWeek)
+        val model = CourseScheduleScreenModel(
+            repository = FakeRepository(cached, refreshed),
+            calendarRepository = FakeCalendarRepository(
+                listOf(
+                    week(1, LocalDate(2026, 9, 7)),
+                    week(2, LocalDate(2026, 9, 14)),
+                    week(3, LocalDate(2026, 9, 21)),
+                ),
+            ),
+            todayProvider = { today },
+        )
+
+        // 阶段 1：只有缓存值，可以先显示，但还没被校历确认。
+        model.initialize(refreshFromNetwork = false)
+        assertEquals(cachedWeek, model.state.value.currentWeek)
+        assertFalse(model.state.value.weekResolved)
+        assertTrue(model.state.value.hasCachedWeek)
+
+        // 阶段 2：远端刷新到达。裸周数 1 不得覆盖显示值。
+        model.refresh()
+        assertEquals(cachedWeek, model.state.value.currentWeek)
+        assertFalse(model.state.value.weekResolved)
+
+        // 阶段 3：校历按日期给出唯一权威值。
+        model.ensureCalendarLoaded()
+        assertEquals(calendarWeek, model.state.value.currentWeek)
+        assertTrue(model.state.value.weekResolved)
+
+        // 全程只允许出现 cachedWeek -> calendarWeek 一次跳变，绝不出现 remoteBareWeek。
+        val seenWeeks = mutableListOf<Int>()
+        seenWeeks += cachedWeek
+        seenWeeks += model.state.value.currentWeek
+        assertFalse(remoteBareWeek in seenWeeks)
+    }
+
+    @Test
+    fun startupWithoutCachedWeekStaysPendingUntilCalendarConfirms() = runBlocking {
+        val today = LocalDate(2026, 9, 16)
+        val model = CourseScheduleScreenModel(
+            repository = FakeRepository(
+                CourseScheduleSnapshot(emptyList(), 0),
+                CourseScheduleSnapshot(emptyList(), 0),
+            ),
+            calendarRepository = FakeCalendarRepository(
+                listOf(week(1, LocalDate(2026, 9, 7)), week(2, LocalDate(2026, 9, 14))),
+            ),
+            todayProvider = { today },
+        )
+
+        model.initialize(refreshFromNetwork = false)
+        assertFalse(model.state.value.weekResolved)
+        assertFalse(model.state.value.hasCachedWeek)
+
+        model.ensureCalendarLoaded()
+        assertEquals(2, model.state.value.currentWeek)
+        assertTrue(model.state.value.weekResolved)
+    }
+
+    @Test
+    fun scheduleModelWithoutCalendarSourceIsNeverPending() {
+        val model = CourseScheduleScreenModel(
+            repository = FakeRepository(
+                CourseScheduleSnapshot(listOf(course(1, week = 4)), 4),
+                CourseScheduleSnapshot(listOf(course(1, week = 4)), 4),
+            ),
+            todayProvider = { LocalDate(2026, 9, 16) },
+        )
+
+        assertTrue(model.state.value.weekResolved)
+    }
+
+    @Test
+    fun cachedTeachingWeekIsKeptAsSelectedWeekBeforeCalendarConfirms() = runBlocking {
+        // 2026-09-16 实机反馈：缓存是第 2 周，进入首页却先显示「非教学周」。
+        // 未确认的 0 不能覆盖缓存下来的真实教学周，否则会多出一次无意义的跳变。
+        val model = CourseScheduleScreenModel(
+            repository = FakeRepository(
+                CourseScheduleSnapshot(listOf(course(1, week = 2)), 2),
+                CourseScheduleSnapshot(listOf(course(1, week = 2)), 2),
+            ),
+            calendarRepository = FakeCalendarRepository(
+                listOf(week(1, LocalDate(2026, 9, 7)), week(2, LocalDate(2026, 9, 14))),
+            ),
+            todayProvider = { LocalDate(2026, 9, 16) },
+        )
+
+        model.initialize(refreshFromNetwork = false)
+
+        assertEquals(2, model.state.value.currentWeek)
+        assertEquals(2, model.state.value.selectedWeek)
+        assertFalse(model.state.value.weekResolved)
+
+        // 校历到达后按日期确认为第 2 周，不产生额外跳变。
+        model.ensureCalendarLoaded()
+        assertEquals(2, model.state.value.currentWeek)
+        assertEquals(2, model.state.value.selectedWeek)
+        assertTrue(model.state.value.weekResolved)
+    }
+
+    @Test
+    fun confirmedHolidayGapShowsNonTeachingWeek() = runBlocking {
+        // 校历确认当天不在教学周时，允许显示 0（非教学周）。
+        val model = CourseScheduleScreenModel(
+            repository = FakeRepository(
+                CourseScheduleSnapshot(listOf(course(1, week = 2)), 2),
+                CourseScheduleSnapshot(listOf(course(1, week = 2)), 2),
+            ),
+            calendarRepository = FakeCalendarRepository(
+                listOf(week(1, LocalDate(2026, 9, 7)), week(2, LocalDate(2026, 9, 14))),
+            ),
+            todayProvider = { LocalDate(2026, 10, 5) },
+        )
+
+        model.initialize(refreshFromNetwork = false)
+        assertEquals(2, model.state.value.selectedWeek)
+
+        model.ensureCalendarLoaded()
+        assertEquals(0, model.state.value.currentWeek)
+        assertEquals(0, model.state.value.selectedWeek)
+        assertTrue(model.state.value.weekResolved)
+    }
+
+    @Test
     fun stateExposesTodayForCompactListContext() {
         val today = LocalDate(2026, 8, 11)
         val snapshot = CourseScheduleSnapshot(listOf(course(1, week = 24)), 24)

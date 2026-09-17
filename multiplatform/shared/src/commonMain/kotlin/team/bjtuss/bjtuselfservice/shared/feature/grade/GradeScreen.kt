@@ -1065,6 +1065,9 @@ fun AuthenticatedAppShell(
                     phyVlabEvents = if (phyVlabEnabled) phyVlabState.agendaEvents else emptyList(),
                     currentWeek = courseState.currentWeek,
                     academicWeeks = courseState.academicWeeks,
+                    // 周数只在被校历确认后显示：确认前统一「日程加载中」，
+                    // 拿到确切结果后一次显示最终值，不再出现中间值弹跳。
+                    isWeekResolved = courseState.weekResolved,
                     now = homeworkState.now,
                     timeZone = homeworkState.timeZone,
                     isAgendaLoading = homeworkState.isLoading || examState.isLoading ||

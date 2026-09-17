@@ -30,7 +30,17 @@ private const val HOMEWORK_PATH = "/ve/back/coursePlatform/homeWork.shtml"
 private const val GRADE_PATH = "/ve/back/course/courseWorkInfo.shtml"
 private const val ATTACHMENT_PATH = "/ve/back/coursePlatform/dataSynAction.shtml"
 private const val SUBMITTED_ATTACHMENT_PATH = "/ve//downloadZyFj.shtml"
-private const val UPLOAD_PATH = "/ve/back/rp/common/rpUpload.shtml"
+
+/**
+ * 作业附件上传：学生与老师用的是两个不同端点。
+ *
+ * 2026-09-16 用 Chrome DevTools MCP 直接读取课程平台作业弹层
+ * `courseWorkInfo.shtml?method=uploadDiv3` 的前端源码确认：
+ * - 学生走 `homeworkUpload.shtml?noteId=<upId>`（缺失 noteId 回 `STATUS=3 缺少作业ID参数`）；
+ * - `rpUpload.shtml` 只在老师分支里出现，学生调用会回 `{"STATUS":"2","MSG":"学生角色无权限上传"}`，
+ *   这正是移植版此前一直失败的原因。
+ */
+private const val UPLOAD_PATH = "/ve/back/rp/common/homeworkUpload.shtml"
 private const val MAX_CONCURRENT_HOMEWORK_REQUESTS = 3
 
 enum class HomeworkRemoteFailure {
@@ -38,11 +48,26 @@ enum class HomeworkRemoteFailure {
     SESSION_EXPIRED,
     MALFORMED_RESPONSE,
     SECURE_CHANNEL_UNAVAILABLE,
+
+    /** 服务端明确回绝了提交/上传（如「学生角色无权限上传」「上传文件类型不支持」）。 */
+    SUBMIT_REJECTED,
 }
 
 class HomeworkRemoteException(
     val reason: HomeworkRemoteFailure,
-) : Exception("Unable to refresh homework: ${reason.name}")
+    message: String? = null,
+) : Exception(message ?: "Unable to refresh homework: ${reason.name}")
+
+/**
+ * 服务端回绝文案与内部字段名（`uploadReceipt`/`flag`/`json`/`root`）的区分。
+ * 只有真正来自服务端的中文/英文提示才回传给界面，内部标记继续走通用失败文案。
+ */
+private fun isServerRejectionMessage(message: String): Boolean {
+    if (message.isBlank() || message.length < 3) return false
+    if (message in setOf("uploadReceipt", "flag", "json", "root")) return false
+    // 只允许可打印字符，避免把回执里的控制字符带进界面。
+    return message.none { it.code < 0x20 }
+}
 
 interface HomeworkRemoteDataSource {
     suspend fun fetchHomework(): List<Homework>
@@ -200,69 +225,110 @@ class SchoolHomeworkRemoteDataSource(
         require(files.isNotEmpty()) { "At least one homework file is required" }
         ensureInitialized()
         val receipts = files.map { file ->
-            val upload = smartRequest(
-                method = SchoolHttpMethod.POST,
-                path = UPLOAD_PATH,
-                query = linkedMapOf(),
-                // 原 Android 1.7.0 的 HomeworkUploader 直接用 OkHttp Request，
-                // 不附加 X-Requested-With / Referer 业务头，只让 CookieJar
-                // 携带登录 Cookie。旧上传接口会因 AJAX 头得到 STATUS/MSG 错误回执。
-                includeSmartHeaders = false,
-                // sessionid 是旧平台区别于 JSESSIONID 的教学平台会话标识，上传接口也需要它。
-                includeSessionHeader = true,
-                multipartFiles = listOf(
-                    SchoolMultipartFile(
-                        fieldName = "file",
-                        fileName = file.fileName,
-                        // 与原作者 Android 1.7.0 的 HomeworkUploader 一致：
-                        // rpUpload.shtml 按通用二进制流接收文件，不使用系统推断的 MIME。
-                        contentType = "application/octet-stream",
-                        bytes = file.bytes,
+            // 上传与提交各允许一次瞬时网络重试。作业弹层本身没有重试路径，
+            // 移动网络下偶发一次抖动就会让整次提交失败（2026-09-16 模拟器实证）。
+            // 提交是覆盖式的（服务端删旧记录再写新记录），重试不会产生重复提交。
+            retryOnceOnNetworkFailure {
+                val upload = smartRequest(
+                    method = SchoolHttpMethod.POST,
+                    path = UPLOAD_PATH,
+                    // 学生上传端点把作业 ID 放在 noteId 查询参数里；缺它服务端直接回
+                    // `STATUS=3 缺少作业ID参数(noteId)`。
+                    query = linkedMapOf("noteId" to homework.upId.toString()),
+                    // 网页端 layui/uploadify 的学生上传同样不带 AJAX/Referer 业务头，
+                    // 只靠登录 Cookie 与教学平台 sessionid。
+                    includeSmartHeaders = false,
+                    // sessionid 是旧平台区别于 JSESSIONID 的教学平台会话标识。
+                    includeSessionHeader = true,
+                    multipartFiles = listOf(
+                        SchoolMultipartFile(
+                            fieldName = "file",
+                            fileName = file.fileName,
+                            // 网页端上传不带文件类型；服务端按扩展名校验（实测 application/octet-stream
+                            // 常量即可通过）。真实类型只用于让服务端更准确识别。
+                            contentType = file.contentType.ifBlank { "application/octet-stream" },
+                            bytes = file.bytes,
+                        ),
                     ),
+                )
+                val uploadBody = upload.bodyText()
+                when (val parsed = parseHomeworkUploadReceipt(uploadBody)) {
+                    is HomeworkJsonParseResult.Failure -> {
+                        if (uploadResponseLooksLikeSessionExpired(upload)) {
+                            invalidateSmartSession()
+                            sessionExpired()
+                        }
+                        println(
+                            "Homework upload receipt rejected: field=${parsed.field}, " +
+                                uploadReceiptShape(upload),
+                        )
+                        // 服务端明确回绝（文件类型不支持、缺少 noteId、权限不足）时把原文带给用户，
+                        // 网络/解析类问题仍按原有分类处理。
+                        parsed.field.takeIf(::isServerRejectionMessage)?.let(::submitRejected)
+                        malformed()
+                    }
+                    is HomeworkJsonParseResult.Success -> parsed.value
+                }
+            }
+        }
+        retryOnceOnNetworkFailure {
+            val submit = smartRequest(
+                method = SchoolHttpMethod.POST,
+                path = GRADE_PATH,
+                query = linkedMapOf("method" to "sendStuHomeWorks"),
+                // 与网页端 jQuery 提交保持一致：写请求不附加智慧平台查询接口专用的 AJAX 头，
+                // 但保留教学平台 sessionid。
+                includeSmartHeaders = false,
+                includeSessionHeader = true,
+                formFields = linkedMapOf(
+                    // 网页端 sendHomeWorks() 先 encodeURIComponent 再交给 jQuery 编码一次；
+                    // 服务端按两层解码处理，这里保持同样的预编码。
+                    "content" to content.formValuePreEncode(),
+                    "groupName" to "",
+                    "groupId" to "",
+                    "courseId" to homework.courseId.toString(),
+                    "contentType" to homework.homeworkType.toString(),
+                    "fz" to "0",
+                    "jxrl_id" to "",
+                    "fileList" to receipts.toUploadFileListJson(),
+                    "upId" to homework.upId.toString(),
+                    // 服务端把 return_num 当整数解析：网页表单未初始化时提交的 `{}` 会得到
+                    // `{"flag":"bad"}`，并连带清掉上一次提交记录；列表页自己的
+                    // jiaozuoye(...) 传的是 '0'，实测 0 / 空 / 省略都能正常提交。
+                    "return_num" to "0",
+                    "isTeacher" to "0",
                 ),
             )
-            val uploadBody = upload.bodyText()
-            when (val parsed = parseHomeworkUploadReceipt(uploadBody)) {
+            // 服务端回执是 `{"flag":"success"}`；`{"flag":"bad"}` 表示这次提交没有生效，
+            // 并且会连带清掉上一次提交记录。只看 HTTP 2xx 会把失败当成功（历史缺陷）。
+            when (val parsed = parseHomeworkSubmitReceipt(submit.bodyText())) {
+                is HomeworkJsonParseResult.Success -> Unit
                 is HomeworkJsonParseResult.Failure -> {
-                    if (uploadResponseLooksLikeSessionExpired(upload)) {
+                    if (uploadResponseLooksLikeSessionExpired(submit)) {
                         invalidateSmartSession()
                         sessionExpired()
                     }
                     println(
-                        "Homework upload receipt rejected: field=${parsed.field}, " +
-                            uploadReceiptShape(upload),
+                        "Homework submit receipt rejected: field=${parsed.field}, " +
+                            uploadReceiptShape(submit),
                     )
+                    parsed.field.takeIf(::isServerRejectionMessage)?.let(::submitRejected)
                     malformed()
                 }
-                is HomeworkJsonParseResult.Success -> parsed.value
             }
         }
-        val submit = smartRequest(
-            method = SchoolHttpMethod.POST,
-            path = GRADE_PATH,
-            query = linkedMapOf("method" to "sendStuHomeWorks"),
-            // 与原作者 Android 1.7.0 的 FormBody 请求保持一致：写请求不附加
-            // 智慧平台查询接口专用的 AJAX 头，但保留教学平台 sessionid。
-            includeSmartHeaders = false,
-            includeSessionHeader = true,
-            formFields = linkedMapOf(
-                // v1.7.0 在 FormBody 编码前先做一次 URLEncoder；服务端按两层解码处理。
-                "content" to content.formValuePreEncode(),
-                "groupName" to "",
-                "groupId" to "",
-                "courseId" to homework.courseId.toString(),
-                "contentType" to homework.homeworkType.toString(),
-                "fz" to "0",
-                "jxrl_id" to "",
-                "fileList" to receipts.toUploadFileListJson(),
-                "upId" to homework.upId.toString(),
-                "return_num" to "",
-                "isTeacher" to "0",
-            ),
-        )
-        // 原作者 Android 1.7.0 的实现只依赖 HTTP 成功。这个老接口的 2xx 响应正文
-        // 在不同网关上可能为空、返回中文，或返回不稳定的文本；不能把正文关键字
-        // 当成提交失败依据，否则服务端已接收时客户端会误报失败。
+    }
+
+    /**
+     * 只对 [HomeworkRemoteFailure.NETWORK] 重试一次：会话失效、安全通道拒绝和服务端回绝
+     * 都已有各自的恢复/提示路径，重试只会拖慢反馈。
+     */
+    private suspend fun <T> retryOnceOnNetworkFailure(block: suspend () -> T): T = try {
+        block()
+    } catch (error: HomeworkRemoteException) {
+        if (error.reason != HomeworkRemoteFailure.NETWORK) throw error
+        println("Homework submit step failed with NETWORK, retrying once")
+        block()
     }
 
     override fun attachmentDownloadUrl(homeworkId: Int, attachmentId: Int): String = endpoint.apiUrl(
@@ -566,21 +632,26 @@ private fun uploadReceiptShape(response: SchoolHttpResponse): String {
         ?.joinToString(",")
         ?: "non-json"
     val status = root?.string("STATUS").orEmpty().safeLogValue()
-    val message = (root?.string("MSG") ?: root?.string("MESSAGE")).orEmpty().safeLogValue()
+    val flag = root?.string("flag").orEmpty().safeLogValue()
+    val message = (root?.string("MSG") ?: root?.string("msg") ?: root?.string("MESSAGE"))
+        .orEmpty()
+        .safeLogValue()
     val contentType = response.header("Content-Type")
         ?.substringBefore(';')
         ?.trim()
         ?.take(80)
         .orEmpty()
         .ifBlank { "unknown" }
-    return "status=${response.statusCode},bytes=${response.body.size},contentType=$contentType,keys=$keys,statusValue=$status,message=$message"
+    return "status=${response.statusCode},bytes=${response.body.size},contentType=$contentType," +
+        "keys=$keys,statusValue=$status,flag=$flag,message=$message"
 }
 
 private fun String.safeLogValue(): String = replace(Regex("[\\r\\n\\t]"), " ").take(80)
 
-/** 老接口把会话失效混成 HTTP 200 的 STATUS/MSG 或登录 HTML，不能按普通 JSON 缺字段处理。 */
+/** 老接口把会话失效混成 HTTP 200 的 STATUS/MSG/flag 正文或登录 HTML，不能按普通 JSON 缺字段处理。 */
 private fun uploadResponseLooksLikeSessionExpired(response: SchoolHttpResponse): Boolean {
-    val normalized = (response.bodyText() + "\n" + response.bodyTextGbk()).lowercase()
+    val text = response.bodyText()
+    val normalized = (text + "\n" + response.bodyTextGbk() + "\n" + response.finalUrl).lowercase()
     if (listOf(
             "会话结束",
             "会话失效",
@@ -636,6 +707,8 @@ private fun Int?.orEmptyNumber(): String = this?.toString().orEmpty()
 private fun network(): Nothing = throw HomeworkRemoteException(HomeworkRemoteFailure.NETWORK)
 private fun sessionExpired(): Nothing = throw HomeworkRemoteException(HomeworkRemoteFailure.SESSION_EXPIRED)
 private fun malformed(): Nothing = throw HomeworkRemoteException(HomeworkRemoteFailure.MALFORMED_RESPONSE)
+private fun submitRejected(message: String): Nothing =
+    throw HomeworkRemoteException(HomeworkRemoteFailure.SUBMIT_REJECTED, message.safeLogValue())
 private fun secureChannelUnavailable(): Nothing =
     throw HomeworkRemoteException(HomeworkRemoteFailure.SECURE_CHANNEL_UNAVAILABLE)
 

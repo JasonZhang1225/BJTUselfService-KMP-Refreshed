@@ -165,14 +165,24 @@ fun parseHomeworkDetail(
     )
 }
 
+/**
+ * 学生上传端点 `homeworkUpload.shtml?noteId=` 的回执。
+ *
+ * 真实观察（2026-09-16，Chrome DevTools MCP 对照网页端）：
+ * - 成功是 `STATUS=0` 加四个回执字段；
+ * - 文件类型不合法是 `STATUS` 缺失 + 中文 `MSG`；
+ * - 老师端点 `rpUpload.shtml` 会返回 `{"STATUS":"2","MSG":"学生角色无权限上传"}`。
+ * 因此这里必须逐个字段校验，不能只看 HTTP 200。
+ */
 fun parseHomeworkUploadReceipt(body: String): HomeworkJsonParseResult<HomeworkUploadReceipt> =
     parseObject(body) { root ->
+        val status = root.string("STATUS")
         val name = root.string("fileNameNoExt").orEmpty()
         val extension = root.string("fileExtName").orEmpty()
         val size = root.string("fileSize").orEmpty()
         val visitName = root.string("visitName").orEmpty()
-        if (name.isBlank() || size.isBlank() || visitName.isBlank()) {
-            HomeworkJsonParseResult.Failure("uploadReceipt")
+        if (status != "0" || name.isBlank() || size.isBlank() || visitName.isBlank()) {
+            HomeworkJsonParseResult.Failure(root.string("MSG")?.takeIf(String::isNotBlank) ?: "uploadReceipt")
         } else {
             HomeworkJsonParseResult.Success(
                 HomeworkUploadReceipt(
@@ -182,6 +192,24 @@ fun parseHomeworkUploadReceipt(body: String): HomeworkJsonParseResult<HomeworkUp
                     visitName = visitName,
                 ),
             )
+        }
+    }
+
+/**
+ * 提交端点 `sendStuHomeWorks` 的回执：成功为 `{"flag":"success"}`。
+ *
+ * 真实观察：`return_num={}` 时服务端返回 `{"flag":"bad"}`，且会把上一次提交记录
+ * 一并清掉；空正文提交会先落库再回滚。因此必须按 `flag` 判定成功，不能沿用
+ * 老 Android 1.7.0「只看 HTTP 2xx」的写法。
+ */
+fun parseHomeworkSubmitReceipt(body: String): HomeworkJsonParseResult<Unit> =
+    parseObject(body) { root ->
+        val flag = root.string("flag").orEmpty()
+        val message = root.string("msg")?.takeIf(String::isNotBlank)
+            ?: root.string("message")?.takeIf(String::isNotBlank)
+        when {
+            flag.equals("success", ignoreCase = true) -> HomeworkJsonParseResult.Success(Unit)
+            else -> HomeworkJsonParseResult.Failure(message ?: "flag")
         }
     }
 

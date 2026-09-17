@@ -127,6 +127,24 @@ enum class CourseCompactViewMode {
 data class CourseScheduleUiState(
     val courses: List<Course> = emptyList(),
     val currentWeek: Int = 0,
+    /**
+     * 当前 [currentWeek] 是否已经由本学期校历确认过。
+     *
+     * - `true`：校历已按日期校准，可以把它当最终值；
+     * - `false`：手里只有未经验证的中间值，首页据此显示「日程加载中」并禁止自动跟随，
+     *   避免把中间值当成最终周数展示后又跳一次。
+     *
+     * 远端 `getTimeList` / `room_view` 的裸周数永远不参与本字段，也永远不直接进 UI。
+     */
+    val weekResolved: Boolean = false,
+    /**
+     * 当前显示的周数是否来自“上次校历校准过的缓存”。
+     *
+     * 为 true 时首页可以先按 B 方案立即显示缓存值（最多在校历到达后再跳一次），
+     * 为 false 且 [weekResolved] 仍为 false 时，首页没有任何可信值可显示，
+     * 应整体显示「日程加载中」。
+     */
+    val hasCachedWeek: Boolean = false,
     val scheduleType: CourseScheduleType = CourseScheduleType.CURRENT,
     val selectedWeek: Int = 0,
     val selectedDay: Int = 0,
@@ -191,7 +209,13 @@ class CourseScheduleScreenModel(
         Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
     },
 ) {
-    private val mutableState = MutableStateFlow(CourseScheduleUiState(todayDate = todayProvider()))
+    private val mutableState = MutableStateFlow(
+        CourseScheduleUiState(
+            todayDate = todayProvider(),
+            // 没有校历源时不存在“待确认”状态，避免首页一直停在加载占位。
+            weekResolved = calendarRepository == null,
+        ),
+    )
     val state: StateFlow<CourseScheduleUiState> = mutableState.asStateFlow()
 
     /** 本地缓存是否已灌入 UI。可在登录完成前执行。 */
@@ -419,7 +443,7 @@ class CourseScheduleScreenModel(
                     // 校历有当前学期映射时，当天不在教学周就明确为 0，不沿用旧周数。
                     calendarCurrentWeek ?: 0
                 } else {
-                    // 校历暂时不可用时保留已经显示过的缓存周数；不接受任何远端猜测值。
+                    // 校历暂时不可用：保留上次校历校准过的缓存值，不接受任何远端猜测值。
                     current.currentWeek.takeIf { it in 1..COURSE_MAX_WEEK } ?: 0
                 }
                 val effectiveSelectedWeek = if (followCalendarCurrentWeek) {
@@ -442,6 +466,10 @@ class CourseScheduleScreenModel(
                     academicWeeks = weeks,
                     currentWeek = effectiveCurrentWeek,
                     selectedWeek = effectiveSelectedWeek,
+                    // 校历给出结论（有当前学期映射并按日期命中，含明确的非教学周）才算确认；
+                    // 拿不到当前学期映射时保留缓存值，但状态仍是“未确认”。
+                    weekResolved = currentCalendarAvailable,
+                    hasCachedWeek = calendarCurrentWeek != null || effectiveCurrentWeek in 1..COURSE_MAX_WEEK,
                     isCalendarLoading = false,
                     todayDate = today,
                     selectedDate = selectedDate,
@@ -451,6 +479,9 @@ class CourseScheduleScreenModel(
                 mutableState.value = mutableState.value.copy(isCalendarLoading = false)
                 throw error
             } catch (_: Exception) {
+                // 校历拉取失败：不写任何猜测值，也不把状态标成已确认。
+                // 已有可信（缓存）值时首页照样可以显示；没有可信值时继续显示「日程加载中」，
+                // 用户仍可手动切周，不会被卡住。
                 mutableState.value = mutableState.value.copy(isCalendarLoading = false)
             }
         }
@@ -485,16 +516,26 @@ class CourseScheduleScreenModel(
         val effectiveCurrentWeek = if (calendarValidationEnabled) {
             when {
                 calendarCurrentWeek != null -> calendarCurrentWeek
+                // 只有本地缓存是“上次校历校准过的值”，才允许先显示；否则保持当前值。
                 source == CourseScheduleContentSource.CACHE ->
                     snapshot.currentWeek.takeIf { it in 1..COURSE_MAX_WEEK } ?: 0
+                // 远端刷新到达时绝不能把服务器的裸周数写进 UI：那正是启动期间
+                // 缓存值 -> 裸值 -> 校历值 反复跳变的来源。
                 else -> current.currentWeek.takeIf { it in 1..COURSE_MAX_WEEK } ?: 0
             }
         } else {
             snapshot.currentWeek.takeIf { it in 1..COURSE_MAX_WEEK } ?: 0
         }
+        // 校历已按日期给出结论（含“确定不是教学周”）才算确认；
+        // 缓存快照即便带着上次的周数，也只能算已显示、未确认。
+        val weekResolved = calendarCurrentWeek != null
         val shouldApplyCurrentWeek = current.scheduleType == CourseScheduleType.CURRENT &&
             current.followCurrentWeek &&
-            (calendarValidationEnabled || effectiveCurrentWeek in 1..COURSE_MAX_WEEK)
+            weekSelectionIsTrustworthy(
+                weekResolved = weekResolved,
+                calendarValidationEnabled = calendarValidationEnabled,
+                effectiveCurrentWeek = effectiveCurrentWeek,
+            )
         val selectedWeek = if (shouldApplyCurrentWeek) effectiveCurrentWeek else current.selectedWeek
         if (
             calendarValidationEnabled && effectiveCurrentWeek != snapshot.currentWeek
@@ -505,6 +546,9 @@ class CourseScheduleScreenModel(
         mutableState.value = current.copy(
             courses = snapshot.courses,
             currentWeek = effectiveCurrentWeek,
+            weekResolved = weekResolved,
+            hasCachedWeek = source == CourseScheduleContentSource.CACHE &&
+                (snapshot.currentWeek in 1..COURSE_MAX_WEEK),
             selectedWeek = selectedWeek,
             // 缓存/网络快照都属于自动结果，不能把“跟随当前周”误关掉；
             // selectWeek/selectDate 才代表用户明确选择并会把它置 false。
@@ -522,4 +566,22 @@ class CourseScheduleScreenModel(
             },
         )
     }
+}
+
+/**
+ * 能否把这个 [effectiveCurrentWeek] 当作“跟随当前周”的目标。
+ *
+ * 关键场景（2026-09-16 实机反馈）：本地缓存是第 2 周、校历还没加载完成时，
+ * [effectiveCurrentWeek] 只有 2 而没有确认标志。此时绝不能把它当 0（非教学周）处理，
+ * 否则首页会先显示「非教学周」，等校历到达再跳回第 2 周——正是要消除的反复跳变。
+ */
+internal fun weekSelectionIsTrustworthy(
+    weekResolved: Boolean,
+    calendarValidationEnabled: Boolean,
+    effectiveCurrentWeek: Int,
+): Boolean = when {
+    !calendarValidationEnabled -> true
+    weekResolved -> true
+    // 未确认但手里是缓存下来的真实教学周：可以先跟随显示。
+    else -> effectiveCurrentWeek in 1..COURSE_MAX_WEEK
 }

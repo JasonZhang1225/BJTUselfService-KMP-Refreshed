@@ -148,6 +148,15 @@ class KtorSchoolHttpTransport(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
+            // 只记录可定位问题的形状信息：异常类型+消息、方法、脱敏 URL、是否 multipart、
+            // 文件字节数。不记录文件名、正文、Cookie 或会话值。
+            println(
+                "SchoolHttpRequest failed: method=${request.method} " +
+                    "url=${request.url.substringBefore('?')} " +
+                    "multipart=${request.multipartFiles.isNotEmpty()} " +
+                    "bytes=${request.multipartFiles.sumOf { it.bytes.size }} " +
+                    "cause=${error::class.simpleName}: ${error.message?.take(160)}",
+            )
             throw SchoolNetworkException("School request failed", error)
         }
     }

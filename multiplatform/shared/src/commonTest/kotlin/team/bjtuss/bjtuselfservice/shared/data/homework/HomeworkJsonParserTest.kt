@@ -87,13 +87,41 @@ class HomeworkJsonParserTest {
     fun parsesUploadReceiptWithExtensionlessFile() {
         val receipt = assertIs<HomeworkJsonParseResult.Success<HomeworkUploadReceipt>>(
             parseHomeworkUploadReceipt(
-                """{"fileNameNoExt":"README","fileExtName":"","fileSize":"12","visitName":"server-token"}""",
+                """{"STATUS":"0","fileNameNoExt":"README","fileExtName":"","fileSize":"12","visitName":"server-token"}""",
             ),
         ).value
 
         assertEquals("README", receipt.fileNameNoExt)
         assertEquals("", receipt.fileExtName)
         assertEquals("12", receipt.fileSize)
+    }
+
+    @Test
+    fun rejectsUploadReceiptWhenServerStatusIsNotZero() {
+        // 学生调用老师端点 rpUpload.shtml 的真实回执。
+        val rejected = assertIs<HomeworkJsonParseResult.Failure>(
+            parseHomeworkUploadReceipt("""{"STATUS":"2","MSG":"学生角色无权限上传"}"""),
+        )
+        assertEquals("学生角色无权限上传", rejected.field)
+
+        // 文件类型不支持时回执没有 STATUS，正文是中文提示。
+        val unsupported = assertIs<HomeworkJsonParseResult.Failure>(
+            parseHomeworkUploadReceipt("上传文件类型不支持，请更换文件！"),
+        )
+        assertEquals("root", unsupported.field)
+    }
+
+    @Test
+    fun acceptsOnlySuccessFlagFromSubmitReceipt() {
+        assertIs<HomeworkJsonParseResult.Success<Unit>>(
+            parseHomeworkSubmitReceipt("""{"flag":"success"}"""),
+        )
+
+        // return_num 取错值时服务端的真实回执：提交没有生效。
+        val rejected = assertIs<HomeworkJsonParseResult.Failure>(
+            parseHomeworkSubmitReceipt("""{"flag":"bad"}"""),
+        )
+        assertEquals("flag", rejected.field)
     }
 
     @Test

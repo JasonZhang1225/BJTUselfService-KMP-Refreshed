@@ -64,10 +64,56 @@ class HomeworkRepositoryTest {
         assertEquals(HomeworkSyncFailure.SESSION_EXPIRED, result.reason)
     }
 
+    @Test
+    fun submitRejectionKeepsServerMessageAndIsTyped() = runBlocking {
+        val repository = DefaultHomeworkRepository(
+            "student-a",
+            FakeLocal(HomeworkSnapshot(emptyList())),
+            FakeRemote(
+                submitError = HomeworkRemoteException(
+                    HomeworkRemoteFailure.SUBMIT_REJECTED,
+                    "上传文件类型不支持，请更换文件！",
+                ),
+            ),
+        )
+
+        val result = assertIs<HomeworkOperationResult.Failure>(
+            repository.submitHomework(
+                homework(1, 1, "作业"),
+                content = "提交说明",
+                files = listOf(HomeworkFileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
+            ),
+        )
+
+        assertEquals(HomeworkSyncFailure.SUBMIT_REJECTED, result.reason)
+        assertEquals("上传文件类型不支持，请更换文件！", result.serverMessage)
+    }
+
+    @Test
+    fun networkSubmitFailureDoesNotExposeInternalMessage() = runBlocking {
+        val repository = DefaultHomeworkRepository(
+            "student-a",
+            FakeLocal(HomeworkSnapshot(emptyList())),
+            FakeRemote(submitError = HomeworkRemoteException(HomeworkRemoteFailure.NETWORK)),
+        )
+
+        val result = assertIs<HomeworkOperationResult.Failure>(
+            repository.submitHomework(
+                homework(1, 1, "作业"),
+                content = "提交说明",
+                files = listOf(HomeworkFileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
+            ),
+        )
+
+        assertEquals(HomeworkSyncFailure.NETWORK, result.reason)
+        assertEquals(null, result.serverMessage)
+    }
+
     private class FakeRemote(
         private val homework: List<Homework> = emptyList(),
         private val error: Exception? = null,
         private val detailError: Exception? = null,
+        private val submitError: Exception? = null,
     ) : HomeworkRemoteDataSource {
         override suspend fun fetchHomework(): List<Homework> {
             error?.let { throw it }
@@ -96,7 +142,9 @@ class HomeworkRepositoryTest {
             homework: Homework,
             content: String,
             files: List<HomeworkFileContent>,
-        ) = Unit
+        ) {
+            submitError?.let { throw it }
+        }
 
         override fun attachmentDownloadUrl(homeworkId: Int, attachmentId: Int): String =
             "https://example.invalid/download"

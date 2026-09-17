@@ -209,11 +209,14 @@ fun CourseScheduleWorkspace(
                                     ) {
                                         CourseTypeLegend(mappingLoaded = courseTypesByCode != null)
                                         Spacer(Modifier.weight(1f))
-                                        CourseWeekNavigationControls(
-                                            selectedWeek = state.selectedWeek,
-                                            onPrevious = { model.moveWeekBy(-1) },
-                                            onNext = { model.moveWeekBy(1) },
-                                        )
+                                        // 移动端只保留手指横滑；上一周/下一周按钮只留给宽屏/桌面。
+                                        if (!useFingerWeekPager) {
+                                            CourseWeekNavigationControls(
+                                                selectedWeek = state.selectedWeek,
+                                                onPrevious = { model.moveWeekBy(-1) },
+                                                onNext = { model.moveWeekBy(1) },
+                                            )
+                                        }
                                     }
                                     if (useFingerWeekPager) {
                                         ExpandedWeekPager(

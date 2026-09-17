@@ -362,13 +362,20 @@ private class HomeworkTransferState(
             )
             when (val finalResult = result ?: HomeworkOperationResult.Failure(HomeworkSyncFailure.NETWORK)) {
                 is HomeworkOperationResult.Failure -> {
-                    uploadFeedback = when (finalResult.reason) {
+                    val reasonText = when (finalResult.reason) {
                         HomeworkSyncFailure.NETWORK -> "上传失败，请检查网络后重试。"
                         HomeworkSyncFailure.SESSION_EXPIRED -> "登录会话已失效，请点击右上角刷新重试登录。"
+                        // 服务端原文（如「上传文件类型不支持，请更换文件！」）比通用文案更有用；
+                        // 回执没有可读原因时仍要给出可执行的下一步。
+                        HomeworkSyncFailure.SUBMIT_REJECTED -> finalResult.serverMessage
+                            ?: "学校平台没有接受这次提交，请更换文件或稍后重试。"
                         HomeworkSyncFailure.MALFORMED_RESPONSE -> "学校平台没有确认提交成功，请稍后重试。"
                         HomeworkSyncFailure.SECURE_CHANNEL_UNAVAILABLE -> "该资源地址不在允许的学校通道范围内。"
                         HomeworkSyncFailure.CACHE -> "提交已停止，本地缓存不可用。"
                     }
+                    uploadFeedback = finalResult.diagnostic
+                        ?.let { diagnostic -> "$reasonText\n（原因：$diagnostic）" }
+                        ?: reasonText
                 }
                 is HomeworkOperationResult.Success -> {
                     showUpload = false
@@ -1343,6 +1350,8 @@ private fun HomeworkFailureBanner(
             HomeworkSyncFailure.SECURE_CHANNEL_UNAVAILABLE ->
                 "该资源地址不在允许的学校通道范围内。"
             HomeworkSyncFailure.CACHE -> "本地作业缓存操作失败。"
+            // 提交被服务端回绝不会写进同步横幅，这里只是保证状态机完整可穷举。
+            HomeworkSyncFailure.SUBMIT_REJECTED -> "提交被学校平台回绝，请查看上传窗口中的原因。"
         },
         onRetry = if (failure != HomeworkSyncFailure.CACHE) onRetry else null,
         onDismiss = onDismiss,

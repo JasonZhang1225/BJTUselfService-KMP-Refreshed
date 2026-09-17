@@ -10,6 +10,7 @@ import kotlin.test.assertTrue
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
+import team.bjtuss.bjtuselfservice.shared.network.SchoolNetworkException
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
@@ -161,10 +162,10 @@ class HomeworkRemoteDataSourceTest {
             ),
             smartBytes("submitted-file".encodeToByteArray(), "application/pdf"),
             smartResponse(
-                """{"fileNameNoExt":"answer","fileExtName":"pdf","fileSize":"11","visitName":"server-visit"}""",
+                """{"STATUS":"0","fileNameNoExt":"answer","fileExtName":"pdf","fileSize":"11","visitName":"server-visit"}""",
             ),
-            // The original Android 1.7.0 client accepts any successful HTTP response here.
-            smartResponse("{\"STATUS\":\"5\",\"message\":\"网关回执不稳定\"}"),
+            // 网页端提交成功回执是 {"flag":"success"}；只在 HTTP 200 上判成功是历史缺陷。
+            smartResponse("""{"flag":"success"}"""),
         )
         val remote = SchoolHomeworkRemoteDataSource(transport, requestDelayMillis = 0)
         val homework = homework()
@@ -183,16 +184,101 @@ class HomeworkRemoteDataSourceTest {
         assertEquals("submitted-file", submittedFile.bytes.decodeToString())
         val uploadRequest = transport.requests[7]
         assertEquals("POST", uploadRequest.method.name)
+        // 学生走 homeworkUpload.shtml?noteId=<upId>；rpUpload.shtml 是老师端点，
+        // 学生调用会得到「学生角色无权限上传」。
+        assertTrue("homeworkUpload.shtml" in uploadRequest.url)
+        assertFalse("rpUpload" in uploadRequest.url)
+        assertTrue("noteId=101" in uploadRequest.url)
+        assertEquals("file", uploadRequest.multipartFiles.single().fieldName)
         assertEquals("我的答案.pdf", uploadRequest.multipartFiles.single().fileName)
-        assertEquals("application/octet-stream", uploadRequest.multipartFiles.single().contentType)
+        assertEquals("application/pdf", uploadRequest.multipartFiles.single().contentType)
         assertEquals(mapOf("sessionid" to "session-value"), uploadRequest.headers)
         assertFalse("我的答案.pdf" in uploadRequest.toString())
         val submitRequest = transport.requests[8]
         assertEquals("%E6%8F%90%E4%BA%A4%E8%AF%B4%E6%98%8E", submitRequest.formFields["content"])
         assertTrue("sendStuHomeWorks" in submitRequest.url)
+        // 服务端把 return_num 当整数解析，网页表单未初始化的 `{}` 会让提交失败并清掉旧记录。
+        assertEquals("0", submitRequest.formFields["return_num"])
         assertEquals(mapOf("sessionid" to "session-value"), submitRequest.headers)
         assertFalse("提交说明" in submitRequest.toString())
         assertFalse("%E6%8F%90" in submitRequest.toString())
+    }
+
+    @Test
+    fun retriesUploadOnceAfterTransientNetworkFailure() = runBlocking {
+        // 模拟器上真实出现过：唯一一次上传请求抖动就让整次提交报「上传失败，请检查网络后重试」，
+        // 作业弹层没有别的重试路径。第一次上传抛网络异常，第二次必须能补上并完成提交。
+        val transport = FailingFirstUploadTransport(
+            smartResponse("<html></html>"),
+            smartResponse("""{"sessionId":"session-value"}"""),
+            smartResponse("""{"STATUS":"0","result":[{"xqCode":"2026-1"}]}"""),
+            smartResponse("""{"STATUS":"0","courseList":[{"id":17,"name":"程序设计","teacher_id":28}]}"""),
+            smartResponse(
+                """{"STATUS":"0","fileNameNoExt":"answer","fileExtName":"pdf","fileSize":"4","visitName":"server-visit"}""",
+            ),
+            smartResponse("""{"flag":"success"}"""),
+        )
+        val remote = SchoolHomeworkRemoteDataSource(transport, requestDelayMillis = 0)
+
+        remote.submitHomework(
+            homework = homework(),
+            content = "提交说明",
+            files = listOf(HomeworkFileContent("答案.pdf", "application/pdf", byteArrayOf(1, 2, 3, 4))),
+        )
+
+        assertEquals(1, transport.failedUploads)
+        assertEquals(2, transport.requests.count { "homeworkUpload.shtml" in it.url })
+        assertEquals(1, transport.requests.count { "sendStuHomeWorks" in it.url })
+    }
+
+    @Test
+    fun rejectsUploadWhenReceiptStatusIsNotZero() = runBlocking {
+        val transport = QueueTransport(
+            smartResponse("<html></html>"),
+            smartResponse("""{"sessionId":"session-value"}"""),
+            smartResponse("""{"STATUS":"0","result":[{"xqCode":"2026-1"}]}"""),
+            smartResponse("""{"STATUS":"0","courseList":[{"id":17,"name":"程序设计","teacher_id":28}]}"""),
+            // 老师端点/非法扩展名的真实回执形状。
+            smartResponse("""{"STATUS":"2","MSG":"学生角色无权限上传"}"""),
+        )
+        val remote = SchoolHomeworkRemoteDataSource(transport, requestDelayMillis = 0)
+
+        val error = assertFailsWith<HomeworkRemoteException> {
+            remote.submitHomework(
+                homework = homework(),
+                content = "提交说明",
+                files = listOf(HomeworkFileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
+            )
+        }
+
+        assertEquals(HomeworkRemoteFailure.SUBMIT_REJECTED, error.reason)
+        assertEquals("学生角色无权限上传", error.message)
+    }
+
+    @Test
+    fun rejectsSubmitWhenServerFlagIsNotSuccess() = runBlocking {
+        val transport = QueueTransport(
+            smartResponse("<html></html>"),
+            smartResponse("""{"sessionId":"session-value"}"""),
+            smartResponse("""{"STATUS":"0","result":[{"xqCode":"2026-1"}]}"""),
+            smartResponse("""{"STATUS":"0","courseList":[{"id":17,"name":"程序设计","teacher_id":28}]}"""),
+            smartResponse(
+                """{"STATUS":"0","fileNameNoExt":"answer","fileExtName":"pdf","fileSize":"11","visitName":"server-visit"}""",
+            ),
+            // `return_num` 取错值时服务端的真实回执：提交未生效。
+            smartResponse("""{"flag":"bad"}"""),
+        )
+        val remote = SchoolHomeworkRemoteDataSource(transport, requestDelayMillis = 0)
+
+        val error = assertFailsWith<HomeworkRemoteException> {
+            remote.submitHomework(
+                homework = homework(),
+                content = "提交说明",
+                files = listOf(HomeworkFileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
+            )
+        }
+
+        assertEquals(HomeworkRemoteFailure.MALFORMED_RESPONSE, error.reason)
     }
 
     @Test
@@ -256,6 +342,24 @@ class HomeworkRemoteDataSourceTest {
 
         override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse {
             requests += request
+            return queue.removeFirst()
+        }
+
+        override fun clearSession() = Unit
+    }
+
+    /** 第一次上传请求抛网络异常，之后按队列正常返回。 */
+    private class FailingFirstUploadTransport(vararg responses: SchoolHttpResponse) : SchoolHttpTransport {
+        private val queue = responses.toMutableList()
+        val requests = mutableListOf<SchoolHttpRequest>()
+        var failedUploads = 0
+
+        override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse {
+            requests += request
+            if ("homeworkUpload.shtml" in request.url && failedUploads == 0) {
+                failedUploads += 1
+                throw SchoolNetworkException("synthetic transient upload failure")
+            }
             return queue.removeFirst()
         }
 
