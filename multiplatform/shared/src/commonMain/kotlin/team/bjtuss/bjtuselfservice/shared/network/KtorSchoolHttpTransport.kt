@@ -23,6 +23,7 @@ import io.ktor.http.content.ByteArrayContent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import team.bjtuss.bjtuselfservice.shared.logging.AppLog
 
 expect fun schoolHttpEngineFactory(): HttpClientEngineFactory<*>
 
@@ -150,7 +151,8 @@ class KtorSchoolHttpTransport(
         } catch (error: Throwable) {
             // 只记录可定位问题的形状信息：异常类型+消息、方法、脱敏 URL、是否 multipart、
             // 文件字节数。不记录文件名、正文、Cookie 或会话值。
-            println(
+            AppLog.d(
+                "SchoolHttp",
                 "SchoolHttpRequest failed: method=${request.method} " +
                     "url=${request.url.substringBefore('?')} " +
                     "multipart=${request.multipartFiles.isNotEmpty()} " +

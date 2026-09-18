@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.auth
 
+import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
+
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
@@ -7,11 +9,9 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 private const val MIS_SSO_URL = "https://mis.bjtu.edu.cn/auth/sso/?next=/"
 private const val MIS_HOME_URL = "https://mis.bjtu.edu.cn/home/"
 private const val CAS_LOGIN_PREFIX = "https://cas.bjtu.edu.cn/auth/login/?next="
-private const val CAS_ORIGIN = "https://cas.bjtu.edu.cn"
-private const val CAS_REFRESH_LOGIN_URL =
-    "$CAS_ORIGIN/auth/login/?next=%2Fauth%2Fsso%2F%3Fnext%3D%2F"
+private val CAS_REFRESH_LOGIN_URL =
+    "${SchoolEndpoints.CAS_ORIGIN}/auth/login/?next=%2Fauth%2Fsso%2F%3Fnext%3D%2F"
 private const val AA_MODULE_URL = "https://mis.bjtu.edu.cn/module/module/10/"
-private const val AA_HOME_URL = "https://aa.bjtu.edu.cn/notice/item/"
 
 sealed interface SessionProbeResult {
     data object Active : SessionProbeResult
@@ -112,7 +112,7 @@ class SchoolLoginProtocol(
             is ParseResult.Failure -> return ChallengeResult.Failed(LoginFailure.MALFORMED_RESPONSE)
         }
         val image = transport.execute(
-            SchoolHttpRequest(SchoolHttpMethod.GET, "$CAS_ORIGIN/image/${form.captchaId}/"),
+            SchoolHttpRequest(SchoolHttpMethod.GET, "${SchoolEndpoints.CAS_ORIGIN}/image/${form.captchaId}/"),
         )
         if (image.statusCode !in 200..299 || image.body.isEmpty()) {
             return ChallengeResult.Failed(LoginFailure.NETWORK)
@@ -145,7 +145,7 @@ class SchoolLoginProtocol(
                 url = challenge.loginPageUrl,
                 headers = mapOf(
                     "Referer" to challenge.loginPageUrl,
-                    "Origin" to CAS_ORIGIN,
+                    "Origin" to SchoolEndpoints.CAS_ORIGIN,
                 ),
                 formFields = mapOf(
                     "csrfmiddlewaretoken" to challenge.csrfToken,
@@ -189,7 +189,7 @@ class SchoolLoginProtocol(
                 headers = mapOf("Referer" to AA_MODULE_URL),
             ),
         )
-        return response.finalUrl.matchesEndpoint(AA_HOME_URL)
+        return response.finalUrl.matchesEndpoint(SchoolEndpoints.AA_HOME_URL)
     }
 
     fun logout() = transport.clearSession()

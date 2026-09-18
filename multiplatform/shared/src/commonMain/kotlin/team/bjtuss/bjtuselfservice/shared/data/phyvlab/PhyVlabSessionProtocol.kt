@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.data.phyvlab
 
+import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
+
 import com.fleeksoft.ksoup.Ksoup
 import io.ktor.http.URLBuilder
 import io.ktor.http.Url
@@ -9,11 +11,9 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
-private const val PHYVLAB_ORIGIN = "https://phyvlab.bjtu.edu.cn"
-private const val CAS_ORIGIN = "https://cas.bjtu.edu.cn"
-private const val PHYVLAB_LOGIN_URL = "$PHYVLAB_ORIGIN/login/index.php"
-private const val PHYVLAB_HOME_URL = "$PHYVLAB_ORIGIN/"
-private const val PHYVLAB_COURSES_URL = "$PHYVLAB_ORIGIN/my/courses.php"
+private val PHYVLAB_LOGIN_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/login/index.php"
+private val PHYVLAB_HOME_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/"
+private val PHYVLAB_COURSES_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/my/courses.php"
 
 private val ALLOWED_HANDSHAKE_HOSTS = setOf("phyvlab.bjtu.edu.cn", "cas.bjtu.edu.cn")
 
@@ -70,7 +70,7 @@ class PhyVlabSessionProtocol(
         }
 
         // 如果 CAS 会话已失效，初始入口也可能直接落在 CAS 登录表单。
-        if (loginPage.finalUrl.startsWith(CAS_ORIGIN) && looksLikeCasLoginForm(body)) {
+        if (loginPage.finalUrl.startsWith(SchoolEndpoints.CAS_ORIGIN) && looksLikeCasLoginForm(body)) {
             return PhyVlabSessionResult.CasLoginRequired
         }
 
@@ -108,10 +108,10 @@ class PhyVlabSessionProtocol(
 
     private suspend fun SchoolHttpResponse.toSessionResult(): PhyVlabSessionResult {
         val url = finalUrl
-        if (url.startsWith(CAS_ORIGIN) && looksLikeCasLoginForm(bodyText())) {
+        if (url.startsWith(SchoolEndpoints.CAS_ORIGIN) && looksLikeCasLoginForm(bodyText())) {
             return PhyVlabSessionResult.CasLoginRequired
         }
-        if (url.startsWith(PHYVLAB_ORIGIN)) {
+        if (url.startsWith(SchoolEndpoints.PHYVLAB_ORIGIN)) {
             val body = bodyText()
             if (isPhyVlabAuthenticatedPage(url, body)) {
                 return PhyVlabSessionResult.Ready(PHYVLAB_HOME_URL)
@@ -128,10 +128,10 @@ class PhyVlabSessionProtocol(
                     "casForm=${looksLikeCasLoginForm(settledBody)} " +
                     "loginPage=${looksLikePhyVlabLoginPage(settledBody)}",
             )
-            if (settled.finalUrl.startsWith(CAS_ORIGIN) && looksLikeCasLoginForm(settledBody)) {
+            if (settled.finalUrl.startsWith(SchoolEndpoints.CAS_ORIGIN) && looksLikeCasLoginForm(settledBody)) {
                 return PhyVlabSessionResult.CasLoginRequired
             }
-            if (settled.finalUrl.startsWith(PHYVLAB_ORIGIN) &&
+            if (settled.finalUrl.startsWith(SchoolEndpoints.PHYVLAB_ORIGIN) &&
                 isPhyVlabAuthenticatedPage(settled.finalUrl, settledBody)
             ) {
                 return PhyVlabSessionResult.Ready(PHYVLAB_HOME_URL)
@@ -224,7 +224,7 @@ private fun parsePhyVlabOauthUrl(html: String): String? {
         }.getOrNull()
     }
     return sesskey?.let {
-        "$PHYVLAB_ORIGIN/auth/oauth2/login.php?id=1&sesskey=$it&wantsurl=%2F"
+        "${SchoolEndpoints.PHYVLAB_ORIGIN}/auth/oauth2/login.php?id=1&sesskey=$it&wantsurl=%2F"
     }
 }
 
@@ -237,7 +237,7 @@ private fun isPhyVlabOauthUrl(url: String): Boolean {
 }
 
 private fun isPhyVlabAuthenticatedPage(url: String, html: String): Boolean {
-    if (!url.startsWith(PHYVLAB_ORIGIN)) return false
+    if (!url.startsWith(SchoolEndpoints.PHYVLAB_ORIGIN)) return false
     val doc = Ksoup.parse(html)
     val logout = doc.selectFirst("a[href*='/login/logout.php']") != null
     // “我的课程/个人主页”链接在访客页也可能出现，不能单独作为登录态凭据；

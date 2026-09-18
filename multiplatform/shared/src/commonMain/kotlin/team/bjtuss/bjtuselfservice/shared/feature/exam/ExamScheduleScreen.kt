@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.exam
 
+import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceEmptyState
+import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceLoadingState
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -569,26 +572,11 @@ private fun ExamFailureBanner(
 }
 
 @Composable
-private fun ExamLoadingState() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            CircularProgressIndicator()
-            Text("正在读取本地考试安排并连接教务系统…")
-        }
-    }
-}
+private fun ExamLoadingState() = WorkspaceLoadingState("正在读取本地考试安排并连接教务系统…")
 
 @Composable
-private fun ExamEmptyState(onRefresh: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("暂无考试安排", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text(
-                "本地没有缓存，教务系统也没有返回可显示的考试。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(onClick = onRefresh) { Text("重新同步") }
-        }
-    }
-}
+private fun ExamEmptyState(onRefresh: () -> Unit) = WorkspaceEmptyState(
+    title = "暂无考试安排",
+    description = "本地没有缓存，教务系统也没有返回可显示的考试。",
+    onRefresh = onRefresh,
+)

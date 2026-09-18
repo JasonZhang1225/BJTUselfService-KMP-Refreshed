@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.data.classroomoccupancy
 
+import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
+
 import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -12,8 +14,6 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
-private const val AA_ORIGIN = "https://aa.bjtu.edu.cn/"
-private const val ROOM_VIEW_URL = "https://aa.bjtu.edu.cn/classroom/timeholdresult/room_view/"
 private const val CALENDAR_PAGE_URL = "https://bksy.bjtu.edu.cn/Admin/SemesterTranPage.aspx?noRemark=1"
 
 /**
@@ -74,7 +74,7 @@ class SchoolClassroomOccupancyRemoteDataSource(
     ): ClassroomOccupancyPage {
         require(week in 1..53) { "week out of range" }
         val url = buildString {
-            append("$ROOM_VIEW_URL?zc=$week")
+            append("${SchoolEndpoints.ROOM_VIEW_URL}?zc=$week")
             append("&jxlh=${buildingId.encodeURLParameter()}")
             if (semesterId != null) {
                 append("&zxjxjhh=${semesterId.encodeURLParameter()}")
@@ -99,7 +99,7 @@ class SchoolClassroomOccupancyRemoteDataSource(
 
     override suspend fun fetchSemesters(): SemesterOptions {
         // 下拉在列表页本身就渲染出来，按最小参数取一次页面即可。
-        val response = executeWithAaSession("$ROOM_VIEW_URL?zc=1&jxlh=1&page=1&perpage=5")
+        val response = executeWithAaSession("${SchoolEndpoints.ROOM_VIEW_URL}?zc=1&jxlh=1&page=1&perpage=5")
         return parseSemesterOptions(response.bodyText())
             ?: throw ClassroomOccupancyRemoteException(ClassroomOccupancyRemoteFailure.MALFORMED_RESPONSE)
     }
@@ -146,7 +146,7 @@ class SchoolClassroomOccupancyRemoteDataSource(
         if (response.statusCode !in 200..299) {
             throw ClassroomOccupancyRemoteException(ClassroomOccupancyRemoteFailure.NETWORK)
         }
-        if (!response.finalUrl.startsWith(AA_ORIGIN)) {
+        if (!response.finalUrl.startsWith(SchoolEndpoints.AA_ORIGIN)) {
             throw ClassroomOccupancyRemoteException(ClassroomOccupancyRemoteFailure.SESSION_EXPIRED)
         }
         return response

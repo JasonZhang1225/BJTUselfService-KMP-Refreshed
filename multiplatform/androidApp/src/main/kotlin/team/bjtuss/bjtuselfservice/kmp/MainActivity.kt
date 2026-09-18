@@ -10,6 +10,7 @@ import team.bjtuss.bjtuselfservice.shared.App
 import team.bjtuss.bjtuselfservice.shared.cache.createAndroidCacheStore
 import team.bjtuss.bjtuselfservice.shared.security.createAndroidAccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.auth.AndroidTorchCaptchaRecognizer
+import team.bjtuss.bjtuselfservice.shared.logging.AppLog
 
 class MainActivity : ComponentActivity() {
     private val refreshRate = AndroidRefreshRateController(this)
@@ -17,6 +18,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // 调试日志只在 debug 构建开启；release 保持关闭。
+        AppLog.enabled = BuildConfig.DEBUG
         // 不要在此处预热 WebView：Chromium 会让 HyperOS 把应用标成「跟随应用内设置」并锁 60Hz。
         refreshRate.start()
         val accountSecurityStore = createAndroidAccountSecurityStore(this)

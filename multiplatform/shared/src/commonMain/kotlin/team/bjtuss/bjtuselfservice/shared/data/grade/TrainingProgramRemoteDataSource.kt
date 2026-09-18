@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.data.grade
 
+import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import team.bjtuss.bjtuselfservice.shared.domain.grade.CourseType
@@ -8,8 +10,6 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
 private const val AA_PROGRAM_URL = "https://aa.bjtu.edu.cn/training/training/program/"
-private const val AA_PROGRAM_ORIGIN = "https://aa.bjtu.edu.cn/"
-private const val AA_PROGRAM_REFERER = "https://aa.bjtu.edu.cn/notice/item/"
 
 interface TrainingProgramRemoteDataSource {
     suspend fun fetchCourseTypes(): Map<String, CourseType>
@@ -55,7 +55,7 @@ class SchoolTrainingProgramRemoteDataSource(
                     url = url,
                     headers = mapOf(
                         "Host" to "aa.bjtu.edu.cn",
-                        "Referer" to AA_PROGRAM_REFERER,
+                        "Referer" to SchoolEndpoints.AA_HOME_URL,
                     ),
                 ),
             )
@@ -67,7 +67,7 @@ class SchoolTrainingProgramRemoteDataSource(
         if (response.statusCode !in 200..299) {
             throw GradeRemoteException(GradeRemoteFailure.NETWORK)
         }
-        if (!response.finalUrl.startsWith(AA_PROGRAM_ORIGIN)) {
+        if (!response.finalUrl.startsWith(SchoolEndpoints.AA_ORIGIN)) {
             throw GradeRemoteException(GradeRemoteFailure.SESSION_EXPIRED)
         }
         response

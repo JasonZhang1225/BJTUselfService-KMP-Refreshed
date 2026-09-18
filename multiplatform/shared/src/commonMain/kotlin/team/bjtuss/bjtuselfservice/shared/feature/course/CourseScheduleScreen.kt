@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.course
 
+import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceEmptyState
+import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceLoadingState
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -1507,30 +1510,15 @@ private fun CourseFailureBanner(
 }
 
 @Composable
-private fun CourseLoadingState() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            CircularProgressIndicator()
-            Text("正在读取本地课表并连接教务系统…")
-        }
-    }
-}
+private fun CourseLoadingState() = WorkspaceLoadingState("正在读取本地课表并连接教务系统…")
 
 @Composable
-private fun CourseEmptyState(type: CourseScheduleType, onRefresh: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("暂无课表", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text(
-                if (type == CourseScheduleType.CURRENT) {
-                    "本地和教务系统均没有返回本学期课程。"
-                } else {
-                    "教务系统当前没有可显示的选课课表。"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(onClick = onRefresh) { Text("重新同步") }
-        }
-    }
-}
+private fun CourseEmptyState(type: CourseScheduleType, onRefresh: () -> Unit) = WorkspaceEmptyState(
+    title = "暂无课表",
+    description = if (type == CourseScheduleType.CURRENT) {
+        "本地和教务系统均没有返回本学期课程。"
+    } else {
+        "教务系统当前没有可显示的选课课表。"
+    },
+    onRefresh = onRefresh,
+)

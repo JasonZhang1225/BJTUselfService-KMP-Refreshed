@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.data.courseware
 
+import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -23,7 +25,6 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
-private const val SMART_MODULE_URL = "https://mis.bjtu.edu.cn/module/module/28/"
 private const val ARTICLE_PATH = "/ve/back/coursePlatform/message.shtml"
 private const val SEMESTER_PATH = "/ve/back/rp/common/teachCalendar.shtml"
 private const val COURSE_PATH = "/ve/back/coursePlatform/course.shtml"
@@ -219,7 +220,7 @@ class SchoolCoursewareRemoteDataSource(
         val module = execute(
             SchoolHttpRequest(
                 method = SchoolHttpMethod.GET,
-                url = SMART_MODULE_URL,
+                url = SchoolEndpoints.SMART_MODULE_URL,
                 headers = mapOf("Referer" to "https://mis.bjtu.edu.cn/home/"),
             ),
         )
@@ -228,7 +229,7 @@ class SchoolCoursewareRemoteDataSource(
         // apiOrigin，HTTPS 跳限 cas/mis 学校主机），直到落地。
         val settled = endpoint.followSmartHandshakeRedirects(
             first = module,
-            referer = SMART_MODULE_URL,
+            referer = SchoolEndpoints.SMART_MODULE_URL,
         ) { request -> execute(request) }
         if (settled !== module || settled.statusCode in 300..399) {
             if (settled.statusCode in 300..399) {
@@ -252,7 +253,7 @@ class SchoolCoursewareRemoteDataSource(
                     SchoolHttpRequest(
                         method = SchoolHttpMethod.GET,
                         url = redirect,
-                        headers = mapOf("Referer" to SMART_MODULE_URL),
+                        headers = mapOf("Referer" to SchoolEndpoints.SMART_MODULE_URL),
                     ),
                 )
                 if (linked.statusCode !in 200..299) network()

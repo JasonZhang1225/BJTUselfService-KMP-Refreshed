@@ -110,7 +110,7 @@ fun AuthenticatedDestinationApp(
     ) { effectiveFontScale ->
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                team.bjtuss.bjtuselfservice.shared.feature.grade.AuthenticatedAppShell(
+                team.bjtuss.bjtuselfservice.shared.feature.shell.AuthenticatedAppShell(
                     session = session,
                     platform = currentPlatform(),
                     windowClass = adaptiveWindowClassFor(

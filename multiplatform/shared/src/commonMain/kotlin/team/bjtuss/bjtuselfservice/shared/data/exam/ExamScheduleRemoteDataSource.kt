@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.data.exam
 
+import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
@@ -7,7 +9,6 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
-private const val AA_ORIGIN = "https://aa.bjtu.edu.cn/"
 private const val EXAM_URL = "https://aa.bjtu.edu.cn/examine/examplanstudent/stulist/"
 
 enum class ExamScheduleRemoteFailure {
@@ -46,7 +47,7 @@ class SchoolExamScheduleRemoteDataSource(
         if (response.statusCode !in 200..299) {
             throw ExamScheduleRemoteException(ExamScheduleRemoteFailure.NETWORK)
         }
-        if (!response.finalUrl.startsWith(AA_ORIGIN)) {
+        if (!response.finalUrl.startsWith(SchoolEndpoints.AA_ORIGIN)) {
             throw ExamScheduleRemoteException(ExamScheduleRemoteFailure.SESSION_EXPIRED)
         }
         return when (val parsed = parseExamScheduleTable(response.bodyText())) {

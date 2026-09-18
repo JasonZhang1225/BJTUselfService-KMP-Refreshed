@@ -4,6 +4,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import team.bjtuss.bjtuselfservice.shared.feature.shell.MailboxBackTarget
+import team.bjtuss.bjtuselfservice.shared.feature.shell.mailboxBackTarget
+import team.bjtuss.bjtuselfservice.shared.feature.shell.shouldHandleInlineMailboxBack
+import team.bjtuss.bjtuselfservice.shared.feature.shell.shouldOpenNativeSectionRoute
 
 class GradeScreenNavigationTest {
     @Test

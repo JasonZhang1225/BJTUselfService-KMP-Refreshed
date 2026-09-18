@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.data.courseware
 
+import team.bjtuss.bjtuselfservice.shared.util.jsonEscape
+
 import team.bjtuss.bjtuselfservice.shared.data.homework.StrictJsonValue
 import team.bjtuss.bjtuselfservice.shared.data.homework.arrayOrBlank
 import team.bjtuss.bjtuselfservice.shared.data.homework.asObject
@@ -175,24 +177,4 @@ private fun StringBuilder.appendJsonField(
 ) {
     append('"').append(name).append("\":")
     if (quoted) append('"').append(value.jsonEscape()).append('"') else append(value)
-}
-
-private fun String.jsonEscape(): String = buildString {
-    this@jsonEscape.forEach { character ->
-        when (character) {
-            '"' -> append("\\\"")
-            '\\' -> append("\\\\")
-            '\b' -> append("\\b")
-            '\u000c' -> append("\\f")
-            '\n' -> append("\\n")
-            '\r' -> append("\\r")
-            '\t' -> append("\\t")
-            else -> if (character.code < 0x20) {
-                append("\\u")
-                append(character.code.toString(16).padStart(4, '0'))
-            } else {
-                append(character)
-            }
-        }
-    }
 }

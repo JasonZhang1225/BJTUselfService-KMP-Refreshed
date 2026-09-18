@@ -124,7 +124,7 @@ import team.bjtuss.bjtuselfservice.shared.data.home.gradeChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.data.home.homeworkChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.exam.ExamScheduleScreenModel
-import team.bjtuss.bjtuselfservice.shared.feature.grade.AuthenticatedAppShell
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AuthenticatedAppShell
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.grade.GradeScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkScreenModel
@@ -137,6 +137,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.settings.SettingsScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
+import team.bjtuss.bjtuselfservice.shared.feature.shell.rememberAuthenticatedSession
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.network.createSchoolHttpTransport
@@ -506,216 +507,24 @@ fun LoginRoute(
     // 静默入场：自动登录完成前，用缓存档案先把主界面渲染出来。
     val shellProfile = signedIn?.profile ?: autoEntryProfile
     if (shellProfile != null && protocol.isInitialized()) {
-        val smartPlatformEndpoint = remember(platform.family) {
-            smartPlatformEndpointFor(platform.family)
-        }
-        val homeChangeFeed = remember(shellProfile.studentId, cacheStore) {
-            CacheStoreHomeChangeFeedRepository(shellProfile.studentId, cacheStore)
-        }
-        val gradeRepository = remember(shellProfile.studentId, cacheStore) {
-            DefaultGradeRepository(
-                accountScope = shellProfile.studentId,
-                local = CacheStoreGradeLocalDataSource(cacheStore),
-                remote = SchoolGradeRemoteDataSource(transport.value),
-                programRemote = SchoolTrainingProgramRemoteDataSource(transport.value),
-            )
-        }
-        val gradeModel = remember(gradeRepository, homeChangeFeed) {
-            GradeScreenModel(gradeRepository, gradeChangeRecorder(homeChangeFeed))
-        }
-        // M11/M12 共用同一校历与学期来源：避免课表日期跳转再建一套 bksy 请求。
-        val classroomOccupancyRepository = remember {
-            DefaultClassroomOccupancyRepository(
-                remote = SchoolClassroomOccupancyRemoteDataSource(transport.value),
-            )
-        }
-        val courseScheduleRepository = remember(shellProfile.studentId, cacheStore, smartPlatformEndpoint) {
-            DefaultCourseScheduleRepository(
-                accountScope = shellProfile.studentId,
-                local = CacheStoreCourseScheduleLocalDataSource(cacheStore),
-                remote = SchoolCourseScheduleRemoteDataSource(
-                    transport = transport.value,
-                    endpoint = smartPlatformEndpoint,
-                ),
-            )
-        }
-        val courseScheduleModel = remember(courseScheduleRepository, homeChangeFeed, classroomOccupancyRepository) {
-            CourseScheduleScreenModel(
-                repository = courseScheduleRepository,
-                changeRecorder = courseChangeRecorder(homeChangeFeed),
-                calendarRepository = classroomOccupancyRepository,
-            )
-        }
-        val examScheduleRepository = remember(shellProfile.studentId, cacheStore) {
-            DefaultExamScheduleRepository(
-                accountScope = shellProfile.studentId,
-                local = CacheStoreExamScheduleLocalDataSource(cacheStore),
-                remote = SchoolExamScheduleRemoteDataSource(transport.value),
-            )
-        }
-        val examScheduleModel = remember(examScheduleRepository, homeChangeFeed) {
-            ExamScheduleScreenModel(examScheduleRepository, examChangeRecorder(homeChangeFeed))
-        }
-        val homeworkRepository = remember(shellProfile.studentId, cacheStore, smartPlatformEndpoint) {
-            DefaultHomeworkRepository(
-                accountScope = shellProfile.studentId,
-                local = CacheStoreHomeworkLocalDataSource(cacheStore),
-                remote = SchoolHomeworkRemoteDataSource(
-                    transport = transport.value,
-                    endpoint = smartPlatformEndpoint,
-                ),
-            )
-        }
-        val homeworkModel = remember(homeworkRepository, homeChangeFeed) {
-            HomeworkScreenModel(homeworkRepository, homeworkChangeRecorder(homeChangeFeed))
-        }
-        val coursewareRepository = remember(shellProfile.studentId, cacheStore, smartPlatformEndpoint) {
-            DefaultCoursewareRepository(
-                accountScope = shellProfile.studentId,
-                local = CacheStoreCoursewareLocalDataSource(cacheStore),
-                remote = SchoolCoursewareRemoteDataSource(
-                    transport = transport.value,
-                    endpoint = smartPlatformEndpoint,
-                ),
-            )
-        }
-        val otherFunctionRepository = remember {
-            DefaultOtherFunctionRepository(
-                remote = SchoolOtherFunctionRemoteDataSource(transport.value),
-            )
-        }
-        val otherFunctionModel = remember(otherFunctionRepository, homeworkFileGateway) {
-            OtherFunctionScreenModel(otherFunctionRepository, homeworkFileGateway)
-        }
-        val classroomRepository = remember {
-            DefaultClassroomRepository(
-                remote = SchoolClassroomRemoteDataSource(createSchoolHttpTransport()),
-            )
-        }
-        val classroomModel = remember(classroomRepository) {
-            ClassroomScreenModel(classroomRepository)
-        }
-        val classroomOccupancyModel = remember(classroomOccupancyRepository) {
-            ClassroomOccupancyScreenModel(
-                repository = classroomOccupancyRepository,
-                // 默认周跟随课表切片的学校当前教学周，课表未同步时回退第 1 周。
-                currentWeekProvider = {
-                    courseScheduleModel.state.value.currentWeek.takeIf { it > 0 } ?: 1
-                },
-            )
-        }
-        val settingsModel = remember(shellProfile.studentId, cacheStore) {
-            SettingsScreenModel(
-                initialPreferences = appPreferences,
-                persistPreferences = onPreferencesChanged,
-                clearAccountCache = {
-                    runCatching { cacheStore.clearAccount(shellProfile.studentId) }.isSuccess
-                },
-                wipeAllLocalData = {
-                    runCatching { cacheStore.clearAll() }.isSuccess && securityCoordinator.clear()
-                },
-                checkLatestRelease = { AppUpdateChecker.fetchLatest(transport.value) },
-            )
-        }
-        val mailboxModel = remember(shellProfile.studentId) {
-            MailboxScreenModel(transport.value)
-        }
-        // 各学校业务会话的 Cookie 有不同生命周期。保留当前登录凭据的内存引用，
-        // 让刷新发现会话过期时可以在 App 内自动恢复 CAS/教务链路，
-        // 不把用户推到无法回传 Cookie 的系统浏览器。
-        val latestCredentials = rememberUpdatedState(Credentials(username.trim(), password))
-        val sessionRecovery = remember(protocol.value, captchaRecognizer) {
-            SchoolSessionRecovery(
-                protocol = protocol.value,
-                captchaRecognizer = captchaRecognizer,
-                credentialsProvider = {
-                    latestCredentials.value.takeIf(Credentials::isValid)
-                },
-            )
-        }
-        val coursewareModel = remember(coursewareRepository, sessionRecovery) {
-            CoursewareScreenModel(
-                repository = coursewareRepository,
-                reauthenticate = sessionRecovery::attempt,
-            )
-        }
-        val phyVlabRepository = remember {
-            DefaultPhyVlabRepository(SchoolPhyVlabRemoteDataSource(transport.value))
-        }
-        val phyVlabSessionProtocol = remember {
-            PhyVlabSessionProtocol(transport.value)
-        }
-        val phyVlabLocalDataSource = remember(cacheStore) {
-            CacheStorePhyVlabLocalDataSource(cacheStore)
-        }
-        val phyVlabModel = remember(
-            phyVlabRepository,
-            phyVlabSessionProtocol,
-            sessionRecovery,
-            phyVlabLocalDataSource,
-            shellProfile.studentId,
-        ) {
-            PhyVlabScreenModel(
-                repository = phyVlabRepository,
-                sessionProtocol = phyVlabSessionProtocol,
-                reauthenticate = sessionRecovery::attempt,
-                localDataSource = phyVlabLocalDataSource,
-                accountScope = shellProfile.studentId,
-            )
-        }
-        val homeStatusRepository = remember(shellProfile.studentId, cacheStore) {
-            DefaultHomeStatusRepository(
-                accountScope = shellProfile.studentId,
-                local = CacheStoreHomeStatusLocalDataSource(cacheStore),
-                remote = SchoolHomeStatusRemoteDataSource(transport.value),
-            )
-        }
-        val homeModel = remember(homeStatusRepository) { HomeScreenModel(homeStatusRepository) }
-        val authenticatedSession = remember(
-            shellProfile,
-            silentAutoLogin,
-            signedIn,
-            gradeModel,
-            courseScheduleModel,
-            examScheduleModel,
-            homeworkModel,
-            coursewareModel,
-            otherFunctionModel,
-            classroomModel,
-            classroomOccupancyModel,
-            settingsModel,
-            appPreferences,
-            mailboxModel,
-            phyVlabModel,
-            homeModel,
-            homeChangeFeed,
-            homeworkFileGateway,
-            coursewareDirectoryGateway,
-        ) {
-            AuthenticatedSession(
-                profile = shellProfile,
-                entryLoggingIn = silentAutoLogin && signedIn == null,
-                gradeModel = gradeModel,
-                courseScheduleModel = courseScheduleModel,
-                examScheduleModel = examScheduleModel,
-                homeworkModel = homeworkModel,
-                coursewareModel = coursewareModel,
-                otherFunctionModel = otherFunctionModel,
-                classroomModel = classroomModel,
-                classroomOccupancyModel = classroomOccupancyModel,
-                settingsModel = settingsModel,
-                loginSyncPreferences = appPreferences,
-                mailboxModel = mailboxModel,
-                phyVlabModel = phyVlabModel,
-                homeModel = homeModel,
-                homeChangeFeed = homeChangeFeed,
-                homeworkFileGateway = homeworkFileGateway,
-                coursewareDirectoryGateway = coursewareDirectoryGateway,
-                systemCalendarGateway = systemCalendarGateway,
-                onLogout = { logout(shellProfile.studentId) },
-                reauthenticateSession = sessionRecovery::attempt,
-            )
-        }
+        val authenticatedSession = rememberAuthenticatedSession(
+            profile = shellProfile,
+            entryLoggingIn = silentAutoLogin && signedIn == null,
+            transport = transport.value,
+            loginProtocol = protocol.value,
+            cacheStore = cacheStore,
+            platform = platform,
+            appPreferences = appPreferences,
+            onPreferencesChanged = onPreferencesChanged,
+            securityCoordinator = securityCoordinator,
+            captchaRecognizer = captchaRecognizer,
+            username = username,
+            password = password,
+            homeworkFileGateway = homeworkFileGateway,
+            coursewareDirectoryGateway = coursewareDirectoryGateway,
+            systemCalendarGateway = systemCalendarGateway,
+            onLogout = ::logout,
+        )
         SideEffect {
             onAuthenticatedSessionChanged(authenticatedSession)
         }

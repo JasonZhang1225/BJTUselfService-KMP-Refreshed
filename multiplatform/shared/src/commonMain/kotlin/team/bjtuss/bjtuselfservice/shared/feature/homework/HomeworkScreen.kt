@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.homework
 
+import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceEmptyState
+import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceLoadingState
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -1359,29 +1362,14 @@ private fun HomeworkFailureBanner(
 }
 
 @Composable
-private fun HomeworkLoadingState() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            CircularProgressIndicator()
-            Text("正在读取本地作业并连接智慧教学平台…")
-        }
-    }
-}
+private fun HomeworkLoadingState() = WorkspaceLoadingState("正在读取本地作业并连接智慧教学平台…")
 
 @Composable
-private fun HomeworkEmptyState(onRefresh: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("暂无作业", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text(
-                "本地没有缓存，智慧教学平台也没有返回可显示的任务。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(onClick = onRefresh) { Text("重新同步") }
-        }
-    }
-}
+private fun HomeworkEmptyState(onRefresh: () -> Unit) = WorkspaceEmptyState(
+    title = "暂无作业",
+    description = "本地没有缓存，智慧教学平台也没有返回可显示的任务。",
+    onRefresh = onRefresh,
+)
 
 private fun Long.toReadableSize(): String = when {
     this <= 0L -> "大小未知"

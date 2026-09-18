@@ -1,5 +1,9 @@
 package team.bjtuss.bjtuselfservice.shared.data.homework
 
+import team.bjtuss.bjtuselfservice.shared.util.jsonEscape
+
+import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
+
 import com.fleeksoft.ksoup.Ksoup
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -9,6 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import team.bjtuss.bjtuselfservice.shared.auth.ParseResult
+import team.bjtuss.bjtuselfservice.shared.logging.AppLog
 import team.bjtuss.bjtuselfservice.shared.auth.parseAcademicRedirectUrl
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkAttachment
@@ -22,7 +27,6 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.network.SchoolMultipartFile
 
-private const val SMART_MODULE_URL = "https://mis.bjtu.edu.cn/module/module/28/"
 private const val ARTICLE_PATH = "/ve/back/coursePlatform/message.shtml"
 private const val SEMESTER_PATH = "/ve/back/rp/common/teachCalendar.shtml"
 private const val COURSE_PATH = "/ve/back/coursePlatform/course.shtml"
@@ -258,8 +262,9 @@ class SchoolHomeworkRemoteDataSource(
                             invalidateSmartSession()
                             sessionExpired()
                         }
-                        println(
-                            "Homework upload receipt rejected: field=${parsed.field}, " +
+                        AppLog.d(
+                            "Homework",
+                            "upload receipt rejected: field=${parsed.field}, " +
                                 uploadReceiptShape(upload),
                         )
                         // 服务端明确回绝（文件类型不支持、缺少 noteId、权限不足）时把原文带给用户，
@@ -308,8 +313,9 @@ class SchoolHomeworkRemoteDataSource(
                         invalidateSmartSession()
                         sessionExpired()
                     }
-                    println(
-                        "Homework submit receipt rejected: field=${parsed.field}, " +
+                    AppLog.d(
+                        "Homework",
+                        "submit receipt rejected: field=${parsed.field}, " +
                             uploadReceiptShape(submit),
                     )
                     parsed.field.takeIf(::isServerRejectionMessage)?.let(::submitRejected)
@@ -327,7 +333,7 @@ class SchoolHomeworkRemoteDataSource(
         block()
     } catch (error: HomeworkRemoteException) {
         if (error.reason != HomeworkRemoteFailure.NETWORK) throw error
-        println("Homework submit step failed with NETWORK, retrying once")
+        AppLog.d("Homework", "submit step failed with NETWORK, retrying once")
         block()
     }
 
@@ -345,7 +351,7 @@ class SchoolHomeworkRemoteDataSource(
         val module = execute(
             SchoolHttpRequest(
                 method = SchoolHttpMethod.GET,
-                url = SMART_MODULE_URL,
+                url = SchoolEndpoints.SMART_MODULE_URL,
                 headers = mapOf("Referer" to "https://mis.bjtu.edu.cn/home/"),
             ),
         )
@@ -354,7 +360,7 @@ class SchoolHomeworkRemoteDataSource(
         // 精确 apiOrigin，HTTPS 跳限 cas/mis 学校主机），直到落地。
         val settled = endpoint.followSmartHandshakeRedirects(
             first = module,
-            referer = SMART_MODULE_URL,
+            referer = SchoolEndpoints.SMART_MODULE_URL,
         ) { request -> execute(request) }
         if (settled !== module || settled.statusCode in 300..399) {
             // 走过了至少一跳；最终落地必须是白名单握手地址且 2xx。
@@ -379,7 +385,7 @@ class SchoolHomeworkRemoteDataSource(
                     SchoolHttpRequest(
                         method = SchoolHttpMethod.GET,
                         url = redirect,
-                        headers = mapOf("Referer" to SMART_MODULE_URL),
+                        headers = mapOf("Referer" to SchoolEndpoints.SMART_MODULE_URL),
                     ),
                 )
                 if (linked.statusCode !in 200..299) network()
@@ -680,26 +686,6 @@ private fun List<HomeworkUploadReceipt>.toUploadFileListJson(): String = joinToS
         "\"fileSize\":\"${receipt.fileSize.jsonEscape()}\"," +
         "\"visitName\":\"${receipt.visitName.jsonEscape()}\"," +
         "\"pid\":\"\",\"ftype\":\"insert\"}"
-}
-
-private fun String.jsonEscape(): String = buildString {
-    this@jsonEscape.forEach { character ->
-        when (character) {
-            '"' -> append("\\\"")
-            '\\' -> append("\\\\")
-            '\b' -> append("\\b")
-            '\u000c' -> append("\\f")
-            '\n' -> append("\\n")
-            '\r' -> append("\\r")
-            '\t' -> append("\\t")
-            else -> if (character.code < 0x20) {
-                append("\\u")
-                append(character.code.toString(16).padStart(4, '0'))
-            } else {
-                append(character)
-            }
-        }
-    }
 }
 
 private fun Int?.orEmptyNumber(): String = this?.toString().orEmpty()

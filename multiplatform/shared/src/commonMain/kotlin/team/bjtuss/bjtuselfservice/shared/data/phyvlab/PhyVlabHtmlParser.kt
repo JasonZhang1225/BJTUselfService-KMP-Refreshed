@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.data.phyvlab
 
+import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
+
 import com.fleeksoft.ksoup.Ksoup
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
@@ -15,7 +17,6 @@ sealed interface PhyVlabParseResult<out T> {
     data class Failure(val field: String) : PhyVlabParseResult<Nothing>
 }
 
-private const val PHYVLAB_ORIGIN = "https://phyvlab.bjtu.edu.cn"
 
 /**
  * 解析 Moodle“我的课程”页卡片。只读取登录后的课程名称、分类、完成百分比与课程链接。
@@ -60,7 +61,7 @@ fun parsePhyVlabCourses(html: String): PhyVlabParseResult<List<PhyVlabCourse>> {
         val href = link?.attr("href").orEmpty()
         val courseUrl = when {
             href.startsWith("https://", ignoreCase = true) -> href
-            href.startsWith("/") -> "$PHYVLAB_ORIGIN$href"
+            href.startsWith("/") -> "${SchoolEndpoints.PHYVLAB_ORIGIN}$href"
             else -> return@mapNotNull null
         }
         PhyVlabCourse(
@@ -128,7 +129,7 @@ private fun parseLegacyPhyVlabCourses(document: com.fleeksoft.ksoup.nodes.Docume
             val href = link.attr("href").trim()
             val courseUrl = when {
                 href.startsWith("https://", ignoreCase = true) -> href
-                href.startsWith("/") -> "$PHYVLAB_ORIGIN$href"
+                href.startsWith("/") -> "${SchoolEndpoints.PHYVLAB_ORIGIN}$href"
                 else -> return@mapNotNull null
             }
             Triple(id, name, courseUrl)
@@ -181,7 +182,7 @@ fun parsePhyVlabActivities(
         val href = link?.attr("href").orEmpty()
         val activityUrl = when {
             href.startsWith("https://", ignoreCase = true) -> href
-            href.startsWith("/") -> "$PHYVLAB_ORIGIN$href"
+            href.startsWith("/") -> "${SchoolEndpoints.PHYVLAB_ORIGIN}$href"
             else -> return@mapNotNull null
         }
         val completion = activity.selectFirst("button[data-action='toggle-manual-completion']")
@@ -342,7 +343,7 @@ internal fun parsePhyVlabAssignmentPage(
     val sesskey = formFields["sesskey"]
         ?.takeIf(String::isNotBlank)
         ?: parsePhyVlabSesskeyFromAssignment(html)
-    val fallbackEditUrl = "$PHYVLAB_ORIGIN/mod/assign/view.php?id=${activity.id}&action=editsubmission"
+    val fallbackEditUrl = "${SchoolEndpoints.PHYVLAB_ORIGIN}/mod/assign/view.php?id=${activity.id}&action=editsubmission"
     val formUrl = form?.attr("action")
         ?.takeIf(String::isNotBlank)
         ?.let(::resolvePhyVlabUrl)
@@ -506,7 +507,7 @@ private fun resolvePhyVlabUrl(href: String): String? {
     val value = href.trim()
     return when {
         value.startsWith("https://", ignoreCase = true) -> value
-        value.startsWith("/") -> "$PHYVLAB_ORIGIN$value"
+        value.startsWith("/") -> "${SchoolEndpoints.PHYVLAB_ORIGIN}$value"
         else -> null
     }
 }
@@ -608,7 +609,7 @@ fun parsePhyVlabEvents(html: String): PhyVlabParseResult<List<PhyVlabEvent>> {
             val href = link.attr("href").orEmpty()
             val eventUrl = when {
                 href.startsWith("https://", ignoreCase = true) -> href
-                href.startsWith("/") -> "$PHYVLAB_ORIGIN$href"
+                href.startsWith("/") -> "${SchoolEndpoints.PHYVLAB_ORIGIN}$href"
                 else -> null
             }
             PhyVlabEvent(

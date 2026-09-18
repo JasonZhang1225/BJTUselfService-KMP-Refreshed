@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.data.phyvlab
 
+import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
+
 import kotlinx.coroutines.CancellationException
 import com.fleeksoft.ksoup.Ksoup
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
@@ -12,11 +14,10 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
-private const val PHYVLAB_ORIGIN = "https://phyvlab.bjtu.edu.cn"
-private const val PHYVLAB_COURSES_URL = "$PHYVLAB_ORIGIN/my/courses.php"
-private const val PHYVLAB_COURSE_VIEW_URL = "$PHYVLAB_ORIGIN/course/view.php"
-private const val PHYVLAB_CALENDAR_URL = "$PHYVLAB_ORIGIN/calendar/view.php"
-private const val PHYVLAB_REPOSITORY_UPLOAD_URL = "$PHYVLAB_ORIGIN/repository/repository_ajax.php"
+private val PHYVLAB_COURSES_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/my/courses.php"
+private val PHYVLAB_COURSE_VIEW_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/course/view.php"
+private val PHYVLAB_CALENDAR_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/calendar/view.php"
+private val PHYVLAB_REPOSITORY_UPLOAD_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/repository/repository_ajax.php"
 
 enum class PhyVlabRemoteFailure {
     NETWORK,
@@ -46,7 +47,7 @@ class SchoolPhyVlabRemoteDataSource(
     private val submissionContexts = mutableMapOf<Int, PhyVlabAssignmentSubmissionContext>()
 
     override suspend fun fetchCourses(): List<PhyVlabCourse> {
-        val response = fetchPage(PHYVLAB_COURSES_URL, referer = "$PHYVLAB_ORIGIN/?redirect=0")
+        val response = fetchPage(PHYVLAB_COURSES_URL, referer = "${SchoolEndpoints.PHYVLAB_ORIGIN}/?redirect=0")
         return when (val parsed = parsePhyVlabCourses(response.bodyText())) {
             is PhyVlabParseResult.Failure -> parse()
             is PhyVlabParseResult.Success -> parsed.value.also {
@@ -78,7 +79,7 @@ class SchoolPhyVlabRemoteDataSource(
     }
 
     override suspend fun fetchAssignmentDetail(activity: PhyVlabActivity): PhyVlabAssignmentDetail {
-        val response = fetchPage(activity.activityUrl, referer = "$PHYVLAB_ORIGIN/course/view.php?id=${activity.courseId}")
+        val response = fetchPage(activity.activityUrl, referer = "${SchoolEndpoints.PHYVLAB_ORIGIN}/course/view.php?id=${activity.courseId}")
         return when (val parsed = parsePhyVlabAssignmentPage(response.bodyText(), activity)) {
             is PhyVlabParseResult.Failure -> parse()
             is PhyVlabParseResult.Success -> {
@@ -90,7 +91,7 @@ class SchoolPhyVlabRemoteDataSource(
                     // 主题可能把“添加/编辑提交”渲染成无 href 的按钮；Moodle
                     // 的标准编辑入口仍是该活动 id + action=editsubmission。
                     val editUrl = page.editSubmissionUrl
-                        ?: "$PHYVLAB_ORIGIN/mod/assign/view.php?id=${activity.id}&action=editsubmission"
+                        ?: "${SchoolEndpoints.PHYVLAB_ORIGIN}/mod/assign/view.php?id=${activity.id}&action=editsubmission"
                     val editResponse = try {
                         fetchPage(editUrl, referer = activity.activityUrl)
                     } catch (error: PhyVlabRemoteException) {
@@ -223,7 +224,7 @@ class SchoolPhyVlabRemoteDataSource(
 
     private fun validateWriteResponse(response: SchoolHttpResponse) {
         if (response.statusCode !in 200..299) network()
-        if (!response.finalUrl.startsWith(PHYVLAB_ORIGIN)) sessionExpired()
+        if (!response.finalUrl.startsWith(SchoolEndpoints.PHYVLAB_ORIGIN)) sessionExpired()
         if (response.finalUrl.contains("/login/index.php") || looksLikePhyVlabLoginPage(response.bodyText())) {
             sessionExpired()
         }
@@ -247,7 +248,7 @@ class SchoolPhyVlabRemoteDataSource(
                 "${safePhyVlabEndpoint(response.finalUrl)} bytes=${response.body.size}",
         )
         if (response.statusCode !in 200..299) network()
-        if (!response.finalUrl.startsWith(PHYVLAB_ORIGIN)) sessionExpired()
+        if (!response.finalUrl.startsWith(SchoolEndpoints.PHYVLAB_ORIGIN)) sessionExpired()
         if (response.finalUrl.contains("/login/index.php") ||
             response.finalUrl.contains("/enrol/index.php")
         ) {

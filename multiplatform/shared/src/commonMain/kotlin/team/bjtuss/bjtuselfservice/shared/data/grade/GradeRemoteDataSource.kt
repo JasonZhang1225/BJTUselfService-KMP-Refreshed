@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.data.grade
 
+import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
+
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 import team.bjtuss.bjtuselfservice.shared.domain.grade.Grade
@@ -9,8 +11,6 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
 private const val AA_GRADE_URL =
     "https://aa.bjtu.edu.cn/score/scores/stu/view/?page=1&perpage=500&ctype="
-private const val AA_ORIGIN = "https://aa.bjtu.edu.cn/"
-private const val AA_REFERER = "https://aa.bjtu.edu.cn/notice/item/"
 
 enum class GradeRemoteFailure {
     NETWORK,
@@ -44,7 +44,7 @@ class SchoolGradeRemoteDataSource(
                         url = AA_GRADE_URL + courseType,
                         headers = mapOf(
                             "Host" to "aa.bjtu.edu.cn",
-                            "Referer" to AA_REFERER,
+                            "Referer" to SchoolEndpoints.AA_HOME_URL,
                         ),
                     ),
                 )
@@ -56,7 +56,7 @@ class SchoolGradeRemoteDataSource(
             if (response.statusCode !in 200..299) {
                 throw GradeRemoteException(GradeRemoteFailure.NETWORK)
             }
-            if (!response.finalUrl.startsWith(AA_ORIGIN)) {
+            if (!response.finalUrl.startsWith(SchoolEndpoints.AA_ORIGIN)) {
                 throw GradeRemoteException(GradeRemoteFailure.SESSION_EXPIRED)
             }
             when (val parsed = parseGradeTable(response.bodyText())) {

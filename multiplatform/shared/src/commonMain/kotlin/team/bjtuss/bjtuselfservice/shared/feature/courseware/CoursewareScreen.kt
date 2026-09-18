@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.courseware
 
+import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceEmptyState
+import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceLoadingState
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -894,29 +897,14 @@ private fun failureMessage(failure: CoursewareSyncFailure, hasContent: Boolean):
 }
 
 @Composable
-private fun CoursewareLoadingState() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            CircularProgressIndicator()
-            Text("正在读取本地课件并连接智慧教学平台…")
-        }
-    }
-}
+private fun CoursewareLoadingState() = WorkspaceLoadingState("正在读取本地课件并连接智慧教学平台…")
 
 @Composable
-private fun CoursewareEmptyState(onRefresh: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("暂无课件", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text(
-                "本地没有缓存，智慧教学平台也没有返回可显示的课程资源。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(onClick = onRefresh) { Text("重新同步") }
-        }
-    }
-}
+private fun CoursewareEmptyState(onRefresh: () -> Unit) = WorkspaceEmptyState(
+    title = "暂无课件",
+    description = "本地没有缓存，智慧教学平台也没有返回可显示的课程资源。",
+    onRefresh = onRefresh,
+)
 
 private fun compactPathTitle(state: CoursewareUiState): String = buildString {
     append(state.selectedCourse?.name.orEmpty())

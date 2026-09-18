@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.data.course
 
+import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
+
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import team.bjtuss.bjtuselfservice.shared.data.homework.SmartPlatformEndpoint
@@ -9,16 +11,12 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
-private const val AA_ORIGIN = "https://aa.bjtu.edu.cn/"
 private const val TEACHER_URL =
     "https://aa.bjtu.edu.cn/course_selection/courseselectabsent/absent_list/"
 private const val CURRENT_SCHEDULE_URL =
     "https://aa.bjtu.edu.cn/course_selection/courseselect/stuschedule/"
 private const val SELECTION_SCHEDULE_URL =
     "https://aa.bjtu.edu.cn/course_selection/courseselecttask/schedule/"
-private const val CURRENT_WEEK_URL =
-    "https://aa.bjtu.edu.cn/classroom/timeholdresult/room_view/"
-private const val SMART_MODULE_URL = "https://mis.bjtu.edu.cn/module/module/28/"
 private const val TIME_LIST_PATH = "/ve/back/coursePlatform/course.shtml"
 
 data class RemoteCourseScheduleSnapshot(
@@ -121,20 +119,20 @@ class SchoolCourseScheduleRemoteDataSource(
         val module = executeSoft(
             SchoolHttpRequest(
                 method = SchoolHttpMethod.GET,
-                url = SMART_MODULE_URL,
+                url = SchoolEndpoints.SMART_MODULE_URL,
                 headers = mapOf("Referer" to "https://mis.bjtu.edu.cn/home/"),
             ),
         ) ?: return
         smart.followSmartHandshakeRedirects(
             first = module,
-            referer = SMART_MODULE_URL,
+            referer = SchoolEndpoints.SMART_MODULE_URL,
         ) { request ->
             executeSoft(request) ?: module
         }
     }
 
     private suspend fun fetchRoomViewWeek(): Int = try {
-        parseCurrentWeekFromUrl(request(CURRENT_WEEK_URL).finalUrl)
+        parseCurrentWeekFromUrl(request(SchoolEndpoints.ROOM_VIEW_URL).finalUrl)
     } catch (error: CancellationException) {
         throw error
     } catch (_: Exception) {
@@ -153,7 +151,7 @@ class SchoolCourseScheduleRemoteDataSource(
             if (response.statusCode !in 200..299) {
                 throw CourseScheduleRemoteException(CourseScheduleRemoteFailure.NETWORK)
             }
-            if (!response.finalUrl.startsWith(AA_ORIGIN)) {
+            if (!response.finalUrl.startsWith(SchoolEndpoints.AA_ORIGIN)) {
                 throw CourseScheduleRemoteException(CourseScheduleRemoteFailure.SESSION_EXPIRED)
             }
         }

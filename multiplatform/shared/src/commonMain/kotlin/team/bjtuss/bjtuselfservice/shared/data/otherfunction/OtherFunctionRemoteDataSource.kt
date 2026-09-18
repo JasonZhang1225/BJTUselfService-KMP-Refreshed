@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.data.otherfunction
 
+import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
+
 import kotlinx.coroutines.CancellationException
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.domain.otherfunction.ReportCardLanguage
@@ -8,7 +10,6 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
-private const val AA_ORIGIN = "https://aa.bjtu.edu.cn"
 
 enum class OtherFunctionRemoteFailure {
     NETWORK,
@@ -26,7 +27,7 @@ fun reportCardDownloadUrl(language: ReportCardLanguage): String {
         ReportCardLanguage.CHINESE -> "card_cn_sign"
         ReportCardLanguage.ENGLISH -> "card_en_sign"
     }
-    return "$AA_ORIGIN/score/scorecard/stu/5201314/download_pdf/?type=$type&has_advance_query="
+    return "${SchoolEndpoints.AA_ROOT}/score/scorecard/stu/5201314/download_pdf/?type=$type&has_advance_query="
 }
 
 interface OtherFunctionRemoteDataSource {
