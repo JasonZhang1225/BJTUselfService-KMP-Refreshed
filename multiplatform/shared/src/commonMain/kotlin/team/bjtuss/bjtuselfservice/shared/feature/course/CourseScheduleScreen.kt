@@ -940,6 +940,7 @@ private fun CourseCompactScrollableContent(
             CompactDaySelector(state.selectedDay, model::selectDay)
             CompactDayPager(
                 courses = state.visibleCourses,
+                courseTypesByCode = courseTypesByCode,
                 selectedDay = state.selectedDay,
                 onSelectDay = model::selectDay,
                 onOpen = onOpen,
@@ -1038,6 +1039,7 @@ private fun CompactTableIcon(modifier: Modifier) {
 @Composable
 private fun CompactDayPager(
     courses: List<Course>,
+    courseTypesByCode: Map<String, CourseType>?,
     selectedDay: Int,
     onSelectDay: (Int) -> Unit,
     onOpen: (Int) -> Unit,
@@ -1069,6 +1071,7 @@ private fun CompactDayPager(
                 DayScheduleSlotRow(
                     slotLabel = slotLabels[slot],
                     slotCourses = byLocation[location].orEmpty(),
+                    courseTypesByCode = courseTypesByCode,
                     onOpen = onOpen,
                 )
             }
@@ -1364,6 +1367,7 @@ private fun CompactCourseColorBlock(
 private fun DayScheduleSlotRow(
     slotLabel: String,
     slotCourses: List<Course>,
+    courseTypesByCode: Map<String, CourseType>?,
     onOpen: (Int) -> Unit,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
@@ -1386,7 +1390,7 @@ private fun DayScheduleSlotRow(
                 )
             } else {
                 slotCourses.forEach { course ->
-                    CourseListCard(course, onOpen)
+                    CourseListCard(course, courseTypesByCode, onOpen)
                 }
             }
         }
@@ -1394,14 +1398,23 @@ private fun DayScheduleSlotRow(
 }
 
 @Composable
-private fun CourseListCard(course: Course, onOpen: (Int) -> Unit) {
+private fun CourseListCard(
+    course: Course,
+    courseTypesByCode: Map<String, CourseType>?,
+    onOpen: (Int) -> Unit,
+) {
+    // 底色与「色块概览」同源：培养方案课程号 → 课程性质 → 配色；未命中用 UNKNOWN 灰。
+    val courseType = courseTypesByCode?.let { mapping ->
+        courseTypeForCourseName(course.courseId, mapping)
+    } ?: CourseType.UNKNOWN
+    val colors = courseTypeColors(courseType)
     // 扁平 Surface：无 elevation 阴影描边，避免外圈偏深、正文区又叠浅色矩形的双层感。
     Surface(
         onClick = { onOpen(course.id) },
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.accessibleAlpha(0.72f),
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        color = colors.container,
+        contentColor = colors.onContainer,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
@@ -1413,12 +1426,12 @@ private fun CourseListCard(course: Course, onOpen: (Int) -> Unit) {
             Text(
                 "${displayCoursePlace(course.coursePlace)} · ${course.courseTeacher.ifBlank { "教师未知" }}",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.accessibleAlpha(0.78f),
+                color = colors.onContainer.accessibleAlpha(0.78f),
             )
             Text(
                 course.courseTime,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.accessibleAlpha(0.72f),
+                color = colors.onContainer.accessibleAlpha(0.72f),
             )
         }
     }

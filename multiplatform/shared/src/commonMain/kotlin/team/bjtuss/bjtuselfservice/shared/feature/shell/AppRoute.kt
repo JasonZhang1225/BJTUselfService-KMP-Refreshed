@@ -316,4 +316,5 @@ internal fun HomeChangeDomain.toAppSection(): AppSection = when (this) {
     HomeChangeDomain.COURSES -> AppSection.SCHEDULE
     HomeChangeDomain.EXAMS -> AppSection.EXAMS
     HomeChangeDomain.HOMEWORK -> AppSection.HOMEWORK
+    HomeChangeDomain.PHYVLAB -> AppSection.PHYVLAB
 }

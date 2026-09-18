@@ -24,6 +24,8 @@ import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSessionResult
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSubmissionResult
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.phyVlabDebug
+import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeRecorder
+import team.bjtuss.bjtuselfservice.shared.domain.change.recordSafely
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
@@ -76,6 +78,8 @@ class PhyVlabScreenModel(
      */
     private val reauthenticate: (suspend () -> Boolean)? = null,
     private val localDataSource: PhyVlabLocalDataSource? = null,
+    /** 可选：刷新成功后把活动列表变化写入首页「数据变动」。 */
+    private val changeRecorder: DataChangeRecorder<PhyVlabActivity>? = null,
     accountScope: String? = null,
 ) {
     private val mutableState = MutableStateFlow(PhyVlabUiState())
@@ -183,8 +187,16 @@ class PhyVlabScreenModel(
                 return
             }
 
+            val previousActivities = activitiesByCourse.values.flatten()
+                .distinctBy { it.courseId to it.id }
             activitiesByCourse.clear()
             activitiesByCourse.putAll(fetchedActivitiesByCourse)
+            if (!activityFetchFailed) {
+                // 用同一 identity 去重后再 diff，避免同一活动在多门课缓存里重复计数。
+                val afterActivities = fetchedActivitiesByCourse.values.flatten()
+                    .distinctBy { it.courseId to it.id }
+                changeRecorder.recordSafely(previousActivities, afterActivities)
+            }
             scheduleEvents = fetchedScheduleEvents.distinctBy(PhyVlabEvent::id)
             assignmentDetailsByActivity.keys.retainAll(
                 activitiesByCourse.values.flatten().map { it.cacheKey() }.toSet(),

@@ -17,6 +17,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeDomain
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeFeedSnapshot
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeRecord
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
+import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 
 private const val HOME_CHANGE_FEED_KEY = "home_change_feed_v1"
 private const val MAX_RECORDS = 100
@@ -179,6 +180,22 @@ fun homeworkChangeRecorder(feed: HomeChangeFeedRepository): DataChangeRecorder<H
         },
         title = Homework::title,
         detail = { "${it.courseName} · ${it.endTime} · ${it.subStatus}" },
+    )
+
+fun phyvlabChangeRecorder(feed: HomeChangeFeedRepository): DataChangeRecorder<PhyVlabActivity> =
+    changeRecorder(
+        feed = feed,
+        domain = HomeChangeDomain.PHYVLAB,
+        identity = { listOf(it.courseId, it.id) },
+        equivalent = { old, new -> old == new },
+        title = PhyVlabActivity::title,
+        detail = { activity ->
+            buildString {
+                append(activity.courseName)
+                activity.dueText?.let { append(" · 截止 ").append(it) }
+                append(" · ").append(if (activity.completed) "已完成" else "未完成")
+            }
+        },
     )
 
 private fun <T, K> changeRecorder(

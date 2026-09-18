@@ -7,6 +7,7 @@ enum class HomeChangeDomain(val title: String) {
     COURSES("课程表"),
     EXAMS("考试安排"),
     HOMEWORK("作业"),
+    PHYVLAB("物理在线"),
 }
 
 data class HomeChangeRecord(

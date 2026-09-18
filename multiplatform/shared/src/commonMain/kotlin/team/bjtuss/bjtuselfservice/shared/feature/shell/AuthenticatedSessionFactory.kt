@@ -37,6 +37,7 @@ import team.bjtuss.bjtuselfservice.shared.data.home.courseChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.data.home.examChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.data.home.gradeChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.data.home.homeworkChangeRecorder
+import team.bjtuss.bjtuselfservice.shared.data.home.phyvlabChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.data.homework.CacheStoreHomeworkLocalDataSource
 import team.bjtuss.bjtuselfservice.shared.data.homework.DefaultHomeworkRepository
 import team.bjtuss.bjtuselfservice.shared.data.homework.SchoolHomeworkRemoteDataSource
@@ -244,6 +245,7 @@ internal fun rememberAuthenticatedSession(
             sessionProtocol = phyVlabSessionProtocol,
             reauthenticate = sessionRecovery::attempt,
             localDataSource = phyVlabLocalDataSource,
+            changeRecorder = phyvlabChangeRecorder(homeChangeFeed),
             accountScope = profile.studentId,
         )
     }
