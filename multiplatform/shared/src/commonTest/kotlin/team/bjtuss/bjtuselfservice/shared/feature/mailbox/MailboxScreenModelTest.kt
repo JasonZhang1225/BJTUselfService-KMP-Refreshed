@@ -119,6 +119,51 @@ class MailboxScreenModelTest {
     }
 
     @Test
+    fun openingUnreadMessageMarksItReadLocally() {
+        runBlocking {
+            val unread = MailSummary(
+                id = "message-unread",
+                folderId = 1,
+                sender = "teacher@example.test",
+                subject = "新邮件",
+                preview = "正文摘要",
+                sentAt = "2026-08-29 09:10:00",
+                receivedAt = "2026-08-29 09:10:00",
+                sizeBytes = 128,
+                isRead = false,
+                hasAttachments = false,
+            )
+            val detail = MailMessage(
+                id = unread.id,
+                folderId = unread.folderId,
+                from = listOf(unread.sender),
+                to = listOf("student@example.test"),
+                cc = emptyList(),
+                bcc = emptyList(),
+                subject = unread.subject,
+                bodyHtml = "<p>正文</p>",
+                sentAt = unread.sentAt,
+                attachments = emptyList(),
+            )
+            val model = MailboxScreenModel(
+                transport = CookieTransport(listOf(SchoolSessionCookie("session", "secret"))),
+                remote = FakeMailboxRemote(
+                    page = MailboxPage(totalCount = 1, messages = listOf(unread)),
+                    detail = detail,
+                ),
+            )
+
+            model.initialize()
+            assertEquals(false, assertIs<MailboxUiState.Ready>(model.state.value).messages.single().isRead)
+
+            model.openMessage(unread)
+
+            val afterOpen = assertIs<MailboxUiState.Ready>(model.state.value)
+            assertTrue(afterOpen.messages.single().isRead)
+        }
+    }
+
+    @Test
     fun loadsNextMailboxPageWithoutDuplicatingMessages() {
         runBlocking {
             val first = MailSummary(

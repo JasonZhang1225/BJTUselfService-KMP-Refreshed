@@ -264,6 +264,11 @@ class MailboxScreenModel(
                     pendingMessageId = requestedId,
                     isMessageLoading = false,
                     failure = null,
+                    // readMessage.jsp 已在服务端置 \Seen；同步本地列表项，
+                    // 返回后蓝点/加粗即时消失，无需手动刷新。
+                    messages = latest.messages.map {
+                        if (it.id == requestedId && !it.isRead) it.copy(isRead = true) else it
+                    },
                 )
             }
         } catch (error: CancellationException) {
