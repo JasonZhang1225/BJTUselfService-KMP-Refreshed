@@ -55,20 +55,27 @@ android {
                 "Copy the shared key to that path, or set BJTU_ANDROID_KEYSTORE."
         }
     }
-    fun envOrDefault(name: String, default: String): String {
-        val value = providers.environmentVariable(name).orNull
-        return if (value.isNullOrBlank()) default else value
+
+    // 签名口令只允许显式注入（环境变量或 ~/.gradle/gradle.properties），
+    // 不内置弱口令默认值：keystore 一旦泄露，默认口令等于直接交出签名能力。
+    fun requiredSigningSecret(envName: String, propertyName: String): String {
+        val fromEnv = providers.environmentVariable(envName).orNull?.takeIf(String::isNotBlank)
+        val fromProperty = providers.gradleProperty(propertyName).orNull?.takeIf(String::isNotBlank)
+        return fromEnv ?: fromProperty ?: error(
+            "Missing Android signing credential: set $envName in the environment, or " +
+                "$propertyName in ~/.gradle/gradle.properties (never in the repo's gradle.properties). " +
+                "CI provides these as GitHub Secrets.",
+        )
     }
-    val uploadStorePassword = envOrDefault("BJTU_ANDROID_STORE_PASSWORD", "android")
-    val uploadKeyAlias = envOrDefault("BJTU_ANDROID_KEY_ALIAS", "androiddebugkey")
-    val uploadKeyPassword = envOrDefault("BJTU_ANDROID_KEY_PASSWORD", "android")
 
     signingConfigs {
         create("shared") {
             storeFile = uploadKeystore
-            storePassword = uploadStorePassword
-            keyAlias = uploadKeyAlias
-            keyPassword = uploadKeyPassword
+            if (androidBuildRequested) {
+                storePassword = requiredSigningSecret("BJTU_ANDROID_STORE_PASSWORD", "bjtuAndroidStorePassword")
+                keyAlias = requiredSigningSecret("BJTU_ANDROID_KEY_ALIAS", "bjtuAndroidKeyAlias")
+                keyPassword = requiredSigningSecret("BJTU_ANDROID_KEY_PASSWORD", "bjtuAndroidKeyPassword")
+            }
         }
     }
 
