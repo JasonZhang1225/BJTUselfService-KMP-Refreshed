@@ -148,6 +148,17 @@ iOS 未签名 IPA 的自签与安装请参考 [iOS 自签与安装指南](docs/i
 - ✅ 账号密码仅存储在本地设备
 - ✅ 教室人数侦测是唯一需要与服务器通信的功能
 
+### 🗑️ 卸载与本地数据清理
+
+- **Android / iOS**：卸载即清除应用私有数据。iOS 端在启动时会检测「卸载重装」并自动清除残留的 Keychain 凭据；缓存数据库已设置不随 iCloud/iTunes 备份上云。
+- **Windows**：MSI 卸载会自动删除 `%LOCALAPPDATA%\BJTUselfServiceKMP`（离线缓存）和 `HKCU\Software\JavaSoft\Prefs\team\bjtuss\bjtuselfservice`（DPAPI 加密凭据）；升级安装不会清数据。
+- **macOS**：拖拽删除 `.app` 不会清除用户数据。卸载前请在应用内「设置 → 本地数据与会话 → 清除全部本地数据」执行全量清理；如已删除应用，可手动删除：
+  - `~/Library/Application Support/BJTUselfServiceKMP/`（离线缓存）
+  - 「钥匙串访问」中服务名为 `team.bjtuss.bjtuselfservice.kmp.credentials` 的条目（登录凭据）
+  - `~/Library/Preferences/` 下 `team/bjtuss/bjtuselfservice` 相关的偏好文件（记住密码标记）
+
+安全审计与修复记录见 [docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-17.md](docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-17.md)。
+
 ## 🤝 贡献者
 
 感谢以下所有为本项目做出贡献的朋友们：

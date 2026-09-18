@@ -47,6 +47,18 @@ class AccountSecurityCoordinatorTest {
     }
 
     @Test
+    fun unrememberedStatePurgesResidualVaultContent() = runSuspend {
+        // 模拟 iOS 卸载重装：记忆标记（NSUserDefaults）被清除，Keychain 密文残留。
+        val vault = FakeCredentialVault().apply { saved = Credentials("student", "secret") }
+        val preferences = FakeAccountPreferences(enabled = false)
+        val coordinator = AccountSecurityCoordinator(AccountSecurityStore(vault, preferences))
+
+        assertIs<CredentialRestoreResult.Empty>(coordinator.restore())
+        assertTrue(vault.clearCount > 0)
+        assertEquals(null, vault.saved)
+    }
+
+    @Test
     fun unavailableVaultNeverClaimsCredentialsWereRemembered() = runSuspend {
         val preferences = FakeAccountPreferences(enabled = true)
         val coordinator = AccountSecurityCoordinator(AccountSecurityStore(null, preferences))

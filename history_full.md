@@ -427,3 +427,26 @@
 - **提交与 tag**：`6e61e61` 教学周/作业修复；`7d85055` 版本标识与 Actions；`6f40abb` 修 macOS JDK 路径并拆 iOS job。首跑无 GitHub Release（release job 被跳过）。旧 tag 已删除，`v1.7.3-KMP-B` 改指含 CI 修复的提交后重推。
 - **二跑（失败）**：Android、macOS DMG 成功。Windows WiX `light.exe` 311，中文 `packageName` 在英文 runner 变成 `????? KMP`。iOS 链接 `UIViewLayoutRegion`，Xcode 16.4 / iPhoneOS 18.5 没有该符号（Compose 1.12 需要 iOS 26 SDK）。
 - **三跑**：Android、macOS DMG、iOS IPA 成功（Xcode 26.6 / iPhoneOS 26.5）。Windows 仍 light 311（中文 description）。随后一次 tag 重打补上 ASCII description。
+
+---
+
+## 1.7.4～1.7.6：M15 邮箱、作业提交修复与四端正式发布（2026-08-28～2026-09-17，自 memory.md 归档）
+
+- **发布链**：`1.7.4-KMP`（四端 CI 产物、共用上传签名入库 GitHub Secrets、DMG/IPA 放 Downloads）→ `1.7.5-KMP`（版本统一，versionCode/Build 16）→ **`1.7.6-KMP` 正式发布**（run 35185935353 五 job 全绿：Android arm64 APK、Windows MSI、macOS DMG、iOS unsigned IPA、GitHub Release）。iOS Bundle ID `team.bjtuss.bjtuselfservice.kmp.ios`；Android 共用上传 keystore `~/.android/bjtu-kmp-upload.keystore`，证书 SHA-256 `5D0DABC3…C773`。
+- **CI 打包收口**：Android action 只装 `platform-tools`；CI 恢复 ASCII 安装器元数据规避 WiX 311（本机保留中文默认名）；冻结旧 Android CI（`Build Debug APK`）改写 Maven 源为 Google/Central 且 KMP 提交不再触发。
+- **M15 邮箱（自 `1.7.5` 保持）**：Coremail 传统前端 JSON 协议；宽屏文件夹—列表—阅读三栏/紧凑端列表→详情二级页；7 个 FID 文件夹；HTML 表格正文（Ksoup DOM 遍历）；写信/回复首版（`compose.jsp` + `mbox:compose action=deliver`，发送前确认）；真实发送/删除/移动/附件写操作与 Apple 真机端保留为后续风险验收项。
+- **普通作业提交协议修复（2026-09-16）**：Chrome DevTools MCP 取证确认学生上传端点为 `homeworkUpload.shtml?noteId=<upId>`（`rpUpload.shtml` 为老师端点）；`sendStuHomeWorks` 回执校验 `flag=success`、`return_num` 传 `0`（`{}` 会得 `flag=bad` 并清掉上次提交记录）；去掉写请求的 AJAX/`sessionid`/Referer 头；上传/提交各一次瞬时网络重试 + 底层异常链文案；`SUBMIT_REJECTED` 透传服务端原文；提交接入 `SessionRefreshCoordinator`（最多两次重新认证）。`emulator-5554` 真实端到端验证：`提交人数 93/99`，docx 与中文名 PDF 均成功。回归测试 44 项通过。
+- **首页教学周与周卡片（2026-09-16/17）**：`weekResolved`/`hasCachedWeek`，校历确认前显示「日程加载中」，远端裸周数不进 UI；移动端 `HorizontalPager` 手势切周、按钮仅宽屏；周/日卡片高度隔离与高度缓存刷新失效修复；**移除首页日程卡手工高度锁定与动画**（测量→写入→再测量闭环曾致模拟器 `system_server` 阻塞 11.7s、掉 124 帧、2.3G 内存）；周分页竞态区分自动跟随与手动选周。
+- **会话恢复四端接入**：回前台对失效页自动重试一次；右上角刷新在内存凭据可用时最多重新认证两次，不自动跳登录。
+- **其它**：物理在线详情缓存优先、详情路由与总开关、课件刷新/下载修复（`childrenLoaded` 失效）、课表模式文案、iOS 校历 `openURL`、Windows 宽屏侧栏复用物理在线开关、`DesktopTouchScroll` 平台门禁。
+- **未验收边界（移交当前痛点）**：作业列表「提交人数 0/63」口径、iOS 真机签名/provisioning、M13 真实上传、验证码发布级准确率扩样、Windows MSI 卸载清凭据复测。
+
+## 安全审计与修复里程碑（2026-09-18）
+
+- **输入**：GLM 只读安全审计（2026-09-17），原文与修复进度归档于 `docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-17.md`。用户指示：H1/H2/M1 暂缓；优先 M2/M3/M4；M5 要求本地与 CI 均可出**不改签名、可直接覆盖升级安装**的包，否则不修（已满足，故验证通过即收口）；总体要求现有用户覆盖升级即获修复、无需卸载重装。
+- **M2（iOS/macOS Keychain 卸载残留）**：`AccountSecurityCoordinator.restore()` 在 `shouldRememberCredentials()` 为否时主动 `vault.clear()`。原理：iOS 卸载清 NSUserDefaults 而残留 Keychain，重装后启动即清残留；未采用审计建议的独立哨兵——新哨兵会把从未写入哨兵的升级用户误判为重装强制重登，复用既有标记则升级用户不受影响。macOS 无法检测卸载（Preferences 不随删除 .app 清除），由 M3 兜底。修改 `security/AccountSecurityStore.kt`；新增 commonTest `unrememberedStatePurgesResidualVaultContent`。
+- **M3（桌面卸载残留）**：`SettingsScreenModel` 新增 `clearAllLocalData`（构造参数 `wipeAllLocalData: suspend () -> Boolean`，注意成员函数与构造属性同名会致编译错误，故异名）→ `cacheStore.clearAll()`（8 张表含 `app_setting`）+ `securityCoordinator.clear()`；设置页「本地数据与会话」卡片新增「清除全部本地数据」按钮（仅 `PlatformFamily.MacOS` 即 macOS/Windows 显示，因 Windows 复用 MacOS family），确认弹窗说明后果，成功后偏好回默认值；`LoginScreen` 装配接线。README 新增「卸载与本地数据清理」（macOS 手动清理路径：Application Support、Keychain 条目 `team.bjtuss.bjtuselfservice.kmp.credentials`、Preferences）。Windows MSI 卸载级清理为 2026-08-16 既有 deferred CustomAction `CleanupUserData`。新增 `SettingsScreenModelTest` 全量清除成功/失败两用例。
+- **M4（iOS 备份排除）**：`createIosCacheStore()` 每次启动对两个候选路径的 db/`-wal`/`-shm` 设 `NSURLIsExcludedFromBackupKey`（`NSURL.setResourceValue`，尽力而为不阻断启动；WAL/SHM 可能晚于启动生成，故每次启动重设）。
+- **M5（Android 签名，验证而非新修）**：代码侧为本地 commit `584d26c`（`requiredSigningSecret` 无默认回退，缺凭据即 fail）。本地验证：`~/.gradle/gradle.properties` 三凭据为强口令（非 `android`）；keystore 唯一条目别名 `androiddebugkey`（真实别名，非默认回退），证书指纹与已发布 APK 一致；`signingReport` 通过。CI：`kmp-package.yml` 从 Secrets `BJTU_ANDROID_KEYSTORE_BASE64` 还原同一 keystore 并注入三项口令。结论：本地/CI 同一签名身份，覆盖升级成立。
+- **验证记录**：`desktopTest`（AccountSecurityCoordinatorTest + SettingsScreenModelTest）通过；`iosSimulatorArm64Test` 全量通过；`:androidApp:compileDebugKotlin` 通过；desktopTest 全量仅 `PackagingCiAsciiConfigTest` 2 例既有失败（stash 本轮改动后复现，属 1.7.6 打包收口遗留）。实机验证（iOS 卸载重装、iCloud 备份、桌面清除按钮 UI）未做。
+- **交付状态**：全部改动在工作区未提交（等用户确认提交/发版节奏）；归档文档 `docs/security/…2026-09-17.md`、README、memory.md 已同步。

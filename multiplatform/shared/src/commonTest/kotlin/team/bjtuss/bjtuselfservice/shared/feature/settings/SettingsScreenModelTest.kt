@@ -14,6 +14,7 @@ class SettingsScreenModelTest {
         initialPreferences: AppPreferences = AppPreferences(),
         persistPreferences: (AppPreferences) -> Boolean = { true },
         clearAccountCache: () -> Boolean = { true },
+        clearAllLocalData: () -> Boolean = { true },
         checkLatestRelease: suspend () -> AppUpdateChecker.Result = {
             AppUpdateChecker.Result.Unavailable
         },
@@ -21,6 +22,7 @@ class SettingsScreenModelTest {
         initialPreferences = initialPreferences,
         persistPreferences = persistPreferences,
         clearAccountCache = clearAccountCache,
+        wipeAllLocalData = clearAllLocalData,
         checkLatestRelease = checkLatestRelease,
     )
 
@@ -125,6 +127,44 @@ class SettingsScreenModelTest {
             model.clearOfflineCache()
 
             assertIs<OfflineCacheActionState.Failed>(model.state.value.cacheAction)
+        }
+    }
+
+    @Test
+    fun successfulFullWipeClearsDataAndResetsDisplayedPreferences() {
+        runBlocking {
+            var calls = 0
+            val model = model(
+                initialPreferences = AppPreferences(autoSyncGrades = false, dynamicColor = true),
+                clearAllLocalData = {
+                    calls += 1
+                    true
+                },
+            )
+
+            model.clearAllLocalData()
+
+            assertEquals(1, calls)
+            assertIs<OfflineCacheActionState.Cleared>(model.state.value.dataWipeAction)
+            // 全量清除后持久化偏好为空，界面回默认值。
+            assertEquals(AppPreferences(), model.state.value.preferences)
+            model.dismissFeedback()
+            assertIs<OfflineCacheActionState.Idle>(model.state.value.dataWipeAction)
+        }
+    }
+
+    @Test
+    fun fullWipeFailureKeepsPreviousPreferencesAndReportsFailure() {
+        runBlocking {
+            val model = model(
+                initialPreferences = AppPreferences(autoSyncGrades = false),
+                clearAllLocalData = { false },
+            )
+
+            model.clearAllLocalData()
+
+            assertIs<OfflineCacheActionState.Failed>(model.state.value.dataWipeAction)
+            assertEquals(false, model.state.value.preferences.autoSyncGrades)
         }
     }
 

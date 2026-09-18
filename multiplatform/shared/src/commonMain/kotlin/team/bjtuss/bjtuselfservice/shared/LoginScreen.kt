@@ -611,6 +611,9 @@ fun LoginRoute(
                 clearAccountCache = {
                     runCatching { cacheStore.clearAccount(shellProfile.studentId) }.isSuccess
                 },
+                wipeAllLocalData = {
+                    runCatching { cacheStore.clearAll() }.isSuccess && securityCoordinator.clear()
+                },
                 checkLatestRelease = { AppUpdateChecker.fetchLatest(transport.value) },
             )
         }

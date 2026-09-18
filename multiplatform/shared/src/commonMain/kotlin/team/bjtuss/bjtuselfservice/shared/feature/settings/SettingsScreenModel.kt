@@ -29,6 +29,7 @@ sealed interface UpdateCheckState {
 data class SettingsUiState(
     val preferences: AppPreferences,
     val cacheAction: OfflineCacheActionState = OfflineCacheActionState.Idle,
+    val dataWipeAction: OfflineCacheActionState = OfflineCacheActionState.Idle,
     val saveFailed: Boolean = false,
     val updateCheck: UpdateCheckState = UpdateCheckState.Idle,
 )
@@ -41,6 +42,7 @@ class SettingsScreenModel(
     initialPreferences: AppPreferences,
     private val persistPreferences: (AppPreferences) -> Boolean,
     private val clearAccountCache: () -> Boolean,
+    private val wipeAllLocalData: suspend () -> Boolean,
     private val checkLatestRelease: suspend () -> AppUpdateChecker.Result,
 ) {
     private val mutableState = MutableStateFlow(SettingsUiState(initialPreferences))
@@ -94,9 +96,29 @@ class SettingsScreenModel(
         )
     }
 
+    /**
+     * 清除全部本地数据：所有账号的离线缓存、应用设置与系统安全存储中的登录信息。
+     * 供桌面端卸载前的兜底清理（macOS 删除 .app 不会清 Application Support/Keychain）。
+     */
+    suspend fun clearAllLocalData() {
+        if (mutableState.value.dataWipeAction == OfflineCacheActionState.Clearing) return
+        mutableState.value = mutableState.value.copy(dataWipeAction = OfflineCacheActionState.Clearing)
+        val wiped = try {
+            wipeAllLocalData()
+        } catch (_: Exception) {
+            false
+        }
+        mutableState.value = mutableState.value.copy(
+            dataWipeAction = if (wiped) OfflineCacheActionState.Cleared else OfflineCacheActionState.Failed,
+            // 全量清除后持久化偏好已为空，回到默认值，避免界面继续显示旧设置。
+            preferences = if (wiped) AppPreferences() else mutableState.value.preferences,
+        )
+    }
+
     fun dismissFeedback() {
         mutableState.value = mutableState.value.copy(
             cacheAction = OfflineCacheActionState.Idle,
+            dataWipeAction = OfflineCacheActionState.Idle,
             saveFailed = false,
         )
     }

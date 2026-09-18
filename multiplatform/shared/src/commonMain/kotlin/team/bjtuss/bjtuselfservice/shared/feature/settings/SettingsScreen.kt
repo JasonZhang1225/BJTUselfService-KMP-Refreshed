@@ -57,6 +57,7 @@ fun SettingsWorkspace(
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
     var confirmClear by remember { mutableStateOf(false) }
+    var confirmWipe by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val pageScrollState = rememberScrollState()
 
@@ -74,6 +75,26 @@ fun SettingsWorkspace(
                 }) { Text("清除缓存") }
             },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
+        )
+    }
+
+    if (confirmWipe) {
+        AlertDialog(
+            onDismissRequest = { confirmWipe = false },
+            title = { Text("清除全部本地数据？") },
+            text = {
+                Text(
+                    "所有账号的离线缓存、应用设置和系统安全存储中的登录信息都会被删除，" +
+                        "下次启动需要重新登录。适合卸载应用前彻底清理本机数据。"
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    confirmWipe = false
+                    scope.launch { model.clearAllLocalData() }
+                }) { Text("全部清除") }
+            },
+            dismissButton = { TextButton(onClick = { confirmWipe = false }) { Text("取消") } },
         )
     }
 
@@ -205,6 +226,25 @@ fun SettingsWorkspace(
                     OfflineCacheActionState.Failed ->
                         Feedback("离线缓存清除失败，请稍后重试。", true, model::dismissFeedback)
                     OfflineCacheActionState.Idle -> Unit
+                }
+                when (state.dataWipeAction) {
+                    OfflineCacheActionState.Clearing -> LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    OfflineCacheActionState.Cleared ->
+                        Feedback("本地数据已全部清除；下次启动需重新登录。", false, model::dismissFeedback)
+                    OfflineCacheActionState.Failed ->
+                        Feedback("本地数据清除失败，请重试或参考卸载清理指引。", true, model::dismissFeedback)
+                    OfflineCacheActionState.Idle -> Unit
+                }
+                // macOS/Windows 删除应用本体不会清 Application Support/注册表/Keychain，
+                // 提供卸载前的应用内全量清理入口；移动端系统卸载本身即彻底清除。
+                if (platform.family == PlatformFamily.MacOS) {
+                    OutlinedButton(
+                        onClick = { confirmWipe = true },
+                        enabled = state.dataWipeAction != OfflineCacheActionState.Clearing,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("清除全部本地数据")
+                    }
                 }
                 if (expanded) {
                     Row(
