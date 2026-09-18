@@ -139,7 +139,9 @@ private fun parseSummary(item: JsonObject?): MailSummary? {
     if (item == null) return null
     val id = item.string("id")?.takeIf(String::isNotBlank) ?: return null
     val flags = item["flags"] as? JsonObject
-    val isRead = flags?.boolean("read") ?: true
+    // Coremail 只对「已读」返回 read=true；未读邮件整个 read 键缺失。
+    // 因此必须显式等于 true 才算已读，缺失/null 一律视为未读。
+    val isRead = flags?.boolean("read") == true
     val hasAttachments = flags?.boolean("attached") == true ||
         flags?.boolean("inlineAttached") == true
     val folderId = item.int("fid") ?: 0

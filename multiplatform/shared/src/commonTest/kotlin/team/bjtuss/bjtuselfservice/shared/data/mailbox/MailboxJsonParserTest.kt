@@ -54,6 +54,27 @@ class MailboxJsonParserTest {
     }
 
     @Test
+    fun treatsMissingReadFlagAsUnread() {
+        // Coremail 真实行为：未读邮件的 flags 里根本没有 read 键，已读才带 read=true。
+        val result = parseMailboxMessageList(
+            """
+            {
+              "code":"S_OK",
+              "total":2,
+              "var":[
+                {"id":"unread-1","fid":1,"from":"a@example.test","subject":"新邮件","flags":{}},
+                {"id":"read-1","fid":1,"from":"b@example.test","subject":"旧邮件","flags":{"read":true}}
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val page = assertIs<MailboxJsonParseResult.Success<MailboxPage>>(result).value
+        assertTrue(page.messages.first().isRead.not())
+        assertTrue(page.messages.last().isRead)
+    }
+
+    @Test
     fun parsesMessageDetailAndAttachmentMetadata() {
         val result = parseMailboxMessage(
             """
