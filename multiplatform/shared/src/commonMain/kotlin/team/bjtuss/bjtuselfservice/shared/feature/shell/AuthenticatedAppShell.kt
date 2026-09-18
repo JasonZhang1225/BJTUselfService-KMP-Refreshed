@@ -811,13 +811,16 @@ fun AuthenticatedAppShell(
                         null
                     },
                 )
-                // 同步进度条钉在顶栏下方。
-                if (isRefreshing || sessionRecoveryInProgress) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
                 // 列表仅平台原生滚动/过滚，无下拉刷新包裹层。
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     content()
+                    // 同步进度条悬浮在内容顶部，不参与 Column 布局，避免其出现时
+                    // 把下方内容挤矮一丝。
+                    if (isRefreshing || sessionRecoveryInProgress) {
+                        LinearProgressIndicator(
+                            modifier = Modifier.align(Alignment.TopStart).fillMaxWidth(),
+                        )
+                    }
                 }
             }
         }
