@@ -79,6 +79,7 @@ import kotlin.time.Instant
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.PlatformInfo
 import team.bjtuss.bjtuselfservice.shared.data.home.HomeStatusFailure
+import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxUnreadSummary
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeKind
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
@@ -103,6 +104,7 @@ fun HomeWorkspace(
     model: HomeScreenModel,
     platform: PlatformInfo,
     expanded: Boolean,
+    mailboxUnread: MailboxUnreadSummary? = null,
     homework: List<Homework>,
     exams: List<ExamSchedule>,
     phyVlabEvents: List<PhyVlabEvent> = emptyList(),
@@ -248,7 +250,7 @@ fun HomeWorkspace(
         if (expanded) {
             item(key = "home-status-cards") {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    MailCard(status, onOpenMailbox, Modifier.weight(1f))
+                    MailCard(status, mailboxUnread, onOpenMailbox, Modifier.weight(1f))
                     CampusCard(status, { dialog = HomeDialog.CampusCard }, Modifier.weight(1f))
                     NetworkCard(status, { dialog = HomeDialog.Network }, Modifier.weight(1f))
                 }
@@ -293,7 +295,7 @@ fun HomeWorkspace(
                 )
             }
             item(key = "home-mail-card") {
-                MailCard(status, onOpenMailbox, Modifier.fillMaxWidth())
+                MailCard(status, mailboxUnread, onOpenMailbox, Modifier.fillMaxWidth())
             }
             item(key = "home-account-cards") {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -385,14 +387,26 @@ private fun NetworkPaymentInstruction(family: PlatformFamily) {
 }
 
 @Composable
-private fun MailCard(status: HomeStatus?, onClick: () -> Unit, modifier: Modifier) = StatusCard(
-    title = "新邮件",
-    value = status?.newMailCount ?: "—",
-    detail = if (status?.hasNewMail == true) "有新邮件，记得查看" else "当前 BJTU 邮箱状态",
-    action = "查看邮箱",
-    onClick = onClick,
-    modifier = modifier,
-)
+private fun MailCard(
+    status: HomeStatus?,
+    mailboxUnread: MailboxUnreadSummary?,
+    onClick: () -> Unit,
+    modifier: Modifier,
+) {
+    // 优先用邮箱实际未读数（Coremail 列表）；未探测到时回退 MIS 聚合值。
+    val value = mailboxUnread?.let { if (it.capped) "${it.count}+" else "${it.count}" }
+        ?: status?.newMailCount
+        ?: "—"
+    val hasUnread = mailboxUnread?.let { it.count > 0 } ?: (status?.hasNewMail == true)
+    StatusCard(
+        title = "新邮件",
+        value = value,
+        detail = if (hasUnread) "有新邮件，记得查看" else "当前 BJTU 邮箱状态",
+        action = "查看邮箱",
+        onClick = onClick,
+        modifier = modifier,
+    )
+}
 
 @Composable
 private fun CampusCard(status: HomeStatus?, onClick: () -> Unit, modifier: Modifier) = StatusCard(

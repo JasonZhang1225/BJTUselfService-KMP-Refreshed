@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import team.bjtuss.bjtuselfservice.shared.data.mailbox.MailboxRemoteDataSource
@@ -89,6 +90,12 @@ private const val DELETED_FOLDER_ID = 4
 private const val SPAM_FOLDER_ID = 5
 private const val VIRUS_FOLDER_ID = 6
 private const val PAGE_SIZE = 20
+
+/** 首页未读徽标探测：Coremail 无未读计数字段，只能拉收件箱一页消息数未读；超过此上限按封顶显示。 */
+private const val UNREAD_PROBE_LIMIT = 50
+
+/** 收件箱未读摘要；[capped] 为 true 表示未读数可能超过探测页大小。 */
+data class MailboxUnreadSummary(val count: Int, val capped: Boolean)
 private val defaultMailboxFolders = listOf(
     // Coremail 的 ztMail 顺序不是 FID：已发送在网页 hash 中是 fid=3，草稿箱是 fid=2。
     MailboxFolderUi(INBOX_FOLDER_ID, "收件箱", MailboxFolderKind.INBOX),
@@ -107,6 +114,10 @@ class MailboxScreenModel(
     private val mutableState = MutableStateFlow<MailboxUiState>(MailboxUiState.Idle)
     val state: StateFlow<MailboxUiState> = mutableState.asStateFlow()
 
+    // 首页「新邮件」徽标用的收件箱未读摘要；null 表示尚未探测成功（首页回退 MIS 聚合值）。
+    private val _unreadSummary = MutableStateFlow<MailboxUnreadSummary?>(null)
+    val unreadSummary: StateFlow<MailboxUnreadSummary?> = _unreadSummary.asStateFlow()
+
     private val operationMutex = Mutex()
     // 详情页可能在上一次读取尚未返回时被退出并重新打开；只允许当前消息的结果落地。
     private var messageRequestId: String? = null
@@ -116,6 +127,24 @@ class MailboxScreenModel(
 
     suspend fun initialize() {
         if (mutableState.value == MailboxUiState.Idle) refresh()
+    }
+
+    /**
+     * 轻量探测收件箱未读数供首页徽标使用（Coremail 无未读计数字段，只能拉一页消息数未读）。
+     * 会话失效或网络错误时保留上一次成功值，不清零，避免首页在偶发失败时回退到误导数字。
+     */
+    suspend fun refreshUnreadInboxCount() {
+        val summary = runCatching {
+            val page = remote.listMessages(
+                folderId = INBOX_FOLDER_ID,
+                start = 0,
+                limit = UNREAD_PROBE_LIMIT,
+                descending = true,
+            )
+            val unread = page.messages.count { !it.isRead }
+            MailboxUnreadSummary(count = unread, capped = unread >= UNREAD_PROBE_LIMIT)
+        }.getOrNull()
+        if (summary != null) _unreadSummary.value = summary
     }
 
     suspend fun refresh() {
@@ -270,6 +299,12 @@ class MailboxScreenModel(
                         if (it.id == requestedId && !it.isRead) it.copy(isRead = true) else it
                     },
                 )
+            }
+            // 首页徽标同步：刚打开的是未读邮件则本地未读数减一。
+            if (!message.isRead) {
+                _unreadSummary.update { current ->
+                    current?.let { it.copy(count = (it.count - 1).coerceAtLeast(0), capped = false) }
+                }
             }
         } catch (error: CancellationException) {
             throw error

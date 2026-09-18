@@ -233,6 +233,7 @@ fun AuthenticatedAppShell(
     val classroomState by classroomModel.state.collectAsState()
     val classroomOccupancyState by classroomOccupancyModel.state.collectAsState()
     val mailboxState by mailboxModel.state.collectAsState()
+    val mailboxUnread by mailboxModel.unreadSummary.collectAsState()
     val mailboxMessageLoading = (mailboxState as? MailboxUiState.Ready)?.isMessageLoading == true
     val phyVlabState by phyVlabModel.state.collectAsState()
     val homeState by homeModel.state.collectAsState()
@@ -423,6 +424,7 @@ fun AuthenticatedAppShell(
                             sessionExpired = { homeModel.state.value.failure == HomeStatusFailure.SESSION_EXPIRED },
                         )
                     }
+                    launch { mailboxModel.refreshUnreadInboxCount() }
                     launch {
                         refreshModule(
                             operation = homeworkModel::refresh,
@@ -697,6 +699,13 @@ fun AuthenticatedAppShell(
         }
     }
 
+    // 首页「新邮件」徽标：登录完成后探测一次收件箱实际未读数（Coremail 列表），
+    // 之后由首页刷新和读信动作维护；探测失败时首页回退 MIS 聚合值。
+    LaunchedEffect(mailboxModel, entryLoggingIn) {
+        if (entryLoggingIn) return@LaunchedEffect
+        mailboxModel.refreshUnreadInboxCount()
+    }
+
     // 物理在线总开关关闭时不读取网络；打开后在当前登录会话中主动同步一次。
     // 这样开关同时控制“是否同步”和“是否显示底栏入口”，不会留下隐藏的后台请求。
     LaunchedEffect(phyVlabModel, phyVlabEnabled, entryLoggingIn, forcedRouteId) {
@@ -869,6 +878,7 @@ fun AuthenticatedAppShell(
                     model = homeModel,
                     platform = platform,
                     expanded = expanded,
+                    mailboxUnread = mailboxUnread,
                     holdNetwork = entryLoggingIn,
                     homework = homeworkState.homework,
                     exams = examState.exams,

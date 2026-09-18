@@ -164,6 +164,63 @@ class MailboxScreenModelTest {
     }
 
     @Test
+    fun unreadProbeCountsInboxAndDecrementsOnOpen() {
+        runBlocking {
+            val unread = MailSummary(
+                id = "message-unread",
+                folderId = 1,
+                sender = "a@example.test",
+                subject = "新邮件",
+                preview = "",
+                sentAt = "",
+                receivedAt = "",
+                sizeBytes = 0,
+                isRead = false,
+                hasAttachments = false,
+            )
+            val read = MailSummary(
+                id = "message-read",
+                folderId = 1,
+                sender = "b@example.test",
+                subject = "旧邮件",
+                preview = "",
+                sentAt = "",
+                receivedAt = "",
+                sizeBytes = 0,
+                isRead = true,
+                hasAttachments = false,
+            )
+            val detail = MailMessage(
+                id = unread.id,
+                folderId = 1,
+                from = listOf(unread.sender),
+                to = emptyList(),
+                cc = emptyList(),
+                bcc = emptyList(),
+                subject = unread.subject,
+                bodyHtml = "<p>x</p>",
+                sentAt = "",
+                attachments = emptyList(),
+            )
+            val model = MailboxScreenModel(
+                transport = CookieTransport(listOf(SchoolSessionCookie("session", "secret"))),
+                remote = FakeMailboxRemote(
+                    page = MailboxPage(totalCount = 2, messages = listOf(unread, read)),
+                    detail = detail,
+                ),
+            )
+
+            model.refreshUnreadInboxCount()
+            assertEquals(1, model.unreadSummary.value?.count)
+
+            model.initialize()
+            model.openMessage(unread)
+            // 打开未读邮件后首页徽标未读数本地减一。
+            assertEquals(0, model.unreadSummary.value?.count)
+        }
+    }
+
+    @Test
     fun loadsNextMailboxPageWithoutDuplicatingMessages() {
         runBlocking {
             val first = MailSummary(
