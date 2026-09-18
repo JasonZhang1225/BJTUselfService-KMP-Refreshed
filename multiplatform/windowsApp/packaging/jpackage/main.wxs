@@ -47,7 +47,7 @@
       jpackage 默认 IncludeMaximum=no，同版本旧包不会进升级表；
       IncludeMinimum=yes 又会把同版本当成降级拦住。
       ProductVersion 只能是三段数字，不能加字母。同 UpgradeCode、新 ProductCode
-      时允许覆盖已安装的相同 1.7.6，这样文件名加 A/B 不必改大数字。
+      时允许覆盖已安装的相同 1.7.7，这样文件名加 A/B 不必改大数字。
     -->
     <Upgrade Id="$(var.JpProductUpgradeCode)">
       <UpgradeVersion

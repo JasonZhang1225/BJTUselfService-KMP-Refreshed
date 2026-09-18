@@ -181,7 +181,9 @@ fun SettingsWorkspace(
             ) {
                 Text("版本与项目", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "${platform.displayName} · KMP 迁移构建 v${AppUpdateChecker.CURRENT_VERSION}\n功能对齐基线：原安卓 v1.7.0",
+                    "${platform.displayName} · KMP 迁移构建 v${AppUpdateChecker.CURRENT_VERSION}\n" +
+                        "功能对齐基线：原安卓 v1.7.0\n" +
+                        "本版本经过了网络安全领域SOTA模型GLM5.3的网络和数据安全审查与冗余重构",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 OutlinedButton(
