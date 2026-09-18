@@ -91,8 +91,8 @@ private const val SPAM_FOLDER_ID = 5
 private const val VIRUS_FOLDER_ID = 6
 private const val PAGE_SIZE = 20
 
-/** 首页未读徽标探测：Coremail 无未读计数字段，只能拉收件箱一页消息数未读；超过此上限按封顶显示。 */
-private const val UNREAD_PROBE_LIMIT = 50
+/** 首页未读徽标探测：Coremail 无未读计数字段，只能拉收件箱一页消息数未读；超过此上限按封顶显示（微信式 99+）。 */
+private const val UNREAD_PROBE_LIMIT = 99
 
 /** 收件箱未读摘要；[capped] 为 true 表示未读数可能超过探测页大小。 */
 data class MailboxUnreadSummary(val count: Int, val capped: Boolean)
