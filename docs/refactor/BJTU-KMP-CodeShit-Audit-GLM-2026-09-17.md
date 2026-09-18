@@ -263,4 +263,5 @@ UI 巨型函数内部几乎无注释；数据层关键决策有高质量注释�
 - 2026-09-18：P1 完成。新增 `AuthenticatedSessionFactory.kt`（`rememberAuthenticatedSession`，含原装配块全部 remember 依赖链）；关键决策：`sessionRecovery` 复用 `LoginRoute` 的同一 `SchoolLoginProtocol` 实例（新建实例会丢失登录会话状态），故工厂增加 `loginProtocol` 参数；`logout` 闭包仍留在 LoginRoute（操作 15 个局部状态，搬移无净收益），通过 `onLogout` 回调传入工厂。
 - 2026-09-18：P2a 完成。Android 侧尝试在 shared 模块启用 buildConfig 失败（KMP android library 插件 DSL 不支持），改为 androidApp 宿主在 `MainActivity.onCreate` 按 `BuildConfig.DEBUG` 设置 `AppLog.enabled`；iOS `Platform.isDebugBinary` 需 `@OptIn(ExperimentalNativeApi::class)`。
 - 2026-09-18：P0/P1/P2a 打包本地实机验证包（`~/Downloads/BJTUselfServiceKMP-1.7.6-KMP-local.dmg` + `BJTUSelfService-KMP-1.7.6-KMP-local-iOS-unsigned.ipa`，iOS Build 17）；用户实测 macOS/iOS 通过，基本标记实机通过。
-- 2026-09-18：P3a/P3b/P2b(部分) 完成。P3a 收敛 12 个文件的端点常量到 `SchoolEndpoints`；P3b jsonEscape 去重；P2b 抽 `WorkspaceStates` 共享加载/空态。全部改动仍在本地工作区，等用户决定提交。
+- 2026-09-18：P3a/P3b/P2b(部分) 完成。P3a 收敛 12 个文件的端点常量到 `SchoolEndpoints`；P3b jsonEscape 去重；P2b 抽 `WorkspaceStates` 共享加载/空态。P2b 剩余项（周选择器/`SectionDestination`）经评估明确不做：两屏结构已分化、参数化 30+ 参数，抽象成本高于维护成本。
+- 2026-09-18：全部修复合并提交为本地 `1409ba0`（42 文件，+5030/−3275）。里程碑收口。
