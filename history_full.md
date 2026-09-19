@@ -450,3 +450,62 @@
 - **M5（Android 签名，验证而非新修）**：代码侧为本地 commit `584d26c`（`requiredSigningSecret` 无默认回退，缺凭据即 fail）。本地验证：`~/.gradle/gradle.properties` 三凭据为强口令（非 `android`）；keystore 唯一条目别名 `androiddebugkey`（真实别名，非默认回退），证书指纹与已发布 APK 一致；`signingReport` 通过。CI：`kmp-package.yml` 从 Secrets `BJTU_ANDROID_KEYSTORE_BASE64` 还原同一 keystore 并注入三项口令。结论：本地/CI 同一签名身份，覆盖升级成立。
 - **验证记录**：`desktopTest`（AccountSecurityCoordinatorTest + SettingsScreenModelTest）通过；`iosSimulatorArm64Test` 全量通过；`:androidApp:compileDebugKotlin` 通过；desktopTest 全量仅 `PackagingCiAsciiConfigTest` 2 例既有失败（stash 本轮改动后复现，属 1.7.6 打包收口遗留）。实机验证（iOS 卸载重装、iCloud 备份、桌面清除按钮 UI）未做。
 - **交付状态**：全部改动在工作区未提交（等用户确认提交/发版节奏）；归档文档 `docs/security/…2026-09-17.md`、README、memory.md 已同步。
+
+## M18：macOS 原生外观（2026-09-19 当晚，已取消，代码从未提交）
+
+> 用户 2026-09-19 22:40 决定：**方向不认可，暂不做**。`macosArm64()` target、`shared/src/macosMain/`（18 文件）、
+> `:macosApp` 模块、离线壳预览与 `docs/migration/m18-macos-native-shell-plan.md` **全部删除且不留备份**。
+> 本节只留实测结论，避免将来重做时重复勘查；它不是待办。
+
+- **做到过的程度**：`NSSplitViewController` + 真系统侧栏（`NSVisualEffectView(.sidebar)` + `NSTableView.style = .sourceList`
+  + SF Symbols）+ 统一标题栏 `NSToolbar`（`sidebar.left` / 系统「边栏」标签）在本机真的起窗；真鼠标点行换目的地、
+  窗口标题跟目的地；release 变体与 DMG 出过包（release Mach-O 52,769,280 B ≈50 MiB vs debug 85,777,664 B ≈82 MiB，
+  DMG ≈17 MiB）。**从未**用真实凭据登录过原生版，眼验靠离线合成会话（假 profile + 抛 `SchoolNetworkException` 的
+  transport + 独立缓存库 + `credentialVault = null` + 偏好不落盘）。
+- **Compose 1.12.0-beta03 在 macosArm64 上没有「把 Compose 挂进调用方给的 NSView」的 seam**：
+  `androidx.compose.ui.window.Window(title, size, content)` 在 macos 上是普通函数（不是 `@Composable`）能起整窗，
+  但 `ComposeWindow` 类是 `private`、`contentView` 被它私有占用，其依赖的 `WindowInfoImpl` / `MacosTextInputService` /
+  `NSEvent.toComposeEvent` / `registerSkikoComposeImplementation` 全是模块 internal。自写可嵌入宿主可行，
+  不需要 fork Compose 也不需要 `-Xfriend`：`CanvasLayersComposeScene`（`@OptIn(InternalComposeUiApi::class)`）+
+  `ComposeScene.setContent/sendPointerEvent/sendKeyEvent/render/size/close` + `FrameRecomposer`（跨分栏必须共享）+
+  `SingleComposeSceneRenderingScope` + `SkiaLayer.attachTo`。`attachTo` **只能在 `viewDidMoveToWindow` 里做**，
+  在 `loadView` 阶段 attach 会让 skiko `MacOsMetalRedrawer.<init>` 抛 NPE，K/N 导出函数不带 `@Throws` → `SIGABRT`。
+- **硬伤（原生 Mac 包链接必失败）**：Apple 的 macOS 系统 libsqlite3 是 `SQLITE_OMIT_LOAD_EXTENSION` 编的，
+  tbd 里没有 `sqlite3_enable_load_extension` / `sqlite3_load_extension`，而 SQLDelight 原生驱动
+  （`co.touchlab:sqliter-driver` 的 cinterop）无条件引用 → 链接期缺符号。iOS 的系统 sqlite3 有这两个符号，所以 iOS 一直链得过。
+  当晚用 `xcrun clang -c` 编的 compat `.c` 打桩（`enable`→OK、`load`→ERROR）验穿，**桩不能上生产**；
+  正式方案要么自带 sqlite3（只需替这一个文件 + 两条 `linkerOpts`），要么放弃原生 target 继续走 JVM。
+- **中文输入法无解**：键盘转发本身可通（公开工厂 `@InternalComposeUiApi fun KeyEvent(key, type, codePoint, is*Pressed, nativeEvent)`，
+  `key` 用 Apple HID keyCode 即 `Key.DirectionLeft/Right/Down/Up` = 123/124/125/126，`codePoint` 取 `characters` 首单元，
+  修饰键从 `modifierFlags` 来，`scene.sendKeyEvent` 返回 false 要回手 `super.keyDown(event)`；逐字符/空格/Shift 大写/退格/
+  方向键/⌘A/Return 实测全通），但 `MacosTextInputService` 是 internal → **中文候选窗出不来**，对中文 App 是必答题。
+- **K/N 调 AppKit 的实测坑**：`NSLog("…%@", kotlinString)` 变参位置直接 SIGTRAP（栈顶
+  `objc_opt_respondsToSelector` ← `_NSDescriptionWithStringProxyFunc`），`toNSString` 三个 Apple target 都没有；
+  `NSToolbar.items` 是只读 val，只能由 `NSToolbarDelegateProtocol` 现造项，而 `toolbar.delegate` 与 `NSApplication.delegate`
+  都是**弱引用**（不宿主强持有就静默空栏 / 「窗口还在代理没了」）；`addChildViewController:` / `addChild:` / `selectRow:`
+  在 macos_arm64 klib 里没有导出符号（字符串在 linkdata 里 ≠ 可用），选中要用 `selectRowIndexes(NSIndexSet.indexSetWithIndex(ULong), …)`；
+  `setContentViewController:` 会按控制器 view 尺寸改窗口大小；面板从 contentView 降级成子视图后不再是 first responder
+  （`mouseDown` 里要 `makeFirstResponder`）也不会自己铺满（显式 `setFrame` + 双向 autoresizing）。
+  写法侧：`NS_ENUM` 常量是嵌套的而 `NS_OPTIONS` 是顶层 val 可用 `or`；缺 `@file:OptIn(ExperimentalForeignApi::class)` 时
+  连 import 都报 `Unresolved reference`；`NSMakeRect` 参数名是 `w`/`h`；`NSWindow.restorable` 无可用签名要写
+  `NSQuitAlwaysKeepsWindows` 域；`binaries.executable {}` 返回 `Unit`；`main()` 在包里必须显式 `entryPoint`。
+- **`NSTableView` 单列侧栏两处实测**：列宽必须自己给（`NSTableColumn()` 默认宽度远小于侧栏，单元格被压窄后中文标题
+  从**中段**截断，实测「教室人…」「成绩单…」）；行视图别用 `NSStackView`——SF Symbol 缺失时（`wifi.motion` macOS 没有）
+  image 为 nil 会让整列错位，图标列定宽手摆 frame 才稳。
+- **无障碍**：原生控件对 AX 可见（`AXSplitGroup → AXScrollArea + AXSplitter`），但 **Compose 内容对 macOS AX 不可见**
+  （上游缺口，VoiceOver 等于没有），验证只能靠截图或 stdout 探针。
+- **诚实性问题**：`App(captchaRecognizer = UnavailableCaptchaRecognizer)` 是默认值 → 原生 Mac 没有验证码自动识别，
+  而登录页副标题写死「验证码将自动识别」，这句话在原生版是假的。
+- **发布侧未做**：Developer ID 签名 + 公证始终没做（ad-hoc 包 Gatekeeper 会拦），需要用户的开发者账号。
+  skiko/skia 的 `.o` 按 macOS 26 编，宿主写 `-target arm64-apple-macos13.0` 是假的最低版本；
+  `linkReleaseExecutableMacosArm64` 单任务 >10 分钟。
+- **连带产物（这个留下了）**：为了 iOS/macOS 共用凭据库与缓存库，`iosMain/{cache,security}/Ios*.kt` 提升成
+  `appleMain/…/Apple*.kt`，`kSecAttrAccessible` 收成工厂参数 `accessibleAfterFirstUnlock: Boolean`
+  （iOS 必须带 `AfterFirstUnlockThisDeviceOnly`，macOS 不能带）。iOS 侧调用点已改用 `createAppleCacheStore()` /
+  `createAppleAccountSecurityStore(accessibleAfterFirstUnlock = true)`，因此这次改名**已随 M17 提交进树**，不是死代码。
+- **缓存路径实测**：原生实例落 `~/Library/Application Support/databases/bjtuselfservice_cache.db`，
+  JVM 版在 `~/Library/Application Support/BJTUselfServiceKMP/` 下 —— 两个不同文件，升级时缓存不会自动继承。
+- **取证配方（与 M18 无关但仍有效）**：窗口被遮挡时按 id 截能拿到遮挡中的窗口内容 ——
+  `screencapture -x -o -l<windowID> out.png`，id 用一小段 `swiftc` 脚本调 `CGWindowListCopyWindowInfo` 取
+  （JXA 拿不到 `CFArray` 桥接、`python3 + ctypes` 那条段错误）；按 `kCGWindowOwnerName` 过滤会撞上安装版与开发实例同名，
+  要按窗口标题过滤。klib 勘查必须 `grep -a` 且不套 `head`（当晚一次 `head -12` 让我误判 `NSToolbarDelegate` 未导出）。
