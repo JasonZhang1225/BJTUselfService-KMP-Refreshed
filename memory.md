@@ -2,7 +2,7 @@
 
 > 最后更新：2026-09-19（深夜）
 > 当前分支：**`Liquid`**（17:20 已从 `main` 快进切回，`Liquid` == `main` == `df92d34`，本地/远端其他分支已清理，只剩 `main` 与 `mine/main`、`origin/main`）；显示/打包版本 **`1.7.7-KMP`**。M17 iOS 玻璃壳改动**全部在工作区未提交**。正式 tag `v1.7.7-KMP` 已发布（run 35323961970 五 job 全绿，GitHub Release 已创建，四端产物齐全）。签名加固 `584d26c`、安全修复 `edbfa55`、屎山修复 `1409ba0` 等已全部推送到 `mine` fork。
-> 阶段状态：**M17 玻璃壳四条反馈已收口并模拟器出图，M17 初步实现已提交**；M18 macOS 原生外观**已取消、暂不做**（代码删净不留备份，实测结论见 `history_full.md`）。`1.7.7-KMP` 已正式发布（安全修复 + 屎山重构 + 邮箱未读/首页物理在线/课表着色/进度条布局等），审计与进度见 `docs/refactor/BJTU-KMP-CodeShit-Audit-GLM-2026-09-17.md` 第九节。
+> 阶段状态：**M17 初步实现已提交在 `Liquid`（`b278147` 过期断言修正 + `94e3acb` M18 归档 + `bd2fd93` feat M17 主体，工作树干净、未推送）**；M18 macOS 原生外观**已取消、暂不做**（代码删净不留备份，实测结论见 `history_full.md`）。`1.7.7-KMP` 已正式发布（安全修复 + 屎山重构 + 邮箱未读/首页物理在线/课表着色/进度条布局等），审计与进度见 `docs/refactor/BJTU-KMP-CodeShit-Audit-GLM-2026-09-17.md` 第九节。
 > 分支创建点：`9d8da18`；上游对照基线：`v1.7.0@419313d`；KMP 自身基线：**`v1.7.3-KMP-B` (`a342615`)**；当前正式版本 **`1.7.7-KMP`**；上一发布 `v1.7.6-KMP` 保留。
 > 完整历史与已归档的验收细节：见 `history_full.md`（按里程碑归档，只读）
 > 本文件是实时工作记忆，不是只追加日志：任务开始读、结束改，只保留当前接续工作需要的状态。
@@ -44,7 +44,7 @@
 已把断言改成锁住「当前这个决定」，改回中文会让 Windows 打包再次失败）。
    **工作区里只有这一个会话在动手**（08:40 用户确认）：`AppRoute.kt` / `MoreWorkspace.kt` / `NativeShell.kt` 的改动、以及那几个后台构建，都是本会话上下文压缩前自己做的，我误判成「并发会话」并已在 M17 文档更正。按用户指令：**先把 M17 收口做完，再开始写 M18**（M18 后来取消，见第 2 条与 `history_full.md`）；收口完成后再谈提交（提交范围见该文档第 7 条）。**分支教训**：17:04 有一次 `Liquid → main` 的 checkout 我没复查，导致我在 `main` 上工作却声称在 `Liquid`（脏改动被 git 带着跨 checkout，内容没丢、指针错了）；已把 `Liquid` 快进到 `df92d34` 再切回，今后每轮开工先 `git branch --show-current`。真机侧：iPhone 17 Pro（iOS 27.2）与 iPhone SE 3（iOS 27.0）都能用 Automatic signing 装 Debug 包（`xcodebuild -allowProvisioningUpdates` + `devicectl device install app`），设备上 `…kmp.ios.34S53DC6T6`（1.7.7）与新的 `…kmp.ios` 是两个并存的 App；用户 17:10 起改为**只用模拟器**验证。
 2. **M18 macOS 原生外观已取消（2026-09-19 22:40 用户决定，暂不做）**：代码全部删除且不留备份，实测结论归档在 `history_full.md` 的「M18：macOS 原生外观」一节。工作区与 `main` 的差异只剩 iOS 液态玻璃。
-3. **推送与下一版规划**：`main` 上签名加固/安全修复/屎山修复三个提交待推送 `mine`；下一版 bump versionCode 后四端打包 + 实机回归（iOS 卸载重装、桌面清理按钮复核）。
+3. **推送与下一版规划**：`main` 上签名加固/安全修复/屎山修复三个提交、以及 `Liquid` 上 M17 的三个提交都**尚未推送**（`origin/main` 仍停在 `419313d`）；下一版 bump versionCode 后四端打包 + 实机回归（iOS 卸载重装、桌面清理按钮复核）。
 
 ## 维护规则
 
