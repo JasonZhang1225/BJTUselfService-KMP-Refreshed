@@ -115,6 +115,7 @@ import kotlin.math.PI
 import team.bjtuss.bjtuselfservice.shared.accessibleAlpha
 import team.bjtuss.bjtuselfservice.shared.data.grade.formatGradeDetailForDisplay
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.usesLegacySmartTransportFor
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
 import team.bjtuss.bjtuselfservice.shared.data.grade.GradeSyncFailure
@@ -745,7 +746,7 @@ private fun GradeScrollableContent(
         state = listState,
         modifier = modifier.desktopTouchScroll(listState),
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(bottom = 20.dp),
+        contentPadding = PaddingValues(bottom = 20.dp + LocalBottomBarClearance.current),
     ) {
         item(key = "grade-summary") {
             GradeSummaryCard(

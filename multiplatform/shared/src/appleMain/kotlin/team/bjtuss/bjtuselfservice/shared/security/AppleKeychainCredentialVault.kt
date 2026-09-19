@@ -44,9 +44,17 @@ import platform.Security.kSecReturnData
 import platform.Security.kSecValueData
 import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 
-class IosKeychainCredentialVault(
+/**
+ * iOS 与 macOS 原生共用的 Keychain 保险库（两边都是同一套 `SecItem` C API）。
+ *
+ * [accessibleAfterFirstUnlock] 是唯一的平台分叉：`kSecAttrAccessible` 是 iOS 的概念
+ * （iOS 侧必须带 `AfterFirstUnlockThisDeviceOnly`，这是既定的安全决定），
+ * macOS 上不能带——现在跑在 Mac 上的 JVM 版走同一套 `SecItem`，其查询里也没有这一项。
+ */
+class AppleKeychainCredentialVault(
     private val service: String = "team.bjtuss.bjtuselfservice.kmp.credentials",
     private val account: String = "primary",
+    private val accessibleAfterFirstUnlock: Boolean = false,
 ) : CredentialVault {
     override suspend fun save(credentials: Credentials) {
         val payload = encodeCredentialPayload(credentials).toNSData()
@@ -104,11 +112,13 @@ class IosKeychainCredentialVault(
         CFDictionaryAddValue(dictionary, kSecAttrService, retain(service))
         CFDictionaryAddValue(dictionary, kSecAttrAccount, retain(account))
         if (payload != null) {
-            CFDictionaryAddValue(
-                dictionary,
-                kSecAttrAccessible,
-                kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            )
+            if (accessibleAfterFirstUnlock) {
+                CFDictionaryAddValue(
+                    dictionary,
+                    kSecAttrAccessible,
+                    kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+                )
+            }
             CFDictionaryAddValue(dictionary, kSecValueData, retain(payload))
         }
         if (returnData) {

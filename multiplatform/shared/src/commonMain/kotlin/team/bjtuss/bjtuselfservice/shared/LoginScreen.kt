@@ -161,6 +161,7 @@ fun LoginRoute(
     onPreferencesChanged: (AppPreferences) -> Boolean,
     captchaRecognizer: CaptchaRecognizer,
     nativeNavigationEnabled: Boolean,
+    nativeTabBarEnabled: Boolean = false,
     onOpenNativeRoute: (String) -> Unit,
     onOpenExternalUrl: (String) -> Unit,
     onAuthenticatedSessionChanged: (AuthenticatedSession?) -> Unit,
@@ -531,15 +532,22 @@ fun LoginRoute(
         DisposableEffect(onAuthenticatedSessionChanged) {
             onDispose { onAuthenticatedSessionChanged(null) }
         }
-        AuthenticatedAppShell(
-            session = authenticatedSession,
-            platform = platform,
-            windowClass = windowClass,
-            appCommandBus = appCommandBus,
-            nativeNavigationEnabled = nativeNavigationEnabled,
-            onOpenNativeRoute = onOpenNativeRoute,
-            onOpenExternalUrl = onOpenExternalUrl,
-        )
+        if (nativeTabBarEnabled) {
+            // M17 原生 tab 壳：一级入口各由宿主的一个独立 Compose 目的地承载。
+            // 宿主只保留登录页与会话来源，这里不再渲染共享壳层，否则两份壳层并存
+            // （双份聚合同步副作用 + 自绘底栏与系统玻璃 TabBar 叠在一起）。
+            Spacer(modifier = Modifier.fillMaxSize())
+        } else {
+            AuthenticatedAppShell(
+                session = authenticatedSession,
+                platform = platform,
+                windowClass = windowClass,
+                appCommandBus = appCommandBus,
+                nativeNavigationEnabled = nativeNavigationEnabled,
+                onOpenNativeRoute = onOpenNativeRoute,
+                onOpenExternalUrl = onOpenExternalUrl,
+            )
+        }
         return
     }
 

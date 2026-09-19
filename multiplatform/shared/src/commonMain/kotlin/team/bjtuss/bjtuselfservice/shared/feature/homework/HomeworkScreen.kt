@@ -87,6 +87,7 @@ import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.safeExportFileName
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LegacySmartTransportWarning
 import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
 
@@ -785,7 +786,7 @@ private fun HomeworkScrollableContent(
         state = listState,
         modifier = modifier.desktopTouchScroll(listState),
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(bottom = 18.dp),
+        contentPadding = PaddingValues(bottom = 18.dp + LocalBottomBarClearance.current),
     ) {
         item(key = "homework-summary") {
             HomeworkSummary(state = state, onOpenFilter = onOpenFilter)
@@ -877,7 +878,7 @@ private fun HomeworkList(
         state = listState,
         modifier = modifier.desktopTouchScroll(listState),
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(bottom = 18.dp),
+        contentPadding = PaddingValues(bottom = 18.dp + LocalBottomBarClearance.current),
     ) {
         items(homework, key = Homework::stableKey) { item ->
             HomeworkCard(

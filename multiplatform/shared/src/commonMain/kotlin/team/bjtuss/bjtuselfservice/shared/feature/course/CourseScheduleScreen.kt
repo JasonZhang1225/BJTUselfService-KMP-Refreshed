@@ -96,6 +96,7 @@ import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
 import team.bjtuss.bjtuselfservice.shared.feature.calendar.CourseCalendarExportSheet
 import team.bjtuss.bjtuselfservice.shared.feature.grade.courseTypeColors
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 
@@ -1064,7 +1065,7 @@ private fun CompactDayPager(
             state = listState,
             modifier = Modifier.fillMaxSize().desktopTouchScroll(listState),
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 18.dp),
+            contentPadding = PaddingValues(bottom = 18.dp + LocalBottomBarClearance.current),
         ) {
             items((0 until 7).toList(), key = { "day-$day-slot-$it" }) { slot ->
                 val location = slot * 8 + day + 1

@@ -16,8 +16,9 @@ import team.bjtuss.bjtuselfservice.shared.cache.db.CacheDatabaseSql
 
 private const val CACHE_DATABASE_FILE_NAME = "bjtuselfservice_cache.db"
 
+/** Apple 平台原生共用：同一套 `NativeSqliteDriver` + Application Support 目录布局。 */
 @OptIn(ExperimentalForeignApi::class)
-fun createIosCacheStore(): CacheStoreHandle {
+fun createAppleCacheStore(): CacheStoreHandle {
     val fileManager = NSFileManager.defaultManager
     val directory = requireNotNull(
         fileManager.URLForDirectory(
@@ -27,7 +28,7 @@ fun createIosCacheStore(): CacheStoreHandle {
             create = true,
             error = null,
         )?.path,
-    ) { "无法定位 iOS Application Support 目录。" }
+    ) { "无法定位 Apple Application Support 目录。" }
     val possibleDatabasePaths = listOf(
         "$directory/databases/$CACHE_DATABASE_FILE_NAME",
         "$directory/$CACHE_DATABASE_FILE_NAME",
@@ -45,7 +46,7 @@ fun createIosCacheStore(): CacheStoreHandle {
                 listOf(databasePath, "$databasePath-wal", "$databasePath-shm").forEach { path ->
                     if (fileManager.fileExistsAtPath(path)) {
                         check(fileManager.removeItemAtPath(path, error = null)) {
-                            "无法重建 iOS 本地缓存数据库。"
+                            "无法重建 Apple 本地缓存数据库。"
                         }
                     }
                 }

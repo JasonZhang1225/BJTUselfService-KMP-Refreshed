@@ -9,16 +9,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.window.ComposeUIViewController
 import team.bjtuss.bjtuselfservice.shared.auth.Credentials
-import team.bjtuss.bjtuselfservice.shared.security.IosKeychainCredentialVault
+import team.bjtuss.bjtuselfservice.shared.security.AppleKeychainCredentialVault
 import team.bjtuss.bjtuselfservice.shared.security.CredentialVaultException
 
 fun SecuritySmokeViewController() = ComposeUIViewController {
     var result by remember { mutableStateOf("SECURITY_SMOKE_RUNNING") }
     LaunchedEffect(Unit) {
         result = runCatching {
-            val vault = IosKeychainCredentialVault(
+            val vault = AppleKeychainCredentialVault(
                 service = "team.bjtuss.bjtuselfservice.kmp.credentials.smoke",
                 account = "synthetic-fixture",
+                accessibleAfterFirstUnlock = true,
             )
             val fixture = Credentials("fixture-student", "fixture-password-安全")
             vault.clear()

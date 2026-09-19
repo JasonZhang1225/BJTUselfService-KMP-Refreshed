@@ -70,7 +70,8 @@ kotlin {
             implementation(libs.pytorch.android)
         }
 
-        iosMain.dependencies {
+        // iOS 原生（appleMain 是 Apple 各端的公共上游）：网络走 Darwin(URLSession)，缓存库走原生 sqlite driver。
+        appleMain.dependencies {
             implementation(libs.ktor.client.darwin)
             implementation(libs.sqldelight.native.driver)
         }

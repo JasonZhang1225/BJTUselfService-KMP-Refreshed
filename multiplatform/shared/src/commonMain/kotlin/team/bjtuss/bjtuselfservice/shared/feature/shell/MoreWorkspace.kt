@@ -195,6 +195,8 @@ import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeRecord
 @Composable
 internal fun MoreWorkspace(
     phyVlabEnabled: Boolean,
+    /** 原生底栏放不下第 6 个入口时（iOS 玻璃壳），物理在线的入口改由本目录承载。 */
+    phyVlabEntryInMore: Boolean,
     onPhyVlabEnabledChange: (Boolean) -> Unit,
     onOpenSection: (AppSection) -> Unit,
     modifier: Modifier,
@@ -218,7 +220,14 @@ internal fun MoreWorkspace(
         modifier = modifier
             .verticalScroll(pageScrollState)
             .desktopTouchScroll(pageScrollState)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            // 底部留白在滚动内容之内：玻璃 TabBar 浮在这页之上，末组要靠它让开，
+            // 而列表本身要画到物理底边，玻璃才有内容可折射。
+            .padding(
+                start = 16.dp,
+                top = 12.dp,
+                end = 16.dp,
+                bottom = 12.dp + LocalBottomBarClearance.current,
+            ),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Text(
@@ -229,11 +238,16 @@ internal fun MoreWorkspace(
         )
         MorePhyVlabToggleRow(
             enabled = phyVlabEnabled,
+            entryInMore = phyVlabEntryInMore,
             onEnabledChange = onPhyVlabEnabledChange,
         )
         MoreGroupedSection(
             header = null,
-            items = listOf(AppSection.EXAMS, AppSection.COURSEWARE),
+            items = buildList {
+                if (phyVlabEntryInMore && phyVlabEnabled) add(AppSection.PHYVLAB)
+                add(AppSection.EXAMS)
+                add(AppSection.COURSEWARE)
+            },
             onOpenSection = onOpenSection,
         )
         sections.forEach { section ->
@@ -249,6 +263,7 @@ internal fun MoreWorkspace(
 @Composable
 internal fun MorePhyVlabToggleRow(
     enabled: Boolean,
+    entryInMore: Boolean,
     onEnabledChange: (Boolean) -> Unit,
 ) {
     Surface(
@@ -269,7 +284,11 @@ internal fun MorePhyVlabToggleRow(
                     fontWeight = FontWeight.Normal,
                 )
                 Text(
-                    "开启后同步物理在线，并在底栏显示入口；关闭后不参与同步。",
+                    if (entryInMore) {
+                        "开启后同步物理在线，入口显示在本页列表；关闭后不参与同步。"
+                    } else {
+                        "开启后同步物理在线，并在底栏显示入口；关闭后不参与同步。"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

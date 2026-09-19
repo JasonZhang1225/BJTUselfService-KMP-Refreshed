@@ -40,12 +40,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -75,6 +77,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -197,7 +200,17 @@ fun AuthenticatedAppShell(
     windowClass: WindowClass,
     appCommandBus: AppCommandBus? = null,
     nativeNavigationEnabled: Boolean = false,
+    /** 本实例作为宿主原生 tab 的根页面：底部导航条由系统容器提供，Compose 不再自绘。 */
+    nativeTabBarEnabled: Boolean = false,
+    /** 二级页标题与返回按钮交给宿主导航栏，Compose 顶栏只保留仍有页面动作的一行。 */
+    useNativeTitleBar: Boolean = false,
     onOpenNativeRoute: (String) -> Unit = {},
+    /** 目的地内部请求切换一级入口（原生 tab 根页面之间的跳转）。 */
+    onSelectNativeTab: (String) -> Unit = {},
+    /** 向宿主发布当前目的地标题；宿主据此渲染系统导航栏标题。 */
+    onNativeTitleChanged: (String) -> Unit = {},
+    /** 向宿主发布导航栏右侧动作；传 null 表示本页没有宿主动作，宿主应撤掉按钮。 */
+    onNativeActionChanged: (NativeBarAction?) -> Unit = {},
     onOpenExternalUrl: (String) -> Unit = ::openExternalUrl,
     forcedRouteId: String? = null,
     onCloseNativeRoute: () -> Unit = {},
@@ -241,6 +254,12 @@ fun AuthenticatedAppShell(
     val phyVlabEnabled = settingsState.preferences.isPhyVlabEnabled
     val compactBottomNavSections = remember(phyVlabEnabled) {
         bottomNavSections(phyVlabEnabled)
+    }
+    if (nativeTabBarEnabled) {
+        // 底栏由 UIKit 装配，Compose 侧的入口集合变化必须显式回推给宿主，否则切换「物理在线」底栏不动。
+        LaunchedEffect(compactBottomNavSections) {
+            session.onNativeTabItemsChanged?.invoke(nativeTabItems(session).map { it.routeId })
+        }
     }
     val homeChanges by homeChangeFeed.records.collectAsState()
     var sessionRecoveryInProgress by remember(session) { mutableStateOf(false) }
@@ -296,15 +315,21 @@ fun AuthenticatedAppShell(
     // 紧凑端底栏挂在 NavDisplay 外层（与内容解耦）：一级 tab 切换时底栏实例保持存活，
     // 避免整页销毁把 NavigationBarItem 的按压水波纹掐断。
     // 内容区预留底栏高度：Material3 NavigationBar 80.dp + navigationBars 安全区。
-    val compactBottomBarOverlayPadding = if (windowClass != WindowClass.Expanded) {
-        80.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    } else {
+    val compactBottomBarOverlayPadding = if (windowClass == WindowClass.Expanded) {
         0.dp
+    } else if (nativeTabBarEnabled) {
+        // 底栏换成系统玻璃 TabBar：内容只需让出宿主回报的底部安全区，不再叠加 80.dp 自绘高度。
+        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    } else {
+        80.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     }
     // 宽屏（平板横屏/全屏、macOS）：二级页留在壳内，侧栏固定、右侧换内容，对齐桌面分屏。
     // 仅紧凑/中等窗口才走原生二级 Activity/UIViewController（手机式全屏 push）。
     val useNativeSecondaryRoutes =
         nativeNavigationEnabled && windowClass != WindowClass.Expanded
+    // 本实例是「被宿主压入的页面」而不是玻璃 tab 根：两者都带 forcedRouteId，
+    // 但只有压入页需要返回入口，也不该再为一条不存在的底栏预留高度。
+    val isPushedHostDestination = forcedRouteId != null && !nativeTabBarEnabled
 
     // 未启用原生二级路由时，邮件详情留在邮箱目的地内；
     // 启用原生二级路由时，邮箱列表、邮件详情和写信/回复均由平台页面承载。
@@ -377,7 +402,15 @@ fun AuthenticatedAppShell(
             scope.launch {
                 yield()
                 if (backStack.lastOrNull() == target) return@launch
-                if (shouldOpenNativeSectionRoute(target.name, useNativeSecondaryRoutes)) {
+                if (
+                    forcedRouteId != null &&
+                        isNativeTabRoute(forcedRouteId) &&
+                        isNativeTabRoute(target.name)
+                ) {
+                    // 原生 tab 根页面之间互跳：交给宿主切换 tab，本 Compose 栈只保留自己的根，
+                    // 否则会出现「内容是成绩、高亮仍是首页」的壳层错位。
+                    onSelectNativeTab(target.name)
+                } else if (shouldOpenNativeSectionRoute(target.name, useNativeSecondaryRoutes)) {
                     onOpenNativeRoute(target.name)
                 } else if (
                     target in MoreGroupSections &&
@@ -779,6 +812,8 @@ fun AuthenticatedAppShell(
         showBack: Boolean,
         modifier: Modifier,
         onBack: (() -> Unit)? = null,
+        /** 该页返回动作不只是出栈（如写信需先取消草稿）：此时不交给宿主导航栏。 */
+        ownsBackAction: Boolean = false,
         /** 空闲时右上角状态文案（如课表「已同步/未同步」）；登录中/同步中优先覆盖。 */
         idleStatusText: String? = null,
         /** 页面级动作，显示在同步状态胶囊旁（M12 课程表加入日历）。 */
@@ -790,11 +825,20 @@ fun AuthenticatedAppShell(
         content: @Composable () -> Unit,
     ) {
         // 一级页为底栏预留高度；底栏本身在 NavDisplay 外层，不随 destination 销毁。
-        val reserveBottomBarSpace = !expanded && !showBack && compactBottomBarOverlayPadding > 0.dp
+        val reserveBottomBarSpace = !expanded && !showBack && !isPushedHostDestination &&
+            compactBottomBarOverlayPadding > 0.dp
+        // 玻璃 TabBar 是浮在内容之上的系统控件：净空改由滚动内容的尾部留白承担（见
+        // LocalBottomBarClearance），压在布局上会让列表停在玻璃条上沿、背后只剩纯色，
+        // 玻璃就没有东西可折射。自绘底栏（Android 与 iOS 26 以下）仍按老语义占位。
+        val glassScrollUnderBar = nativeTabBarEnabled && reserveBottomBarSpace
         Box(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(
-                    bottom = if (reserveBottomBarSpace) compactBottomBarOverlayPadding else 0.dp,
+                    bottom = if (reserveBottomBarSpace && !glassScrollUnderBar) {
+                        compactBottomBarOverlayPadding
+                    } else {
+                        0.dp
+                    },
                 ),
             ) {
                 // 紧凑/宽屏统一：标题 + 右上同步胶囊。宽屏不再在页内重复「同步××」按钮。
@@ -805,24 +849,71 @@ fun AuthenticatedAppShell(
                 } else {
                     null
                 }
-                CompactAppTopBar(
-                    title = title,
-                    isRefreshing = isRefreshing || sessionRecoveryInProgress,
-                    isLoggingIn = entryLoggingIn,
-                    idleStatusText = idleStatusText,
-                    action = topBarAction,
-                    // 可刷新页：右上角状态胶囊旁放刷新按钮；不再下拉刷新（保平台原生过滚）。
-                    onRefresh = if (refreshable) refresh else null,
-                    onStatusClick = onStatusClick ?: failureStatusClick,
-                    onBack = if (showBack) {
-                        onBack ?: popBackStack
-                    } else {
-                        null
-                    },
-                )
+                // 原生标题栏模式：系统导航栏已经负责标题与返回。页面若还有动作/同步胶囊，
+                // 顶栏退化为一条纯工具行（无标题、无返回箭头）；否则整行撤掉，只留安全区高度。
+                val nativeTitleBarActive = useNativeTitleBar && showBack && !ownsBackAction
+                // 二级页的刷新与同步状态交给系统导航栏右侧：单独占一行会把内容区整整压掉一条。
+                // 页面级动作（如邮箱顶栏那组按钮）是 Compose 画的，出现时整行仍留在页内；
+                // 状态胶囊可点击时（部分同步失败要点开明细）也必须留在页内——导航栏里的状态是纯文本，
+                // 搬过去就把这个唯一的入口弄丢了。
+                val statusClickHandler = onStatusClick ?: failureStatusClick
+                val hostBarTakesOver = nativeTitleBarActive && !entryLoggingIn &&
+                    topBarAction == null && statusClickHandler == null
+                val refreshHandledByHost = hostBarTakesOver && refreshable
+                val statusHandledByHost = hostBarTakesOver && idleStatusText != null
+                val keepsComposeTopBar = topBarAction != null ||
+                    (idleStatusText != null && !statusHandledByHost) ||
+                    (refreshable && !refreshHandledByHost) ||
+                    entryLoggingIn
+                if (nativeTitleBarActive) {
+                    SideEffect { onNativeTitleChanged(title) }
+                }
+                SideEffect {
+                    onNativeActionChanged(
+                        if (hostBarTakesOver && (refreshable || idleStatusText != null)) {
+                            NativeBarAction(
+                                status = idleStatusText ?: "",
+                                canRefresh = refreshable,
+                                busy = isRefreshing || sessionRecoveryInProgress,
+                                label = if (isRefreshing) "刷新中" else "刷新",
+                                onClick = refresh,
+                            )
+                        } else {
+                            null
+                        }
+                    )
+                }
+                if (nativeTitleBarActive && !keepsComposeTopBar) {
+                    Spacer(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .windowInsetsTopHeight(WindowInsets.statusBars),
+                    )
+                } else {
+                    CompactAppTopBar(
+                        title = if (nativeTitleBarActive) "" else title,
+                        isRefreshing = isRefreshing || sessionRecoveryInProgress,
+                        isLoggingIn = entryLoggingIn,
+                        idleStatusText = idleStatusText,
+                        action = topBarAction,
+                        // 可刷新页：右上角状态胶囊旁放刷新按钮；不再下拉刷新（保平台原生过滚）。
+                        onRefresh = if (refreshable) refresh else null,
+                        onStatusClick = onStatusClick ?: failureStatusClick,
+                        onBack = if (showBack && !nativeTitleBarActive) {
+                            onBack ?: popBackStack
+                        } else {
+                            null
+                        },
+                    )
+                }
                 // 列表仅平台原生滚动/过滚，无下拉刷新包裹层。
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    content()
+                    CompositionLocalProvider(
+                        LocalBottomBarClearance provides
+                            if (glassScrollUnderBar) compactBottomBarOverlayPadding else 0.dp,
+                    ) {
+                        content()
+                    }
                     // 同步进度条悬浮在内容顶部，不参与 Column 布局，避免其出现时
                     // 把下方内容挤矮一丝。
                     if (isRefreshing || sessionRecoveryInProgress) {
@@ -1259,6 +1350,7 @@ fun AuthenticatedAppShell(
                         popBackStack()
                     }
                 },
+                ownsBackAction = true,
                 modifier = modifier,
             ) {
                 MailboxComposeScreen(
@@ -1272,8 +1364,10 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = true,
                 isRefreshing = phyVlabState.isLoading,
-                // 物理在线只从底栏进入，是与首页、课表、作业平级的一级页面。
-                showBack = false,
+                // 物理在线在 Compose 底栏里是与首页/课表/作业平级的一级页，无返回；
+                // 但原生玻璃壳的一级入口上限是 5 个，开启物理在线时它改由「更多」压入，
+                // 这时必须给出返回入口，否则系统栏与页内栏会同时缺返回。
+                showBack = isPushedHostDestination,
                 modifier = modifier,
                 idleStatusText = when {
                     (phyVlabState.failure != null || phyVlabState.casLoginRequired) &&
@@ -1331,6 +1425,7 @@ fun AuthenticatedAppShell(
             ) {
                 MoreWorkspace(
                     phyVlabEnabled = phyVlabEnabled,
+                    phyVlabEntryInMore = nativeTabBarEnabled,
                     onPhyVlabEnabledChange = settingsModel::setPhyVlabEnabled,
                     onOpenSection = { target -> navigateToSection(target) },
                     modifier = Modifier.fillMaxSize(),
@@ -1450,7 +1545,7 @@ fun AuthenticatedAppShell(
         )
 
         // 仅五个一级 tab 显示底栏；更多子页与详情路由隐藏。底栏在 NavDisplay 外，tab 切换不重建。
-        val showsCompactBottomBar = currentRoute in compactBottomNavSections
+        val showsCompactBottomBar = !nativeTabBarEnabled && currentRoute in compactBottomNavSections
 
         Box(modifier = Modifier.fillMaxSize()) {
             // Android 使用 Navigation 3 的 seekable 场景内核，并按 Google full-screen surface

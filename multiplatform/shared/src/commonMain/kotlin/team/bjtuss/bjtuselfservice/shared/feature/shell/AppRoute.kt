@@ -307,9 +307,13 @@ internal fun mailboxBackTarget(
 internal fun shouldOpenNativeSectionRoute(
     targetRouteId: String,
     useNativeSecondaryRoutes: Boolean,
-): Boolean = useNativeSecondaryRoutes &&
-    MoreGroupSections.any { it.name == targetRouteId } &&
-    targetRouteId != AppSection.MORE.name
+): Boolean {
+    if (!useNativeSecondaryRoutes || targetRouteId == AppSection.MORE.name) return false
+    val route = targetRouteId.toAppRoute() ?: return false
+    // 「更多」目录里的项由宿主压栈；因 5 项上限被收进目录的一级项（物理在线）同样要压栈，
+    // 否则它会落在 tab 根的 Compose 栈里，页内与系统栏都不给返回入口。
+    return route !in nativeTabSections()
+}
 
 internal fun HomeChangeDomain.toAppSection(): AppSection = when (this) {
     HomeChangeDomain.GRADES -> AppSection.GRADES

@@ -1,5 +1,6 @@
 package team.bjtuss.bjtuselfservice.shared.feature.home
 
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Spring
@@ -32,7 +33,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -213,8 +213,11 @@ fun HomeWorkspace(
     LazyColumn(
         modifier = modifier.fillMaxSize().desktopTouchScroll(pageListState),
         contentPadding = PaddingValues(
-            horizontal = if (expanded) 8.dp else 16.dp,
-            vertical = 14.dp,
+            start = if (expanded) 8.dp else 16.dp,
+            end = if (expanded) 8.dp else 16.dp,
+            top = 14.dp,
+            // 玻璃 TabBar 浮在列表之上：末项靠这份尾部留白让开，视口本身画到物理底边。
+            bottom = 14.dp + LocalBottomBarClearance.current,
         ),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -441,7 +444,7 @@ private fun StatusCard(
     onClick: () -> Unit,
     modifier: Modifier,
 ) {
-    ElevatedCard(modifier = modifier) {
+    HomeCard(modifier = modifier) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -551,7 +554,7 @@ private fun HomeAgendaSection(
     }
 
     if (dueSoonHomework.isNotEmpty()) {
-        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        HomeCard(modifier = Modifier.fillMaxWidth()) {
             if (expanded) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -689,7 +692,7 @@ private fun HomeAgendaSection(
             scheduleSwipeTargetPage = null
         }
 
-        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        HomeCard(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -943,7 +946,7 @@ private fun HomeAgendaWeekCard(
     val selectedDay = weekAgenda.days.firstOrNull { it.date == selectedDate } ?: weekAgenda.days.first()
 
     val weekIsPending = isWeekPending || !isWeekResolved
-    ElevatedCard(modifier = modifier) {
+    HomeCard(modifier = modifier) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1343,7 +1346,7 @@ private fun HomeChangeFeedSection(
         it.kind == DataChangeKind.MODIFIED && it.beforeDetail == it.afterDetail
     }
     if (meaningful.isEmpty()) return
-    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+    HomeCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),

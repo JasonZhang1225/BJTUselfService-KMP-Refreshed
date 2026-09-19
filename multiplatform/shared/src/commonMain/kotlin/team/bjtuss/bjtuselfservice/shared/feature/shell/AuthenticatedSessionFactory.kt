@@ -1,6 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.shell
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
@@ -257,9 +258,8 @@ internal fun rememberAuthenticatedSession(
         )
     }
     val homeModel = remember(homeStatusRepository) { HomeScreenModel(homeStatusRepository) }
-    return remember(
+    val session = remember(
         profile,
-        entryLoggingIn,
         gradeModel,
         courseScheduleModel,
         examScheduleModel,
@@ -302,4 +302,8 @@ internal fun rememberAuthenticatedSession(
             reauthenticateSession = sessionRecovery::attempt,
         )
     }
+    // 登录完成只更新可观察状态，不换会话实例：M17 原生壳按会话实例装配一级入口，
+    // 换实例等于重建整条玻璃 TabBar——各 tab 的返回栈被丢弃、五个 Compose 宿主重来。
+    SideEffect { session.entryLoggingIn = entryLoggingIn }
+    return session
 }

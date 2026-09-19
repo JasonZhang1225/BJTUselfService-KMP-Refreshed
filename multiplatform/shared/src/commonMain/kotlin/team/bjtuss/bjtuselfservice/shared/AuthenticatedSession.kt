@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,7 +37,7 @@ import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
  */
 class AuthenticatedSession(
     val profile: StudentProfile,
-    val entryLoggingIn: Boolean,
+    entryLoggingIn: Boolean,
     val gradeModel: GradeScreenModel,
     val courseScheduleModel: CourseScheduleScreenModel,
     val examScheduleModel: ExamScheduleScreenModel,
@@ -59,6 +62,12 @@ class AuthenticatedSession(
     private val appResumeGenerationState = MutableStateFlow(0L)
     private val appResumeMutex = Mutex()
     private var claimedAppResumeGeneration = 0L
+
+    /**
+     * M17：一级入口集合变化时通知宿主原生 tab 容器（例如「物理在线」开关会增减底栏项）。
+     * 由宿主装配 tab 容器时赋值；Compose 状态变化不会自动传到 UIKit。
+     */
+    var onNativeTabItemsChanged: ((List<String>) -> Unit)? = null
 
     /** 平台回到前台时递增；应用壳会针对当前页面的失效请求自动重试一次。 */
     val appResumeGeneration: StateFlow<Long> = appResumeGenerationState.asStateFlow()
@@ -89,6 +98,13 @@ class AuthenticatedSession(
      * 是否已在本登录态关闭。
      */
     var classroomIntroBannerDismissed: Boolean = false
+
+    /**
+     * 静默入场期间的「登录中」标记。必须是可观察状态而不是构造常量：
+     * 原生壳（M17 玻璃 TabBar）按会话实例装配一级入口，若登录完成就换一个新实例，
+     * 整条 tab 栏会重建、各 tab 的返回栈被丢弃。改为在既有实例上更新，宿主只换状态不换人。
+     */
+    var entryLoggingIn: Boolean by mutableStateOf(entryLoggingIn)
 }
 
 /** 只有这些目的地属于一级 tab 之上的原生导航层级。 */
