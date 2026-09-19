@@ -40,9 +40,11 @@ class DesktopHomeworkFileGateway(
             return HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
         }
         try {
-            val selected = runCatching {
+            val selected = try {
                 showDialog(FileDialog.LOAD, null, allowMultiple = true)
-            }.getOrElse {
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
                 return HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.IO)
             }
             if (selected.isEmpty()) return HomeworkFilePickResult.Cancelled
@@ -77,9 +79,11 @@ class DesktopHomeworkFileGateway(
             return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
         }
         try {
-            val selected = runCatching {
+            val selected = try {
                 showDialog(FileDialog.SAVE, safeExportFileName(file.fileName), allowMultiple = false).singleOrNull()
-            }.getOrElse {
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
                 return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
             } ?: return HomeworkFileSaveResult.Cancelled
             return withContext(Dispatchers.IO) {
@@ -107,7 +111,11 @@ class DesktopHomeworkFileGateway(
         var sessionOpened = false
         var createdRoot: File? = null
         try {
-            val destination = runCatching(::showDirectoryDialog).getOrElse {
+            val destination = try {
+                showDirectoryDialog()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
                 return CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.IO)
             } ?: return CoursewareDirectoryOpenResult.Cancelled
             val result = withContext(Dispatchers.IO) {
@@ -227,7 +235,7 @@ class DesktopHomeworkFileGateway(
         }
     }
 
-    private fun showDirectoryDialog(): File? {
+    private suspend fun showDirectoryDialog(): File? = withContext(Dispatchers.IO) {
         var selected: File? = null
         val property = "apple.awt.fileDialogForDirectories"
         val previous = System.getProperty(property)
@@ -251,15 +259,21 @@ class DesktopHomeworkFileGateway(
                 if (previous == null) System.clearProperty(property) else System.setProperty(property, previous)
             }
         }
-        if (SwingUtilities.isEventDispatchThread()) show() else SwingUtilities.invokeAndWait { show() }
-        return selected
+        SwingUtilities.invokeAndWait { show() }
+        selected
     }
 
-    private fun showDialog(
+    /**
+     * 模态面板必须在非 EDT 线程上经 invokeAndWait 进入：Compose 的 Main 调度器
+     * (FlushCoroutineDispatcher) 会把任务队列的排空包在可重入的 performRun 里，
+     * 若在 EDT 上直接 isVisible=true，面板的嵌套事件循环会重入同一次排空、
+     * 重复派发仍在调用栈上的协程任务，表现为 Symbol 强转失败后整个界面卡死。
+     */
+    private suspend fun showDialog(
         mode: Int,
         suggestedName: String?,
         allowMultiple: Boolean,
-    ): List<File> {
+    ): List<File> = withContext(Dispatchers.IO) {
         var selected = emptyList<File>()
         val show = {
             val dialog = FileDialog(owner(), if (mode == FileDialog.LOAD) "选择作业文件" else "保存附件", mode)
@@ -278,7 +292,7 @@ class DesktopHomeworkFileGateway(
                 dialog.dispose()
             }
         }
-        if (SwingUtilities.isEventDispatchThread()) show() else SwingUtilities.invokeAndWait { show() }
-        return selected
+        SwingUtilities.invokeAndWait { show() }
+        selected
     }
 }
