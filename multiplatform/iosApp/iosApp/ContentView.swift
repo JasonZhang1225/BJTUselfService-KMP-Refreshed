@@ -355,40 +355,29 @@ private final class NativeChromeBinding {
         apply(scrollEdge: action.scrolledUnder)
     }
 
-    /// Compose cannot expose a UIScrollView to UINavigationBar, so hand the
-    /// edge state to UIKit and let UINavigationBarAppearance perform the
-    /// native material transition. No Compose gradient is painted over content.
+    /// Compose cannot expose a UIScrollView to UINavigationBar, so keep the
+    /// edge state in the native host. The material fade itself is a UIKit
+    /// effect view below the bar; UINavigationBarAppearance stays transparent
+    /// so there is only one continuous material layer. No Compose gradient is
+    /// painted over content.
     ///
     /// Keep the title hierarchy stable. Compose's Skia scroll container is not
     /// a UIKit scroll view, so manually switching large-title display modes
     /// leaves UIKit's old large-title height behind. The title stays compact;
-    /// only the system material follows the real content scroll state.
+    /// the native material fade remains geometrically stable while the content
+    /// moves underneath it.
     func apply(scrollEdge: Bool) {
         guard let controller, let navigationController = controller.navigationController else { return }
         guard lastScrollEdgeState != scrollEdge else { return }
         lastScrollEdgeState = scrollEdge
-
         let appearance = UINavigationBarAppearance()
-        if #available(iOS 26.0, *) {
-            // iOS 26/27 owns the Liquid Glass rendering for system bars. The
-            // public UINavigationBarAppearance API intentionally does not
-            // accept UIGlassEffect, so use the system default background at
-            // the scrolled-under edge and a transparent edge appearance at
-            // the top. UIKit then provides the native blur, depth and mask.
-            if scrollEdge {
-                appearance.configureWithDefaultBackground()
-            } else {
-                appearance.configureWithTransparentBackground()
-                appearance.backgroundColor = .clear
-            }
-            appearance.shadowColor = .clear
-        } else if scrollEdge {
-            appearance.configureWithDefaultBackground()
-        } else {
-            appearance.configureWithTransparentBackground()
-            appearance.backgroundEffect = UIBlurEffect(style: .systemMaterial)
-            appearance.shadowColor = .clear
-        }
+        // Keep the system bar transparent in both scroll states. The single
+        // native material layer below it owns the continuous blur-to-clear
+        // transition; mixing it with UINavigationBar's default background
+        // would produce a second hard-edged glass band over the first card.
+        appearance.configureWithTransparentBackground()
+        appearance.backgroundColor = .clear
+        appearance.shadowColor = .clear
         appearance.titleTextAttributes = [
             // The visible title is the single UIKit label pinned to the
             // navigation-bar center. Keep UINavigationItem.title populated for
@@ -511,10 +500,11 @@ private final class NativeCenteredNavigationTitle: UILabel {
     }
 }
 
-/// A native glass edge mask for the compact bar. UIKit's automatic
-/// scroll-edge appearance only knows about UIScrollView; the page body is
-/// Compose/Skia, so the host supplies a short material falloff in UIKit's
-/// view hierarchy instead of painting a Compose gradient over the page.
+/// Native material fade used when the content is a Compose/Skia scroll
+/// surface. UIKit's navigation bar can provide the title and actions, but it
+/// cannot automatically blur a non-UIKit scroll view behind its bottom edge.
+/// This view supplies only that material transition; the title bar itself is
+/// still the real UINavigationBar.
 private final class NativeTopEdgeMaterialView: UIView {
     private let materialView: UIVisualEffectView
     private let fadeMask = CAGradientLayer()
@@ -531,30 +521,31 @@ private final class NativeTopEdgeMaterialView: UIView {
         materialView = UIVisualEffectView(effect: effect)
         super.init(frame: frame)
         backgroundColor = .clear
+        isOpaque = false
         isUserInteractionEnabled = false
         materialView.isUserInteractionEnabled = false
         materialView.backgroundColor = .clear
-        // Keep the edge material subordinate to the navigation bar itself.
-        // The bar owns the strong glass treatment; this view only softens the
-        // transition into the scrolling content below it.
-        materialView.alpha = 0.72
+        materialView.alpha = 0.9
         addSubview(materialView)
 
+        // The mask is on the wrapper, rather than the private rendering
+        // hierarchy inside UIVisualEffectView, so the fade is deterministic.
         fadeMask.colors = [
             UIColor.white.cgColor,
-            UIColor.white.withAlphaComponent(0.55).cgColor,
+            UIColor.white.withAlphaComponent(0.94).cgColor,
+            UIColor.white.withAlphaComponent(0.58).cgColor,
             UIColor.clear.cgColor,
         ]
-        fadeMask.locations = [0.0, 0.36, 1.0]
+        fadeMask.locations = [0.0, 0.28, 0.68, 1.0]
         fadeMask.startPoint = CGPoint(x: 0.5, y: 0.0)
         fadeMask.endPoint = CGPoint(x: 0.5, y: 1.0)
-        materialView.layer.mask = fadeMask
+        layer.mask = fadeMask
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
         materialView.frame = bounds
-        fadeMask.frame = materialView.bounds
+        fadeMask.frame = bounds
     }
 
     @available(*, unavailable)
@@ -590,8 +581,8 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         self.selectTab = selectTab
         super.init(nibName: nil, bundle: nil)
         delegate = self
-        // 一级页固定使用一条紧凑的原生标题栏；正文滚动只改变系统材质，
-        // 不改变导航栏高度，避免 Compose/ UIKit 两套滚动模型互相错位。
+        // 一级页固定使用一条紧凑的原生标题栏；正文滚动只改变原生材质
+        // 的底部过渡，不改变导航栏高度，避免 Compose/UIKit 两套滚动模型互相错位。
         navigationBar.prefersLargeTitles = false
         installInteractivePopGesture(on: self)
     }
@@ -712,16 +703,13 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         super.viewDidLayoutSubviews()
         if let topEdgeMaterialView {
             let barFrame = navigationBar.frame
-            // This is an edge fade, not a second navigation bar. Keep it
-            // below the bar and only let it overlap by a few points so a
-            // failed/strong material cannot cover the page body.
-            let edgeOverlap: CGFloat = 4
-            let edgeHeight: CGFloat = 44
+            let top = max(0, barFrame.minY)
+            let fadeTail: CGFloat = 72
             topEdgeMaterialView.frame = CGRect(
                 x: 0,
-                y: barFrame.maxY - edgeOverlap,
+                y: top,
                 width: view.bounds.width,
-                height: edgeHeight + edgeOverlap,
+                height: max(0, barFrame.maxY - top) + fadeTail,
             )
             topEdgeMaterialView.isHidden = navigationBar.isHidden
             view.insertSubview(topEdgeMaterialView, belowSubview: navigationBar)
