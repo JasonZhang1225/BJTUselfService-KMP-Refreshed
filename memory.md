@@ -1,6 +1,6 @@
 # BJTUselfService KMP 实时工作记忆
 
-> 最后更新：2026-09-21（Liquid 分支，本轮修复主页面透明宿主后的真实 blur 渐变）
+> 最后更新：2026-09-21（Liquid 分支，本轮移除顶栏 Blur 与渐变）
 > 当前分支：`Liquid`，HEAD 为本轮“基本完成”标记提交（未推送远端；具体短哈希以 `git log -1` 为准）。
 > `history_full.md` 是只读历史归档；本文件只记录当前事实、未决事项和下一步，不重复历史细节。
 
@@ -17,7 +17,7 @@
 - **弹窗统一**：`AppleSheet`/`AppleSheetOrAlert` 的 iOS 标题与动作统一由 UIKit 原生导航栏提供；首页完美校园弹框无标题、仅有左侧蓝色“打开完美校园”，校园网充值弹框只有“校园网充值”标题和原生右上角关闭 X。成绩详情、课程详情、考试详情、课件下载、筛选/选择/日历等 sheet 均补齐原生标题并移除重复的正文标题。公共 API 支持可空标题与 `showDismissButton`；非 iOS 的 Material sheet fallback 也渲染同一套标题和操作语义。
 - **弹窗细节**：考试详情 sheet 直接使用 full-height native detent，避免“添加到日历”按钮和最后一行被半屏底部裁掉。完美校园 sheet 保持无标题，但同时提供左侧蓝色“打开完美校园”和右侧原生关闭 X；正文改为全宽、左对齐的动态正文排版，减少窄文本块和无意义留白。
 - **一级页标题栏统一**：Liquid iOS 壳的所有一级 tab 根页（首页、课程表、成绩、作业、物理在线、更多）与二级 push 页都使用稳定的 UIKit 紧凑标题；标题字号统一为动态 21pt 半粗体。`UINavigationItem.title` 继续承担 UIKit 的显隐/语义，但可见标题由导航栏坐标系内唯一的 UIKit 居中标签承载，避免 UIKit 为避让异步右侧动作而把标题挤到左边；标题与动作回调在同一主线程事务中应用。
-- **顶栏动作几何**：同步、刷新和页面级动作使用统一 32×32 的 UIKit SF Symbol `UIBarButtonItem`；动作布局以结构键缓存，滚动只更新材质和回调，不重建玻璃控件。忙碌态无论是否有点击回调都占一个真正显示 spinner 的原生槽位，完成态与忙碌态不会因动作宽度变化而移动标题；日历动作放在左侧，右侧只保留状态和刷新，文字动作保留完整无障碍标签。
+- **顶栏动作几何**：同步、刷新和页面级动作使用统一 32×32 的 UIKit SF Symbol `UIBarButtonItem`；动作布局以结构键缓存，滚动不重建控件。忙碌态无论是否有点击回调都占一个真正显示 spinner 的原生槽位，完成态与忙碌态不会因动作宽度变化而移动标题；日历动作放在左侧，右侧只保留状态和刷新，文字动作保留完整无障碍标签。
 - **首页刷新反馈**：首页刷新动作现在先打开同步状态 sheet 再开始并行刷新；同步中的 spinner 仍可打开同一面板。同步面板在 iOS 只保留系统右上角 X；只有存在失败项目时才提供右侧“重试”，不再同时生成左侧“关闭”和右侧 X。
 - **作业提示滚动**：紧凑作业页的明文传输提示现在作为 `HomeworkScrollableContent` 的首个 `LazyColumn` item，与筛选摘要和作业卡片共用滚动体；宽屏仍保留顶部提示。提示不会再固定覆盖滚动中的作业卡片。
 - **弹窗覆盖面**：首页卡片/数据变动、成绩变动、作业上传、邮箱发送确认、物理在线提交/上传、设置清理/更新提示都走 `AppleSheetOrAlert`；非 iOS 保持 Material `AlertDialog` 或统一的 Material sheet fallback。
@@ -31,9 +31,8 @@
 - **物理在线层级**：`NativeShell.kt` 不再裁五项、不再暴露 `nativeFloatingEntry`；开启开关时 `bottomNavSections(true)` 包含 `PHYVLAB`，More 只保留总开关，不再列出物理在线入口。`AppRoute.shouldOpenNativeSectionRoute` 因此不会把它 push 成二级页。
 - **iOS tab 宿主**：`ContentView.swift` 用 UIKit `UITabBar` + 每项独立 `TabRootNavigationController` 的自定义容器，绕过 `UITabBarController` 自动插入 More 的五项限制；没有自绘玻璃补位。
 - **tab 重配**：物理在线开关增删 tab 时，UIKit 在关闭动画的事务中同时更新 item 集合和选中项，避免先短暂选中已删除的 PHYVLAB 再跳回首项。
-- **顶栏边缘过渡**：Compose 只把“内容实际滚到导航栏下方”的布尔状态交给 UIKit；Swift 保持 `UINavigationBarAppearance` 在顶部和滚动状态都透明，由导航栏自身的 blur/alpha mask 背景承载连续过渡，不改变标题层级或导航栏高度。滚动量仍夹在 `[0, 52dp]`，只累计子内容实际消费的滚动距离；向下回滚列表中部不会提前清零，只有子内容在顶部报告 downward overscroll 时才复位；不可滚动页面的手势不会改变状态。
-- **顶栏滚动材质**：标题栏使用公开 `UIBlurEffect(.systemMaterial)`，不使用 `UIGlassEffect`，也不把系统默认 Liquid Glass 与自定义背景叠加。`NativeChromeBinding` 始终保持 `prefersLargeTitles = false` 与 `.never`，避免 Compose/UIKit 两套滚动模型产生大标题残留空地；标题和图标前景色显式使用系统 `label/secondaryLabel`，不继承错误的玻璃白色。
-- **顶栏半透明 blur 渐变**：标题栏背景由宿主层的 `NativeNavigationBarBackgroundView` 承载，严格位于 Compose 正文之上、真实 `UINavigationBar` 标题/动作之下；使用 `UIBlurEffect(.systemMaterial)`、轻量同色 wash 和 `CAGradientLayer` alpha mask，从标题栏顶部连续向正文淡出。不使用 `UIGlassEffect`，也不再生成标题栏下方独立横带；`UINavigationBarAppearance` 在两种滚动状态都保持透明。主页面和目的地 `ComposeUIViewController` 均以 `opaque = false` 创建，Swift 宿主也保持 `view.isOpaque = false`，确保 UIKit backdrop 能采样 Compose 内容。
+- **顶栏边缘状态**：Compose 仍可把“内容实际滚到导航栏下方”的布尔状态交给 UIKit，但 Swift 顶栏始终使用透明的 `UINavigationBarAppearance`，不绘制渐变、Blur、alpha mask 或额外背景层，也不改变标题层级或导航栏高度。`prefersLargeTitles = false` 与 `.never` 保持不变，避免 Compose/UIKit 两套滚动模型产生大标题残留空地；不可滚动页面的手势不会改变状态。
+- **顶栏材质**：标题栏只保留原生 UIKit 标题、动作和透明栏本身；`ContentView.swift` 已移除顶栏专用的 `UIVisualEffectView`、`UIBlurEffect`、`CAGradientLayer` 与宿主背景 sibling。主页面和目的地 `ComposeUIViewController` 仍以 `opaque = false` 创建，但这只是让透明栏正确显示页面内容，不代表顶栏有额外材质。
 - **课件详情 sheet**：课件文件详情改为原生大 detent 全高 sheet，正文滚动容器填满可用高度并保留底部安全区；底层“课件下载”导航标题不再与 sheet 标题叠在一起，下载按钮不会被底部截断。
 
 ## 已完成的代码验证
@@ -49,13 +48,13 @@
 - 本轮最新包已在 iOS 27 Device Hub 复核：首页完美校园 sheet 无标题且只有“打开完美校园”；校园网充值 sheet 有“校园网充值”原生标题、二维码正文和单个右上角关闭 X；成绩详情与课程详情均显示统一的原生居中标题。所有已检查 sheet 的底层页面都会被系统材质柔化，正文不再与底层内容直接重叠。
 - 本轮最新包又在 iOS 27 Device Hub 复核：考试详情以完整高度显示到“添加到日历”按钮；完美校园弹框显示“打开完美校园”与原生关闭 X，正文左对齐；首页标题与右侧动作处于同一条紧凑原生导航栏中，不再上下错位。
 - 本轮最终标题栏包已在 iOS 27 Device Hub/模拟器复核：课程表在“添加到日历＋同步状态＋刷新”同时存在时标题仍保持屏幕正中，日历图标独立在左侧；首页刷新反馈链、同步 spinner 槽位和动作缓存已落地。课件详情 sheet 已改全高，完整测试集与 Xcode 模拟器构建通过。物理在线上滑/下滑不再改变标题或高度；不可滚动内容不会被手势误触发。作业明文提示仍随列表滚动离开，不再固定遮挡。
-- 之前的短玻璃层仍产生硬边横带；已改为宿主层单一的半透明 blur 背景，向正文延伸约 72pt，并用 alpha mask 从标题栏顶部连续渐隐。主页面改为透明 Compose 宿主后，iOS 27 Device Hub 高分辨率截图中成绩摘要顶部文字明显柔化、下方课程卡片保持清晰，按钮仍位于最上层，Xcode 构建通过。
+- 本轮按用户最终要求移除顶栏 Blur 与渐变；标题栏不再有额外覆盖层，保留透明原生 UIKit 标题/动作。sheet 内部的系统材质不在本轮移除范围内。
 - 本轮没有在 Computer Use 中输入、输出或复制真实账号、密码、验证码；使用的是用户已打开的登录会话。最新包冷启动等待自动登录完成后仍停留在已登录界面，密码自动保存链路已有运行态证据；真实凭据内容本身未被读取或输出。
 - Device Hub 当前可通过 Computer Use 直接键入普通测试文本，但系统键盘捕获/模拟器剪贴板无法安全注入本地凭据；已关闭键盘捕获并清空测试剪贴板。未读取、输出或复制 `MisSecret.md` 内容。
 
 ## 尚未证明的事项
 
-- 仍需要用户主观确认：各类 sheet 在不同内容长度下的最终审美、边缘返回、减少透明度、iOS 26 以下回退壳、iPad 宽屏、首页卡片内容交互，以及顶栏整体过渡是否达到 iOS 27 参考观感。成绩页上滑/回弹和同步面板同步中入口已完成运行时验证。
+- 仍需要用户主观确认：各类 sheet 在不同内容长度下的最终审美、边缘返回、减少透明度、iOS 26 以下回退壳、iPad 宽屏和首页卡片内容交互。顶栏 Blur/渐变已按要求移除，不再把过渡效果列为待验收项。
 - 本轮已创建本地基本完成标记提交，尚未推送或发布；后续继续修改前仍需保留该提交作为回退点。
 
 ## 相关文件
