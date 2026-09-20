@@ -501,12 +501,14 @@ private final class NativeCenteredNavigationTitle: UILabel {
 
 /// The navigation bar's own translucent background. UIKit supplies the title
 /// and actions above it; this view supplies only an ordinary blur plus a
-/// gradient alpha fade into the Compose/Skia content below. It is a child of
-/// UINavigationBar rather than a separate content overlay.
+/// gradient alpha fade into the Compose/Skia content below. The host places it
+/// immediately above the Compose content and below the
+/// real UINavigationBar, so it reads as the bar's own continuous background.
 private final class NativeNavigationBarBackgroundView: UIView {
     private let blurView: UIVisualEffectView
+    private let tintView = UIView()
+    private let tintGradient = CAGradientLayer()
     private let fadeMask = CAGradientLayer()
-    private var barHeight: CGFloat = 44
 
     override init(frame: CGRect) {
         blurView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
@@ -514,15 +516,21 @@ private final class NativeNavigationBarBackgroundView: UIView {
         backgroundColor = .clear
         isOpaque = false
         isUserInteractionEnabled = false
-        // Stay behind UINavigationBar's title/action content even when
-        // UIKit rebuilds its private bar subviews during layout.
-        layer.zPosition = -1
         blurView.isUserInteractionEnabled = false
         blurView.backgroundColor = .clear
         // Keep the status-bar and title-bar tones aligned while retaining a
         // visible, restrained blur over the content beneath the header.
         blurView.alpha = 0.58
         addSubview(blurView)
+
+        tintView.backgroundColor = .clear
+        tintView.isUserInteractionEnabled = false
+        tintGradient.startPoint = CGPoint(x: 0.5, y: 0.0)
+        tintGradient.endPoint = CGPoint(x: 0.5, y: 1.0)
+        tintGradient.locations = [0.0, 0.20, 0.55, 1.0]
+        tintGradient.colors = Self.tintColors
+        tintView.layer.addSublayer(tintGradient)
+        addSubview(tintView)
 
         fadeMask.startPoint = CGPoint(x: 0.5, y: 0.0)
         fadeMask.endPoint = CGPoint(x: 0.5, y: 1.0)
@@ -533,29 +541,30 @@ private final class NativeNavigationBarBackgroundView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         blurView.frame = bounds
+        tintView.frame = bounds
+        tintGradient.frame = tintView.bounds
         fadeMask.frame = bounds
         updateMask()
     }
 
-    func setBarHeight(_ height: CGFloat) {
-        barHeight = height
-        updateMask()
+    private func updateMask() {
+        // Start fading inside the navigation bar itself. Keeping the first
+        // stop opaque until barHeight makes the content appear to hit a
+        // separate overlay at the bar's bottom edge.
+        fadeMask.locations = [0.0, 0.20, 0.55, 1.0]
+        fadeMask.colors = [
+            UIColor.white.withAlphaComponent(0.88).cgColor,
+            UIColor.white.withAlphaComponent(0.70).cgColor,
+            UIColor.white.withAlphaComponent(0.32).cgColor,
+            UIColor.clear.cgColor,
+        ]
     }
 
-    private func updateMask() {
-        let totalHeight = max(bounds.height, 1)
-        let barStop = min(max(barHeight / totalHeight, 0.05), 0.82)
-        let fadeStop = min(barStop + 0.34, 0.98)
-        fadeMask.locations = [
-            0.0,
-            NSNumber(value: Double(barStop)),
-            NSNumber(value: Double(fadeStop)),
-            1.0,
-        ]
-        fadeMask.colors = [
-            UIColor.white.cgColor,
-            UIColor.white.withAlphaComponent(0.92).cgColor,
-            UIColor.white.withAlphaComponent(0.48).cgColor,
+    private static var tintColors: [CGColor] {
+        [
+            appBackgroundUIColor.withAlphaComponent(0.18).cgColor,
+            appBackgroundUIColor.withAlphaComponent(0.14).cgColor,
+            appBackgroundUIColor.withAlphaComponent(0.06).cgColor,
             UIColor.clear.cgColor,
         ]
     }
@@ -610,10 +619,16 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         guard viewControllers.isEmpty else { return }
         navigationBar.clipsToBounds = false
         navigationBar.backgroundColor = .clear
+        // The background is a single header surface over the Compose sibling;
+        // keep UIKit's actual title/actions above it.
+        navigationBar.layer.zPosition = 200
         let navigationBarBackgroundView = NativeNavigationBarBackgroundView(frame: .zero)
         self.navigationBarBackgroundView = navigationBarBackgroundView
-        navigationBar.addSubview(navigationBarBackgroundView)
-        navigationBar.sendSubviewToBack(navigationBarBackgroundView)
+        navigationBarBackgroundView.layer.zPosition = 100
+        // The material must sit above the Compose sibling view to blur the
+        // content behind the header, while remaining below UINavigationBar's
+        // title and action controls.
+        view.insertSubview(navigationBarBackgroundView, belowSubview: navigationBar)
         let binding = NativeChromeBinding()
         let root = MainViewControllerKt.NativeTabRootViewController(
             session: session,
@@ -717,16 +732,18 @@ private final class TabRootNavigationController: UINavigationController, UINavig
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         if let navigationBarBackgroundView {
+            let barFrame = navigationBar.frame
+            let top = max(0, barFrame.minY)
             let fadeTail: CGFloat = 72
             navigationBarBackgroundView.frame = CGRect(
                 x: 0,
-                y: 0,
-                width: navigationBar.bounds.width,
-                height: navigationBar.bounds.height + fadeTail,
+                y: top,
+                width: view.bounds.width,
+                height: max(0, barFrame.maxY - top) + fadeTail,
             )
-            navigationBarBackgroundView.setBarHeight(navigationBar.bounds.height)
             navigationBarBackgroundView.isHidden = navigationBar.isHidden
-            navigationBar.sendSubviewToBack(navigationBarBackgroundView)
+            view.bringSubviewToFront(navigationBarBackgroundView)
+            view.bringSubviewToFront(navigationBar)
         }
         if let centeredTitleLabel {
             navigationBar.bringSubviewToFront(centeredTitleLabel)
