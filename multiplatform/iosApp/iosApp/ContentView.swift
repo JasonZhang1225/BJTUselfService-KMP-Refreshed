@@ -4,14 +4,13 @@ import SwiftUI
 import UIKit
 
 // Keep this pair aligned with LightColors/DarkColors.background in shared App.kt.
-private let appBackgroundColor = Color(
-    uiColor: UIColor { traits in
-        if traits.userInterfaceStyle == .dark {
-            return UIColor(red: 16.0 / 255.0, green: 18.0 / 255.0, blue: 22.0 / 255.0, alpha: 1)
-        }
-        return UIColor(red: 244.0 / 255.0, green: 245.0 / 255.0, blue: 249.0 / 255.0, alpha: 1)
+private let appBackgroundUIColor = UIColor { traits in
+    if traits.userInterfaceStyle == .dark {
+        return UIColor(red: 16.0 / 255.0, green: 18.0 / 255.0, blue: 22.0 / 255.0, alpha: 1)
     }
-)
+    return UIColor(red: 244.0 / 255.0, green: 245.0 / 255.0, blue: 249.0 / 255.0, alpha: 1)
+}
+private let appBackgroundColor = Color(uiColor: appBackgroundUIColor)
 
 /// 每个 Compose 宿主管线的公共约定（M10 回退壳与 M17 玻璃壳共用，行为必须一致）。
 ///
@@ -165,7 +164,7 @@ private final class NativeChromeBinding {
     }
 
     /// 同步状态、刷新与页面级动作由 Compose 声明、由系统导航栏渲染：不再把 Compose 胶囊
-    /// 塞进标题栏。动作载体只在结构真正变化时重建；滚动时只切换系统材质，避免玻璃控件
+    /// 塞进标题栏。动作载体只在结构真正变化时重建；滚动时只保持渐变层几何稳定，避免控件
     /// 被销毁再创建而闪烁。
     func apply(action: NativeBarAction?) {
         pendingAction = action
@@ -356,10 +355,10 @@ private final class NativeChromeBinding {
     }
 
     /// Compose cannot expose a UIScrollView to UINavigationBar, so keep the
-    /// edge state in the native host. The material fade itself is a UIKit
-    /// effect view below the bar; UINavigationBarAppearance stays transparent
-    /// so there is only one continuous material layer. No Compose gradient is
-    /// painted over content.
+    /// edge state in the native host. The fade itself is a small UIKit
+    /// gradient view below the bar; UINavigationBarAppearance stays
+    /// transparent so there is only one continuous overlay. No Compose
+    /// gradient is painted over content.
     ///
     /// Keep the title hierarchy stable. Compose's Skia scroll container is not
     /// a UIKit scroll view, so manually switching large-title display modes
@@ -500,52 +499,65 @@ private final class NativeCenteredNavigationTitle: UILabel {
     }
 }
 
-/// Native material fade used when the content is a Compose/Skia scroll
-/// surface. UIKit's navigation bar can provide the title and actions, but it
-/// cannot automatically blur a non-UIKit scroll view behind its bottom edge.
-/// This view supplies only that material transition; the title bar itself is
-/// still the real UINavigationBar.
-private final class NativeTopEdgeMaterialView: UIView {
-    private let materialView: UIVisualEffectView
+/// The navigation bar's own translucent background. UIKit supplies the title
+/// and actions above it; this view supplies only an ordinary blur plus a
+/// gradient alpha fade into the Compose/Skia content below. It is a child of
+/// UINavigationBar rather than a separate content overlay.
+private final class NativeNavigationBarBackgroundView: UIView {
+    private let blurView: UIVisualEffectView
     private let fadeMask = CAGradientLayer()
+    private var barHeight: CGFloat = 44
 
     override init(frame: CGRect) {
-        let effect: UIVisualEffect
-        if #available(iOS 26.0, *) {
-            let glass = UIGlassEffect(style: .clear)
-            glass.isInteractive = false
-            effect = glass
-        } else {
-            effect = UIBlurEffect(style: .systemUltraThinMaterial)
-        }
-        materialView = UIVisualEffectView(effect: effect)
+        blurView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
         super.init(frame: frame)
         backgroundColor = .clear
         isOpaque = false
         isUserInteractionEnabled = false
-        materialView.isUserInteractionEnabled = false
-        materialView.backgroundColor = .clear
-        materialView.alpha = 0.9
-        addSubview(materialView)
+        // Stay behind UINavigationBar's title/action content even when
+        // UIKit rebuilds its private bar subviews during layout.
+        layer.zPosition = -1
+        blurView.isUserInteractionEnabled = false
+        blurView.backgroundColor = .clear
+        // Keep the status-bar and title-bar tones aligned while retaining a
+        // visible, restrained blur over the content beneath the header.
+        blurView.alpha = 0.58
+        addSubview(blurView)
 
-        // The mask is on the wrapper, rather than the private rendering
-        // hierarchy inside UIVisualEffectView, so the fade is deterministic.
-        fadeMask.colors = [
-            UIColor.white.cgColor,
-            UIColor.white.withAlphaComponent(0.94).cgColor,
-            UIColor.white.withAlphaComponent(0.58).cgColor,
-            UIColor.clear.cgColor,
-        ]
-        fadeMask.locations = [0.0, 0.28, 0.68, 1.0]
         fadeMask.startPoint = CGPoint(x: 0.5, y: 0.0)
         fadeMask.endPoint = CGPoint(x: 0.5, y: 1.0)
         layer.mask = fadeMask
+        updateMask()
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        materialView.frame = bounds
+        blurView.frame = bounds
         fadeMask.frame = bounds
+        updateMask()
+    }
+
+    func setBarHeight(_ height: CGFloat) {
+        barHeight = height
+        updateMask()
+    }
+
+    private func updateMask() {
+        let totalHeight = max(bounds.height, 1)
+        let barStop = min(max(barHeight / totalHeight, 0.05), 0.82)
+        let fadeStop = min(barStop + 0.34, 0.98)
+        fadeMask.locations = [
+            0.0,
+            NSNumber(value: Double(barStop)),
+            NSNumber(value: Double(fadeStop)),
+            1.0,
+        ]
+        fadeMask.colors = [
+            UIColor.white.cgColor,
+            UIColor.white.withAlphaComponent(0.92).cgColor,
+            UIColor.white.withAlphaComponent(0.48).cgColor,
+            UIColor.clear.cgColor,
+        ]
     }
 
     @available(*, unavailable)
@@ -566,7 +578,7 @@ private final class TabRootNavigationController: UINavigationController, UINavig
     private let tabRouteId: String
     private let selectTab: (String) -> Void
     private var centeredTitleLabel: NativeCenteredNavigationTitle?
-    private var topEdgeMaterialView: NativeTopEdgeMaterialView?
+    private var navigationBarBackgroundView: NativeNavigationBarBackgroundView?
     private var navigationBarHiddenState: Bool?
     /// 根页 ↔ 被压入的二级页切换时通知宿主：底栏被 push 藏起来时同步隐藏。
     var onBarVisibilityChanged: ((Bool) -> Void)?
@@ -581,7 +593,7 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         self.selectTab = selectTab
         super.init(nibName: nil, bundle: nil)
         delegate = self
-        // 一级页固定使用一条紧凑的原生标题栏；正文滚动只改变原生材质
+        // 一级页固定使用一条紧凑的原生标题栏；正文滚动只改变原生渐变
         // 的底部过渡，不改变导航栏高度，避免 Compose/UIKit 两套滚动模型互相错位。
         navigationBar.prefersLargeTitles = false
         installInteractivePopGesture(on: self)
@@ -596,9 +608,12 @@ private final class TabRootNavigationController: UINavigationController, UINavig
     override func viewDidLoad() {
         super.viewDidLoad()
         guard viewControllers.isEmpty else { return }
-        let topEdgeMaterialView = NativeTopEdgeMaterialView(frame: .zero)
-        self.topEdgeMaterialView = topEdgeMaterialView
-        view.insertSubview(topEdgeMaterialView, belowSubview: navigationBar)
+        navigationBar.clipsToBounds = false
+        navigationBar.backgroundColor = .clear
+        let navigationBarBackgroundView = NativeNavigationBarBackgroundView(frame: .zero)
+        self.navigationBarBackgroundView = navigationBarBackgroundView
+        navigationBar.addSubview(navigationBarBackgroundView)
+        navigationBar.sendSubviewToBack(navigationBarBackgroundView)
         let binding = NativeChromeBinding()
         let root = MainViewControllerKt.NativeTabRootViewController(
             session: session,
@@ -701,18 +716,17 @@ private final class TabRootNavigationController: UINavigationController, UINavig
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        if let topEdgeMaterialView {
-            let barFrame = navigationBar.frame
-            let top = max(0, barFrame.minY)
+        if let navigationBarBackgroundView {
             let fadeTail: CGFloat = 72
-            topEdgeMaterialView.frame = CGRect(
+            navigationBarBackgroundView.frame = CGRect(
                 x: 0,
-                y: top,
-                width: view.bounds.width,
-                height: max(0, barFrame.maxY - top) + fadeTail,
+                y: 0,
+                width: navigationBar.bounds.width,
+                height: navigationBar.bounds.height + fadeTail,
             )
-            topEdgeMaterialView.isHidden = navigationBar.isHidden
-            view.insertSubview(topEdgeMaterialView, belowSubview: navigationBar)
+            navigationBarBackgroundView.setBarHeight(navigationBar.bounds.height)
+            navigationBarBackgroundView.isHidden = navigationBar.isHidden
+            navigationBar.sendSubviewToBack(navigationBarBackgroundView)
         }
         if let centeredTitleLabel {
             navigationBar.bringSubviewToFront(centeredTitleLabel)
