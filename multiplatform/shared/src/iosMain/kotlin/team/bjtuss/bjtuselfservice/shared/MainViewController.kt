@@ -70,22 +70,28 @@ fun NativeDestinationViewController(
     onSelectNativeTab = onSelectNativeTab,
 )
 
-/** M17：原生 tab 根页面控制器（底栏由系统玻璃 TabBar 提供，页内顶栏保持自绘）。 */
+/**
+ * M17：原生 tab 根页面控制器。底栏由系统玻璃 TabBar 提供，大标题与同步胶囊交给
+ * 系统导航栏（`useNativeTitleBar = true`），页内不再自绘顶栏；宿主没有真把导航栏放出来时
+ * 不要传 true，否则页面既没有系统标题也没有 Compose 自绘标题。
+ */
 fun NativeTabRootViewController(
     session: AuthenticatedSession,
     routeId: String,
     onOpenNativeRoute: (String) -> Unit,
     onCloseNativeRoute: () -> Unit,
     onTitleChanged: (String) -> Unit = {},
+    onActionChanged: (NativeBarAction?) -> Unit = {},
     onSelectNativeTab: (String) -> Unit = {},
 ): UIViewController = createDestinationViewController(
     session = session,
     routeId = routeId,
     nativeTabBarEnabled = true,
-    useNativeTitleBar = false,
+    useNativeTitleBar = true,
     onOpenNativeRoute = onOpenNativeRoute,
     onCloseNativeRoute = onCloseNativeRoute,
     onTitleChanged = onTitleChanged,
+    onActionChanged = onActionChanged,
     onSelectNativeTab = onSelectNativeTab,
 )
 
@@ -102,6 +108,7 @@ private fun createDestinationViewController(
 ): UIViewController {
     lateinit var controller: UIViewController
     val homeworkFileGateway = IosHomeworkFileGateway { controller }
+    val nativeSheetPresenter = IosNativeSheetPresenter { controller }
     controller = ComposeUIViewController {
         AuthenticatedDestinationApp(
             session = session,
@@ -110,6 +117,7 @@ private fun createDestinationViewController(
             coursewareDirectoryGateway = homeworkFileGateway,
             nativeTabBarEnabled = nativeTabBarEnabled,
             useNativeTitleBar = useNativeTitleBar,
+            nativeSheetPresenter = nativeSheetPresenter,
             onOpenNativeRoute = onOpenNativeRoute,
             onCloseNativeRoute = onCloseNativeRoute,
             onSelectNativeTab = onSelectNativeTab,
@@ -139,6 +147,7 @@ private fun createMainViewController(
     val homeworkFileGateway = IosHomeworkFileGateway { controller }
     val systemCalendarGateway = IosSystemCalendarGateway()
     val captchaRecognizer = IosCoreMlCaptchaRecognizer()
+    val nativeSheetPresenter = IosNativeSheetPresenter { controller }
     controller = ComposeUIViewController {
         App(
             accountSecurityStore = accountSecurityStore,
@@ -149,6 +158,7 @@ private fun createMainViewController(
             captchaRecognizer = captchaRecognizer,
             nativeNavigationEnabled = nativeNavigationEnabled,
             nativeTabBarEnabled = nativeTabBarEnabled,
+            nativeSheetPresenter = nativeSheetPresenter,
             onOpenNativeRoute = onOpenNativeRoute,
             onAuthenticatedSessionChanged = onAuthenticatedSessionChanged,
         )

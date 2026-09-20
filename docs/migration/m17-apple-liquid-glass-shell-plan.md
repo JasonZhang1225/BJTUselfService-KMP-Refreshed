@@ -410,4 +410,142 @@ iPhone 紧凑端 `UITabBarController` 只给 5 格，第 6 项会让系统插自
 另外补了一道门槛：状态胶囊**可点击**时（部分同步失败要点开明细看 `syncFailureItems`）也必须留在页内，
 导航栏里的状态是纯文本 UILabel，搬过去就把这个唯一入口弄丢了。
 
+---
 
+## 2026-09-19 深夜：用户提的五条方向逐条落地
+
+用户 23:05 提了 5 条（一级页标题栏/胶囊原生化、弹窗改苹果式底部卡片、物理在线入口位置、顶栏渐变、课程表全览表格例外），
+附三张系统 App 截图作参照。逐条记录做法与实测边界。
+
+### ① 一级 tab 根页改吃系统导航栏
+
+`NativeTabRootViewController` 的 `useNativeTitleBar` 从 false 翻成 true，宿主侧
+`TabRootNavigationController` 开 `navigationBar.prefersLargeTitles`，根页 `largeTitleDisplayMode = .automatic`、
+被压入的二级页 `.never`。`navigationBarShouldBeHidden` 不再豁免根页，只按「有没有标题」决定显隐
+（写信这类 `nativeRouteTitle` 返回空串的页仍自绘顶栏）。
+
+导航栏右侧从「只有刷新」扩成三件：状态（可点时画成 `UIButton`，闭包回 `onStatusClick`）、刷新、页面级动作
+（`NativeBarAction.extraLabel`/`onExtraClick`，课程表「添加到日历」）。**状态用 UIButton 而不是 UILabel+tap**：
+`UITapGestureRecognizer` 的 target 要 `@objc`，而 `NativeChromeBinding` 不是 NSObject。
+
+出图：首页 `/tmp/m17b-home.png`、课程表 `/tmp/m17c-schedule.png`、成绩 `/tmp/m17o-GRADES.png`（大标题 + 「已同步 ⟳」）、
+更多 `/tmp/m17o-MORE.png`（目录页不可刷新，导航栏只有大标题）、物理在线二级页 `/tmp/m17q-pushed.png`（玻璃返回钮 + 居中标题）。
+
+### ② 弹窗换成苹果式底部卡片（`AppleSheet`）
+
+新文件 `feature/shell/AppleSheet.kt`。**没有真的改用 `UISheetPresentationController`**：卡片内容读的是页面自己的
+Compose 状态（选中的课程、同步失败明细、缴费二维码），换成宿主弹窗要么把每个状态搬进共享模型、要么再起一条
+Compose 管线，代价远大于收益。改为在同一个组合里复刻系统行为：
+
+- 半屏停靠时容器 `surface` alpha 0.86（能看见底下的页面），拉到全屏回到 1.0；驱动量是
+  `sheetState.targetValue == SheetValue.Expanded`，它在拖拽越过阈值时就更新，所以透明度跟着手势走。
+- 顶角 14dp 连续圆角 + grabber（Material 默认 28dp 在 iOS 上显得两张圆片叠着）。
+- `needsFullHeight` 就是用户问的「哪些半屏放得下」：课程详情/成绩详情/完美校园/缴费二维码/部分同步失败
+  走半屏；课表与周数、日历导出、成绩筛选、同步详情清单直接全屏。
+- **只有 iOS 换皮**：Android/桌面仍是 Material 卡片与 `AlertDialog`。确认类弹窗换形态属于平台行为，
+  所以 `AppleSheetOrAlert` 在 iOS 出卡片、其它平台出对话框，内容体共用。
+- 全屏展开时卡片顶到屏幕底边，iOS 侧补 `navigationBarsPadding()`（实测「关闭」按钮原本压在 home indicator 上）。
+
+已出图：缴费二维码卡片 `/tmp/m17p-sheet.png`（半屏、透、grabber、整行胶囊按钮）。其余入口共用同一包装，
+逐个点开确认留给人工。
+
+### ③ 物理在线：底栏同一行的补位，不再悬在上方
+
+先量再做，三条实测结论：
+
+1. `NATIVE_TAB_BAR_MAX_ITEMS` 临时放到 6 → 系统直接把底栏改成 首页/课程表/成绩/作业/`•••`，
+   **应用自己的「更多」目录被系统溢出页顶掉**（`/tmp/m17i-schedule.png`）。5 格上限是硬的。
+2. `tabBar.itemPositioning = .centered` + `itemWidth = 52` → platter 尺寸不变（iOS 26 不认这两个旧属性）。
+3. `tabBar.layoutMargins`/`directionalLayoutMargins` trailing 给 76 → `_UITabBarItemPlatterView` 仍是
+   `(21, 0, 360, 62)`，一点没动。
+
+结论：玻璃条本身腾不出第 6 格，于是**由我们把 `tabBar.frame.width` 让出 68pt**，在同一行右侧放自己的
+`UIGlassEffect` 胶囊（图标 + 文字，62×62，和 tab 槽同高）。它挂在 `view` 上而不是 `tabBar` 里（UIKit 会重排
+bar 的子视图），显隐沿用既有的 `onBarVisibilityChanged`。出图：`/tmp/m17l-barbottom.png`（首页）、
+`/tmp/m17q-sched-bottom.png`（课程表，整张表停在补位上方）、`/tmp/m17q-pushed.png`（压入二级页后底栏与补位一起消失）。
+
+### ④ 顶栏苹果式渐变
+
+`DestinationPage` 的内容 Box 上加 `nestedScroll`，累计子级消费掉的滚动量 `scrolledUnderBarPx`，
+顶部 52dp 叠一条 `background → transparent` 的竖向渐变，alpha = 滚动量 / 52dp。
+只在 `nativeTitleBarActive && !keepsComposeTopBar`（系统栏接管顶部）时挂，页内自绘顶栏的页不加，否则会把自家标题洗淡。
+
+**为什么不是原生 scroll-edge**：滚动发生在 Compose 的 Skia 层里，UIKit 的 `UINavigationBar` 观察不到
+`UIScrollView`，系统的滚动淡入不会自己生效（和 `tabBarMinimizeBehavior(.onScrollDown)` 失效是同一个原因）。
+
+本轮只证明了**渲染正确**：DEBUG 预置 80px 后渐变如实压住卡片上沿（`/tmp/m17p-fade-top.png`）。
+**手势驱动那条链没验**——本机既有的结论是 Computer Use 的 scroll/drag 注不进 Skia 滚动，本轮 Computer Use 连接器也没挂载，
+所以「手指上滑时淡入」要人来点一下才算收口。
+
+### ⑤ 课程表全览表格是「内容穿过底栏」的例外
+
+`AuthenticatedSession.glassTabBarBottomInsetDp` 由宿主 `viewDidLayoutSubviews` 推给 Compose：
+全出血宿主下 `WindowInsets.navigationBars` 只剩 home indicator，UIKit 不会把悬浮 tab bar 算进去，
+所以玻璃条真实占的 83pt 只能由 Swift 报（`max(0, view.bounds.height - tabBar.frame.minY)`，带 0.5pt 容差防自激）。
+`DestinationPage` 新增 `keepsBottomBarInset`，色块概览（`CourseCompactViewMode.WEEK`）为 true → 不吃尾部留白特例，
+改回真实布局内边距并额外给 8dp 呼吸。切到按日列表又回到常态。出图 `/tmp/m17i-schedule.png`、`/tmp/m17q-schedule.png`。
+
+### 踩到的判据坑（记下来，别再犯）
+
+「inset 推过去了但画面没变」这个结论是**错的**：我拿 `m17d` 与 `m17e` 两张图逐行 diff，零差异，就判定修复无效。
+但两个构建**都已含修复**，同源自比的 diff 当然看不出东西。真正有效的两步是：① 把内边距临时改成无条件 283dp 探针，
+画面立刻整体收缩 → 证明链路通；② 用 `rowscan`（`/tmp/rowscan.swift`，按行平均亮度）量出表格下边框正好落在
+`tabBar.frame.minY`，证明落点准。**对比实验要先确认两边不同源。**
+
+### 取证辅助（DEBUG-only，永久保留）
+
+`--tab=<ROUTEID>` 现在除了切 tab，还会把不在 tab 上的入口（物理在线、设置…）按宿主压栈，
+这样二级页也能无头出图，不用抢用户鼠标。
+
+
+## 2026-09-19 深夜续：② 的覆盖面补齐 + 两处判据复核
+
+### ② 不止用户点名的四张：全应用还剩 8 张 Material 卡片
+
+复核 `commonMain` 后确认：`AppleSheet` 当时只覆盖了课程详情/课表与周数/日历导出/成绩详情/成绩筛选/
+同步失败/同步详情/缴费二维码。考试（详情、筛选、导出）、作业筛选、教室占用周选择、课件（选课、详情）、
+物理在线实验详情这 8 张仍是裸 `ModalBottomSheet`，iOS 上就是用户抱怨的那种样式。已全部收进 `AppleSheet`，
+并按「半屏能不能展示完」定档：详情类（考试详情、课件详情）半屏即可；筛选器、周选择、选课列表、实验详情
+（含提交与上传动作）给 `needsFullHeight = true`。
+
+### 一条必须写死的平台分界：半高锚点在 Android/桌面上是坏的
+
+`CoursewareScreen` 里原本就有一条注释记着这个坑（「false 时会卡在半高锚点，得点把手才能展开且底部一截够不着」）。
+所以 `needsFullHeight` **只描述 iOS 的两档 detent**：`rememberModalBottomSheetState(skipPartiallyExpanded = !apple || needsFullHeight)`，
+非苹果端一律直接展开；同时 `containerColor`/`dragHandle` 在非苹果端回到 `BottomSheetDefaults`，
+透明度和 14dp 顶角只在 iOS 生效。否则「换 iOS 皮肤」会顺手把 Android 的卡片卡在半高。
+
+### ④ 的符号约定复核（不用手指也能定案）
+
+`onPostScroll` 里 `consumed.y` 的符号是这套淡入唯一没法截图证明的一环。按官方嵌套滚动文档的折叠顶栏例子
+（`toolbarOffset += delta` 再夹进 `[-toolbarHeight, 0]`，向上收起时 delta 为负）核对：向下滚动时 delta 为负，
+本实现取反累加，方向正确；滚回顶部由 `coerceAtLeast(0f)` 夹住。约定已写进代码注释。
+
+### 全高档出图（探针已删净）
+
+`--tab=` 只能定位到页面，卡片还得有人点。为拿到全高档的画面证据，临时在 `HomeScreen` 预置
+`dialog = HomeDialog.CampusCard` 并把该调用点 `needsFullHeight` 翻成 true，出一张 `/tmp/m17r-sheet-full.png`：
+卡片贴住内容高度、grabber 与两枚胶囊动作完整、底部动作不被屏幕下缘压住、遮罩如实压暗底下的页面。
+随后两行探针全部撤销（`grep "TEMP PROBE"` 残留 0）并重新构建装机，`/tmp/m1r-final.png` 复核课程表一级页
+（原生大标题 + 宿主导航栏里的「添加到日历」与同步胶囊 + 全览表格停在玻璃条上方 + 底栏同行右侧的物理在线补位）无回归。
+
+---
+
+## 2026-09-20 当前实现更正
+
+上面的 2026-09-19 条目保留为当时的实验记录，不再代表当前代码。当前实现以源码和 `memory.md` 为准：
+
+- 弹窗已改为真正的宿主原生 sheet：iOS 由 `IosNativeSheetPresenter` + `UIKitSheetBridge` 调用
+  `UISheetPresentationController`；`AppleSheet.kt` 的 Compose `ModalBottomSheet` 仅是非 iOS 回退。
+  首页、成绩、作业、邮箱、物理在线、设置等确认层统一经过 `AppleSheetOrAlert`。
+- 登录/同步动作由 `NativeChromeBinding` 使用文字 `UIBarButtonItem` 渲染；不再用 Compose 刷新胶囊、刷新图标或自定义状态控件。
+- 物理在线不是悬浮补位，也不是 More 子页：`NativeShell` 不再裁五项，iOS 自定义宿主使用真实 `UITabBar` 承载开启后的六项一级入口；More 只保留总开关。
+- 顶栏过渡仍受 Compose Skia 滚动容器限制，UIKit 不会直接观察它；当前由 Compose 只回报是否 scrolled-under，Swift 以 `UINavigationBarAppearance` 的系统 material 完成透明/默认背景转换，不再绘制第二层 Compose edge scrim。
+- 当前代码门禁：iOS Simulator/Device Kotlin 编译、Xcode arm64 Simulator 构建和 desktopTest 513 项已通过；登录后六项 tab、真实 sheet 手势和顶栏手势仍需真人会话确认。
+
+本轮补充：
+
+- `AppleSheet` 的独立 Compose root 显式继承当前 Material 色彩/字体/形状，UIKit 宿主视图保持透明，让 `UISheetPresentationController` 自己负责玻璃和模糊；标题与确认/取消/关闭动作也由 UIKit `UIBarButtonItem` 提供，Compose 只负责正文，这不是 Compose 画出来的弹窗外壳。
+- 原生刷新进行中状态改为“同步中/刷新中”，不再让旧的“已同步”与忙碌态并列；关闭 PHYVLAB 时 UIKit 在无动画事务中同步重排 tab 与选中项，避免选中滑块短暂跳到被删除项。
+- 密码保存仍只走 Apple Keychain。未签名模拟器的安全烟测为 `-34018`（缺少应用签名 entitlement），本机合法 Apple Development 签名模拟器的隔离 Apple store + `AccountSecurityCoordinator` 保存—恢复—清除烟测为 `SECURITY_SMOKE_PASS`；烟测不触碰生产 service/account/preferences key，也没有加入明文降级存储。
+- 登录验证码恢复和静默自动登录失败提示也统一走 `AppleSheetOrAlert`；Keychain 保存失败会在登录后显式告知用户，不再静默丢失。

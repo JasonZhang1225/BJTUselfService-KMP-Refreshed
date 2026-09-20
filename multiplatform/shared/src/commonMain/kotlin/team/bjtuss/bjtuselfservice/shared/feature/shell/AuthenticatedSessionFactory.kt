@@ -303,7 +303,7 @@ internal fun rememberAuthenticatedSession(
         )
     }
     // 登录完成只更新可观察状态，不换会话实例：M17 原生壳按会话实例装配一级入口，
-    // 换实例等于重建整条玻璃 TabBar——各 tab 的返回栈被丢弃、五个 Compose 宿主重来。
+    // 换实例等于重建整条玻璃 TabBar——各 tab 的返回栈被丢弃、所有 Compose 宿主重来。
     SideEffect { session.entryLoggingIn = entryLoggingIn }
     return session
 }

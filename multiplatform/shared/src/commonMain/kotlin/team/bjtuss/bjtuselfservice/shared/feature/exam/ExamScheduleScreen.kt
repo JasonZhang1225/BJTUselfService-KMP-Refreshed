@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,11 +35,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,6 +61,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
 import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
 import team.bjtuss.bjtuselfservice.shared.feature.calendar.SingleExamCalendarSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 
@@ -84,7 +82,6 @@ fun ExamScheduleWorkspace(
     }
     var showFilterSheet by remember { mutableStateOf(false) }
     var examToCalendar by remember { mutableStateOf<ExamSchedule?>(null) }
-    val filterSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     Column(
         modifier = if (expanded) {
@@ -151,12 +148,10 @@ fun ExamScheduleWorkspace(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                     state.selectedExam?.let { exam ->
-                        val detailSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-                        ModalBottomSheet(
+                        AppleSheet(
                             onDismissRequest = model::dismissExamDetails,
-                            sheetState = detailSheetState,
-                            sheetGesturesEnabled = true,
-                            contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+                            title = "考试详情",
+                            needsFullHeight = true,
                         ) {
                             val detailScrollState = rememberScrollState()
                             ExamDetailSheetBody(
@@ -180,11 +175,10 @@ fun ExamScheduleWorkspace(
     }
 
     if (showFilterSheet) {
-        ModalBottomSheet(
+        AppleSheet(
             onDismissRequest = { showFilterSheet = false },
-            sheetState = filterSheetState,
-            sheetGesturesEnabled = true,
-            contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+            title = "考试筛选",
+            needsFullHeight = true,
         ) {
             ExamFilterSheet(
                 state = state,
@@ -199,12 +193,10 @@ fun ExamScheduleWorkspace(
     }
 
     examToCalendar?.let { exam ->
-        val exportSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        AppleSheet(
             onDismissRequest = { examToCalendar = null },
-            sheetState = exportSheetState,
-            sheetGesturesEnabled = true,
-            contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+            title = "添加到日历",
+            needsFullHeight = true,
         ) {
             SingleExamCalendarSheet(
                 exam = exam,
@@ -523,12 +515,6 @@ private fun ExamDetailSheetBody(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text(
-            "考试详情",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.semantics { heading() },
-        )
         Text(exam.courseName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         ExamDetailLine("类型", exam.examType)
         ExamDetailLine("时间地点", exam.examTimeAndPlace)

@@ -69,6 +69,16 @@ class AuthenticatedSession(
      */
     var onNativeTabItemsChanged: ((List<String>) -> Unit)? = null
 
+    /**
+     * 宿主玻璃 TabBar 实际占掉的底部高度（点；iOS 上 1pt == 1dp）。
+     *
+     * Compose 宿主是全出血的（内容要能伸进玻璃条下面，玻璃才有东西可折射），于是 UIKit 不会把
+     * tab bar 算进 `WindowInsets.navigationBars`，那个数只有 home indicator。所以底栏真实高度
+     * 只能由宿主在布局时写进来：可滚动的列表用它做尾部留白，**不可纵向滚动**的全览表格
+     * （课程表色块概览）用它把整张表停在底栏上方。
+     */
+    var glassTabBarBottomInsetDp: Float by mutableStateOf(0f)
+
     /** 平台回到前台时递增；应用壳会针对当前页面的失效请求自动重试一次。 */
     val appResumeGeneration: StateFlow<Long> = appResumeGenerationState.asStateFlow()
 

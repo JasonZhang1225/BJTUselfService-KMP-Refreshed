@@ -10,6 +10,13 @@ data class AccountSecurityStore(
 interface AccountPreferences {
     suspend fun shouldRememberCredentials(): Boolean
     suspend fun setShouldRememberCredentials(enabled: Boolean)
+
+    /**
+     * Distinguish an explicit opt-out from a missing setting left by an older
+     * build. The default keeps existing non-Apple implementations/tests
+     * backward-compatible; platform stores with a real preference API override it.
+     */
+    suspend fun hasRememberCredentialsSetting(): Boolean = true
 }
 
 sealed interface CredentialRestoreResult {
@@ -24,12 +31,28 @@ class AccountSecurityCoordinator(
 ) {
     val canStoreCredentials: Boolean get() = store.credentialVault != null
 
+    /**
+     * Keep the preference in sync with the checkbox immediately.  The credential
+     * itself is still written only after a successful login, but opting out must
+     * remove an old Keychain item right away rather than waiting for logout.
+     */
+    suspend fun setRememberCredentials(enabled: Boolean): Boolean {
+        return if (enabled) {
+            runCatching {
+                store.preferences.setShouldRememberCredentials(true)
+            }.isSuccess
+        } else {
+            clear()
+        }
+    }
+
     suspend fun restore(): CredentialRestoreResult {
         val vault = store.credentialVault ?: return CredentialRestoreResult.Unavailable
-        if (!store.preferences.shouldRememberCredentials()) {
-            // iOS 卸载会清掉 NSUserDefaults 但保留 Keychain 条目：记忆标记为否却仍有
-            // 密文即为重装残留，直接清除。升级用户标记仍在，凭据不受影响。
-            // Android/Windows 此时保险库本就为空，clear 只是无害兜底。
+        val rememberCredentials = store.preferences.shouldRememberCredentials()
+        val rememberSettingExists = store.preferences.hasRememberCredentialsSetting()
+        if (!rememberCredentials && rememberSettingExists) {
+            // A real, explicit opt-out is authoritative. Do not keep a residual
+            // Keychain/keystore entry after the user disabled password saving.
             runCatching { vault.clear() }
             return CredentialRestoreResult.Empty
         }
@@ -37,9 +60,17 @@ class AccountSecurityCoordinator(
         return try {
             val credentials = vault.load()
             if (credentials == null) {
-                store.preferences.setShouldRememberCredentials(false)
+                if (rememberSettingExists) {
+                    runCatching { store.preferences.setShouldRememberCredentials(false) }
+                }
                 CredentialRestoreResult.Empty
             } else {
+                // Older builds could save the credential before the preference
+                // marker existed. Migrate that valid secure item instead of
+                // treating a missing marker as an opt-out.
+                if (!rememberCredentials && !rememberSettingExists) {
+                    runCatching { store.preferences.setShouldRememberCredentials(true) }
+                }
                 CredentialRestoreResult.Restored(credentials)
             }
         } catch (_: Exception) {

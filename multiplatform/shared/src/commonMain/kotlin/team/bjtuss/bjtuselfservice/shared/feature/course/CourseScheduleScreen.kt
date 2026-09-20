@@ -2,6 +2,7 @@ package team.bjtuss.bjtuselfservice.shared.feature.course
 
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceEmptyState
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceLoadingState
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
@@ -23,7 +24,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,17 +44,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -95,6 +92,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.grade.displayName
 import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
 import team.bjtuss.bjtuselfservice.shared.feature.calendar.CourseCalendarExportSheet
 import team.bjtuss.bjtuselfservice.shared.feature.grade.courseTypeColors
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
@@ -293,12 +291,10 @@ fun CourseScheduleWorkspace(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                     state.selectedCourse?.let { course ->
-                        val detailSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-                        ModalBottomSheet(
+                        // 详情半屏就能放完 → 允许 medium 停靠（半屏透、全屏实）。
+                        AppleSheet(
                             onDismissRequest = model::dismissCourseDetails,
-                            sheetState = detailSheetState,
-                            sheetGesturesEnabled = true,
-                            contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+                            title = "课程详情",
                         ) {
                             val detailScrollState = rememberScrollState()
                             CourseDetailContent(
@@ -317,12 +313,11 @@ fun CourseScheduleWorkspace(
     }
 
     if (showSchedulePicker) {
-        val pickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        // 教学周芯片有二十多个，半屏放不下 → 直接全屏展开。
+        AppleSheet(
             onDismissRequest = { showSchedulePicker = false },
-            sheetState = pickerSheetState,
-            sheetGesturesEnabled = true,
-            contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+            title = "课表与周数",
+            needsFullHeight = true,
         ) {
             val pickerScrollState = rememberScrollState()
             Column(
@@ -332,7 +327,6 @@ fun CourseScheduleWorkspace(
                     .padding(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Text("课表与周数", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
                     "课表类型",
                     style = MaterialTheme.typography.titleSmall,
@@ -406,12 +400,11 @@ fun CourseScheduleWorkspace(
     }
 
     if (showCalendarExportSheet) {
-        val exportSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        // 导出面板要放课程选择 + 两个动作，半屏放不下 → 全屏展开。
+        AppleSheet(
             onDismissRequest = onDismissCalendarExport,
-            sheetState = exportSheetState,
-            sheetGesturesEnabled = true,
-            contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+            title = "添加到日历",
+            needsFullHeight = true,
         ) {
             CourseCalendarExportSheet(
                 courseState = state,
@@ -582,40 +575,34 @@ private fun CourseDatePickerDialog(
     val today = remember {
         Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
     }
-    DatePickerDialog(
+    AppleSheetOrAlert(
         onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(
-                enabled = pickerState.selectedDateMillis != null,
-                onClick = {
-                    val epochDay = pickerState.selectedDateMillis?.floorDiv(MILLIS_PER_DAY)
-                        ?: return@TextButton
-                    onSelect(LocalDate.fromEpochDays(epochDay))
-                },
-            ) { Text(if (locateWeekOnly) "前往这一周" else "前往这一天") }
+        title = "前往日期",
+        confirmLabel = if (locateWeekOnly) "前往这一周" else "前往这一天",
+        confirmEnabled = pickerState.selectedDateMillis != null,
+        onConfirm = {
+            pickerState.selectedDateMillis?.let { millis ->
+                onSelect(LocalDate.fromEpochDays(millis.floorDiv(MILLIS_PER_DAY)))
+            }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+        dismissLabel = "取消",
+        needsFullHeight = true,
     ) {
-        DatePicker(
-            state = pickerState,
-            title = {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp, top = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "前往日期",
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    TextButton(onClick = { onSelect(today) }) {
-                        Text("今天")
-                    }
-                }
-            },
-            showModeToggle = true,
-        )
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            DatePicker(
+                state = pickerState,
+                title = null,
+                showModeToggle = true,
+            )
+            TextButton(
+                onClick = { onSelect(today) },
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text("今天")
+            }
+        }
     }
 }
 
@@ -1466,12 +1453,6 @@ private fun CourseDetailPanel(course: Course?, modifier: Modifier) {
 @Composable
 private fun CourseDetailContent(course: Course, modifier: Modifier) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text(
-            "课程详情",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.semantics { heading() },
-        )
         Text(course.courseName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         CourseDetailLine("编号", course.courseId)
         CourseDetailLine("教师", course.courseTeacher.ifBlank { "未提供" })

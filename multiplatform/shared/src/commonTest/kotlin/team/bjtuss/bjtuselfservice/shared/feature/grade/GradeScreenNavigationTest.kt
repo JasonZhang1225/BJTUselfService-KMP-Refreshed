@@ -16,8 +16,8 @@ class GradeScreenNavigationTest {
         assertTrue(shouldOpenNativeSectionRoute("CLASSROOMS", useNativeSecondaryRoutes = true))
         assertTrue(shouldOpenNativeSectionRoute("CLASSROOM_OCCUPANCY", useNativeSecondaryRoutes = true))
         assertTrue(shouldOpenNativeSectionRoute("EXAMS", useNativeSecondaryRoutes = true))
-        // 物理在线不在原生底栏上（5 格上限），它的一级入口由宿主压栈，才能拿到系统返回。
-        assertTrue(shouldOpenNativeSectionRoute("PHYVLAB", useNativeSecondaryRoutes = true))
+        // 物理在线开启后就是原生底栏一级入口，不应再被宿主压成二级页。
+        assertFalse(shouldOpenNativeSectionRoute("PHYVLAB", useNativeSecondaryRoutes = true))
         assertFalse(shouldOpenNativeSectionRoute("MAILBOX", useNativeSecondaryRoutes = false))
         assertFalse(shouldOpenNativeSectionRoute("EXAMS", useNativeSecondaryRoutes = false))
     }

@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.Density
 import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStoreHandle
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalNativeSheetPresenter
+import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeSheetPresenter
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
@@ -46,6 +48,8 @@ fun App(
     nativeNavigationEnabled: Boolean = false,
     /** M17：一级入口由宿主原生 tab 容器承载，本组合只负责产出登录与会话。 */
     nativeTabBarEnabled: Boolean = false,
+    /** iOS uses the host's real UISheetPresentationController for shared sheets. */
+    nativeSheetPresenter: NativeSheetPresenter? = null,
     onOpenNativeRoute: (String) -> Unit = {},
     onOpenExternalUrl: (String) -> Unit = ::openExternalUrl,
     onAuthenticatedSessionChanged: (AuthenticatedSession?) -> Unit = {},
@@ -66,29 +70,31 @@ fun App(
         useDarkTheme = useDarkTheme,
         dynamicColorEnabled = appPreferences.dynamicColor,
     ) { effectiveFontScale ->
-        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                LoginRoute(
-                    platform = currentPlatform(),
-                    windowClass = adaptiveWindowClassFor(
-                        widthDp = maxWidth.value.toInt(),
-                        fontScale = effectiveFontScale,
-                    ),
-                    accountSecurityStore = accountSecurityStore,
-                    cacheStoreHandle = cacheStoreHandle,
-                    homeworkFileGateway = homeworkFileGateway,
-                    coursewareDirectoryGateway = coursewareDirectoryGateway,
-                    systemCalendarGateway = systemCalendarGateway,
-                    appCommandBus = appCommandBus,
-                    appPreferences = appPreferences,
-                    onPreferencesChanged = onPreferencesChanged,
-                    captchaRecognizer = captchaRecognizer,
-                    nativeNavigationEnabled = nativeNavigationEnabled,
-                    nativeTabBarEnabled = nativeTabBarEnabled,
-                    onOpenNativeRoute = onOpenNativeRoute,
-                    onOpenExternalUrl = onOpenExternalUrl,
-                    onAuthenticatedSessionChanged = onAuthenticatedSessionChanged,
-                )
+        CompositionLocalProvider(LocalNativeSheetPresenter provides nativeSheetPresenter) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    LoginRoute(
+                        platform = currentPlatform(),
+                        windowClass = adaptiveWindowClassFor(
+                            widthDp = maxWidth.value.toInt(),
+                            fontScale = effectiveFontScale,
+                        ),
+                        accountSecurityStore = accountSecurityStore,
+                        cacheStoreHandle = cacheStoreHandle,
+                        homeworkFileGateway = homeworkFileGateway,
+                        coursewareDirectoryGateway = coursewareDirectoryGateway,
+                        systemCalendarGateway = systemCalendarGateway,
+                        appCommandBus = appCommandBus,
+                        appPreferences = appPreferences,
+                        onPreferencesChanged = onPreferencesChanged,
+                        captchaRecognizer = captchaRecognizer,
+                        nativeNavigationEnabled = nativeNavigationEnabled,
+                        nativeTabBarEnabled = nativeTabBarEnabled,
+                        onOpenNativeRoute = onOpenNativeRoute,
+                        onOpenExternalUrl = onOpenExternalUrl,
+                        onAuthenticatedSessionChanged = onAuthenticatedSessionChanged,
+                    )
+                }
             }
         }
     }
@@ -103,6 +109,8 @@ fun AuthenticatedDestinationApp(
     coursewareDirectoryGateway: CoursewareDirectoryGateway = session.coursewareDirectoryGateway,
     nativeTabBarEnabled: Boolean = false,
     useNativeTitleBar: Boolean = false,
+    /** iOS uses the host's real UISheetPresentationController for shared sheets. */
+    nativeSheetPresenter: NativeSheetPresenter? = null,
     onOpenNativeRoute: (String) -> Unit,
     onCloseNativeRoute: () -> Unit,
     onSelectNativeTab: (String) -> Unit = {},
@@ -116,28 +124,30 @@ fun AuthenticatedDestinationApp(
         useDarkTheme = isSystemInDarkTheme(),
         dynamicColorEnabled = settingsState.preferences.dynamicColor,
     ) { effectiveFontScale ->
-        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                team.bjtuss.bjtuselfservice.shared.feature.shell.AuthenticatedAppShell(
-                    session = session,
-                    platform = currentPlatform(),
-                    windowClass = adaptiveWindowClassFor(
-                        widthDp = maxWidth.value.toInt(),
-                        fontScale = effectiveFontScale,
-                    ),
-                    nativeNavigationEnabled = true,
-                    nativeTabBarEnabled = nativeTabBarEnabled,
-                    useNativeTitleBar = useNativeTitleBar,
-                    onOpenNativeRoute = onOpenNativeRoute,
-                    onSelectNativeTab = onSelectNativeTab,
-                    onNativeTitleChanged = onNativeTitleChanged,
-                    onNativeActionChanged = onNativeActionChanged,
-                    onOpenExternalUrl = onOpenExternalUrl,
-                    forcedRouteId = routeId,
-                    onCloseNativeRoute = onCloseNativeRoute,
-                    homeworkFileGatewayOverride = homeworkFileGateway,
-                    coursewareDirectoryGatewayOverride = coursewareDirectoryGateway,
-                )
+        CompositionLocalProvider(LocalNativeSheetPresenter provides nativeSheetPresenter) {
+            Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    team.bjtuss.bjtuselfservice.shared.feature.shell.AuthenticatedAppShell(
+                        session = session,
+                        platform = currentPlatform(),
+                        windowClass = adaptiveWindowClassFor(
+                            widthDp = maxWidth.value.toInt(),
+                            fontScale = effectiveFontScale,
+                        ),
+                        nativeNavigationEnabled = true,
+                        nativeTabBarEnabled = nativeTabBarEnabled,
+                        useNativeTitleBar = useNativeTitleBar,
+                        onOpenNativeRoute = onOpenNativeRoute,
+                        onSelectNativeTab = onSelectNativeTab,
+                        onNativeTitleChanged = onNativeTitleChanged,
+                        onNativeActionChanged = onNativeActionChanged,
+                        onOpenExternalUrl = onOpenExternalUrl,
+                        forcedRouteId = routeId,
+                        onCloseNativeRoute = onCloseNativeRoute,
+                        homeworkFileGatewayOverride = homeworkFileGateway,
+                        coursewareDirectoryGatewayOverride = coursewareDirectoryGateway,
+                    )
+                }
             }
         }
     }

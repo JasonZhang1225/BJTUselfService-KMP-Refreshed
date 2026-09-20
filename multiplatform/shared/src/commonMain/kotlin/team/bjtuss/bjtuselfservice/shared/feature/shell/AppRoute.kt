@@ -310,8 +310,7 @@ internal fun shouldOpenNativeSectionRoute(
 ): Boolean {
     if (!useNativeSecondaryRoutes || targetRouteId == AppSection.MORE.name) return false
     val route = targetRouteId.toAppRoute() ?: return false
-    // 「更多」目录里的项由宿主压栈；因 5 项上限被收进目录的一级项（物理在线）同样要压栈，
-    // 否则它会落在 tab 根的 Compose 栈里，页内与系统栏都不给返回入口。
+    // 「更多」目录里的项由宿主压栈；真正位于原生 tab 的一级入口（包括开启后的物理在线）不压栈。
     return route !in nativeTabSections()
 }
 

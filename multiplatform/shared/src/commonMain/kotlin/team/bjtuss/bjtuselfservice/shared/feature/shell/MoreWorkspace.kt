@@ -195,8 +195,6 @@ import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeRecord
 @Composable
 internal fun MoreWorkspace(
     phyVlabEnabled: Boolean,
-    /** 原生底栏放不下第 6 个入口时（iOS 玻璃壳），物理在线的入口改由本目录承载。 */
-    phyVlabEntryInMore: Boolean,
     onPhyVlabEnabledChange: (Boolean) -> Unit,
     onOpenSection: (AppSection) -> Unit,
     modifier: Modifier,
@@ -238,16 +236,11 @@ internal fun MoreWorkspace(
         )
         MorePhyVlabToggleRow(
             enabled = phyVlabEnabled,
-            entryInMore = phyVlabEntryInMore,
             onEnabledChange = onPhyVlabEnabledChange,
         )
         MoreGroupedSection(
             header = null,
-            items = buildList {
-                if (phyVlabEntryInMore && phyVlabEnabled) add(AppSection.PHYVLAB)
-                add(AppSection.EXAMS)
-                add(AppSection.COURSEWARE)
-            },
+            items = listOf(AppSection.EXAMS, AppSection.COURSEWARE),
             onOpenSection = onOpenSection,
         )
         sections.forEach { section ->
@@ -263,7 +256,6 @@ internal fun MoreWorkspace(
 @Composable
 internal fun MorePhyVlabToggleRow(
     enabled: Boolean,
-    entryInMore: Boolean,
     onEnabledChange: (Boolean) -> Unit,
 ) {
     Surface(
@@ -284,11 +276,7 @@ internal fun MorePhyVlabToggleRow(
                     fontWeight = FontWeight.Normal,
                 )
                 Text(
-                    if (entryInMore) {
-                        "开启后同步物理在线，入口显示在本页列表；关闭后不参与同步。"
-                    } else {
-                        "开启后同步物理在线，并在底栏显示入口；关闭后不参与同步。"
-                    },
+                    "开启后同步物理在线，并在底栏显示入口；关闭后不参与同步。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

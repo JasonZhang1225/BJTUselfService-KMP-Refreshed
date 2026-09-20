@@ -62,6 +62,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.VisibleCoursewareNod
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LegacySmartTransportWarning
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
@@ -272,14 +273,11 @@ fun CoursewareWorkspace(
     }
 
     if (showCoursePicker) {
-        // skipPartiallyExpanded=true：与其它 sheet 对齐，直接展开；
-        // false 时会卡在半高锚点，得点把手才能展开且底部一截够不着。
-        val pickerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        // 课程列表可以很长，半屏放不下：needsFullHeight 让 iOS 卡片直接开到全屏。
+        AppleSheet(
             onDismissRequest = { showCoursePicker = false },
-            sheetState = pickerSheetState,
-            sheetGesturesEnabled = true,
-            contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+            title = "选择课程",
+            needsFullHeight = true,
         ) {
             val pickerListState = rememberLazyListState()
             Column(
@@ -288,12 +286,6 @@ fun CoursewareWorkspace(
                     .fillMaxHeight(0.72f)
                     .padding(bottom = 12.dp),
             ) {
-                Text(
-                    "选择课程",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                )
                 if (state.loadingCourseIds.isNotEmpty()) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                 }
@@ -566,12 +558,13 @@ private fun CoursewareCompactWorkspace(
     }
 
     state.selectedNode?.takeIf { !it.isFolder }?.let { node ->
-        val detailSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        AppleSheet(
             onDismissRequest = { model.selectNode("") },
-            sheetState = detailSheetState,
-            sheetGesturesEnabled = true,
-            contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+            title = "课件下载",
+            // Details are a long, scrollable task. Full height keeps the
+            // underlying Courseware navigation title out of the sheet chrome
+            // and gives the final save button a real viewport to scroll in.
+            needsFullHeight = true,
         ) {
             val detailScrollState = rememberScrollState()
             CoursewareDetailSheetBody(
@@ -584,6 +577,7 @@ private fun CoursewareCompactWorkspace(
                 onExportDirectory = onExportDirectory,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .fillMaxHeight()
                     .verticalScroll(detailScrollState)
                     .desktopTouchScroll(detailScrollState)
                     .padding(horizontal = 24.dp)

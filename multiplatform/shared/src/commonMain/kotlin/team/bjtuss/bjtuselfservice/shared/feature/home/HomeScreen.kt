@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.home
 
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -31,7 +33,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -139,58 +140,56 @@ fun HomeWorkspace(
     LaunchedEffect(model, holdNetwork) { if (!holdNetwork) model.initialize() }
 
     when (dialog) {
-        HomeDialog.CampusCard -> AlertDialog(
+        // iOS 上换成从下往上的卡片（半屏透、可上拉），其余平台仍是 Material 对话框。
+        HomeDialog.CampusCard -> AppleSheetOrAlert(
             onDismissRequest = { dialog = null },
-            title = { Text("前往完美校园") },
-            text = {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(campusDestination.message)
-                    if (campusDestination.action == CampusCardAction.ShowQrCode) {
-                        MiniProgramQrCode()
-                        Text(
-                            "用手机微信扫描",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(onClick = {
-                    dialog = null
-                    if (campusDestination.action == CampusCardAction.OpenUrl) {
-                        val target = campusDestination.url
-                        if (target == null || runCatching { uriHandler.openUri(target) }.isFailure) {
-                            actionMessage = "当前无法打开完美校园链接。"
-                        }
-                    }
-                }) { Text(campusDestination.confirmLabel) }
-            },
-            dismissButton = {
+            title = null,
+            confirmLabel = campusDestination.confirmLabel,
+            showDismissButton = true,
+            onConfirm = {
+                dialog = null
                 if (campusDestination.action == CampusCardAction.OpenUrl) {
-                    TextButton(onClick = { dialog = null }) { Text("取消") }
+                    val target = campusDestination.url
+                    if (target == null || runCatching { uriHandler.openUri(target) }.isFailure) {
+                        actionMessage = "当前无法打开完美校园链接。"
+                    }
                 }
             },
-        )
-        HomeDialog.Network -> AlertDialog(
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+            ) {
+                Text(
+                    campusDestination.message,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Start,
+                )
+                if (campusDestination.action == CampusCardAction.ShowQrCode) {
+                    MiniProgramQrCode()
+                    Text(
+                        "用手机微信扫描",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
+        HomeDialog.Network -> AppleSheet(
             onDismissRequest = { dialog = null },
-            title = { Text("校园网充值") },
-            text = {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    NetworkPaymentQrCode()
-                    NetworkPaymentInstruction(platform.family)
-                }
-            },
-            confirmButton = {
-                Button(onClick = { dialog = null }) { Text("关闭") }
-            },
-        )
+            title = "校园网充值",
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+            ) {
+                NetworkPaymentQrCode()
+                NetworkPaymentInstruction(platform.family)
+            }
+        }
         null -> Unit
     }
     selectedChangeDomain?.let { domain ->
@@ -1381,33 +1380,36 @@ private fun HomeChangeDialog(
     onOpen: () -> Unit,
 ) {
     val changeScrollState = rememberScrollState()
-    AlertDialog(
+    AppleSheetOrAlert(
         onDismissRequest = onDismiss,
-        title = { Text("${domain.title}变动") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 420.dp)
-                    .verticalScroll(changeScrollState)
-                    .desktopTouchScroll(changeScrollState),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                // 过滤历史误报：原/现展示文案完全相同的「修改」不展示。
-                changes
-                    .filterNot {
-                        it.kind == DataChangeKind.MODIFIED && it.beforeDetail == it.afterDetail
-                    }
-                    .forEach { ChangeDetailRow(it) }
-            }
-        },
-        confirmButton = { Button(onClick = onOpen) { Text("前往页面") } },
-        dismissButton = {
-            Row {
-                TextButton(onClick = onMarkRead) { Text("标记已读") }
-                TextButton(onClick = onDismiss) { Text("关闭") }
-            }
-        },
-    )
+        title = "${domain.title}变动",
+        confirmLabel = "前往页面",
+        onConfirm = onOpen,
+        needsFullHeight = true,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 420.dp)
+                .verticalScroll(changeScrollState)
+                .desktopTouchScroll(changeScrollState),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // 过滤历史误报：原/现展示文案完全相同的「修改」不展示。
+            changes
+                .filterNot {
+                    it.kind == DataChangeKind.MODIFIED && it.beforeDetail == it.afterDetail
+                }
+                .forEach { ChangeDetailRow(it) }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            TextButton(onClick = onMarkRead) { Text("标记已读") }
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        }
+    }
 }
 
 @Composable

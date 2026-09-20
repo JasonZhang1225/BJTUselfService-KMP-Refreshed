@@ -59,6 +59,21 @@ class AccountSecurityCoordinatorTest {
     }
 
     @Test
+    fun missingRememberMarkerMigratesExistingSecureCredentials() = runSuspend {
+        val credentials = Credentials("student", "secret")
+        val vault = FakeCredentialVault().apply { saved = credentials }
+        val preferences = FakeAccountPreferences(enabled = false, settingExists = false)
+        val coordinator = AccountSecurityCoordinator(AccountSecurityStore(vault, preferences))
+
+        assertEquals(
+            credentials,
+            assertIs<CredentialRestoreResult.Restored>(coordinator.restore()).credentials,
+        )
+        assertTrue(preferences.enabled)
+        assertEquals(0, vault.clearCount)
+    }
+
+    @Test
     fun unavailableVaultNeverClaimsCredentialsWereRemembered() = runSuspend {
         val preferences = FakeAccountPreferences(enabled = true)
         val coordinator = AccountSecurityCoordinator(AccountSecurityStore(null, preferences))
@@ -67,6 +82,22 @@ class AccountSecurityCoordinatorTest {
         assertIs<CredentialRestoreResult.Unavailable>(coordinator.restore())
         assertTrue(coordinator.persistAfterLogin(Credentials("student", "secret"), true))
         assertFalse(preferences.enabled)
+    }
+
+    @Test
+    fun rememberPreferenceIsAppliedImmediatelyAndOptOutClearsVault() = runSuspend {
+        val vault = FakeCredentialVault().apply {
+            saved = Credentials("student", "secret")
+        }
+        val preferences = FakeAccountPreferences()
+        val coordinator = AccountSecurityCoordinator(AccountSecurityStore(vault, preferences))
+
+        assertTrue(coordinator.setRememberCredentials(enabled = true))
+        assertTrue(preferences.enabled)
+        assertTrue(coordinator.setRememberCredentials(enabled = false))
+        assertFalse(preferences.enabled)
+        assertEquals(null, vault.saved)
+        assertTrue(vault.clearCount > 0)
     }
 }
 
@@ -93,8 +124,11 @@ private class FakeCredentialVault(
 
 private class FakeAccountPreferences(
     var enabled: Boolean = false,
+    private val settingExists: Boolean = true,
 ) : AccountPreferences {
     override suspend fun shouldRememberCredentials(): Boolean = enabled
+
+    override suspend fun hasRememberCredentialsSetting(): Boolean = settingExists
 
     override suspend fun setShouldRememberCredentials(enabled: Boolean) {
         this.enabled = enabled

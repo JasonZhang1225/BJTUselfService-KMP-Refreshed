@@ -27,7 +27,6 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -86,6 +85,8 @@ import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.safeExportFileName
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LegacySmartTransportWarning
@@ -122,9 +123,9 @@ fun HomeworkWorkspace(
         },
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        // 明文通道提示：仅在 shell 判定「本会话尚未关闭」时显示一条可关闭横幅。
-        // 以前在 dismiss 后又画一条无 onDismiss 的副本，导致关不掉。
-        if (legacyWarningVisible) {
+        // 宽屏有独立列表/详情两栏，提示留在工作区顶部；紧凑端则放进
+        // 同一个 LazyColumn，随作业列表一起滚动，避免红色 banner 固定遮挡正文。
+        if ((expanded || state.homework.isEmpty()) && legacyWarningVisible) {
             LegacySmartTransportWarning(onDismiss = onDismissLegacyWarning)
         }
 
@@ -203,6 +204,8 @@ fun HomeworkWorkspace(
                     // 紧凑端：Banner（含筛选按钮）+ 列表；点卡片先选中再 push 详情二级页。
                     HomeworkScrollableContent(
                         state = state,
+                        legacyWarningVisible = legacyWarningVisible,
+                        onDismissLegacyWarning = onDismissLegacyWarning,
                         onOpenFilter = { showFilterSheet = true },
                         onOpen = { key ->
                             transfer.fileFeedback = null
@@ -220,12 +223,10 @@ fun HomeworkWorkspace(
     }
 
     if (showFilterSheet) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        AppleSheet(
             onDismissRequest = { showFilterSheet = false },
-            sheetState = sheetState,
-            sheetGesturesEnabled = true,
-            contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+            title = "作业筛选",
+            needsFullHeight = true,
         ) {
             HomeworkFilterSheet(state = state, model = model)
         }
@@ -411,17 +412,23 @@ private fun rememberHomeworkTransferState(
     }
 }
 
-/** 上传作业对话框：宽屏与紧凑详情二级页统一用 AlertDialog。 */
+/** 上传作业弹窗：iOS 走宿主原生 sheet，其他平台保留 Material 对话框。 */
 @Composable
 private fun HomeworkUploadDialog(
     transfer: HomeworkTransferState,
     isSubmitting: Boolean,
 ) {
     if (!transfer.showUpload) return
-    AlertDialog(
+    AppleSheetOrAlert(
         onDismissRequest = transfer::closeUpload,
-        title = { Text("上传作业") },
-        text = {
+        title = "上传作业",
+        confirmLabel = if (isSubmitting || transfer.isRecoveringSession) "正在提交" else "提交",
+        onConfirm = transfer::submitUpload,
+        confirmEnabled = transfer.uploadFiles.isNotEmpty() && !isSubmitting && !transfer.isRecoveringSession,
+        dismissLabel = "取消",
+        dismissEnabled = !isSubmitting,
+        needsFullHeight = true,
+    ) {
             UploadHomeworkContent(
                 files = transfer.uploadFiles,
                 content = transfer.uploadContent,
@@ -431,17 +438,7 @@ private fun HomeworkUploadDialog(
                 onPickFiles = transfer::pickUploadFiles,
                 onRemoveFile = transfer::removeUploadFile,
             )
-        },
-        confirmButton = {
-            Button(
-                onClick = transfer::submitUpload,
-                enabled = transfer.uploadFiles.isNotEmpty() && !isSubmitting && !transfer.isRecoveringSession,
-            ) { Text(if (isSubmitting || transfer.isRecoveringSession) "正在提交" else "提交") }
-        },
-        dismissButton = {
-            TextButton(onClick = transfer::closeUpload, enabled = !isSubmitting) { Text("取消") }
-        },
-    )
+    }
 }
 
 /**
@@ -774,6 +771,8 @@ private fun CourseFilterRow(title: String, selected: Boolean, onClick: () -> Uni
 @Composable
 private fun HomeworkScrollableContent(
     state: HomeworkUiState,
+    legacyWarningVisible: Boolean = false,
+    onDismissLegacyWarning: () -> Unit = {},
     onOpenFilter: () -> Unit,
     onOpen: (String) -> Unit,
     modifier: Modifier,
@@ -788,6 +787,11 @@ private fun HomeworkScrollableContent(
         verticalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(bottom = 18.dp + LocalBottomBarClearance.current),
     ) {
+        if (legacyWarningVisible) {
+            item(key = "homework-legacy-warning") {
+                LegacySmartTransportWarning(onDismiss = onDismissLegacyWarning)
+            }
+        }
         item(key = "homework-summary") {
             HomeworkSummary(state = state, onOpenFilter = onOpenFilter)
         }

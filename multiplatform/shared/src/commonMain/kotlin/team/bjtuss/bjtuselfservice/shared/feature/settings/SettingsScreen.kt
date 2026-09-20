@@ -44,6 +44,7 @@ import team.bjtuss.bjtuselfservice.shared.update.ReleaseNoteBlock
 import team.bjtuss.bjtuselfservice.shared.update.annotatedInlineMarkdown
 import team.bjtuss.bjtuselfservice.shared.update.parseReleaseNotes
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 
 @Composable
 fun SettingsWorkspace(
@@ -62,40 +63,36 @@ fun SettingsWorkspace(
     val pageScrollState = rememberScrollState()
 
     if (confirmClear) {
-        AlertDialog(
+        AppleSheetOrAlert(
             onDismissRequest = { confirmClear = false },
-            title = { Text("清除当前账号离线缓存？") },
-            text = {
-                Text("成绩、课表、考试和作业的离线副本会被删除；不会退出账号。之后可从学校系统重新下载。")
+            title = "清除当前账号离线缓存？",
+            confirmLabel = "清除缓存",
+            onConfirm = {
+                confirmClear = false
+                scope.launch { model.clearOfflineCache() }
             },
-            confirmButton = {
-                Button(onClick = {
-                    confirmClear = false
-                    scope.launch { model.clearOfflineCache() }
-                }) { Text("清除缓存") }
-            },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } },
-        )
+            dismissLabel = "取消",
+        ) {
+            Text("成绩、课表、考试和作业的离线副本会被删除；不会退出账号。之后可从学校系统重新下载。")
+        }
     }
 
     if (confirmWipe) {
-        AlertDialog(
+        AppleSheetOrAlert(
             onDismissRequest = { confirmWipe = false },
-            title = { Text("清除全部本地数据？") },
-            text = {
-                Text(
-                    "所有账号的离线缓存、应用设置和系统安全存储中的登录信息都会被删除，" +
-                        "下次启动需要重新登录。适合卸载应用前彻底清理本机数据。"
-                )
+            title = "清除全部本地数据？",
+            confirmLabel = "全部清除",
+            onConfirm = {
+                confirmWipe = false
+                scope.launch { model.clearAllLocalData() }
             },
-            confirmButton = {
-                Button(onClick = {
-                    confirmWipe = false
-                    scope.launch { model.clearAllLocalData() }
-                }) { Text("全部清除") }
-            },
-            dismissButton = { TextButton(onClick = { confirmWipe = false }) { Text("取消") } },
-        )
+            dismissLabel = "取消",
+        ) {
+            Text(
+                "所有账号的离线缓存、应用设置和系统安全存储中的登录信息都会被删除，" +
+                    "下次启动需要重新登录。适合卸载应用前彻底清理本机数据。"
+            )
+        }
     }
 
     // 检查结果弹窗提到 SettingsWorkspace 外层渲染：「前往下载」属于应用壳层导航动作，
@@ -306,12 +303,17 @@ fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit) {
     when (check) {
         is UpdateCheckState.Done -> {
             if (check.hasUpdate) {
-                AlertDialog(
+                AppleSheetOrAlert(
                     onDismissRequest = onDismiss,
-                    title = {
-                        AutoSizeDialogTitle("发现新版本 ${check.release.tagName}")
+                    title = "发现新版本 ${check.release.tagName}",
+                    confirmLabel = "前往下载",
+                    onConfirm = {
+                        onDismiss()
+                        uriHandler.openUri(check.release.htmlUrl)
                     },
-                    text = {
+                    dismissLabel = "暂不更新",
+                    needsFullHeight = true,
+                ) {
                         Column(
                             modifier = Modifier
                                 .heightIn(max = 420.dp)
@@ -329,37 +331,27 @@ fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit) {
                                 ReleaseNotesBody(body)
                             }
                         }
-                    },
-                    confirmButton = {
-                        Button(onClick = {
-                            onDismiss()
-                            uriHandler.openUri(check.release.htmlUrl)
-                        }) { Text("前往下载") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = onDismiss) { Text("暂不更新") }
-                    },
-                )
+                }
             } else {
-                AlertDialog(
+                AppleSheetOrAlert(
                     onDismissRequest = onDismiss,
-                    title = { Text("已是最新版本") },
-                    text = { Text("当前 v${AppUpdateChecker.CURRENT_VERSION} 已是最新发布（${check.release.tagName}）。") },
-                    confirmButton = {
-                        TextButton(onClick = onDismiss) { Text("好") }
-                    },
-                )
+                    title = "已是最新版本",
+                    confirmLabel = "好",
+                    onConfirm = onDismiss,
+                ) {
+                    Text("当前 v${AppUpdateChecker.CURRENT_VERSION} 已是最新发布（${check.release.tagName}）。")
+                }
             }
         }
         UpdateCheckState.Failed -> {
-            AlertDialog(
+            AppleSheetOrAlert(
                 onDismissRequest = onDismiss,
-                title = { Text("检查更新失败") },
-                text = { Text("无法连接 GitHub，请检查网络后重试。") },
-                confirmButton = {
-                    TextButton(onClick = onDismiss) { Text("好") }
-                },
-            )
+                title = "检查更新失败",
+                confirmLabel = "好",
+                onConfirm = onDismiss,
+            ) {
+                Text("无法连接 GitHub，请检查网络后重试。")
+            }
         }
         UpdateCheckState.Idle, UpdateCheckState.Checking -> Unit
     }

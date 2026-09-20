@@ -73,6 +73,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailComposeDraft
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailMessage
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailSummary
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.util.SchoolRichTextBlock
 import team.bjtuss.bjtuselfservice.shared.util.schoolRichTextToBlocks
@@ -335,28 +336,22 @@ internal fun MailboxComposeScreen(
     }
 
     if (showSendConfirmation) {
-        AlertDialog(
+        AppleSheetOrAlert(
             onDismissRequest = { showSendConfirmation = false },
-            title = { Text("确认发送") },
-            text = {
+            title = "确认发送",
+            confirmLabel = "发送",
+            onConfirm = {
+                showSendConfirmation = false
+                scope.launch {
+                    if (model.sendCompose()) onSent()
+                }
+            },
+            dismissLabel = "取消",
+        ) {
                 Text(
                     "将发送给 ${composeRecipients(draft.to).joinToString(", ")}\n主题：${draft.subject.ifBlank { "无主题" }}",
                 )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showSendConfirmation = false
-                        scope.launch {
-                            if (model.sendCompose()) onSent()
-                        }
-                    },
-                ) { Text("发送") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSendConfirmation = false }) { Text("取消") }
-            },
-        )
+        }
     }
 }
 

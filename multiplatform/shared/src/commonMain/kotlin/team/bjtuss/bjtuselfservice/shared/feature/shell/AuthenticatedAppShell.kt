@@ -81,6 +81,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
@@ -93,6 +94,10 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
@@ -130,6 +135,7 @@ import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareSyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.course.CourseScheduleSyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.exam.ExamScheduleSyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.classroomoccupancy.ClassroomOccupancySyncFailure
+import team.bjtuss.bjtuselfservice.shared.feature.course.CourseCompactViewMode
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleContentSource
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleWorkspace
@@ -318,8 +324,13 @@ fun AuthenticatedAppShell(
     val compactBottomBarOverlayPadding = if (windowClass == WindowClass.Expanded) {
         0.dp
     } else if (nativeTabBarEnabled) {
-        // 底栏换成系统玻璃 TabBar：内容只需让出宿主回报的底部安全区，不再叠加 80.dp 自绘高度。
-        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        // 底栏换成系统玻璃 TabBar：宿主是全出血的，UIKit 不会把 tab bar 算进 navigationBars
+        // （那里只剩 home indicator），真实高度由宿主写进 session。宿主还没回报时退回安全区，
+        // 最坏情况是尾部留白偏小，不会崩。
+        maxOf(
+            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+            session.glassTabBarBottomInsetDp.dp,
+        )
     } else {
         80.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     }
@@ -808,6 +819,8 @@ fun AuthenticatedAppShell(
         title: String,
         expanded: Boolean,
         refreshable: Boolean,
+        /** 首页可先展示同步面板，再开始刷新；其它页沿用静默刷新。 */
+        refreshAction: (() -> Unit)? = null,
         isRefreshing: Boolean,
         showBack: Boolean,
         modifier: Modifier,
@@ -818,24 +831,43 @@ fun AuthenticatedAppShell(
         idleStatusText: String? = null,
         /** 页面级动作，显示在同步状态胶囊旁（M12 课程表加入日历）。 */
         topBarAction: (@Composable () -> Unit)? = null,
+        /**
+         * 声明式的页面级动作（文字 + 回调）。与 [topBarAction] 的区别只在于：声明式的那份
+         * 宿主能画进系统导航栏右侧，Compose lambda 那份画不了（邮箱顶栏是一组按钮）。
+         */
+        topBarActionLabel: String? = null,
+        onTopBarActionClick: (() -> Unit)? = null,
         /** 状态胶囊点击动作；首页用于查看同步详情，失败时不在点击瞬间触发重试。 */
         onStatusClick: (() -> Unit)? = null,
         /** 未显式提供 [onStatusClick] 时，首页聚合同步失败可由此生成失败详情弹窗。 */
         syncFailureItems: List<String> = emptyList(),
+        /**
+         * 本页不吃「内容延伸进玻璃底栏」那条特例，改回真实布局内边距。
+         *
+         * 玻璃底栏浮在内容之上，列表靠尾部留白让开，这样玻璃才有东西可折射（见
+         * [LocalBottomBarClearance]）。但课程表的「色块概览」是一张**不可纵向滚动**的全览表格，
+         * 高度全靠 `weight()` 分配：尾部留白对它没有任何作用，表格会直接画到物理底边、
+         * 最后一节课被玻璃条盖住。这类页面要的恰恰是「整张表停在底栏上方」。
+         */
+        keepsBottomBarInset: Boolean = false,
         content: @Composable () -> Unit,
     ) {
+        val effectiveRefreshAction = refreshAction ?: refresh
         // 一级页为底栏预留高度；底栏本身在 NavDisplay 外层，不随 destination 销毁。
         val reserveBottomBarSpace = !expanded && !showBack && !isPushedHostDestination &&
             compactBottomBarOverlayPadding > 0.dp
         // 玻璃 TabBar 是浮在内容之上的系统控件：净空改由滚动内容的尾部留白承担（见
         // LocalBottomBarClearance），压在布局上会让列表停在玻璃条上沿、背后只剩纯色，
         // 玻璃就没有东西可折射。自绘底栏（Android 与 iOS 26 以下）仍按老语义占位。
-        val glassScrollUnderBar = nativeTabBarEnabled && reserveBottomBarSpace
+        val glassScrollUnderBar =
+            nativeTabBarEnabled && reserveBottomBarSpace && !keepsBottomBarInset
         Box(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(
                     bottom = if (reserveBottomBarSpace && !glassScrollUnderBar) {
-                        compactBottomBarOverlayPadding
+                        // 全览表格要「停在底栏上方」，但宿主回报的净空正好等于玻璃条上沿：
+                        // 表格边框会贴着玻璃被压住，留 8dp 呼吸，视觉上仍是完整一张表。
+                        compactBottomBarOverlayPadding + if (keepsBottomBarInset) 8.dp else 0.dp
                     } else {
                         0.dp
                     },
@@ -849,39 +881,88 @@ fun AuthenticatedAppShell(
                 } else {
                     null
                 }
-                // 原生标题栏模式：系统导航栏已经负责标题与返回。页面若还有动作/同步胶囊，
-                // 顶栏退化为一条纯工具行（无标题、无返回箭头）；否则整行撤掉，只留安全区高度。
-                val nativeTitleBarActive = useNativeTitleBar && showBack && !ownsBackAction
-                // 二级页的刷新与同步状态交给系统导航栏右侧：单独占一行会把内容区整整压掉一条。
-                // 页面级动作（如邮箱顶栏那组按钮）是 Compose 画的，出现时整行仍留在页内；
-                // 状态胶囊可点击时（部分同步失败要点开明细）也必须留在页内——导航栏里的状态是纯文本，
-                // 搬过去就把这个唯一的入口弄丢了。
+                // 原生标题栏生效的两条路：被宿主 push 的二级页，以及玻璃壳的一级 tab 根页
+                // （M17 之后一级页的紧凑原生标题与同步动作也交给系统导航栏）。
+                // 返回动作不只是出栈的页（写信要先取消草稿）例外，它整条顶栏都留在页内。
+                val nativeTitleBarActive =
+                    useNativeTitleBar && !ownsBackAction && (showBack || nativeTabBarEnabled)
+                // 刷新、同步状态、页面级动作现在都能进系统栏右侧：状态文案自己就是入口
+                // （首页「同步失败」点开同步详情）也一并带过去，不再因为顶栏被撤掉而丢入口。
+                // 只有 Compose 画的一堆按钮（邮箱那组）没法声明成原生项，出现时整行仍留在页内。
                 val statusClickHandler = onStatusClick ?: failureStatusClick
-                val hostBarTakesOver = nativeTitleBarActive && !entryLoggingIn &&
-                    topBarAction == null && statusClickHandler == null
+                val hostBarTakesOver = nativeTitleBarActive && topBarAction == null
                 val refreshHandledByHost = hostBarTakesOver && refreshable
-                val statusHandledByHost = hostBarTakesOver && idleStatusText != null
+                val statusHandledByHost = hostBarTakesOver && (idleStatusText != null || entryLoggingIn)
+                val extraHandledByHost = hostBarTakesOver && topBarActionLabel != null
                 val keepsComposeTopBar = topBarAction != null ||
+                    (topBarActionLabel != null && !extraHandledByHost) ||
                     (idleStatusText != null && !statusHandledByHost) ||
                     (refreshable && !refreshHandledByHost) ||
-                    entryLoggingIn
+                    (entryLoggingIn && !hostBarTakesOver)
+                // 声明式的页面动作：宿主接手就画进系统栏，否则由 Compose 顶栏自己画同一份。
+                val declarativeActionLabel = topBarActionLabel
+                val declarativeActionClick = onTopBarActionClick
+                val composeAction: (@Composable () -> Unit)? = when {
+                    topBarAction != null -> topBarAction
+                    declarativeActionLabel == null ||
+                        declarativeActionClick == null ||
+                        extraHandledByHost -> null
+                    else -> {
+                        {
+                            TopBarCalendarAction(
+                                label = declarativeActionLabel,
+                                onClick = declarativeActionClick,
+                            )
+                        }
+                    }
+                }
                 if (nativeTitleBarActive) {
                     SideEffect { onNativeTitleChanged(title) }
                 }
+                val nativeSyncBusy = isRefreshing || sessionRecoveryInProgress
+                var scrolledUnderBarPx by remember { mutableFloatStateOf(0f) }
+                val topFadeHeight = 52.dp
+                val topFadeHeightPx = with(LocalDensity.current) { topFadeHeight.toPx() }
+                val topFadeActive = nativeTitleBarActive && !keepsComposeTopBar
+                // Read the scroll state during composition so changes from the nested-scroll
+                // connection invalidate this block and reach the UIKit navigation bar.
+                val nativeScrolledUnder = topFadeActive && scrolledUnderBarPx > 0f
                 SideEffect {
-                    onNativeActionChanged(
-                        if (hostBarTakesOver && (refreshable || idleStatusText != null)) {
+                    val nativeBarAction = when {
+                        !hostBarTakesOver -> null
+                        entryLoggingIn || refreshable || idleStatusText != null || topBarActionLabel != null ->
                             NativeBarAction(
-                                status = idleStatusText ?: "",
-                                canRefresh = refreshable,
-                                busy = isRefreshing || sessionRecoveryInProgress,
-                                label = if (isRefreshing) "刷新中" else "刷新",
-                                onClick = refresh,
+                                status = when {
+                                    entryLoggingIn -> "登录中"
+                                    nativeSyncBusy -> "同步中"
+                                    else -> idleStatusText ?: ""
+                                },
+                                canRefresh = refreshable && !entryLoggingIn,
+                                busy = entryLoggingIn || nativeSyncBusy,
+                                label = when {
+                                    entryLoggingIn -> "登录中"
+                                    nativeSyncBusy -> "刷新中"
+                                    else -> "刷新"
+                                },
+                                onClick = effectiveRefreshAction,
+                                onStatusClick = statusClickHandler,
+                                extraLabel = topBarActionLabel,
+                                onExtraClick = onTopBarActionClick,
+                                scrolledUnder = nativeScrolledUnder,
                             )
-                        } else {
-                            null
-                        }
-                    )
+                        else ->
+                            // No visible bar item is needed, but UIKit still
+                            // needs the edge state for a root such as More.
+                            NativeBarAction(
+                                status = "",
+                                canRefresh = false,
+                                busy = false,
+                                label = "",
+                                onClick = {},
+                                scrolledUnder = nativeScrolledUnder,
+                            )
+                    }
+                    onNativeActionChanged(nativeBarAction)
                 }
                 if (nativeTitleBarActive && !keepsComposeTopBar) {
                     Spacer(
@@ -895,9 +976,9 @@ fun AuthenticatedAppShell(
                         isRefreshing = isRefreshing || sessionRecoveryInProgress,
                         isLoggingIn = entryLoggingIn,
                         idleStatusText = idleStatusText,
-                        action = topBarAction,
+                        action = composeAction,
                         // 可刷新页：右上角状态胶囊旁放刷新按钮；不再下拉刷新（保平台原生过滚）。
-                        onRefresh = if (refreshable) refresh else null,
+                        onRefresh = if (refreshable) effectiveRefreshAction else null,
                         onStatusClick = onStatusClick ?: failureStatusClick,
                         onBack = if (showBack && !nativeTitleBarActive) {
                             onBack ?: popBackStack
@@ -906,8 +987,52 @@ fun AuthenticatedAppShell(
                         },
                     )
                 }
-                // 列表仅平台原生滚动/过滚，无下拉刷新包裹层。
-                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                // Compose's Skia scroll container is not a UIScrollView, so it cannot drive
+                // UINavigationBar's automatic scroll-edge observer. The host receives this
+                // boolean and changes the native navigation-bar appearance instead of painting
+                // a second Compose gradient over the content.
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxWidth().then(
+                        if (topFadeActive) {
+                            Modifier.nestedScroll(
+                                object : NestedScrollConnection {
+                                    override fun onPreScroll(
+                                        available: Offset,
+                                        source: NestedScrollSource,
+                                    ): Offset {
+                                        // Do not infer scrolling from the finger gesture itself:
+                                        // a non-scrollable page can receive the same drag. The
+                                        // child reports what it actually consumed in onPostScroll.
+                                        return Offset.Zero
+                                    }
+
+                                    override fun onPostScroll(
+                                        consumed: Offset,
+                                        available: Offset,
+                                        source: NestedScrollSource,
+                                    ): Offset {
+                                        // Only consumed deltas count. This prevents a drag on a
+                                        // short/non-scrollable page (notably Physical Online)
+                                        // from toggling the navigation-bar state. Keep the
+                                        // scrolled-under state while the list is moving back
+                                        // through its content; reset only when the child reports
+                                        // downward overscroll at the actual top edge.
+                                        if (consumed.y < 0f) {
+                                            scrolledUnderBarPx =
+                                                (scrolledUnderBarPx - consumed.y)
+                                                    .coerceIn(0f, topFadeHeightPx)
+                                        } else if (available.y > 0f) {
+                                            scrolledUnderBarPx = 0f
+                                        }
+                                        return Offset.Zero
+                                    }
+                                },
+                            )
+                        } else {
+                            Modifier
+                        }
+                    ),
+                ) {
                     CompositionLocalProvider(
                         LocalBottomBarClearance provides
                             if (glassScrollUnderBar) compactBottomBarOverlayPadding else 0.dp,
@@ -916,7 +1041,13 @@ fun AuthenticatedAppShell(
                     }
                     // 同步进度条悬浮在内容顶部，不参与 Column 布局，避免其出现时
                     // 把下方内容挤矮一丝。
-                    if (isRefreshing || sessionRecoveryInProgress) {
+                    // When UIKit owns the native title bar it also owns the
+                    // busy indicator. Keep the Compose progress line only for
+                    // fallback/self-drawn top bars; otherwise it duplicates the
+                    // native spinner and makes the page look like a KMP overlay.
+                    if ((isRefreshing || sessionRecoveryInProgress) &&
+                        !(nativeTitleBarActive && !keepsComposeTopBar)
+                    ) {
                         LinearProgressIndicator(
                             modifier = Modifier.align(Alignment.TopStart).fillMaxWidth(),
                         )
@@ -940,6 +1071,10 @@ fun AuthenticatedAppShell(
                 title = AppSection.HOME.title,
                 expanded = expanded,
                 refreshable = true,
+                refreshAction = {
+                    homeSyncDialogVisible = true
+                    refresh()
+                },
                 isRefreshing = homeSyncInProgress,
                 showBack = false,
                 modifier = modifier,
@@ -1033,12 +1168,13 @@ fun AuthenticatedAppShell(
                     courseState.source == CourseScheduleContentSource.CACHE -> "已同步"
                     else -> "未同步"
                 },
-                topBarAction = {
-                    TopBarCalendarAction(
-                        label = if (systemCalendarGateway.isAvailable) "添加到日历" else "导出",
-                        onClick = { showCourseCalendarExport = true },
-                    )
-                },
+                // 「添加到日历」声明成文字 + 回调，好让系统导航栏能直接画它。
+                topBarActionLabel =
+                    if (systemCalendarGateway.isAvailable) "添加到日历" else "导出",
+                onTopBarActionClick = { showCourseCalendarExport = true },
+                // 色块概览是不可纵向滚动的全览表格，必须整张停在玻璃底栏上方；
+                // 切到按日列表（可滚动）时又回到「延伸进底栏」的常态。
+                keepsBottomBarInset = courseState.compactViewMode == CourseCompactViewMode.WEEK,
             ) {
                 CourseScheduleWorkspace(
                     state = courseState,
@@ -1364,9 +1500,8 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = true,
                 isRefreshing = phyVlabState.isLoading,
-                // 物理在线在 Compose 底栏里是与首页/课表/作业平级的一级页，无返回；
-                // 但原生玻璃壳的一级入口上限是 5 个，开启物理在线时它改由「更多」压入，
-                // 这时必须给出返回入口，否则系统栏与页内栏会同时缺返回。
+                // 物理在线与首页/课表/作业平级，是完整底栏里的一级页；只有真正被
+                // 非底栏路由 push 进来时才显示系统返回按钮。
                 showBack = isPushedHostDestination,
                 modifier = modifier,
                 idleStatusText = when {
@@ -1425,7 +1560,6 @@ fun AuthenticatedAppShell(
             ) {
                 MoreWorkspace(
                     phyVlabEnabled = phyVlabEnabled,
-                    phyVlabEntryInMore = nativeTabBarEnabled,
                     onPhyVlabEnabledChange = settingsModel::setPhyVlabEnabled,
                     onOpenSection = { target -> navigateToSection(target) },
                     modifier = Modifier.fillMaxSize(),
@@ -1544,7 +1678,7 @@ fun AuthenticatedAppShell(
             easing = androidPredictiveEasing,
         )
 
-        // 仅五个一级 tab 显示底栏；更多子页与详情路由隐藏。底栏在 NavDisplay 外，tab 切换不重建。
+        // 紧凑端一级 tab 显示底栏；更多子页与详情路由隐藏。底栏在 NavDisplay 外，tab 切换不重建。
         val showsCompactBottomBar = !nativeTabBarEnabled && currentRoute in compactBottomNavSections
 
         Box(modifier = Modifier.fillMaxSize()) {

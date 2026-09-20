@@ -10,22 +10,31 @@ import platform.Foundation.NSUserDefaults
  */
 fun createAppleAccountSecurityStore(
     accessibleAfterFirstUnlock: Boolean,
+    credentialService: String = "team.bjtuss.bjtuselfservice.kmp.credentials",
+    credentialAccount: String = "primary",
+    rememberCredentialsKey: String = DEFAULT_REMEMBER_CREDENTIALS_KEY,
 ): AccountSecurityStore = AccountSecurityStore(
-    credentialVault = AppleKeychainCredentialVault(accessibleAfterFirstUnlock = accessibleAfterFirstUnlock),
-    preferences = AppleAccountPreferences(),
+    credentialVault = AppleKeychainCredentialVault(
+        service = credentialService,
+        account = credentialAccount,
+        accessibleAfterFirstUnlock = accessibleAfterFirstUnlock,
+    ),
+    preferences = AppleAccountPreferences(rememberCredentialsKey),
 )
 
 private class AppleAccountPreferences(
+    private val rememberCredentialsKey: String,
     private val defaults: NSUserDefaults = NSUserDefaults.standardUserDefaults,
 ) : AccountPreferences {
     override suspend fun shouldRememberCredentials(): Boolean =
-        defaults.boolForKey(REMEMBER_CREDENTIALS_KEY)
+        defaults.boolForKey(rememberCredentialsKey)
+
+    override suspend fun hasRememberCredentialsSetting(): Boolean =
+        defaults.objectForKey(rememberCredentialsKey) != null
 
     override suspend fun setShouldRememberCredentials(enabled: Boolean) {
-        defaults.setBool(enabled, forKey = REMEMBER_CREDENTIALS_KEY)
-    }
-
-    private companion object {
-        const val REMEMBER_CREDENTIALS_KEY = "remember_credentials"
+        defaults.setBool(enabled, forKey = rememberCredentialsKey)
     }
 }
+
+private const val DEFAULT_REMEMBER_CREDENTIALS_KEY = "remember_credentials"

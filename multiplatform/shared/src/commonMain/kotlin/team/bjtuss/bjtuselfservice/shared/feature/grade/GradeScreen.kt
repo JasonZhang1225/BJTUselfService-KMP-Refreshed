@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -60,7 +59,6 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
@@ -68,7 +66,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
@@ -114,6 +112,7 @@ import team.bjtuss.bjtuselfservice.shared.currentPlatform
 import kotlin.math.PI
 import team.bjtuss.bjtuselfservice.shared.accessibleAlpha
 import team.bjtuss.bjtuselfservice.shared.data.grade.formatGradeDetailForDisplay
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.usesLegacySmartTransportFor
@@ -286,16 +285,15 @@ internal fun GradeWorkspace(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                     state.selectedGrade?.let { grade ->
-                        val detailSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-                        ModalBottomSheet(
+                        // 单条成绩详情半屏就放得下 → 允许 medium 停靠（半屏透、全屏实）。
+                        AppleSheet(
                             onDismissRequest = model::dismissGradeDetails,
-                            sheetState = detailSheetState,
-                            sheetGesturesEnabled = true,
-                            contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+                            title = "成绩详情",
                         ) {
                             val detailScrollState = rememberScrollState()
                             GradeDetailSheetBody(
                                 grade = grade,
+                                showTitle = false,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .verticalScroll(detailScrollState)
@@ -311,12 +309,11 @@ internal fun GradeWorkspace(
     }
 
     if (showFilterSheet) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        // 筛选器一屏放不下 → 直接全屏展开。
+        AppleSheet(
             onDismissRequest = { showFilterSheet = false },
-            sheetState = sheetState,
-            sheetGesturesEnabled = true,
-            contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+            title = "筛选与计算",
+            needsFullHeight = true,
         ) {
             GradeFilterSheet(state = state, model = model)
         }
@@ -467,8 +464,6 @@ private fun GradeFilterSheet(
             .padding(bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Text("筛选与计算", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-
         // —— 学期：小胶囊，默认全选 ——
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
@@ -992,15 +987,18 @@ private fun GradeDetailContent(
 @Composable
 private fun GradeDetailSheetBody(
     grade: Grade,
+    showTitle: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text(
-            "成绩详情",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.semantics { heading() },
-        )
+        if (showTitle) {
+            Text(
+                "成绩详情",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.semantics { heading() },
+            )
+        }
         Text(
             grade.displayCourseName(),
             style = MaterialTheme.typography.headlineSmall,
@@ -1098,10 +1096,14 @@ internal fun GradeChangeNoticeDialog(
     }
     if (visible.isEmpty()) return
     val changeScrollState = rememberScrollState()
-    AlertDialog(
+    AppleSheetOrAlert(
         onDismissRequest = onDismiss,
-        title = { Text("成绩变动") },
-        text = {
+        title = "成绩变动",
+        confirmLabel = "前往成绩",
+        onConfirm = onOpenGrades,
+        dismissLabel = "知道了",
+        needsFullHeight = true,
+    ) {
             Column(
                 modifier = Modifier
                     .heightIn(max = 420.dp)
@@ -1155,9 +1157,5 @@ internal fun GradeChangeNoticeDialog(
                     }
                 }
             }
-        },
-        confirmButton = { Button(onClick = onOpenGrades) { Text("前往成绩") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("知道了") } },
-    )
+    }
 }
-

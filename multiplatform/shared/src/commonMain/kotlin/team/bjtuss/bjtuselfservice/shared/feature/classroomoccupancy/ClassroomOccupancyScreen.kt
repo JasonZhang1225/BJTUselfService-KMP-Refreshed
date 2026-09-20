@@ -71,6 +71,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyBui
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyKind
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.SLOT_TIME_RANGES
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 
@@ -478,16 +479,14 @@ private fun OccupancyWeekPickerSheet(
     hostScope: kotlinx.coroutines.CoroutineScope,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     LaunchedEffect(Unit) {
         model.ensureSemestersLoaded()
         model.ensureWeekDatesLoaded()
     }
-    ModalBottomSheet(
+    AppleSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        sheetGesturesEnabled = true,
-        contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
+        title = "学期与教学周",
+        needsFullHeight = true,
     ) {
         val pickerScrollState = rememberScrollState()
         Column(
@@ -497,7 +496,6 @@ private fun OccupancyWeekPickerSheet(
                 .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text("学期与教学周", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(
                 "学期",
                 style = MaterialTheme.typography.titleSmall,

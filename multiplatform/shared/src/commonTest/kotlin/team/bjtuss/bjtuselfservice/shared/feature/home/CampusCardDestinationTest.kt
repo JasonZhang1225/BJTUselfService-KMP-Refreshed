@@ -12,7 +12,7 @@ class CampusCardDestinationTest {
 
         assertEquals("https://wxaurl.cn/RLEw5IMZRKl", destination.url)
         assertEquals(CampusCardAction.OpenUrl, destination.action)
-        assertEquals("打开微信小程序", destination.confirmLabel)
+        assertEquals("打开完美校园", destination.confirmLabel)
     }
 
     @Test
@@ -30,7 +30,7 @@ class CampusCardDestinationTest {
 
         assertEquals(CampusCardAction.OpenUrl, destination.action)
         assertEquals("https://wxaurl.cn/RLEw5IMZRKl", destination.url)
-        assertEquals("打开微信小程序", destination.confirmLabel)
+        assertEquals("打开完美校园", destination.confirmLabel)
         assertTrue(destination.message.contains("系统默认浏览器"))
     }
 

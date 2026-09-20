@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ModalBottomSheet
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -66,6 +67,7 @@ import team.bjtuss.bjtuselfservice.shared.accessibleAlpha
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
@@ -236,12 +238,11 @@ fun PhyVlabWorkspace(
     }
 
     if (showDetailSheet) state.selectedActivity?.let { activity ->
-        val detailSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        // 实验详情含提交区与上传动作，半屏放不下：iOS 卡片直接开到全屏。
+        AppleSheet(
             onDismissRequest = model::dismissActivityDetails,
-            sheetState = detailSheetState,
-            sheetGesturesEnabled = true,
-            contentWindowInsets = { androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0) },
+            title = "物理作业详情",
+            needsFullHeight = true,
         ) {
             PhyVlabAssignmentDetailContent(
                 activity = activity,
@@ -286,24 +287,20 @@ fun PhyVlabWorkspace(
     }
 
     if (showUploadConfirm) {
-        AlertDialog(
+        AppleSheetOrAlert(
             onDismissRequest = { if (!state.isSubmitting) showUploadConfirm = false },
-            title = { Text("确认提交物理在线作业？") },
-            text = { Text("将把已选择的 ${uploadFiles.size} 个文件提交到“${state.selectedActivity?.title.orEmpty()}”。提交后可在详情中查看最新状态。") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showUploadConfirm = false
-                        showUpload = false
-                        scope.launch {
-                            model.submitSelectedActivity(uploadFiles)
-                        }
-                    },
-                    enabled = uploadFiles.isNotEmpty() && !state.isSubmitting,
-                ) { Text("确认提交") }
+            title = "确认提交物理在线作业？",
+            confirmLabel = "确认提交",
+            onConfirm = {
+                showUploadConfirm = false
+                showUpload = false
+                scope.launch { model.submitSelectedActivity(uploadFiles) }
             },
-            dismissButton = { TextButton(onClick = { showUploadConfirm = false }) { Text("取消") } },
-        )
+            confirmEnabled = uploadFiles.isNotEmpty() && !state.isSubmitting,
+            dismissLabel = "取消",
+        ) {
+            Text("将把已选择的 ${uploadFiles.size} 个文件提交到“${state.selectedActivity?.title.orEmpty()}”。提交后可在详情中查看最新状态。")
+        }
     }
 }
 
@@ -387,22 +384,20 @@ fun PhyVlabDetailWorkspace(
     }
 
     if (showUploadConfirm) {
-        AlertDialog(
+        AppleSheetOrAlert(
             onDismissRequest = { if (!state.isSubmitting) showUploadConfirm = false },
-            title = { Text("确认提交物理在线作业？") },
-            text = { Text("将把已选择的 ${uploadFiles.size} 个文件提交到“${activity?.title.orEmpty()}”。提交后可在详情中查看最新状态。") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showUploadConfirm = false
-                        showUpload = false
-                        scope.launch { model.submitSelectedActivity(uploadFiles) }
-                    },
-                    enabled = uploadFiles.isNotEmpty() && !state.isSubmitting,
-                ) { Text("确认提交") }
+            title = "确认提交物理在线作业？",
+            confirmLabel = "确认提交",
+            onConfirm = {
+                showUploadConfirm = false
+                showUpload = false
+                scope.launch { model.submitSelectedActivity(uploadFiles) }
             },
-            dismissButton = { TextButton(onClick = { showUploadConfirm = false }) { Text("取消") } },
-        )
+            confirmEnabled = uploadFiles.isNotEmpty() && !state.isSubmitting,
+            dismissLabel = "取消",
+        ) {
+            Text("将把已选择的 ${uploadFiles.size} 个文件提交到“${activity?.title.orEmpty()}”。提交后可在详情中查看最新状态。")
+        }
     }
 }
 
@@ -967,10 +962,16 @@ private fun PhyVlabUploadDialog(
     onDismiss: () -> Unit,
 ) {
     val scrollState = rememberScrollState()
-    AlertDialog(
+    AppleSheetOrAlert(
         onDismissRequest = onDismiss,
-        title = { Text("上传物理在线作业") },
-        text = {
+        title = "上传物理在线作业",
+        confirmLabel = if (isSubmitting) "提交中" else "继续",
+        onConfirm = onSubmit,
+        confirmEnabled = files.isNotEmpty() && !isSubmitting,
+        dismissLabel = "取消",
+        dismissEnabled = !isSubmitting,
+        needsFullHeight = true,
+    ) {
             Column(
                 modifier = Modifier
                     .heightIn(max = 480.dp)
@@ -994,14 +995,7 @@ private fun PhyVlabUploadDialog(
                 }
                 feedback?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
-        },
-        confirmButton = {
-            Button(onClick = onSubmit, enabled = files.isNotEmpty() && !isSubmitting) {
-                Text(if (isSubmitting) "提交中" else "继续")
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !isSubmitting) { Text("取消") } },
-    )
+    }
 }
 
 @Composable

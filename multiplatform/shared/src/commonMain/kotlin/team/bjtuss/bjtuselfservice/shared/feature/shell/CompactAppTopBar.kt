@@ -66,6 +66,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -425,20 +426,23 @@ internal fun PartialSyncFailureDialog(
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    AppleSheetOrAlert(
         onDismissRequest = onDismiss,
-        title = { Text("部分同步失败") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("以下内容本轮同步失败。可以稍后手动重试：")
-                failedItems.forEach { item ->
-                    Text("• $item", style = MaterialTheme.typography.bodyMedium)
-                }
+        title = "部分同步失败",
+        confirmLabel = "重试",
+        onConfirm = onRetry,
+        dismissLabel = "关闭",
+    ) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+        ) {
+            Text("以下内容本轮同步失败。可以稍后手动重试：")
+            failedItems.forEach { item ->
+                Text("• $item", style = MaterialTheme.typography.bodyMedium)
             }
-        },
-        confirmButton = { Button(onClick = onRetry) { Text("重试") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
-    )
+        }
+    }
 }
 
 @Composable
@@ -450,87 +454,84 @@ internal fun HomeSyncDetailsDialog(
     onDismiss: () -> Unit,
 ) {
     val scrollState = rememberScrollState()
-    AlertDialog(
+    AppleSheetOrAlert(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 430.dp)
-                    .verticalScroll(scrollState)
-                    .desktopTouchScroll(scrollState),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    when {
-                        canRetry -> "本次同步有失败项目，点击“重试”后才会重新请求。"
-                        title == "登录中" -> "正在完成统一身份认证，页面数据会在登录完成后开始同步。"
-                        title == "同步中" -> "各模块正在并行同步，完成项会显示勾选。"
-                        else -> "当前登录会话与各模块的同步状态如下。"
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                items.forEach { item -> HomeSyncDetailRow(item) }
+        title = title,
+        // iOS already supplies the native top-right X. Only expose an action
+        // when there is something meaningful to do; do not create a second
+        // “关闭” button beside the system close affordance.
+        confirmLabel = if (canRetry) "重试" else null,
+        onConfirm = if (canRetry) onRetry else null,
+        dismissLabel = null,
+        // 模块清单可能长过半屏，直接以全屏展开。
+        needsFullHeight = true,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp)
+                .fillMaxHeight()
+                .verticalScroll(scrollState)
+                .desktopTouchScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                when {
+                    canRetry -> "本次同步有失败项目，点击“重试”后才会重新请求。"
+                    title == "登录中" -> "正在完成统一身份认证，页面数据会在登录完成后开始同步。"
+                    title == "同步中" -> "各模块正在并行同步，完成项会显示勾选。"
+                    else -> "当前登录会话与各模块的同步状态如下。"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            items.forEachIndexed { index, item ->
+                HomeSyncDetailRow(item)
+                if (index != items.lastIndex) {
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                    )
+                }
             }
-        },
-        confirmButton = {
-            if (canRetry) {
-                Button(onClick = onRetry) { Text("重试") }
-            } else {
-                TextButton(onClick = onDismiss) { Text("关闭") }
-            }
-        },
-        dismissButton = if (canRetry) {
-            { TextButton(onClick = onDismiss) { Text("关闭") } }
-        } else {
-            null
-        },
-    )
+        }
+    }
 }
 
 @Composable
 internal fun HomeSyncDetailRow(item: HomeSyncItem) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = MaterialTheme.shapes.medium,
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        Box(
+            modifier = Modifier.size(20.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier.size(20.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                when (item.state) {
-                    HomeSyncItemState.SYNCING -> CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 1.8.dp,
-                    )
-                    HomeSyncItemState.SUCCESS -> TopBarSyncedIcon(Modifier.size(16.dp))
-                    HomeSyncItemState.FAILED -> Text(
-                        "!",
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    HomeSyncItemState.WAITING -> Text(
-                        "·",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(item.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                Text(
-                    item.detail,
-                    style = MaterialTheme.typography.bodySmall,
+            when (item.state) {
+                HomeSyncItemState.SYNCING -> CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 1.8.dp,
+                )
+                HomeSyncItemState.SUCCESS -> TopBarSyncedIcon(Modifier.size(16.dp))
+                HomeSyncItemState.FAILED -> Text(
+                    "!",
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.Bold,
+                )
+                HomeSyncItemState.WAITING -> Text(
+                    "·",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Bold,
                 )
             }
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(item.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(
+                item.detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

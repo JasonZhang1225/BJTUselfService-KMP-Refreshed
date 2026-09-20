@@ -24,7 +24,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -137,6 +136,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.settings.SettingsScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.rememberAuthenticatedSession
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
@@ -187,6 +187,7 @@ fun LoginRoute(
     }
     var storageReady by remember { mutableStateOf(false) }
     var storageMessage by remember { mutableStateOf<String?>(null) }
+    var postLoginStorageFailure by remember { mutableStateOf<String?>(null) }
     var automationMessage by remember { mutableStateOf<String?>(null) }
     var manualDialogChallenge by remember { mutableStateOf<CaptchaChallenge?>(null) }
     var manualDialogAttempts by remember { mutableStateOf(0) }
@@ -219,6 +220,15 @@ fun LoginRoute(
             )
         } else {
             true
+        }
+        postLoginStorageFailure = if (!stored && persistCredentials && credentials.isValid) {
+            if (platform.family == PlatformFamily.IOS) {
+                "当前 iOS 安装包无法访问系统 Keychain，登录信息没有保存。请使用已签名的设备或模拟器运行；应用不会改用明文存储。"
+            } else {
+                "登录成功，但系统安全存储操作失败，登录信息没有保存。"
+            }
+        } else {
+            null
         }
         storageMessage = when {
             !cacheReady -> "登录成功，但本地缓存初始化失败。"
@@ -457,6 +467,7 @@ fun LoginRoute(
         silentAutoLogin = false
         autoLoginFailureAttempts = null
         storageMessage = null
+        postLoginStorageFailure = null
         state = reduceLoginState(state, LoginEvent.Logout)
         scope.launch {
             val secureCleared = securityCoordinator.clear()
@@ -478,30 +489,27 @@ fun LoginRoute(
     // 静默入场且自动登录失败：在主界面上弹引导弹窗，确认后回到登录页。
     val failureAttempts = autoLoginFailureAttempts
     if (failureAttempts != null && autoEntryProfile != null) {
-        AlertDialog(
-            onDismissRequest = {},
-            title = { Text("自动登录失败") },
-            text = {
-                Text(
-                    if (failureAttempts > 0) {
-                        "已自动尝试登录 $failureAttempts 次仍未成功。密码可能已修改，或验证码识别连续失败。" +
-                            "请回到登录页确认账号和密码后重新登录。"
-                    } else {
-                        "自动登录时网络连接失败。请回到登录页检查网络后重新登录。"
-                    },
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        autoLoginFailureAttempts = null
-                        autoEntryProfile = null
-                        silentAutoLogin = false
-                        state = LoginState.SignedOut
-                    },
-                ) { Text("返回登录页") }
-            },
-        )
+        fun returnToLoginAfterAutomaticFailure() {
+            autoLoginFailureAttempts = null
+            autoEntryProfile = null
+            silentAutoLogin = false
+            state = LoginState.SignedOut
+        }
+        AppleSheetOrAlert(
+            onDismissRequest = ::returnToLoginAfterAutomaticFailure,
+            title = "自动登录失败",
+            confirmLabel = "返回登录页",
+            onConfirm = ::returnToLoginAfterAutomaticFailure,
+        ) {
+            Text(
+                if (failureAttempts > 0) {
+                    "已自动尝试登录 $failureAttempts 次仍未成功。密码可能已修改，或验证码识别连续失败。" +
+                        "请回到登录页确认账号和密码后重新登录。"
+                } else {
+                    "自动登录时网络连接失败。请回到登录页检查网络后重新登录。"
+                },
+            )
+        }
     }
 
     val signedIn = state as? LoginState.SignedIn
@@ -548,6 +556,16 @@ fun LoginRoute(
                 onOpenExternalUrl = onOpenExternalUrl,
             )
         }
+        postLoginStorageFailure?.let { message ->
+            AppleSheetOrAlert(
+                onDismissRequest = { postLoginStorageFailure = null },
+                title = "登录信息未保存",
+                confirmLabel = "知道了",
+                onConfirm = { postLoginStorageFailure = null },
+            ) {
+                Text(message)
+            }
+        }
         return
     }
 
@@ -566,77 +584,75 @@ fun LoginRoute(
             onUsernameChange = { username = it },
             onPasswordChange = { password = it },
             onRememberCredentialsChange = { enabled ->
-                // 只更新勾选状态；是否真正写入/清除系统安全存储由登录提交或退出登录时统一处理，
-                // 避免未签名平台上每次取消勾选都触发 Keychain 报错。
                 rememberCredentials = enabled
+                scope.launch {
+                    if (!securityCoordinator.setRememberCredentials(enabled)) {
+                        storageMessage = if (enabled) {
+                            "无法更新系统安全存储设置。"
+                        } else {
+                            "已取消保存，但系统安全存储清除失败。"
+                        }
+                    }
+                }
             },
             onLogin = ::startAutomaticLogin,
         )
     }
 
+    fun dismissFallbackChallenge() {
+        manualDialogChallenge = null
+        manualDialogAttempts = 0
+        manualDialogMessage = null
+        if (protocol.isInitialized()) protocol.value.logout()
+        username = ""
+        password = ""
+        captchaAnswer = ""
+        rememberCredentials = securityCoordinator.canStoreCredentials
+        state = LoginState.SignedOut
+        scope.launch {
+            securityCoordinator.clear()
+        }
+    }
+
     val fallbackChallenge = manualDialogChallenge
     if (fallbackChallenge != null) {
-        AlertDialog(
-            onDismissRequest = {},
-            title = { Text("请输入验证码") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        AppleSheetOrAlert(
+            onDismissRequest = ::dismissFallbackChallenge,
+            title = "请输入验证码",
+            confirmLabel = if (state is LoginState.SubmittingCredentials) "正在登录…" else "继续登录",
+            confirmEnabled = captchaAnswer.isNotBlank() &&
+                state !is LoginState.SubmittingCredentials &&
+                state !is LoginState.CheckingSession,
+            onConfirm = { submitManualCaptcha(fallbackChallenge) },
+            dismissLabel = "修改账号和密码",
+            dismissEnabled = state !is LoginState.SubmittingCredentials &&
+                state !is LoginState.CheckingSession,
+            needsFullHeight = true,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "自动登录已尝试 ${manualDialogAttempts.coerceAtLeast(1)} 次，仍未成功。" +
+                        "请根据图片输入本次验证码。",
+                )
+                manualDialogMessage?.let { message ->
                     Text(
-                        "自动登录已尝试 ${manualDialogAttempts.coerceAtLeast(1)} 次，仍未成功。" +
-                            "请根据图片输入本次验证码。",
-                    )
-                    manualDialogMessage?.let { message ->
-                        Text(
-                            text = message,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    CaptchaBlock(
-                        challenge = fallbackChallenge,
-                        loading = state is LoginState.CheckingSession,
-                        answer = captchaAnswer,
-                        enabled = state !is LoginState.SubmittingCredentials &&
-                            state !is LoginState.CheckingSession,
-                        onAnswerChange = { captchaAnswer = it },
-                        onRefresh = ::refreshManualChallenge,
-                        onSubmit = { submitManualCaptcha(fallbackChallenge) },
+                        text = message,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = { submitManualCaptcha(fallbackChallenge) },
-                    enabled = captchaAnswer.isNotBlank() &&
-                        state !is LoginState.SubmittingCredentials &&
-                        state !is LoginState.CheckingSession,
-                ) {
-                    Text(if (state is LoginState.SubmittingCredentials) "正在登录…" else "继续登录")
-                }
-            },
-            dismissButton = {
-                TextButton(
+                CaptchaBlock(
+                    challenge = fallbackChallenge,
+                    loading = state is LoginState.CheckingSession,
+                    answer = captchaAnswer,
                     enabled = state !is LoginState.SubmittingCredentials &&
                         state !is LoginState.CheckingSession,
-                    onClick = {
-                        manualDialogChallenge = null
-                        manualDialogAttempts = 0
-                        manualDialogMessage = null
-                        if (protocol.isInitialized()) protocol.value.logout()
-                        username = ""
-                        password = ""
-                        captchaAnswer = ""
-                        rememberCredentials = securityCoordinator.canStoreCredentials
-                        state = LoginState.SignedOut
-                        scope.launch {
-                            securityCoordinator.clear()
-                        }
-                    }
-                ) {
-                    Text("修改账号和密码")
-                }
-            },
-        )
+                    onAnswerChange = { captchaAnswer = it },
+                    onRefresh = ::refreshManualChallenge,
+                    onSubmit = { submitManualCaptcha(fallbackChallenge) },
+                )
+            }
+        }
     }
 
     if (platform.family == PlatformFamily.MacOS) {
@@ -875,6 +891,14 @@ private fun LoginCard(
                         modifier = Modifier.padding(14.dp),
                     )
                 }
+            }
+
+            storageMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             PlatformCredentialFields(

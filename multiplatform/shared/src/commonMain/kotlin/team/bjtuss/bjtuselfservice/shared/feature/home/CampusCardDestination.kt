@@ -21,13 +21,13 @@ internal fun campusCardDestination(family: PlatformFamily): CampusCardDestinatio
         action = CampusCardAction.OpenUrl,
         url = WECHAT_MINI_PROGRAM_URL,
         message = "校园卡充值由完美校园提供。将使用系统默认浏览器打开完美校园微信小程序链接，本应用不会代填金额或发起支付。",
-        confirmLabel = "打开微信小程序",
+        confirmLabel = "打开完美校园",
     )
     PlatformFamily.IOS -> CampusCardDestination(
         action = CampusCardAction.OpenUrl,
         url = WECHAT_MINI_PROGRAM_URL,
         message = "校园卡充值由完美校园提供。将使用系统默认浏览器打开完美校园微信小程序链接，本应用不会代填金额或发起支付。",
-        confirmLabel = "打开微信小程序",
+        confirmLabel = "打开完美校园",
     )
     PlatformFamily.MacOS -> CampusCardDestination(
         action = CampusCardAction.ShowQrCode,

@@ -38,6 +38,14 @@ kotlin {
     iosSimulatorArm64()
 
     targets.withType<KotlinNativeTarget>().configureEach {
+        compilations.getByName("main") {
+            cinterops {
+                create("uikitSheet") {
+                    defFile(project.file("src/iosMain/cinterop/UIKitSheetBridge.def"))
+                    compilerOpts("-I${project.file("src/iosMain/cinterop").absolutePath}")
+                }
+            }
+        }
         binaries.framework {
             baseName = "BJTUShared"
             isStatic = true

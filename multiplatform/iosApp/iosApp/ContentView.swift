@@ -149,59 +149,432 @@ private final class NativeNavigationController: UINavigationController, UINaviga
 /// 并让宿主重算导航栏显隐——空标题代表「本页自绘顶栏」，系统玻璃栏不该出现。
 private final class NativeChromeBinding {
     weak var controller: UIViewController?
+    private var lastScrollEdgeState: Bool?
+    private var retainedActionTargets: [NativeBarActionTarget] = []
+    private var actionTargets: [NativeBarActionRole: NativeBarActionTarget] = [:]
+    private var lastActionLayoutKey: NativeBarActionLayoutKey?
+    private var pendingTitle: String?
+    private var pendingAction: NativeBarAction?
+    private var hasPendingAction = false
+    private var updateScheduled = false
 
     func apply(_ title: String) {
-        guard let controller, !title.isEmpty else { return }
-        controller.navigationItem.title = title
+        guard !title.isEmpty else { return }
+        pendingTitle = title
+        scheduleFlush()
+    }
+
+    /// 同步状态、刷新与页面级动作由 Compose 声明、由系统导航栏渲染：不再把 Compose 胶囊
+    /// 塞进标题栏。动作载体只在结构真正变化时重建；滚动时只切换系统材质，避免玻璃控件
+    /// 被销毁再创建而闪烁。
+    func apply(action: NativeBarAction?) {
+        pendingAction = action
+        hasPendingAction = true
+        scheduleFlush()
+    }
+
+    private func scheduleFlush() {
+        guard !updateScheduled else { return }
+        updateScheduled = true
+        // Title and action callbacks arrive from separate Compose SideEffects.
+        // Coalesce them into one main-queue transaction so UIKit never renders
+        // a centered title first and then animates it away when buttons arrive.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.updateScheduled = false
+            self.flushPendingChrome()
+        }
+    }
+
+    private func flushPendingChrome() {
+        guard let controller else { return }
+        if let title = pendingTitle {
+            pendingTitle = nil
+            controller.navigationItem.title = title
+            (controller.navigationController as? NativeChromeHosting)?.setNativeTitle(title)
+        }
+        if hasPendingAction {
+            let action = pendingAction
+            pendingAction = nil
+            hasPendingAction = false
+            applyAction(action)
+        }
         (controller.navigationController as? NativeChromeHosting)?.refreshNavigationBarVisibility()
     }
 
-    /// 同步状态与刷新由 Compose 声明、由系统导航栏渲染：省掉页内那条独占一行的胶囊，
-    /// 刷新进行中换成转圈，页面自己不再画顶栏工具行。
-    func apply(action: NativeBarAction?) {
+    private func iconBarItem(
+        title: String,
+        symbolName: String,
+        role: NativeBarActionRole,
+        onClick: (() -> Void)?,
+        enabled: Bool = true,
+    ) -> UIBarButtonItem {
+        let button = NativeBarIconButton(symbolName: symbolName)
+        button.isEnabled = enabled
+        if let onClick {
+            let target = makeActionTarget(role: role, onInvoke: onClick)
+            button.addTarget(
+                target,
+                action: #selector(NativeBarActionTarget.invoke(_:)),
+                for: .touchUpInside,
+            )
+        }
+        button.accessibilityLabel = title
+        return UIBarButtonItem(customView: button)
+    }
+
+    private func makeActionTarget(
+        role: NativeBarActionRole,
+        onInvoke: @escaping () -> Void,
+    ) -> NativeBarActionTarget {
+        let target = NativeBarActionTarget(onInvoke: onInvoke)
+        actionTargets[role] = target
+        retainedActionTargets.append(target)
+        return target
+    }
+
+    private func updateActionTargets(_ action: NativeBarAction) {
+        actionTargets[.refresh]?.update(action.canRefresh ? action.onClick : nil)
+        actionTargets[.status]?.update(action.onStatusClick)
+        actionTargets[.extra]?.update(action.onExtraClick)
+        actionTargets[.spinner]?.update(action.onStatusClick)
+    }
+
+    private func symbolName(for label: String, kind: NativeBarActionItemKind) -> String {
+        switch kind {
+        case .refresh:
+            return "arrow.clockwise"
+        case .extra:
+            if label.localizedCaseInsensitiveContains("日历") {
+                return "calendar.badge.plus"
+            }
+            return "ellipsis.circle"
+        case .status:
+            if label.contains("失败") || label.contains("错误") {
+                return "exclamationmark.triangle"
+            }
+            if label.contains("已同步") || label.contains("成功") || label.contains("完成") {
+                return "checkmark.circle"
+            }
+            return "info.circle"
+        }
+    }
+
+    private func applyAction(_ action: NativeBarAction?) {
         guard let controller else { return }
         guard let action else {
+            retainedActionTargets.removeAll()
+            actionTargets.removeAll()
+            lastActionLayoutKey = nil
+            controller.navigationItem.leftBarButtonItems = nil
+            controller.navigationItem.leftItemsSupplementBackButton = false
             controller.navigationItem.rightBarButtonItems = nil
+            apply(scrollEdge: false)
             return
         }
+        let layoutKey = NativeBarActionLayoutKey(action)
+        if layoutKey == lastActionLayoutKey {
+            // The only expected change here is the scroll-edge material or a
+            // freshly captured Kotlin callback. Keep every UIKit view alive.
+            updateActionTargets(action)
+            apply(scrollEdge: action.scrolledUnder)
+            return
+        }
+        lastActionLayoutKey = layoutKey
+        retainedActionTargets.removeAll()
+        actionTargets.removeAll()
         var items: [UIBarButtonItem] = []
-        if action.canRefresh {
-            if action.busy {
-                let spinner = UIActivityIndicatorView(style: .medium)
-                spinner.startAnimating()
-                items.append(UIBarButtonItem(customView: spinner))
-            } else {
-                let item = UIBarButtonItem(
-                    image: UIImage(systemName: "arrow.clockwise"),
-                    primaryAction: UIAction { _ in action.onClick() }
+        var leftItems: [UIBarButtonItem] = []
+        if action.busy {
+            // Busy feedback belongs to the native bar. A text item saying
+            // “刷新中” plus a Compose progress bar duplicates the same state and
+            // makes the page feel like two toolbars are fighting each other.
+            let statusLabel = action.status.isEmpty ? action.label : action.status
+            // Busy feedback is one compact native slot. Keeping the status text
+            // in accessibility rather than adding another wide text slot leaves
+            // enough room for the centered title even when a page also exposes
+            // a calendar/action button.
+            let button = NativeSpinnerButton(type: .system)
+            button.accessibilityLabel = statusLabel
+            button.accessibilityValue = "进行中"
+            let spinner = UIActivityIndicatorView(style: .medium)
+            spinner.color = .secondaryLabel
+            spinner.startAnimating()
+            if let onStatusClick = action.onStatusClick {
+                let target = makeActionTarget(role: .spinner, onInvoke: onStatusClick)
+                button.addTarget(
+                    target,
+                    action: #selector(NativeBarActionTarget.invoke(_:)),
+                    for: .touchUpInside,
                 )
-                item.accessibilityLabel = action.label
-                items.append(item)
             }
+            spinner.translatesAutoresizingMaskIntoConstraints = false
+            button.addSubview(spinner)
+            NSLayoutConstraint.activate([
+                spinner.centerXAnchor.constraint(equalTo: button.centerXAnchor),
+                spinner.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+                spinner.widthAnchor.constraint(equalToConstant: 20),
+                spinner.heightAnchor.constraint(equalToConstant: 20),
+            ])
+            items.append(UIBarButtonItem(customView: button))
+        } else if action.canRefresh {
+            items.append(
+                iconBarItem(
+                    title: action.label,
+                    symbolName: symbolName(for: action.label, kind: .refresh),
+                    role: .refresh,
+                    onClick: action.onClick,
+                )
+            )
         }
-        // UIKit 把 rightBarButtonItems 的第 0 项放在最右边：主操作（刷新）靠右，状态文字在它左边。
-        if !action.status.isEmpty {
-            let label = UILabel()
-            label.text = action.status
-            label.font = .preferredFont(forTextStyle: .subheadline)
-            label.textColor = .secondaryLabel
-            items.append(UIBarButtonItem(customView: label))
+        // UIKit 把 rightBarButtonItems 的第 0 项放在最右边：主操作（刷新）靠右，状态图标在它左边。
+        if !action.busy && !action.status.isEmpty {
+            items.append(
+                iconBarItem(
+                    title: action.status,
+                    symbolName: symbolName(for: action.status, kind: .status),
+                    role: .status,
+                    onClick: action.onStatusClick,
+                    enabled: action.onStatusClick != nil,
+                )
+            )
         }
+        if let extraLabel = action.extraLabel, let onExtraClick = action.onExtraClick {
+            leftItems.append(
+                iconBarItem(
+                    title: extraLabel,
+                    symbolName: symbolName(for: extraLabel, kind: .extra),
+                    role: .extra,
+                    onClick: onExtraClick,
+                )
+            )
+        }
+        controller.navigationItem.leftItemsSupplementBackButton = !leftItems.isEmpty
+        controller.navigationItem.leftBarButtonItems = leftItems.isEmpty ? nil : leftItems
         controller.navigationItem.rightBarButtonItems = items.isEmpty ? nil : items
+        apply(scrollEdge: action.scrolledUnder)
+    }
+
+    /// Compose cannot expose a UIScrollView to UINavigationBar, so hand the
+    /// edge state to UIKit and let UINavigationBarAppearance perform the
+    /// native material transition. No Compose gradient is painted over content.
+    ///
+    /// Keep the title hierarchy stable. Compose's Skia scroll container is not
+    /// a UIKit scroll view, so manually switching large-title display modes
+    /// leaves UIKit's old large-title height behind. The title stays compact;
+    /// only the system material follows the real content scroll state.
+    func apply(scrollEdge: Bool) {
+        guard let controller, let navigationController = controller.navigationController else { return }
+        guard lastScrollEdgeState != scrollEdge else { return }
+        lastScrollEdgeState = scrollEdge
+
+        let appearance = UINavigationBarAppearance()
+        if #available(iOS 26.0, *) {
+            // iOS 26/27 owns the Liquid Glass rendering for system bars. The
+            // public UINavigationBarAppearance API intentionally does not
+            // accept UIGlassEffect, so use the system default background at
+            // the scrolled-under edge and a transparent edge appearance at
+            // the top. UIKit then provides the native blur, depth and mask.
+            if scrollEdge {
+                appearance.configureWithDefaultBackground()
+            } else {
+                appearance.configureWithTransparentBackground()
+                appearance.backgroundColor = .clear
+            }
+            appearance.shadowColor = .clear
+        } else if scrollEdge {
+            appearance.configureWithDefaultBackground()
+        } else {
+            appearance.configureWithTransparentBackground()
+            appearance.backgroundEffect = UIBlurEffect(style: .systemMaterial)
+            appearance.shadowColor = .clear
+        }
+        appearance.titleTextAttributes = [
+            // The visible title is the single UIKit label pinned to the
+            // navigation-bar center. Keep UINavigationItem.title populated for
+            // UIKit's visibility/accessibility semantics, but hide its
+            // collision-avoiding copy so it cannot flash or drift sideways.
+            .foregroundColor: UIColor.clear,
+            .font: UIFontMetrics(forTextStyle: .title3).scaledFont(
+                for: UIFont.systemFont(ofSize: 21, weight: .semibold),
+            ),
+        ]
+        appearance.titlePositionAdjustment = UIOffset(horizontal: 0, vertical: 1)
+        UIView.performWithoutAnimation {
+            navigationController.navigationBar.standardAppearance = appearance
+            navigationController.navigationBar.scrollEdgeAppearance = appearance
+            navigationController.view.layoutIfNeeded()
+        }
+    }
+}
+
+private enum NativeBarActionRole: Hashable {
+    case refresh
+    case status
+    case extra
+    case spinner
+}
+
+private struct NativeBarActionLayoutKey: Equatable {
+    let status: String
+    let canRefresh: Bool
+    let busy: Bool
+    let label: String
+    let hasStatusAction: Bool
+    let extraLabel: String?
+    let hasExtraAction: Bool
+
+    init(_ action: NativeBarAction) {
+        status = action.status
+        canRefresh = action.canRefresh
+        busy = action.busy
+        label = action.label
+        hasStatusAction = action.onStatusClick != nil
+        extraLabel = action.extraLabel
+        hasExtraAction = action.onExtraClick != nil
+    }
+}
+
+private final class NativeBarActionTarget: NSObject {
+    private var onInvoke: (() -> Void)?
+
+    init(onInvoke: @escaping () -> Void) {
+        self.onInvoke = onInvoke
+    }
+
+    func update(_ onInvoke: (() -> Void)?) {
+        self.onInvoke = onInvoke
+    }
+
+    @objc func invoke(_ sender: UIControl) {
+        onInvoke?()
+    }
+}
+
+private enum NativeBarActionItemKind {
+    case refresh
+    case status
+    case extra
+}
+
+private final class NativeBarIconButton: UIButton {
+    init(symbolName: String) {
+        super.init(frame: .zero)
+        let symbolConfiguration = UIImage.SymbolConfiguration(
+            pointSize: 18,
+            weight: .semibold,
+        )
+        setImage(UIImage(systemName: symbolName, withConfiguration: symbolConfiguration), for: .normal)
+        tintColor = .label
+    }
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: 32, height: 32)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+private final class NativeSpinnerButton: UIButton {
+    override var intrinsicContentSize: CGSize {
+        // Keep busy and idle action carriers equally compact so the title never
+        // changes position when synchronization completes.
+        CGSize(width: 32, height: 32)
+    }
+}
+
+/// One native UILabel is overlaid on the navigation bar's own coordinate space.
+/// `UINavigationItem.title` deliberately avoids this because UIKit shifts it to
+/// avoid a long trailing action group; the app needs a title that stays centered
+/// while those actions change asynchronously.
+private final class NativeCenteredNavigationTitle: UILabel {
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        font = UIFontMetrics(forTextStyle: .title3).scaledFont(
+            for: UIFont.systemFont(ofSize: 21, weight: .semibold),
+        )
+        adjustsFontForContentSizeCategory = true
+        textAlignment = .center
+        numberOfLines = 1
+        lineBreakMode = .byTruncatingTail
+        textColor = .label
+        isUserInteractionEnabled = false
+        accessibilityTraits = .header
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+/// A native glass edge mask for the compact bar. UIKit's automatic
+/// scroll-edge appearance only knows about UIScrollView; the page body is
+/// Compose/Skia, so the host supplies the same material falloff in UIKit's
+/// view hierarchy instead of painting a Compose gradient over the page.
+private final class NativeTopEdgeMaterialView: UIView {
+    private let materialView: UIVisualEffectView
+    private let fadeMask = CAGradientLayer()
+
+    override init(frame: CGRect) {
+        let effect: UIVisualEffect
+        if #available(iOS 26.0, *) {
+            let glass = UIGlassEffect(style: .clear)
+            glass.isInteractive = false
+            effect = glass
+        } else {
+            effect = UIBlurEffect(style: .systemUltraThinMaterial)
+        }
+        materialView = UIVisualEffectView(effect: effect)
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isUserInteractionEnabled = false
+        materialView.isUserInteractionEnabled = false
+        materialView.backgroundColor = .clear
+        addSubview(materialView)
+
+        fadeMask.colors = [
+            UIColor.white.cgColor,
+            UIColor.white.withAlphaComponent(0.92).cgColor,
+            UIColor.white.withAlphaComponent(0.42).cgColor,
+            UIColor.clear.cgColor,
+        ]
+        fadeMask.locations = [0.0, 0.28, 0.68, 1.0]
+        fadeMask.startPoint = CGPoint(x: 0.5, y: 0.0)
+        fadeMask.endPoint = CGPoint(x: 0.5, y: 1.0)
+        materialView.layer.mask = fadeMask
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        materialView.frame = bounds
+        fadeMask.frame = materialView.bounds
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }
 
 private protocol NativeChromeHosting: AnyObject {
+    func setNativeTitle(_ title: String)
     func refreshNavigationBarVisibility()
 }
 
-/// 单个一级入口的原生导航栈：根页面为对应 tab 的 Compose 内容（保留页内自绘顶栏与同步胶囊），
-/// 二/三级页 push 后由系统玻璃导航栏提供标题与返回。
+/// 单个一级入口的原生导航栈：根页面与 push 后的二级页都使用稳定的 UIKit 行内标题，
+/// Compose 只负责正文，系统导航栏统一承载标题、同步状态和页面动作。
 private final class TabRootNavigationController: UINavigationController, UINavigationControllerDelegate, UIGestureRecognizerDelegate, NativeChromeHosting {
     private let session: AuthenticatedSession
     private let tabRouteId: String
     private let selectTab: (String) -> Void
-    /// 根页 ↔ 被压入的二级页切换时通知宿主：底栏被 push 藏起来时，悬浮入口必须跟着消失。
+    private var centeredTitleLabel: NativeCenteredNavigationTitle?
+    private var topEdgeMaterialView: NativeTopEdgeMaterialView?
+    private var navigationBarHiddenState: Bool?
+    /// 根页 ↔ 被压入的二级页切换时通知宿主：底栏被 push 藏起来时同步隐藏。
     var onBarVisibilityChanged: ((Bool) -> Void)?
 
     init(
@@ -214,7 +587,9 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         self.selectTab = selectTab
         super.init(nibName: nil, bundle: nil)
         delegate = self
-        setNavigationBarHidden(true, animated: false)
+        // 一级页固定使用一条紧凑的原生标题栏；正文滚动只改变系统材质，
+        // 不改变导航栏高度，避免 Compose/ UIKit 两套滚动模型互相错位。
+        navigationBar.prefersLargeTitles = false
         installInteractivePopGesture(on: self)
     }
 
@@ -223,11 +598,14 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         fatalError("init(coder:) has not been implemented")
     }
 
-    /// UITabBarController 会一次性装配五个 tab，但只有被选中的那个加载视图：
-    /// Compose 根控制器推迟到这里创建，冷启动不必同时付五份组合与五块 Metal 层的成本。
+    /// Compose 根控制器推迟到这里创建，冷启动不必同时付多份组合与 Metal 层的成本。
     override func viewDidLoad() {
         super.viewDidLoad()
         guard viewControllers.isEmpty else { return }
+        let topEdgeMaterialView = NativeTopEdgeMaterialView(frame: .zero)
+        self.topEdgeMaterialView = topEdgeMaterialView
+        view.insertSubview(topEdgeMaterialView, belowSubview: navigationBar)
+        let binding = NativeChromeBinding()
         let root = MainViewControllerKt.NativeTabRootViewController(
             session: session,
             routeId: tabRouteId,
@@ -237,15 +615,25 @@ private final class TabRootNavigationController: UINavigationController, UINavig
             onCloseNativeRoute: { [weak self] in
                 self?.popViewController(animated: true)
             },
-            // tab 根页面保留页内顶栏（标题与同步胶囊同一条），不向系统栏要标题。
-            onTitleChanged: { _ in },
+            // 一级页的标题与右上胶囊都由系统栏承载：静态标题先放好，动态回报再覆盖。
+            onTitleChanged: { title in
+                DispatchQueue.main.async { binding.apply(title) }
+            },
+            onActionChanged: { action in
+                DispatchQueue.main.async { binding.apply(action: action) }
+            },
             onSelectNativeTab: { [weak self] routeId in
                 self?.selectTab(routeId)
             }
         )
         root.restorationIdentifier = tabRouteId
+        let rootTitle = NativeShellKt.nativeRouteTitle(routeId: tabRouteId)
+        root.navigationItem.title = rootTitle
+        root.navigationItem.largeTitleDisplayMode = .never
         configureComposeHost(root)
+        binding.controller = root
         setViewControllers([root], animated: false)
+        setNativeTitle(rootTitle)
         updateInteractivePopEnabled()
     }
 
@@ -277,23 +665,76 @@ private final class TabRootNavigationController: UINavigationController, UINavig
             }
         )
         destination.restorationIdentifier = routeId
-        destination.navigationItem.title = NativeShellKt.nativeRouteTitle(routeId: routeId)
+        let destinationTitle = NativeShellKt.nativeRouteTitle(routeId: routeId)
+        destination.navigationItem.title = destinationTitle
+        // 被 push 的页也使用行内标题，保持根页与二级页的高度和排版一致。
+        destination.navigationItem.largeTitleDisplayMode = .never
         configureComposeHost(destination)
         binding.controller = destination
+        setNativeTitle(destinationTitle)
         destination.hidesBottomBarWhenPushed = true
         pushViewController(destination, animated: true)
     }
 
     // MARK: - NativeChromeHosting
 
-    /// 一级 tab 根页面、以及没有标题的页面（写信等自绘返回的页）不显示系统栏。
+    func setNativeTitle(_ title: String) {
+        guard !title.isEmpty else {
+            centeredTitleLabel?.text = nil
+            centeredTitleLabel?.isHidden = true
+            return
+        }
+        let label: NativeCenteredNavigationTitle
+        if let centeredTitleLabel {
+            label = centeredTitleLabel
+        } else {
+            label = NativeCenteredNavigationTitle(frame: .zero)
+            label.translatesAutoresizingMaskIntoConstraints = false
+            navigationBar.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.centerXAnchor.constraint(equalTo: navigationBar.centerXAnchor),
+                label.centerYAnchor.constraint(equalTo: navigationBar.centerYAnchor, constant: 1),
+                label.leadingAnchor.constraint(greaterThanOrEqualTo: navigationBar.leadingAnchor, constant: 16),
+                label.trailingAnchor.constraint(lessThanOrEqualTo: navigationBar.trailingAnchor, constant: -16),
+                label.heightAnchor.constraint(lessThanOrEqualToConstant: 44),
+            ])
+            centeredTitleLabel = label
+        }
+        label.text = title
+        label.isHidden = false
+        navigationBar.bringSubviewToFront(label)
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if let topEdgeMaterialView {
+            let barFrame = navigationBar.frame
+            topEdgeMaterialView.frame = CGRect(
+                x: 0,
+                y: barFrame.minY,
+                width: view.bounds.width,
+                height: barFrame.height + 76,
+            )
+            topEdgeMaterialView.isHidden = navigationBar.isHidden
+            view.insertSubview(topEdgeMaterialView, belowSubview: navigationBar)
+        }
+        if let centeredTitleLabel {
+            navigationBar.bringSubviewToFront(centeredTitleLabel)
+        }
+    }
+
+    /// 只有一页例外不显示系统栏：没有标题的页（写信这类自绘返回的页）。一级 tab 根页现在也有标题，
+    /// 所以不再按「是不是栈底」豁免。
     private func navigationBarShouldBeHidden(for viewController: UIViewController) -> Bool {
-        viewController === viewControllers.first || viewController.navigationItem.title?.isEmpty != false
+        viewController.navigationItem.title?.isEmpty != false
     }
 
     func refreshNavigationBarVisibility() {
         guard let top = topViewController else { return }
-        setNavigationBarHidden(navigationBarShouldBeHidden(for: top), animated: true)
+        let shouldHide = navigationBarShouldBeHidden(for: top)
+        guard navigationBarHiddenState != shouldHide else { return }
+        navigationBarHiddenState = shouldHide
+        setNavigationBarHidden(shouldHide, animated: false)
     }
 
     private func updateInteractivePopEnabled() {
@@ -307,7 +748,9 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         willShow viewController: UIViewController,
         animated: Bool
     ) {
-        setNavigationBarHidden(navigationBarShouldBeHidden(for: viewController), animated: animated)
+        let shouldHide = navigationBarShouldBeHidden(for: viewController)
+        navigationBarHiddenState = shouldHide
+        setNavigationBarHidden(shouldHide, animated: animated)
         onBarVisibilityChanged?(viewController === viewControllers.first)
     }
 
@@ -316,6 +759,9 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         didShow viewController: UIViewController,
         animated: Bool
     ) {
+        // A pop does not recreate the root Compose controller, so restore the
+        // single centered label explicitly when UIKit finishes returning to it.
+        setNativeTitle(viewController.navigationItem.title ?? "")
         updateInteractivePopEnabled()
         // 部分系统版本在 didShow 后会把 delegate 重置；每次确认仍由本类接管。
         installInteractivePopGesture(on: navigationController)
@@ -339,7 +785,7 @@ private final class TabRootNavigationController: UINavigationController, UINavig
 
 /// 一级入口的系统玻璃 TabBar。tab 列表来自 Kotlin 的同一份 bottomNavSections，
 /// 两端不会漂移；图标改用 SF Symbols，交给系统做选中态填充与玻璃着色。
-private final class AppTabBarController: UITabBarController, UITabBarControllerDelegate {
+private final class AppTabBarController: UIViewController, UITabBarDelegate {
     private static let symbolNames: [String: String] = [
         "HOME": "house",
         "SCHEDULE": "calendar",
@@ -350,25 +796,45 @@ private final class AppTabBarController: UITabBarController, UITabBarControllerD
     ]
 
     private var tabRouteIds: [String] = []
+    private var pendingItems: [NativeTabItem]
+    private var selectedRouteId: String?
+    private var activeController: TabRootNavigationController?
+    private let nativeTabBar = UITabBar()
     private var tabStudentId: String?
+    /// 玻璃底栏的真实占位高度要推给 Compose：宿主是全出血的，UIKit 不会把 tab bar 算进
+    /// `WindowInsets.navigationBars`，而不可纵向滚动的全览表格（课程表色块概览）必须停在底栏上方。
+    /// 弱引用即可：壳控制器已经强引用同一会话，这里只是取用，不该多持一份。
+    private weak var session: AuthenticatedSession?
+    private var pushedBottomInset: CGFloat = -1
     /// routeId → 该 tab 的导航栈。重配 tab 时按 routeId 复用，避免整条玻璃栏被拆掉、各 tab 返回栈丢失。
     private var controllersByRoute: [String: TabRootNavigationController] = [:]
-    /// 被 5 格上限挤掉的一级入口（物理在线）用的悬浮玻璃圆按钮，贴在底栏右上缘之外。
-    private var floatingEntry: UIVisualEffectView?
-    private var floatingRouteId: String?
-    private let floatingEntrySide: CGFloat = 46
+    private var tabBarVisible = true
 
     init(session: AuthenticatedSession) {
-        super.init(nibName: nil, bundle: nil)
-        delegate = self
-        // M17 步骤 2 的「浮动/最小化 TabBar」在 UIKit 上确有等价 API（`tabBarMinimizeBehavior`，iOS 26+）。
-        // 保持 .automatic 交给系统决定，但不选 .onScrollDown：滚动发生在 Compose 的 Skia 层里，
-        // UIKit 观察不到 scroll view，滚动驱动的收起不会生效。是否真的浮动需手指滑一次确认。
-        if #available(iOS 26.0, *) {
-            tabBarMinimizeBehavior = .automatic
-        }
+        pendingItems = NativeShellKt.nativeTabItems(session: session)
         tabStudentId = session.profile.studentId
-        apply(items: NativeShellKt.nativeTabItems(session: session), session: session)
+        self.session = session
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = UIColor(appBackgroundColor)
+        nativeTabBar.delegate = self
+        nativeTabBar.itemPositioning = .fill
+        nativeTabBar.isTranslucent = true
+        nativeTabBar.autoresizingMask = [.flexibleWidth, .flexibleTopMargin]
+        view.addSubview(nativeTabBar)
+        guard let session else { return }
+        apply(items: pendingItems, session: session)
+#if DEBUG
+        // 取证用：`simctl launch … --tab=SCHEDULE` 直接停在某个一级入口。模拟器没有无头点击的口子，
+        // 而合成鼠标点击会抢用户焦点，所以把「切 tab」做成启动参数（与既有的 --security-smoke 同一套路）。
+        for arg in ProcessInfo.processInfo.arguments where arg.hasPrefix("--tab=") {
+            let routeId = String(arg.dropFirst("--tab=".count))
+            select(routeId: routeId)
+        }
+#endif
     }
 
     @available(*, unavailable)
@@ -377,28 +843,36 @@ private final class AppTabBarController: UITabBarController, UITabBarControllerD
     }
 
     func reloadTabs(session: AuthenticatedSession) {
+        // 登录流程会产出新的会话实例，而底栏高度是挂在实例上的状态：换实例时必须让去重失效，
+        // 否则下一次布局过阈值才推、极端情况下永远不推，课程表又钻回底栏下面。
+        if session !== self.session {
+            self.session = session
+            pushedBottomInset = -1
+        }
         let items = NativeShellKt.nativeTabItems(session: session)
         let routeIds = items.map(\.routeId)
-        // 悬浮入口跟着同一个开关走，但 5 格上限会让底栏组成在开关前后完全一样，
-        // 下面的 guard 因此会直接返回。必须在此之前先同步按钮，否则拨完开关按钮不出现。
-        syncFloatingEntry(session: session)
-        // 登录过程中 Kotlin 会因 profile/偏好写入产出新的会话实例（内部 ScreenModel 仍是同一批对象）。
-        // 只有 tab 组成或账号真的变了才重建，否则整条玻璃 TabBar 会被拆掉、各 tab 返回栈丢失。
-        guard routeIds != tabRouteIds || session.profile.studentId != tabStudentId else { return }
         let accountChanged = session.profile.studentId != tabStudentId
         tabStudentId = session.profile.studentId
-        if accountChanged { controllersByRoute.removeAll() }
+        pendingItems = items
+        guard isViewLoaded else { return }
+        guard routeIds != tabRouteIds || accountChanged else { return }
+        if accountChanged { removeAllControllers() }
         apply(items: items, session: session)
     }
 
-    /// 一级入口整份交给系统 TabBar：5 项上限由 Kotlin 侧 `NATIVE_TAB_BAR_MAX_ITEMS` 统一裁，
-    /// 两端读同一份 `nativeTabItems`，Swift 不再自己过滤（曾在这里过滤过一次，导致设置里的
-    /// 物理在线开关看起来完全没反应）。放不下的入口由「更多」目录承载并被宿主压栈。
+    /// 一级入口整份交给 UIKit 的 UITabBar；不再裁成五项，也不创建系统 More 溢出页。
     private func apply(items: [NativeTabItem], session: AuthenticatedSession) {
-        let selectedRouteId = tabRouteIds.indices.contains(selectedIndex) ? tabRouteIds[selectedIndex] : nil
-        tabRouteIds = items.map(\.routeId)
-        viewControllers = items.map { item in
-            if let existing = controllersByRoute[item.routeId] { return existing }
+        let previousRouteId = selectedRouteId
+        let nextRouteIds = items.map(\.routeId)
+        for (routeId, controller) in controllersByRoute where !nextRouteIds.contains(routeId) {
+            controller.onBarVisibilityChanged = nil
+            controller.willMove(toParent: nil)
+            if controller.isViewLoaded { controller.view.removeFromSuperview() }
+            controller.removeFromParent()
+        }
+        controllersByRoute = controllersByRoute.filter { nextRouteIds.contains($0.key) }
+        tabRouteIds = nextRouteIds
+        for item in items where controllersByRoute[item.routeId] == nil {
             let controller = TabRootNavigationController(
                 session: session,
                 tabRouteId: item.routeId,
@@ -410,133 +884,128 @@ private final class AppTabBarController: UITabBarController, UITabBarControllerD
                 selectedImage: nil
             )
             controller.onBarVisibilityChanged = { [weak self] visible in
-                self?.floatingEntry?.isHidden = !visible
+                self?.setTabBarVisible(visible)
             }
             controllersByRoute[item.routeId] = controller
-            return controller
+            addChild(controller)
+            controller.didMove(toParent: self)
         }
-        controllersByRoute = controllersByRoute.filter { tabRouteIds.contains($0.key) }
-        // 增删入口后停在用户原来那一栏上，只有原选中项被收走时才回首页。
-        if let selectedRouteId, let index = tabRouteIds.firstIndex(of: selectedRouteId) {
-            selectedIndex = index
-        } else {
-            selectedIndex = 0
+        let nativeItems = items.map {
+            UITabBarItem(
+                title: $0.title,
+                image: UIImage(systemName: Self.symbolNames[$0.routeId] ?? "circle"),
+                selectedImage: nil
+            )
         }
-        syncFloatingEntry(session: session)
-    }
-
-    /// 底栏装不下但用户已开启的入口改由悬浮圆按钮承载；关掉开关时按钮随之消失。
-    private func syncFloatingEntry(session: AuthenticatedSession) {
-        guard let item = NativeShellKt.nativeFloatingEntry(session: session) else {
-            floatingEntry?.removeFromSuperview()
-            floatingEntry = nil
-            floatingRouteId = nil
-            return
+        let routeToSelect = previousRouteId.flatMap { nextRouteIds.contains($0) ? $0 : nil }
+            ?? nextRouteIds.first
+        // A preference change can remove the currently selected item (PHYVLAB).
+        // Update the item list and selection in one animation-disabled transaction;
+        // otherwise UITabBar briefly keeps its old selected item and visibly slides
+        // to the removed tab before the fallback route is selected.
+        selectedRouteId = routeToSelect
+        UIView.performWithoutAnimation {
+            // Clear the old item before replacing the collection. UIKit may
+            // otherwise resolve the old index against the shorter list for one
+            // layout pass, which is visible as a PHYVLAB -> fallback jump.
+            nativeTabBar.selectedItem = nil
+            nativeTabBar.setItems(nativeItems, animated: false)
+            if let routeToSelect,
+               let index = nextRouteIds.firstIndex(of: routeToSelect) {
+                nativeTabBar.selectedItem = nativeItems[index]
+            } else {
+                nativeTabBar.selectedItem = nil
+            }
         }
-        guard floatingRouteId != item.routeId else { return }
-        floatingEntry?.removeFromSuperview()
-        let button = makeFloatingEntry(item: item)
-        floatingEntry = button
-        floatingRouteId = item.routeId
-        view.addSubview(button)
-        view.setNeedsLayout()
-    }
-
-    private func makeFloatingEntry(item: NativeTabItem) -> UIVisualEffectView {
-        let effect: UIVisualEffect
-        if #available(iOS 26.0, *) {
-            let glass = UIGlassEffect()
-            glass.isInteractive = true
-            effect = glass
-        } else {
-            effect = UIBlurEffect(style: .systemThinMaterial)
+        if let routeToSelect {
+            select(routeId: routeToSelect)
         }
-        let container = UIVisualEffectView(effect: effect)
-        container.layer.cornerRadius = floatingEntrySide / 2
-        container.layer.cornerCurve = .continuous
-        container.clipsToBounds = true
-        container.isAccessibilityElement = true
-        container.accessibilityLabel = item.title
-        container.accessibilityTraits = .button
-
-        let icon = UIImageView(
-            image: UIImage(systemName: Self.symbolNames[item.routeId] ?? "circle")
-        )
-        icon.tintColor = .secondaryLabel
-        icon.contentMode = .scaleAspectFit
-        icon.isUserInteractionEnabled = false
-        container.contentView.addSubview(icon)
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            icon.centerXAnchor.constraint(equalTo: container.contentView.centerXAnchor),
-            icon.centerYAnchor.constraint(equalTo: container.contentView.centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 21),
-            icon.heightAnchor.constraint(equalToConstant: 21),
-        ])
-        container.addGestureRecognizer(
-            UITapGestureRecognizer(target: self, action: #selector(floatingEntryTapped))
-        )
-        return container
-    }
-
-    @objc private func floatingEntryTapped() {
-        guard let floatingRouteId else { return }
-        select(routeId: floatingRouteId)
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        guard let floatingEntry else { return }
-        // 贴在玻璃条右上缘之外，不遮任何 tab。显隐由 `onBarVisibilityChanged` 决定：
-        // 这里再按 tabBar.frame 猜一次会和 push 动画抢写入，结果按钮留在二级页上不走。
-        let bar = tabBar.frame
-        floatingEntry.frame = CGRect(
-            x: bar.maxX - floatingEntrySide,
-            y: bar.minY - floatingEntrySide - 8,
-            width: floatingEntrySide,
-            height: floatingEntrySide
+        let intrinsicHeight = nativeTabBar.sizeThatFits(
+            CGSize(width: view.bounds.width, height: CGFloat.greatestFiniteMagnitude)
+        ).height
+        let barHeight = tabBarVisible
+            ? max(80, intrinsicHeight + view.safeAreaInsets.bottom)
+            : 0
+        nativeTabBar.frame = CGRect(
+            x: 0,
+            y: view.bounds.height - barHeight,
+            width: view.bounds.width,
+            height: barHeight
         )
+        nativeTabBar.isHidden = !tabBarVisible
+        activeController?.view.frame = view.bounds
+
+        if let session {
+            let inset = barHeight
+            if abs(inset - pushedBottomInset) > 0.5 {
+                pushedBottomInset = inset
+                session.glassTabBarBottomInsetDp = Float(inset)
+            }
+        }
     }
 
-    /// Kotlin 侧「一级入口互跳」转成系统 tab 切换；入口当前不在 tab 上时（例如关闭物理在线后
-    /// 又从别处跳它）改为在当前 tab 上 push，避免点了没有任何反应。
+    private func setTabBarVisible(_ visible: Bool) {
+        guard tabBarVisible != visible else { return }
+        tabBarVisible = visible
+        view.setNeedsLayout()
+    }
+
+    private func removeAllControllers() {
+        for controller in controllersByRoute.values {
+            controller.onBarVisibilityChanged = nil
+            controller.willMove(toParent: nil)
+            if controller.isViewLoaded { controller.view.removeFromSuperview() }
+            controller.removeFromParent()
+        }
+        controllersByRoute.removeAll()
+        activeController = nil
+        selectedRouteId = nil
+    }
+
+    /// Kotlin 侧「一级入口互跳」转成系统 tab 切换；非一级路由仍在当前 tab 的
+    /// UINavigationController 中 push，保持系统返回入口。
     private func select(routeId: String) {
         if let index = tabRouteIds.firstIndex(of: routeId) {
-            selectedIndex = index
+            selectedRouteId = routeId
+            let next = controllersByRoute[routeId]!
+            if activeController !== next {
+                activeController?.view.removeFromSuperview()
+                next.loadViewIfNeeded()
+                next.view.frame = view.bounds
+                view.insertSubview(next.view, belowSubview: nativeTabBar)
+                activeController = next
+            }
+            nativeTabBar.selectedItem = nativeTabBar.items?[index]
+            setTabBarVisible(next.viewControllers.count <= 1)
+            view.setNeedsLayout()
             return
         }
-        (selectedViewController as? TabRootNavigationController)?.openNativeRouteFromHost(routeId)
+        activeController?.loadViewIfNeeded()
+        activeController?.openNativeRouteFromHost(routeId)
     }
 
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        shouldSelect viewController: UIViewController
-    ) -> Bool {
-        // 再点已选中的 tab：回到该 tab 根页面（iOS 标准语义），不重复切页。
-        guard tabBarController.selectedViewController === viewController,
-              let controller = viewController as? UINavigationController,
-              controller.viewControllers.count > 1
-        else { return true }
-        controller.popToRootViewController(animated: true)
-        return false
-    }
-
-    /// 从系统溢出（More）列表里选 tab 时，UIKit 不走正常的视图加载路径，
-    /// 而本壳把 Compose 根推迟到 `viewDidLoad` 才建 —— 结果该 tab 的栈是空的，
-    /// 页面停在溢出列表上，看起来就是「点了没反应」。这里显式催一次加载。
-    func tabBarController(
-        _ tabBarController: UITabBarController,
-        didSelect viewController: UIViewController
-    ) {
-        guard let controller = viewController as? TabRootNavigationController,
-              controller.viewControllers.isEmpty
+    func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
+        guard let index = tabBar.items?.firstIndex(where: { $0 === item }),
+              tabRouteIds.indices.contains(index)
         else { return }
-        controller.loadViewIfNeeded()
+        let routeId = tabRouteIds[index]
+        if selectedRouteId == routeId,
+           let controller = controllersByRoute[routeId],
+           controller.viewControllers.count > 1 {
+            controller.popToRootViewController(animated: true)
+            setTabBarVisible(true)
+        } else {
+            select(routeId: routeId)
+        }
     }
 }
 
 /// 玻璃壳装配入口：登录与会话仍由一个 Compose 宿主管，登录后把一级入口交给
-/// UITabBarController，退出登录时收回。
+/// UIKit tab 容器，退出登录时收回。
 ///
 /// 这里用 child VC 而不是导航栈切换：登录宿主管线必须始终留在窗口里。原生容器一旦
 /// 把它的视图移出窗口，Compose 组合可能被回收，会话来源与 `onAuthenticatedSessionChanged`
@@ -586,7 +1055,7 @@ private final class LiquidGlassShellController: UIViewController {
                 embed(tabs)
                 // 一级入口集合在 Compose 里观测（「物理在线」开关会增减一项），UIKit 收不到快照变化，
                 // 所以由会话上的回调显式回推一次重配，否则拨完开关底栏看起来毫无反应。
-                session!.onNativeTabItemsChanged = { _ in
+                session!.onNativeTabItemsChanged = { [weak self, weak tabs] _ in
                     DispatchQueue.main.async { [weak self, weak tabs] in
                         guard let self, let tabs, let session = self.authenticatedSession else { return }
                         tabs.reloadTabs(session: session)
@@ -618,6 +1087,9 @@ struct ComposeView: UIViewControllerRepresentable {
 #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--security-smoke") {
             return SecuritySmokeViewControllerKt.SecuritySmokeViewController()
+        }
+        if ProcessInfo.processInfo.arguments.contains("--sheet-smoke") {
+            return NativeSheetSmokeViewControllerKt.NativeSheetSmokeViewController()
         }
 #endif
         // iOS 26 起把导航壳交给系统容器，由渲染栈自动应用 Liquid Glass；更低版本原样保留
