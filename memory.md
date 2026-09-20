@@ -49,6 +49,7 @@
 - 本轮最新包又在 iOS 27 Device Hub 复核：考试详情以完整高度显示到“添加到日历”按钮；完美校园弹框显示“打开完美校园”与原生关闭 X，正文左对齐；首页标题与右侧动作处于同一条紧凑原生导航栏中，不再上下错位。
 - 本轮最终标题栏包已在 iOS 27 Device Hub/模拟器复核：课程表在“添加到日历＋同步状态＋刷新”同时存在时标题仍保持屏幕正中，日历图标独立在左侧；首页刷新反馈链、同步 spinner 槽位和动作缓存已落地。课件详情 sheet 已改全高，完整测试集与 Xcode 模拟器构建通过。物理在线上滑/下滑不再改变标题或高度；不可滚动内容不会被手势误触发。作业明文提示仍随列表滚动离开，不再固定遮挡。
 - 本轮按用户最终要求移除顶栏 Blur 与渐变；标题栏不再有额外覆盖层，保留透明原生 UIKit 标题/动作。sheet 内部的系统材质不在本轮移除范围内。
+- 真机 IPA：`xcodebuild -sdk iphoneos -configuration Release CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO` 已成功生成 arm64 `.app`；`/Users/zjg/Downloads/BJTUselfService-Liquid-unsigned-iphoneos-20260921-075608.ipa` 为只含 `Payload/` 的标准 IPA，未嵌入 `embedded.mobileprovision`，`codesign` 验证为未签名。它需要后续使用开发者证书重新签名后才能安装到真机。
 - 本轮没有在 Computer Use 中输入、输出或复制真实账号、密码、验证码；使用的是用户已打开的登录会话。最新包冷启动等待自动登录完成后仍停留在已登录界面，密码自动保存链路已有运行态证据；真实凭据内容本身未被读取或输出。
 - Device Hub 当前可通过 Computer Use 直接键入普通测试文本，但系统键盘捕获/模拟器剪贴板无法安全注入本地凭据；已关闭键盘捕获并清空测试剪贴板。未读取、输出或复制 `MisSecret.md` 内容。
 
