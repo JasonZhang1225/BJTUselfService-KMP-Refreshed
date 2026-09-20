@@ -1,6 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared
 
 import androidx.compose.ui.window.ComposeUIViewController
+import androidx.compose.ui.ExperimentalComposeUiApi
 import platform.CoreGraphics.CGRectMake
 import platform.UIKit.UIViewController
 import platform.WebKit.WKWebView
@@ -95,6 +96,7 @@ fun NativeTabRootViewController(
     onSelectNativeTab = onSelectNativeTab,
 )
 
+@OptIn(ExperimentalComposeUiApi::class)
 private fun createDestinationViewController(
     session: AuthenticatedSession,
     routeId: String,
@@ -109,7 +111,9 @@ private fun createDestinationViewController(
     lateinit var controller: UIViewController
     val homeworkFileGateway = IosHomeworkFileGateway { controller }
     val nativeSheetPresenter = IosNativeSheetPresenter { controller }
-    controller = ComposeUIViewController {
+    controller = ComposeUIViewController(
+        configure = { opaque = false },
+    ) {
         AuthenticatedDestinationApp(
             session = session,
             routeId = routeId,
@@ -128,7 +132,7 @@ private fun createDestinationViewController(
     return controller
 }
 
-@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, ExperimentalComposeUiApi::class)
 private fun createMainViewController(
     nativeNavigationEnabled: Boolean,
     nativeTabBarEnabled: Boolean,
@@ -148,7 +152,9 @@ private fun createMainViewController(
     val systemCalendarGateway = IosSystemCalendarGateway()
     val captchaRecognizer = IosCoreMlCaptchaRecognizer()
     val nativeSheetPresenter = IosNativeSheetPresenter { controller }
-    controller = ComposeUIViewController {
+    controller = ComposeUIViewController(
+        configure = { opaque = false },
+    ) {
         App(
             accountSecurityStore = accountSecurityStore,
             cacheStoreHandle = cacheStoreHandle,

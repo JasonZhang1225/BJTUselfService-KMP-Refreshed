@@ -22,6 +22,7 @@ private let appBackgroundColor = Color(uiColor: appBackgroundUIColor)
 /// Compose 首帧之前 UIKit 会先显示宿主底色；与页面背景保持一致可避免深色模式闪白。
 private func configureComposeHost(_ controller: UIViewController) {
     controller.view.accessibilityElementsHidden = true
+    controller.view.isOpaque = false
     controller.view.backgroundColor = UIColor(appBackgroundColor)
 }
 
@@ -511,7 +512,7 @@ private final class NativeNavigationBarBackgroundView: UIView {
     private let fadeMask = CAGradientLayer()
 
     override init(frame: CGRect) {
-        blurView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+        blurView = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
         super.init(frame: frame)
         backgroundColor = .clear
         isOpaque = false
@@ -520,14 +521,14 @@ private final class NativeNavigationBarBackgroundView: UIView {
         blurView.backgroundColor = .clear
         // Keep the status-bar and title-bar tones aligned while retaining a
         // visible, restrained blur over the content beneath the header.
-        blurView.alpha = 0.58
+        blurView.alpha = 0.78
         addSubview(blurView)
 
         tintView.backgroundColor = .clear
         tintView.isUserInteractionEnabled = false
         tintGradient.startPoint = CGPoint(x: 0.5, y: 0.0)
         tintGradient.endPoint = CGPoint(x: 0.5, y: 1.0)
-        tintGradient.locations = [0.0, 0.20, 0.55, 1.0]
+        tintGradient.locations = [0.0, 0.25, 0.70, 1.0]
         tintGradient.colors = Self.tintColors
         tintView.layer.addSublayer(tintGradient)
         addSubview(tintView)
@@ -548,14 +549,14 @@ private final class NativeNavigationBarBackgroundView: UIView {
     }
 
     private func updateMask() {
-        // Start fading inside the navigation bar itself. Keeping the first
-        // stop opaque until barHeight makes the content appear to hit a
-        // separate overlay at the bar's bottom edge.
-        fadeMask.locations = [0.0, 0.20, 0.55, 1.0]
+        // Start fading inside the navigation bar itself. Keeping a long
+        // opaque plateau would make the content appear to hit a separate
+        // overlay at the bar's bottom edge.
+        fadeMask.locations = [0.0, 0.25, 0.70, 1.0]
         fadeMask.colors = [
-            UIColor.white.withAlphaComponent(0.88).cgColor,
-            UIColor.white.withAlphaComponent(0.70).cgColor,
-            UIColor.white.withAlphaComponent(0.32).cgColor,
+            UIColor.white.withAlphaComponent(0.95).cgColor,
+            UIColor.white.withAlphaComponent(0.85).cgColor,
+            UIColor.white.withAlphaComponent(0.50).cgColor,
             UIColor.clear.cgColor,
         ]
     }
