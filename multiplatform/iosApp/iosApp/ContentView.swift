@@ -513,7 +513,7 @@ private final class NativeCenteredNavigationTitle: UILabel {
 
 /// A native glass edge mask for the compact bar. UIKit's automatic
 /// scroll-edge appearance only knows about UIScrollView; the page body is
-/// Compose/Skia, so the host supplies the same material falloff in UIKit's
+/// Compose/Skia, so the host supplies a short material falloff in UIKit's
 /// view hierarchy instead of painting a Compose gradient over the page.
 private final class NativeTopEdgeMaterialView: UIView {
     private let materialView: UIVisualEffectView
@@ -534,15 +534,18 @@ private final class NativeTopEdgeMaterialView: UIView {
         isUserInteractionEnabled = false
         materialView.isUserInteractionEnabled = false
         materialView.backgroundColor = .clear
+        // Keep the edge material subordinate to the navigation bar itself.
+        // The bar owns the strong glass treatment; this view only softens the
+        // transition into the scrolling content below it.
+        materialView.alpha = 0.72
         addSubview(materialView)
 
         fadeMask.colors = [
             UIColor.white.cgColor,
-            UIColor.white.withAlphaComponent(0.92).cgColor,
-            UIColor.white.withAlphaComponent(0.42).cgColor,
+            UIColor.white.withAlphaComponent(0.55).cgColor,
             UIColor.clear.cgColor,
         ]
-        fadeMask.locations = [0.0, 0.28, 0.68, 1.0]
+        fadeMask.locations = [0.0, 0.36, 1.0]
         fadeMask.startPoint = CGPoint(x: 0.5, y: 0.0)
         fadeMask.endPoint = CGPoint(x: 0.5, y: 1.0)
         materialView.layer.mask = fadeMask
@@ -709,11 +712,16 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         super.viewDidLayoutSubviews()
         if let topEdgeMaterialView {
             let barFrame = navigationBar.frame
+            // This is an edge fade, not a second navigation bar. Keep it
+            // below the bar and only let it overlap by a few points so a
+            // failed/strong material cannot cover the page body.
+            let edgeOverlap: CGFloat = 4
+            let edgeHeight: CGFloat = 44
             topEdgeMaterialView.frame = CGRect(
                 x: 0,
-                y: barFrame.minY,
+                y: barFrame.maxY - edgeOverlap,
                 width: view.bounds.width,
-                height: barFrame.height + 76,
+                height: edgeHeight + edgeOverlap,
             )
             topEdgeMaterialView.isHidden = navigationBar.isHidden
             view.insertSubview(topEdgeMaterialView, belowSubview: navigationBar)
