@@ -24,6 +24,7 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
+import team.bjtuss.bjtuselfservice.shared.network.looksLikeSessionExpired
 
 private const val ARTICLE_PATH = "/ve/back/coursePlatform/message.shtml"
 private const val SEMESTER_PATH = "/ve/back/rp/common/teachCalendar.shtml"
@@ -344,6 +345,10 @@ class SchoolCoursewareRemoteDataSource(
             sessionExpired()
         }
         if (response.statusCode !in 200..299) network()
+        if (response.looksLikeSessionExpired()) {
+            invalidateSession()
+            sessionExpired()
+        }
         if (!endpoint.acceptsApiUrl(response.finalUrl)) {
             invalidateSession()
             sessionExpired()

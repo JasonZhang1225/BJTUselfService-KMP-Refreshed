@@ -64,6 +64,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.plus
 import team.bjtuss.bjtuselfservice.shared.accessibleAlpha
 import team.bjtuss.bjtuselfservice.shared.data.classroomoccupancy.ClassroomOccupancySyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.ClassroomOccupancy
@@ -392,7 +395,12 @@ private fun OccupancyDetail(
             onSelect = { model.selectWeekday(it) },
         )
 
-        when (val query = state.queryState) {
+        if (state.isNonTeachingWeek) {
+            NonTeachingOccupancyState(
+                startDate = state.selectedNonTeachingWeekStart,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
+        } else when (val query = state.queryState) {
             ClassroomOccupancyQueryState.Idle, ClassroomOccupancyQueryState.Loading -> {
                 Column(
                     modifier = Modifier.fillMaxWidth().weight(1f),
@@ -521,8 +529,10 @@ private fun OccupancyWeekPickerSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                val weekSlots = model.weekSlots()
                 FilterChip(
-                    selected = state.selectedWeek == model.currentWeek,
+                    selected = state.selectedNonTeachingWeekStart == null &&
+                        state.selectedWeek == model.currentWeek,
                     onClick = {
                         onDismiss()
                         hostScope.launch { model.selectWeek(model.currentWeek) }
@@ -534,20 +544,54 @@ private fun OccupancyWeekPickerSheet(
                         )
                     },
                 )
-                (MIN_WEEK..MAX_WEEK).forEach { week ->
-                    FilterChip(
-                        selected = state.selectedWeek == week,
-                        onClick = {
-                            onDismiss()
-                            hostScope.launch { model.selectWeek(week) }
-                        },
-                        label = {
-                            WeekChipLabel(
-                                date = model.weekDateOf(week),
-                                primary = "第${week}周",
-                            )
-                        },
-                    )
+                if (weekSlots.isEmpty()) {
+                    (MIN_WEEK..MAX_WEEK).forEach { week ->
+                        FilterChip(
+                            selected = state.selectedNonTeachingWeekStart == null &&
+                                state.selectedWeek == week,
+                            onClick = {
+                                onDismiss()
+                                hostScope.launch { model.selectWeek(week) }
+                            },
+                            label = {
+                                WeekChipLabel(
+                                    date = model.weekDateOf(week),
+                                    primary = "第${week}周",
+                                )
+                            },
+                        )
+                    }
+                } else {
+                    weekSlots.forEach { slot ->
+                        FilterChip(
+                            selected = if (slot.isNonTeachingWeek) {
+                                state.selectedNonTeachingWeekStart == slot.startDate
+                            } else {
+                                state.selectedNonTeachingWeekStart == null &&
+                                    state.selectedWeek == slot.teachingWeek
+                            },
+                            onClick = {
+                                onDismiss()
+                                if (slot.isNonTeachingWeek) {
+                                    model.selectNonTeachingWeek(slot.startDate)
+                                } else {
+                                    slot.teachingWeek?.let { week ->
+                                        hostScope.launch { model.selectWeek(week) }
+                                    }
+                                }
+                            },
+                            label = {
+                                if (slot.isNonTeachingWeek) {
+                                    NonTeachingWeekChipLabel(slot.startDate)
+                                } else {
+                                    WeekChipLabel(
+                                        date = model.weekDateOf(slot.teachingWeek ?: MIN_WEEK),
+                                        primary = "第${slot.teachingWeek}周",
+                                    )
+                                }
+                            },
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(18.dp))
@@ -630,6 +674,26 @@ private fun WeekChipLabel(
     }
 }
 
+@Composable
+private fun NonTeachingWeekChipLabel(startDate: LocalDate) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("非教学周", style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        Text(
+            displayWeekRange(startDate),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
+
+private fun displayWeekRange(startDate: LocalDate): String {
+    val endDate = startDate.plus(6, DateTimeUnit.DAY)
+    return "${displayMonthDay(startDate)}–${displayMonthDay(endDate)}"
+}
+
+private fun displayMonthDay(date: LocalDate): String = "${date.month.ordinal + 1}/${date.day}"
+
 /** 筛选区：周选择箭头 + 可点击周文本（开学期/周弹层）。星期条已拆到详情层。 */
 @Composable
 private fun ClassroomOccupancyFilters(
@@ -646,8 +710,8 @@ private fun ClassroomOccupancyFilters(
         WeekArrow(
             label = "‹",
             contentDescription = "上一周",
-            enabled = state.selectedWeek > MIN_WEEK,
-            onClick = { scope.launch { model.selectWeek(state.selectedWeek - 1) } },
+            enabled = model.canMoveWeekBy(-1),
+            onClick = { scope.launch { model.moveWeekBy(-1) } },
         )
         // 中间整块可点击打开弹层：带下箭头暗示可展开，与两侧箭头同款药丸样式。
         Surface(
@@ -662,12 +726,24 @@ private fun ClassroomOccupancyFilters(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
             ) {
-                Text(
-                    "第 ${state.selectedWeek} 周",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        if (state.isNonTeachingWeek) "非教学周" else "第 ${state.selectedWeek} 周",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                    )
+                    val selectedStart = state.selectedNonTeachingWeekStart
+                        ?: model.weekDateOf(state.selectedWeek)?.startDate
+                    selectedStart?.let {
+                        Text(
+                            displayWeekRange(it),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer.accessibleAlpha(0.78f),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
                 Text(
                     "▾",
                     style = MaterialTheme.typography.titleMedium,
@@ -679,9 +755,42 @@ private fun ClassroomOccupancyFilters(
         WeekArrow(
             label = "›",
             contentDescription = "下一周",
-            enabled = state.selectedWeek < MAX_WEEK,
-            onClick = { scope.launch { model.selectWeek(state.selectedWeek + 1) } },
+            enabled = model.canMoveWeekBy(1),
+            onClick = { scope.launch { model.moveWeekBy(1) } },
         )
+    }
+}
+
+@Composable
+private fun NonTeachingOccupancyState(
+    startDate: LocalDate?,
+    modifier: Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceVariant.accessibleAlpha(0.48f),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text("非教学周", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            startDate?.let {
+                Text(
+                    displayWeekRange(it),
+                    modifier = Modifier.padding(top = 6.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                "校历未安排教学周，教室占用查询不发送虚构周数。",
+                modifier = Modifier.padding(top = 8.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 

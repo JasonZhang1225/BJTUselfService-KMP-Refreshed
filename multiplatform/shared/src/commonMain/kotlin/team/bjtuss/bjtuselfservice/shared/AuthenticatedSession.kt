@@ -58,6 +58,8 @@ class AuthenticatedSession(
     val onLogout: () -> Unit,
     /** 业务会话失效时，在 App 内复用当前内存中的 CAS 凭据恢复。 */
     val reauthenticateSession: (suspend () -> Boolean)? = null,
+    /** 刷新前探测 MIS 会话；返回 false 时由共享刷新协调器触发恢复。 */
+    val probeSession: (suspend () -> Boolean)? = null,
 ) {
     private val appResumeGenerationState = MutableStateFlow(0L)
     private val appResumeMutex = Mutex()

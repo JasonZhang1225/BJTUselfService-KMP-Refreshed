@@ -10,6 +10,7 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.isoDayNumber
+import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
@@ -19,6 +20,7 @@ import team.bjtuss.bjtuselfservice.shared.data.course.CourseScheduleSnapshot
 import team.bjtuss.bjtuselfservice.shared.data.course.CourseScheduleSyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.classroomoccupancy.ClassroomOccupancyRepository
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
+import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.academicWeekSlots
 import team.bjtuss.bjtuselfservice.shared.domain.course.Course
 import team.bjtuss.bjtuselfservice.shared.domain.course.coursesForWeek
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeRecorder
@@ -29,6 +31,41 @@ internal const val AUTO_SYNC_MAX_ATTEMPTS = 3
 internal const val AUTO_SYNC_RETRY_DELAY_MILLIS = 700L
 const val COURSE_MAX_WEEK = 30
 internal const val COURSE_OVERVIEW_PAGE_COUNT = COURSE_MAX_WEEK + 1
+
+/** 一张课表分页：第 0 页是全部教学周，后面按校历自然时间轴排列。 */
+internal data class CourseScheduleWeekPage(
+    val teachingWeek: Int? = null,
+    val startDate: LocalDate? = null,
+    val isOverview: Boolean = false,
+) {
+    val isNonTeachingWeek: Boolean
+        get() = !isOverview && teachingWeek == null
+}
+
+/**
+ * 课表分页不再把“教学周编号”当作连续的日历索引。
+ * 校历缺失的自然周会变成独立的非教学周页；没有校历时保留旧的 1..30 兜底。
+ */
+internal fun courseScheduleWeekPages(state: CourseScheduleUiState): List<CourseScheduleWeekPage> {
+    val calendarSlots = academicWeekSlots(state.academicWeeks, COURSE_MAX_WEEK)
+    val pages = if (calendarSlots.isEmpty()) {
+        (1..COURSE_MAX_WEEK).map { CourseScheduleWeekPage(teachingWeek = it) }
+    } else {
+        calendarSlots.map { slot ->
+            CourseScheduleWeekPage(
+                teachingWeek = slot.teachingWeek,
+                startDate = slot.startDate,
+            )
+        }
+    }.toMutableList()
+    state.selectedNonTeachingWeekStart?.let { startDate ->
+        if (pages.none { it.isNonTeachingWeek && it.startDate == startDate }) {
+            pages += CourseScheduleWeekPage(startDate = startDate)
+            pages.sortWith(compareBy<CourseScheduleWeekPage> { it.startDate == null }.thenBy { it.startDate })
+        }
+    }
+    return listOf(CourseScheduleWeekPage(isOverview = true)) + pages
+}
 
 /** 概览 page 0 固定对应“全部教学周”，page 1..30 与教学周编号相同。 */
 internal fun overviewPageForWeek(week: Int): Int {
@@ -161,6 +198,8 @@ data class CourseScheduleUiState(
     val todayDate: LocalDate? = null,
     val selectedDate: LocalDate? = null,
     val dateOutsideTeachingWeeks: Boolean = false,
+    /** 当前分页落在校历补出的非教学自然周时使用；0 周仍保留“全部教学周”语义。 */
+    val selectedNonTeachingWeekStart: LocalDate? = null,
 ) {
     val scheduleCourses: List<Course>
         get() = courses.filter { course ->
@@ -168,7 +207,14 @@ data class CourseScheduleUiState(
         }
 
     val visibleCourses: List<Course>
-        get() = if (dateOutsideTeachingWeeks) emptyList() else coursesForWeek(scheduleCourses, selectedWeek)
+        get() = if (dateOutsideTeachingWeeks || selectedNonTeachingWeekStart != null) {
+            emptyList()
+        } else {
+            coursesForWeek(scheduleCourses, selectedWeek)
+        }
+
+    val isNonTeachingWeek: Boolean
+        get() = dateOutsideTeachingWeeks || selectedNonTeachingWeekStart != null
 
     val selectedCourse: Course?
         get() = courses.firstOrNull { it.id == selectedCourseId }
@@ -331,6 +377,7 @@ class CourseScheduleScreenModel(
                 ?.startDate
                 ?.plus(current.selectedDay, DateTimeUnit.DAY),
             dateOutsideTeachingWeeks = false,
+            selectedNonTeachingWeekStart = null,
         )
     }
 
@@ -343,14 +390,55 @@ class CourseScheduleScreenModel(
             selectedCourseId = null,
             selectedDate = current.dateFor(week, current.selectedDay),
             dateOutsideTeachingWeeks = false,
+            selectedNonTeachingWeekStart = null,
+        )
+    }
+
+    fun selectNonTeachingWeek(startDate: LocalDate) {
+        val current = mutableState.value
+        mutableState.value = current.copy(
+            selectedWeek = 0,
+            followCurrentWeek = false,
+            selectedCourseId = null,
+            selectedDate = startDate,
+            dateOutsideTeachingWeeks = false,
+            selectedNonTeachingWeekStart = startDate,
         )
     }
 
     /** 桌面按钮/触摸板必须基于最新状态原子递进，不能使用 Modifier 首次组合时捕获的旧周数。 */
     fun moveWeekBy(offset: Int) {
         if (offset !in setOf(-1, 1)) return
-        val target = (mutableState.value.selectedWeek + offset).coerceIn(0, COURSE_MAX_WEEK)
-        selectWeek(target)
+        val current = mutableState.value
+        val pages = courseScheduleWeekPages(current)
+        val currentPage = when {
+            current.selectedNonTeachingWeekStart != null -> pages.indexOfFirst {
+                it.isNonTeachingWeek && it.startDate == current.selectedNonTeachingWeekStart
+            }
+            current.selectedWeek == 0 -> 0
+            else -> pages.indexOfFirst { it.teachingWeek == current.selectedWeek }
+        }.takeIf { it >= 0 } ?: 0
+        val targetPage = (currentPage + offset).coerceIn(0, pages.lastIndex)
+        val page = pages[targetPage]
+        when {
+            page.isOverview -> selectWeek(0)
+            page.isNonTeachingWeek -> page.startDate?.let(::selectNonTeachingWeek)
+            else -> page.teachingWeek?.let(::selectWeek)
+        }
+    }
+
+    fun canMoveWeekBy(offset: Int): Boolean {
+        if (offset !in setOf(-1, 1)) return false
+        val current = mutableState.value
+        val pages = courseScheduleWeekPages(current)
+        val currentPage = when {
+            current.selectedNonTeachingWeekStart != null -> pages.indexOfFirst {
+                it.isNonTeachingWeek && it.startDate == current.selectedNonTeachingWeekStart
+            }
+            current.selectedWeek == 0 -> 0
+            else -> pages.indexOfFirst { it.teachingWeek == current.selectedWeek }
+        }.takeIf { it >= 0 } ?: 0
+        return currentPage + offset in pages.indices
     }
 
     fun selectDay(day: Int) {
@@ -386,6 +474,7 @@ class CourseScheduleScreenModel(
             Triple(type, mapping, week)
         }.firstOrNull()
         mutableState.value = if (destination == null) {
+            val monday = date.minus(date.dayOfWeek.isoDayNumber - 1, DateTimeUnit.DAY)
             current.copy(
                 selectedWeek = 0,
                 selectedDay = date.dayOfWeek.isoDayNumber - 1,
@@ -393,6 +482,7 @@ class CourseScheduleScreenModel(
                 dateOutsideTeachingWeeks = true,
                 followCurrentWeek = false,
                 selectedCourseId = null,
+                selectedNonTeachingWeekStart = monday,
             )
         } else {
             val (scheduleType, mapping, week) = destination
@@ -406,6 +496,7 @@ class CourseScheduleScreenModel(
                 selectedCourseId = null,
                 calendarSemesterLabel = mapping.semesterLabel,
                 academicWeeks = mapping.weeks,
+                selectedNonTeachingWeekStart = null,
             )
         }
     }
@@ -451,6 +542,10 @@ class CourseScheduleScreenModel(
                 } else {
                     current.selectedWeek
                 }
+                val currentWeekStart = today.minus(
+                    today.dayOfWeek.isoDayNumber - 1,
+                    DateTimeUnit.DAY,
+                )
                 if (calendarCurrentWeek != null && calendarCurrentWeek != current.currentWeek) {
                     repository.reconcileCurrentWeek(calendarCurrentWeek)
                 }
@@ -461,6 +556,12 @@ class CourseScheduleScreenModel(
                     } }
                     ?: weeks.firstOrNull { it.week == effectiveSelectedWeek }?.startDate
                         ?.plus(current.selectedDay, DateTimeUnit.DAY)
+                    ?: if (followCalendarCurrentWeek && currentCalendarAvailable && calendarCurrentWeek == null) {
+                        today
+                    } else {
+                        current.selectedNonTeachingWeekStart
+                            ?.let { current.selectedDate ?: it }
+                    }
                 mutableState.value = current.copy(
                     calendarSemesterLabel = selectedCalendar?.semesterLabel,
                     academicWeeks = weeks,
@@ -473,6 +574,13 @@ class CourseScheduleScreenModel(
                     isCalendarLoading = false,
                     todayDate = today,
                     selectedDate = selectedDate,
+                    selectedNonTeachingWeekStart = if (
+                        followCalendarCurrentWeek && currentCalendarAvailable && calendarCurrentWeek == null
+                    ) {
+                        currentWeekStart
+                    } else {
+                        current.selectedNonTeachingWeekStart
+                    },
                 )
                 calendarLoaded = calendarMappings.isNotEmpty()
             } catch (error: kotlinx.coroutines.CancellationException) {
@@ -537,6 +645,7 @@ class CourseScheduleScreenModel(
                 effectiveCurrentWeek = effectiveCurrentWeek,
             )
         val selectedWeek = if (shouldApplyCurrentWeek) effectiveCurrentWeek else current.selectedWeek
+        val currentWeekStart = today.minus(today.dayOfWeek.isoDayNumber - 1, DateTimeUnit.DAY)
         if (
             calendarValidationEnabled && effectiveCurrentWeek != snapshot.currentWeek
         ) {
@@ -560,9 +669,16 @@ class CourseScheduleScreenModel(
             failure = failure,
             todayDate = today,
             selectedDate = if (shouldApplyCurrentWeek) {
-                current.dateFor(effectiveCurrentWeek, current.selectedDay)
+                if (effectiveCurrentWeek == 0) today else current.dateFor(effectiveCurrentWeek, current.selectedDay)
             } else {
                 current.selectedDate
+            },
+            selectedNonTeachingWeekStart = if (shouldApplyCurrentWeek && effectiveCurrentWeek == 0) {
+                currentWeekStart
+            } else if (shouldApplyCurrentWeek) {
+                null
+            } else {
+                current.selectedNonTeachingWeekStart
             },
         )
     }

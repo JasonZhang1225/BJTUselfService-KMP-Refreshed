@@ -55,6 +55,34 @@ class SessionRefreshCoordinatorTest {
         assertEquals(1, operationCount)
         assertEquals(2, authenticationCount)
     }
+
+    @Test
+    fun preflightReauthenticatesBeforeTheFirstRefreshRequest() = runSuspend {
+        val events = mutableListOf<String>()
+        var probeCount = 0
+        var authenticationCount = 0
+        val coordinator = SessionRefreshCoordinator(
+            reauthenticate = {
+                events += "reauthenticate"
+                authenticationCount += 1
+                true
+            },
+            probeSession = {
+                events += "probe"
+                probeCount += 1
+                false
+            },
+        )
+
+        coordinator.run(
+            operation = { events += "operation" },
+            sessionExpired = { false },
+        )
+
+        assertEquals(listOf("probe", "reauthenticate", "operation"), events)
+        assertEquals(1, probeCount)
+        assertEquals(1, authenticationCount)
+    }
 }
 
 private fun runSuspend(block: suspend () -> Unit) {

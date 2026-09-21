@@ -1,19 +1,22 @@
 # BJTUselfService KMP 实时工作记忆
 
-> 最后更新：2026-09-21（Liquid 分支，本轮移除顶栏 Blur 与渐变）
+> 最后更新：2026-09-21（Liquid 分支，iOS 收口并准备 1.7.8-Liquid 跨平台包）
 > 当前分支：`Liquid`，HEAD 为本轮“基本完成”标记提交（未推送远端；具体短哈希以 `git log -1` 为准）。
+> 当前工作区在该提交后有“同步状态面板”未提交调整；本轮仅完成本地验证，未重新打包，也未标记为发布就绪。
 > `history_full.md` 是只读历史归档；本文件只记录当前事实、未决事项和下一步，不重复历史细节。
 
 ## 当前目标
 
 - 收口 Liquid 液态玻璃分支：真实 UIKit sheet、登录页原生导航栏动作、物理在线一级 tab、顶栏 scroll-edge 过渡。
+- Liquid 分支 iOS 主线已按用户要求标记完成；KMP 全平台应用版本进入 `1.7.8-Liquid`，原生安装器使用数值版 `1.7.8`。
+- 本次交付产物已复制到 `/Users/zjg/Downloads`：`BJTUselfService-1.7.8-Liquid-macOS.dmg`、`BJTUselfService-1.7.8-Liquid-Android-arm64-v8a-debug.apk`、`BJTUselfService-1.7.8-Liquid-iOS-unsigned.ipa`。
 - 纠正 Memory 中把旧方案写成现状的问题；不要把未做真人交互验证的内容写成已验收。
 
 ## 当前实现事实
 
 - **iOS sheet**：`feature/shell/AppleSheet.kt` 在 iOS 通过 `LocalNativeSheetPresenter` 把 Compose 内容交给 `IosNativeSheetPresenter`；`UIKitSheetBridge.h/.def` 调用真实 `UISheetPresentationController` 的 page sheet、medium/large detent、系统 grabber 和交互式 dismiss。Compose `ModalBottomSheet` 只保留 Android/桌面回退。
 - **sheet 材质**：Compose root 使用官方 `ComposeUIViewController(configure = { opaque = false })`，不再用默认白色 Metal 画布盖住原生材质；UIKit 的 `UIGlassEffectStyleRegular` 同时用于 detent/background effect 和 sheet `UINavigationController` 根视图的 `UIVisualEffectView`，没有自绘颜色、渐变、圆角或伪玻璃。独立 Compose root 会显式继承当前 Material color scheme、typography 和 shapes，避免深色模式退回默认浅色。标题、确认/取消/关闭动作走 UIKit `UINavigationBar`/`UIBarButtonItem`；默认无标题 sheet 也保留原生关闭按钮，只有完美校园这个明确要求无标题且仅保留主操作的入口设置为隐藏关闭按钮。
-- **同步面板正文**：`HomeSyncDetailsDialog` 使用 full-height 可滚动透明列表和 UIKit 风格分隔线，不再给每个模块套旧的 Material `surfaceVariant` 卡片；全屏同步清单不会被固定高度截断。课表日期选择也改为 `AppleSheetOrAlert`，iOS 不再直接调用 Material `DatePickerDialog`。
+- **同步面板正文**：`HomeSyncDetailsDialog` 统一使用 `AppleSheet`；Android/桌面走 bottom sheet，iOS 走 UIKit 原生 detent。移除顶部并行同步说明和嵌套 `surfaceVariant` 卡片，只保留单一 sheet 表面与分隔线；行高和图标进一步压缩，Android 七个模块无需上下滑动即可完整显示。iOS 六行以内使用 medium detent，启用物理在线产生第七行时自动从 large detent 展开，避免最后一项被裁掉。课表日期选择仍使用 `AppleSheetOrAlert`，iOS 不再直接调用 Material `DatePickerDialog`。
 - **弹窗统一**：`AppleSheet`/`AppleSheetOrAlert` 的 iOS 标题与动作统一由 UIKit 原生导航栏提供；首页完美校园弹框无标题、仅有左侧蓝色“打开完美校园”，校园网充值弹框只有“校园网充值”标题和原生右上角关闭 X。成绩详情、课程详情、考试详情、课件下载、筛选/选择/日历等 sheet 均补齐原生标题并移除重复的正文标题。公共 API 支持可空标题与 `showDismissButton`；非 iOS 的 Material sheet fallback 也渲染同一套标题和操作语义。
 - **弹窗细节**：考试详情 sheet 直接使用 full-height native detent，避免“添加到日历”按钮和最后一行被半屏底部裁掉。完美校园 sheet 保持无标题，但同时提供左侧蓝色“打开完美校园”和右侧原生关闭 X；正文改为全宽、左对齐的动态正文排版，减少窄文本块和无意义留白。
 - **一级页标题栏统一**：Liquid iOS 壳的所有一级 tab 根页（首页、课程表、成绩、作业、物理在线、更多）与二级 push 页都使用稳定的 UIKit 紧凑标题；标题字号统一为动态 21pt 半粗体。`UINavigationItem.title` 继续承担 UIKit 的显隐/语义，但可见标题由导航栏坐标系内唯一的 UIKit 居中标签承载，避免 UIKit 为避让异步右侧动作而把标题挤到左边；标题与动作回调在同一主线程事务中应用。
@@ -23,7 +26,7 @@
 - **弹窗覆盖面**：首页卡片/数据变动、成绩变动、作业上传、邮箱发送确认、物理在线提交/上传、设置清理/更新提示都走 `AppleSheetOrAlert`；非 iOS 保持 Material `AlertDialog` 或统一的 Material sheet fallback。
 - **登录/同步动作**：`AuthenticatedAppShell` 在 native title bar 接管时把 `entryLoggingIn` 也发布为 `NativeBarAction`；Swift `NativeChromeBinding` 使用 UIKit `UIBarButtonItem` 与 SF Symbol，不再使用 Compose 刷新胶囊。忙碌态是原生 `UIActivityIndicatorView`，外包一个无背景、32×32 的 UIKit 按钮，仅用于点击打开同步面板；完成/失败状态用系统语义图标表达，文字仍保留在无障碍标签中。
 - **同步状态**：原生标题栏刷新进行中使用 UIKit `UIActivityIndicatorView`；native title-bar 页面不再绘制 Compose `LinearProgressIndicator`，也不会再同时显示忙碌刷新与旧的“已同步”。
-- **同步状态入口**：忙碌态 spinner 的导航栏按钮用标准 target/action 并保留 intrinsic hit area；Device Hub 运行态已验证在同步过程中点击它可以打开“同步中”面板，面板会显示进行中/已完成/等待同步状态。
+- **同步状态入口**：忙碌态 spinner 的导航栏按钮用标准 target/action 并保留 intrinsic hit area；Device Hub 运行态已验证在同步过程中点击它可以打开“同步中”面板，面板会显示进行中/已完成/等待同步状态。Liquid 原生 Tab 壳由首页宿主启动物理在线自动同步，其他 Tab/二级页只复用同一模型，避免首页长期显示“等待同步”或进入物理在线才首次请求。
 - **密码保存**：登录勾选状态现在会立即同步到安全存储设置；取消勾选立即清除旧凭据。iOS 正式路径仍是 `AppleKeychainCredentialVault`，没有增加明文或 `NSUserDefaults` 密码回退。未签名模拟器访问 Keychain 会返回 `-34018`，这是签名边界，不是载荷编码失败。
 - **密码保存迁移**：`AccountPreferences` 现在能区分“明确关闭”与“旧版本没有记忆标记”。如果旧版本已把凭据写入 Keychain 但没有写标记，启动时会恢复并补写标记；只有明确关闭才清除安全存储。新增迁移回归测试覆盖该路径。
 - **烟测隔离**：此前 DEBUG `--security-smoke` 错用了生产 Keychain service/account 并在结束时清除，可能造成模拟器已保存凭据被测试擦掉；现在生产 store factory 支持隔离的 service/account/preferences key，烟测只清理 synthetic fixture。
@@ -34,11 +37,17 @@
 - **顶栏边缘状态**：Compose 仍可把“内容实际滚到导航栏下方”的布尔状态交给 UIKit，但 Swift 顶栏始终使用透明的 `UINavigationBarAppearance`，不绘制渐变、Blur、alpha mask 或额外背景层，也不改变标题层级或导航栏高度。`prefersLargeTitles = false` 与 `.never` 保持不变，避免 Compose/UIKit 两套滚动模型产生大标题残留空地；不可滚动页面的手势不会改变状态。
 - **顶栏材质**：标题栏只保留原生 UIKit 标题、动作和透明栏本身；`ContentView.swift` 已移除顶栏专用的 `UIVisualEffectView`、`UIBlurEffect`、`CAGradientLayer` 与宿主背景 sibling。主页面和目的地 `ComposeUIViewController` 仍以 `opaque = false` 创建，但这只是让透明栏正确显示页面内容，不代表顶栏有额外材质。
 - **课件详情 sheet**：课件文件详情改为原生大 detent 全高 sheet，正文滚动容器填满可用高度并保留底部安全区；底层“课件下载”导航标题不再与 sheet 标题叠在一起，下载按钮不会被底部截断。
+- **校历空档周位**：`AcademicWeekSlot` 统一把相邻教学周之间的自然周展开为独立的非教学周；课表周数弹层、课程日期跳转摘要、日历导出周范围日期提示，以及教室占用周数弹层/箭头都显示对应日期。教室占用选中非教学周时只显示占位框，不向 `room_view` 发送不存在的教学周编号。
+- **iOS 课表日期与 Pager**：课表“前往日期”在 iOS 使用 UIKit `UIDatePicker`（仍放在现有原生 sheet 内），其它平台保留 Material 日期选择器。课表周 Pager 只监听 `settledPage`，并标记程序滚动目标，切换选课/本学期课表或跳周时不再把中间动画页写回模型造成来回闪烁。
+- **iOS 课表日期 sheet**：日期选择器使用 UIKit `medium` detent，默认只弹出半屏；“今天”通过共享 sheet API 传给 UIKit `UIBarButtonItem`，放在原生导航栏右侧、紧邻“取消”，iOS 不再在原生日历下方绘制 Compose `TextButton`。非 iOS 仍保留 Material 日期选择器和原有“今天”按钮。
 
 ## 已完成的代码验证
 
 - `./gradlew :shared:compileKotlinIosSimulatorArm64 :shared:compileKotlinIosArm64`：通过。
 - `./gradlew :shared:desktopTest`：通过，515 tests；`./gradlew :shared:iosSimulatorArm64Test`：通过，488 tests。
+- 2026-09-21：物理在线自动同步宿主选择逻辑回归测试通过；Java 21 下 `:shared:desktopTest` 成功，iOS Simulator arm64 Debug 构建成功。默认 Java 25.0.1 会触发旧 Kotlin/IntelliJ 解析器兼容性错误，未修改项目工具链。
+- 2026-09-21：校历空档周位扩展到课表周数弹层、日期跳转显示、日历导出起止周日期和教室占用查询；Java 21 下 `:shared:desktopTest`、iOS Simulator arm64 Debug 构建均通过。
+- 2026-09-21：iOS 原生日期选择器与课表 Pager 稳定性修复完成；Java 21 下 `:shared:desktopTest`、iOS Simulator arm64 Debug 构建通过。当前模拟器重新安装 unsigned Debug 包后没有可读取的 Keychain 登录态，实际登录态视觉复现待用户重新登录后确认。
 - Xcode iOS 27 Simulator arm64 构建：通过；本机合法 Apple Development 签名包的安全烟测显示 `SECURITY_SMOKE_PASS`，覆盖隔离 Apple Keychain store 与 `AccountSecurityCoordinator` 的保存/恢复/清除路径。烟测使用独立 service/account/preferences key，不会清除生产登录凭据；未签名包的同一烟测明确显示 `SECURITY_SMOKE_FAIL_CLEAR_-34018`。
 - `./gradlew :shared:desktopTest :shared:iosSimulatorArm64Test`：通过（本轮 53s；桌面/ iOS 测试任务均成功）。
 - 强制重生成 iOS arm64/Simulator cinterop 后，`:shared:compileKotlinIosArm64`、`:shared:desktopTest`、`:shared:iosSimulatorArm64Test` 均通过；Xcode iOS 27 Simulator 构建也通过。
@@ -49,7 +58,13 @@
 - 本轮最新包又在 iOS 27 Device Hub 复核：考试详情以完整高度显示到“添加到日历”按钮；完美校园弹框显示“打开完美校园”与原生关闭 X，正文左对齐；首页标题与右侧动作处于同一条紧凑原生导航栏中，不再上下错位。
 - 本轮最终标题栏包已在 iOS 27 Device Hub/模拟器复核：课程表在“添加到日历＋同步状态＋刷新”同时存在时标题仍保持屏幕正中，日历图标独立在左侧；首页刷新反馈链、同步 spinner 槽位和动作缓存已落地。课件详情 sheet 已改全高，完整测试集与 Xcode 模拟器构建通过。物理在线上滑/下滑不再改变标题或高度；不可滚动内容不会被手势误触发。作业明文提示仍随列表滚动离开，不再固定遮挡。
 - 本轮按用户最终要求移除顶栏 Blur 与渐变；标题栏不再有额外覆盖层，保留透明原生 UIKit 标题/动作。sheet 内部的系统材质不在本轮移除范围内。
-- 真机 IPA：`xcodebuild -sdk iphoneos -configuration Release CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO` 已成功生成 arm64 `.app`；`/Users/zjg/Downloads/BJTUselfService-Liquid-unsigned-iphoneos-20260921-075608.ipa` 为只含 `Payload/` 的标准 IPA，未嵌入 `embedded.mobileprovision`，`codesign` 验证为未签名。它需要后续使用开发者证书重新签名后才能安装到真机。
+- 2026-09-21：日期 sheet 半屏与原生“今天”动作改动后，Java 21 下 `:shared:desktopTest` 通过，iOS Simulator arm64 Debug 构建通过；最新包已用 Apple Development 证书重新签名并安装到 iPhone 17 Pro 模拟器，未安装 unsigned 包。模拟器当前无可读取登录态，日期页视觉仍需登录后点验。
+- 2026-09-21：复查自动登录时确认当前 iPhone 17 Pro 模拟器的 `remember_credentials` 为 `false`；此前登录发生在 unsigned 包，Keychain 保存失败后安全协调器按设计关闭了记忆开关。更换签名身份安装时模拟器也替换了旧 App 容器，旧缓存/会话没有迁移。当前本机没有可用 provisioning profile，Xcode Simulator 仍生成 adhoc 包；手工补 application/team entitlement 会触发 Simulator `Security policy issue`，因此不能把当前模拟器包声称为可验证 Keychain 自动登录。已恢复为可启动的 Apple Development 签名包，未安装 unsigned 包。
+- 真机 IPA：本轮 `xcodebuild -sdk iphoneos -configuration Release CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO` 成功生成 arm64 `.app`；`/Users/zjg/Downloads/BJTUselfService-1.7.8-Liquid-iOS-unsigned.ipa` 为只含 `Payload/` 的标准 IPA，版本 `1.7.8-Liquid`、build `19`，未嵌入 `embedded.mobileprovision`，`codesign` 验证为未签名，需要后续使用开发者证书重新签名后才能安装到真机。
+- 2026-09-21：Android `arm64-v8a` debug APK 构建成功并安装到 `Pixel_10_Pro_XL`（实际 ABI `arm64-v8a`），`dumpsys package` 确认 versionCode `19` / versionName `1.7.8-Liquid`；应用已启动到首页并进入同步面板。x86_64 变体曾因 AVD ABI 不匹配被拒绝，未作为最终交付包。
+- 2026-09-21：同步状态面板改动后，Java 21 下 `:shared:desktopTest :androidApp:assembleDebug` 通过；Android `Pixel_10_Pro_XL` 深色模式实机截图确认七行状态全部可见、无需滚动。iOS 27 iPhone 17 Pro Simulator Debug 构建与 `--sheet-smoke` 通过，深色原生 sheet 确认七行状态完整显示；macOS `--sync-status-smoke` 测试窗口确认单一扁平面板、无冗余说明和嵌套内框。该轮没有重新生成 Downloads 安装包。
+- 2026-09-21：macOS `packageDmg` 构建成功；DMG 可挂载，Bundle ID `team.bjtuss.bjtuselfservice.kmp.macos`、CFBundleVersion `19`、数值 CFBundleShortVersionString `1.7.8`，Apple release metadata 校验和严格 ad-hoc 签名校验通过。
+- 2026-09-21：版本统一改为 `1.7.8-Liquid`（Android/iOS/共享更新检测/桌面应用内显示）；Android/iOS build code 与 macOS packageBuildVersion 统一为 `19`，jpackage 安装器版本保留三段数字 `1.7.8`。
 - 本轮没有在 Computer Use 中输入、输出或复制真实账号、密码、验证码；使用的是用户已打开的登录会话。最新包冷启动等待自动登录完成后仍停留在已登录界面，密码自动保存链路已有运行态证据；真实凭据内容本身未被读取或输出。
 - Device Hub 当前可通过 Computer Use 直接键入普通测试文本，但系统键盘捕获/模拟器剪贴板无法安全注入本地凭据；已关闭键盘捕获并清空测试剪贴板。未读取、输出或复制 `MisSecret.md` 内容。
 

@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -46,6 +48,9 @@ fun AppleSheet(
     confirmLabel: String? = null,
     confirmEnabled: Boolean = true,
     onConfirm: (() -> Unit)? = null,
+    todayLabel: String? = null,
+    todayEnabled: Boolean = true,
+    onToday: (() -> Unit)? = null,
     dismissLabel: String? = null,
     dismissEnabled: Boolean = true,
     showDismissButton: Boolean = true,
@@ -68,16 +73,23 @@ fun AppleSheet(
                 typography = appTypography,
                 shapes = appShapes,
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(if (needsFullHeight) Modifier.fillMaxHeight() else Modifier)
-                        // Native title/action bar occupies the top of a sheet
-                        // navigation controller; keep Compose body below it.
-                        .padding(top = 44.dp)
-                        .navigationBarsPadding(),
-                    content = content,
-                )
+                // ComposeUIViewController is a separate root from the app shell.
+                // MaterialTheme carries the palette, but it does not provide a
+                // LocalContentColor by itself. Without this provider, Text with
+                // an unspecified color falls back to black over the native dark
+                // glass surface.
+                CompositionLocalProvider(LocalContentColor provides appColorScheme.onSurface) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if (needsFullHeight) Modifier.fillMaxHeight() else Modifier)
+                            // Native title/action bar occupies the top of a sheet
+                            // navigation controller; keep Compose body below it.
+                            .padding(top = 44.dp)
+                            .navigationBarsPadding(),
+                        content = content,
+                    )
+                }
             }
         }
         SideEffect {
@@ -88,6 +100,9 @@ fun AppleSheet(
                 confirmLabel = confirmLabel,
                 confirmEnabled = confirmEnabled,
                 onConfirm = onConfirm,
+                todayLabel = todayLabel,
+                todayEnabled = todayEnabled,
+                onToday = onToday,
                 dismissLabel = dismissLabel,
                 dismissEnabled = dismissEnabled,
                 showDismissButton = showDismissButton,
@@ -116,7 +131,9 @@ fun AppleSheet(
         dragHandle = { BottomSheetDefaults.DragHandle() },
         content = {
             Column(modifier = Modifier.fillMaxWidth()) {
-                if (title != null || confirmLabel != null || dismissLabel != null || showDismissButton) {
+                if (title != null || confirmLabel != null || todayLabel != null ||
+                    dismissLabel != null || showDismissButton
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.End,
@@ -134,6 +151,12 @@ fun AppleSheet(
                                 onClick = onConfirm,
                                 enabled = confirmEnabled,
                             ) { Text(confirmLabel) }
+                        }
+                        if (todayLabel != null && onToday != null) {
+                            TextButton(
+                                onClick = onToday,
+                                enabled = todayEnabled,
+                            ) { Text(todayLabel) }
                         }
                         if (dismissLabel != null) {
                             TextButton(
@@ -159,6 +182,9 @@ fun AppleSheetOrAlert(
     confirmLabel: String? = null,
     onConfirm: (() -> Unit)? = null,
     confirmEnabled: Boolean = true,
+    todayLabel: String? = null,
+    todayEnabled: Boolean = true,
+    onToday: (() -> Unit)? = null,
     dismissLabel: String? = null,
     dismissEnabled: Boolean = true,
     showDismissButton: Boolean = true,
@@ -176,6 +202,9 @@ fun AppleSheetOrAlert(
             confirmLabel = confirmLabel,
             confirmEnabled = confirmEnabled,
             onConfirm = onConfirm,
+            todayLabel = todayLabel,
+            todayEnabled = todayEnabled,
+            onToday = onToday,
             dismissLabel = dismissLabel,
             dismissEnabled = dismissEnabled,
             showDismissButton = showDismissButton,

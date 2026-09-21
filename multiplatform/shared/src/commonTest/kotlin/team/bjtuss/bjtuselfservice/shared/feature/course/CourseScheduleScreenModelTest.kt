@@ -316,6 +316,32 @@ class CourseScheduleScreenModelTest {
     }
 
     @Test
+    fun coursePagerKeepsHolidayWeeksBetweenTeachingWeeks() {
+        val state = CourseScheduleUiState(
+            academicWeeks = listOf(
+                week(3, LocalDate(2026, 9, 21)),
+                week(4, LocalDate(2026, 10, 12)),
+            ),
+        )
+
+        val pages = courseScheduleWeekPages(state)
+        assertEquals(
+            listOf(null, 3, null, null, 4),
+            pages.map { if (it.isOverview) null else it.teachingWeek },
+        )
+        assertEquals(
+            listOf(
+                null,
+                LocalDate(2026, 9, 21),
+                LocalDate(2026, 9, 28),
+                LocalDate(2026, 10, 5),
+                LocalDate(2026, 10, 12),
+            ),
+            pages.map { it.startDate },
+        )
+    }
+
+    @Test
     fun firstNetworkSnapshotFollowsCurrentWeekOnce() = runBlocking {
         val repository = FakeRepository(
             loaded = CourseScheduleSnapshot(listOf(course(1, week = 2)), 0),

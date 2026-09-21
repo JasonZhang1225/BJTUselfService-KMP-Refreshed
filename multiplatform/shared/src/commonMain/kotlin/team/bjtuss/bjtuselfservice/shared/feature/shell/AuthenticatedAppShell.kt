@@ -198,6 +198,19 @@ import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeKind
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeDomain
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeRecord
 
+/**
+ * 物理在线的列表和首页日程共用同一个模型，因此自动同步只能由一个稳定的宿主启动。
+ *
+ * 旧的共享壳只有一个 Compose 实例，`forcedRouteId == null` 就足够了。iOS Liquid
+ * 壳则为每个一级 Tab 建一个宿主；它们都会执行这个文件里的副作用，如果只判断
+ * `forcedRouteId != null`，首页也会被排除，物理在线便只会在用户点进页面后才同步。
+ */
+internal fun shouldStartPhyVlabAutoSync(
+    forcedRouteId: String?,
+    nativeTabBarEnabled: Boolean,
+): Boolean = forcedRouteId == null ||
+    (nativeTabBarEnabled && forcedRouteId == AppSection.HOME.name)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AuthenticatedAppShell(
@@ -452,6 +465,7 @@ fun AuthenticatedAppShell(
             }
             val sessionRefresh = SessionRefreshCoordinator(
                 reauthenticate = reauthenticateSession,
+                probeSession = session.probeSession,
                 onRecoveryStateChanged = { sessionRecoveryInProgress = it },
             )
             suspend fun refreshModule(
@@ -468,7 +482,18 @@ fun AuthenticatedAppShell(
                             sessionExpired = { homeModel.state.value.failure == HomeStatusFailure.SESSION_EXPIRED },
                         )
                     }
-                    launch { mailboxModel.refreshUnreadInboxCount() }
+                    launch {
+                        sessionRefresh.run(
+                            operation = { mailboxModel.refreshUnreadInboxCount() },
+                            sessionExpired = {
+                                when (val current = mailboxModel.state.value) {
+                                    MailboxUiState.SessionUnavailable -> true
+                                    is MailboxUiState.Ready -> current.failure == MailboxFailure.SESSION_EXPIRED
+                                    else -> false
+                                }
+                            },
+                        )
+                    }
                     launch {
                         refreshModule(
                             operation = homeworkModel::refresh,
@@ -701,10 +726,25 @@ fun AuthenticatedAppShell(
     // 各 Workspace 只会 initialize(refreshFromNetwork=false) 灌缓存；真正的自动同步只在这里启动。
     LaunchedEffect(gradeModel, entryLoggingIn) {
         if (entryLoggingIn) return@LaunchedEffect
-        gradeModel.initialize(loginSyncPreferences.autoSyncGrades)
+        val sessionRefresh = SessionRefreshCoordinator(
+            reauthenticate = reauthenticateSession,
+            probeSession = session.probeSession,
+            onRecoveryStateChanged = { sessionRecoveryInProgress = it },
+        )
+        if (loginSyncPreferences.autoSyncGrades) {
+            sessionRefresh.run(
+                operation = { gradeModel.initialize(refreshFromNetwork = true) },
+                sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
+            )
+        } else {
+            gradeModel.initialize(refreshFromNetwork = false)
+        }
         if (loginSyncPreferences.autoSyncGrades && gradeModel.state.value.failure != null) {
             delay(LOGIN_SYNC_RETRY_DELAY_MILLIS)
-            gradeModel.refresh()
+            sessionRefresh.run(
+                operation = { gradeModel.refresh() },
+                sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
+            )
         }
         if (gradeModel.state.value.courseTypesByCode == null) {
             gradeModel.ensureProgramCourseTypes()
@@ -717,16 +757,44 @@ fun AuthenticatedAppShell(
         entryLoggingIn,
     ) {
         if (entryLoggingIn) return@LaunchedEffect
+        val sessionRefresh = SessionRefreshCoordinator(
+            reauthenticate = reauthenticateSession,
+            probeSession = session.probeSession,
+            onRecoveryStateChanged = { sessionRecoveryInProgress = it },
+        )
         coroutineScope {
             launch {
                 // 作业自动同步的失败重试在 ScreenModel 内（最多 3 次），与课表一致。
-                homeworkModel.initialize(loginSyncPreferences.autoSyncHomework)
+                if (loginSyncPreferences.autoSyncHomework) {
+                    sessionRefresh.run(
+                        operation = { homeworkModel.initialize(refreshFromNetwork = true) },
+                        sessionExpired = {
+                            homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED
+                        },
+                    )
+                } else {
+                    homeworkModel.initialize(refreshFromNetwork = false)
+                }
             }
             launch {
-                examScheduleModel.initialize(loginSyncPreferences.autoSyncExams)
+                if (loginSyncPreferences.autoSyncExams) {
+                    sessionRefresh.run(
+                        operation = { examScheduleModel.initialize(refreshFromNetwork = true) },
+                        sessionExpired = {
+                            examScheduleModel.state.value.failure == ExamScheduleSyncFailure.SESSION_EXPIRED
+                        },
+                    )
+                } else {
+                    examScheduleModel.initialize(refreshFromNetwork = false)
+                }
                 if (loginSyncPreferences.autoSyncExams && examScheduleModel.state.value.failure != null) {
                     delay(LOGIN_SYNC_RETRY_DELAY_MILLIS)
-                    examScheduleModel.refresh()
+                    sessionRefresh.run(
+                        operation = { examScheduleModel.refresh() },
+                        sessionExpired = {
+                            examScheduleModel.state.value.failure == ExamScheduleSyncFailure.SESSION_EXPIRED
+                        },
+                    )
                 }
             }
             launch {
@@ -735,9 +803,19 @@ fun AuthenticatedAppShell(
                 // 否则 getTimeList/room_view 短暂返回第 1 周时会覆盖缓存的第 26 周。
                 courseScheduleModel.initialize(refreshFromNetwork = false)
                 // M12 校历映射独立于“自动同步课表”偏好，但同样必须等登录完成后再取学期。
-                courseScheduleModel.ensureCalendarLoaded()
+                sessionRefresh.run(
+                    operation = { courseScheduleModel.ensureCalendarLoaded() },
+                    // 校历加载失败本身是静默降级；业务刷新随后会给出明确状态。
+                    sessionExpired = { false },
+                )
                 if (loginSyncPreferences.autoSyncSchedule) {
-                    courseScheduleModel.initialize(refreshFromNetwork = true)
+                    sessionRefresh.run(
+                        operation = { courseScheduleModel.initialize(refreshFromNetwork = true) },
+                        sessionExpired = {
+                            courseScheduleModel.state.value.failure ==
+                                CourseScheduleSyncFailure.SESSION_EXPIRED
+                        },
+                    )
                 }
             }
         }
@@ -752,10 +830,17 @@ fun AuthenticatedAppShell(
 
     // 物理在线总开关关闭时不读取网络；打开后在当前登录会话中主动同步一次。
     // 这样开关同时控制“是否同步”和“是否显示底栏入口”，不会留下隐藏的后台请求。
-    LaunchedEffect(phyVlabModel, phyVlabEnabled, entryLoggingIn, forcedRouteId) {
+    LaunchedEffect(phyVlabModel, phyVlabEnabled, entryLoggingIn, forcedRouteId, nativeTabBarEnabled) {
         // 原生作业详情页复用同一个模型，但不能在这里重新刷新整份课程数据；
         // refresh 成功会清空 selectedActivity，导致详情页退化成“未选择物理在线作业”。
-        if (entryLoggingIn || !phyVlabEnabled || forcedRouteId != null) return@LaunchedEffect
+        if (
+            entryLoggingIn ||
+            !phyVlabEnabled ||
+            !shouldStartPhyVlabAutoSync(
+                forcedRouteId = forcedRouteId,
+                nativeTabBarEnabled = nativeTabBarEnabled,
+            )
+        ) return@LaunchedEffect
         phyVlabModel.initialize(refreshFromNetwork = false)
         phyVlabModel.refresh()
     }

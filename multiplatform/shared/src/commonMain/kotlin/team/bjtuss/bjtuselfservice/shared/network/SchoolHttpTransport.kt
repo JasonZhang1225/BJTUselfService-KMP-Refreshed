@@ -88,6 +88,52 @@ data class SchoolHttpResponse(
         "SchoolHttpResponse(statusCode=$statusCode, finalUrl=${finalUrl.redactedUrl()}, headers=${headers.keys}, body=${body.size} bytes)"
 }
 
+/**
+ * Some school endpoints return HTTP 200 with a login page instead of redirecting.
+ * Callers must classify that response as a lost session before handing it to a
+ * JSON/HTML parser, otherwise the user sees a misleading "response structure changed" error.
+ */
+fun SchoolHttpResponse.looksLikeSessionExpired(): Boolean {
+    if (statusCode == 401 || statusCode == 403) return true
+    val url = finalUrl.lowercase()
+    if (
+        url.contains("/auth/login") ||
+        url.contains("/login/") ||
+        url.contains("cas.bjtu.edu.cn/auth/")
+    ) {
+        return true
+    }
+
+    val bodyText = bodyText().trim().lowercase()
+    if (bodyText.isEmpty()) return false
+    if (listOf(
+            "会话失效",
+            "会话结束",
+            "登录失效",
+            "登录超时",
+            "未登录",
+            "请重新登录",
+            "session expired",
+            "session timeout",
+            "not logged in",
+        ).any(bodyText::contains)
+    ) {
+        return true
+    }
+
+    val looksLikeHtml = bodyText.startsWith("<!doctype html") ||
+        bodyText.startsWith("<html") ||
+        bodyText.startsWith("<form") ||
+        bodyText.contains("<form")
+    val hasCredentialField = bodyText.contains("type=\"password\"") ||
+        bodyText.contains("type='password'") ||
+        bodyText.contains("name=\"password\"") ||
+        bodyText.contains("name='password'") ||
+        bodyText.contains("id=\"id_captcha") ||
+        bodyText.contains("name=\"loginname\"")
+    return looksLikeHtml && hasCredentialField
+}
+
 interface SchoolHttpTransport {
     /**
      * 会话相关请求（CAS / aa / 智慧平台等）。实现应串行化，保护共享 Cookie jar。

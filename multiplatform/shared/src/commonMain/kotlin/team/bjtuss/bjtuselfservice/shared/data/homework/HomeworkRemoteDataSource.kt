@@ -26,6 +26,7 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.network.SchoolMultipartFile
+import team.bjtuss.bjtuselfservice.shared.network.looksLikeSessionExpired
 
 private const val ARTICLE_PATH = "/ve/back/coursePlatform/message.shtml"
 private const val SEMESTER_PATH = "/ve/back/rp/common/teachCalendar.shtml"
@@ -355,6 +356,10 @@ class SchoolHomeworkRemoteDataSource(
                 headers = mapOf("Referer" to "https://mis.bjtu.edu.cn/home/"),
             ),
         )
+        if (module.looksLikeSessionExpired()) {
+            invalidateSmartSession()
+            sessionExpired()
+        }
         // 登录态下 module 28 直接以裸 3xx 指向智慧平台明文入口；Ktor 拒绝
         // HTTPS→HTTP 降级跟随，因此这里逐跳手动跟随 OAuth 链（明文跳限
         // 精确 apiOrigin，HTTPS 跳限 cas/mis 学校主机），直到落地。
@@ -529,6 +534,10 @@ class SchoolHomeworkRemoteDataSource(
             secureChannelUnavailable()
         }
         if (response.statusCode !in 200..299) network()
+        if (response.looksLikeSessionExpired()) {
+            invalidateSmartSession()
+            sessionExpired()
+        }
         if (!endpoint.acceptsApiUrl(response.finalUrl)) {
             invalidateSmartSession()
             sessionExpired()

@@ -13,6 +13,7 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
+import team.bjtuss.bjtuselfservice.shared.network.looksLikeSessionExpired
 
 private const val CALENDAR_PAGE_URL = "https://bksy.bjtu.edu.cn/Admin/SemesterTranPage.aspx?noRemark=1"
 
@@ -146,7 +147,7 @@ class SchoolClassroomOccupancyRemoteDataSource(
         if (response.statusCode !in 200..299) {
             throw ClassroomOccupancyRemoteException(ClassroomOccupancyRemoteFailure.NETWORK)
         }
-        if (!response.finalUrl.startsWith(SchoolEndpoints.AA_ORIGIN)) {
+        if (response.looksLikeSessionExpired() || !response.finalUrl.startsWith(SchoolEndpoints.AA_ORIGIN)) {
             throw ClassroomOccupancyRemoteException(ClassroomOccupancyRemoteFailure.SESSION_EXPIRED)
         }
         return response

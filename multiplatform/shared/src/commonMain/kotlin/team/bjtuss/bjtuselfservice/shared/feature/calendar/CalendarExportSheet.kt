@@ -34,6 +34,7 @@ import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarInstallResult
 import team.bjtuss.bjtuselfservice.shared.domain.calendar.CalendarExportResult
 import team.bjtuss.bjtuselfservice.shared.domain.calendar.generateAcademicCalendarIcs
 import team.bjtuss.bjtuselfservice.shared.domain.calendar.parseExamCalendarTime
+import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.feature.course.COURSE_MAX_WEEK
@@ -87,6 +88,7 @@ fun CourseCalendarExportSheet(
             startWeek = startWeek,
             endWeek = endWeek,
             maxWeek = maxWeek,
+            weekDates = courseState.academicWeeks,
             onStartWeek = { startWeek = it.coerceIn(1, endWeek) },
             onEndWeek = { endWeek = it.coerceIn(startWeek, maxWeek) },
         )
@@ -373,12 +375,27 @@ private fun WeekRangeStepper(
     startWeek: Int,
     endWeek: Int,
     maxWeek: Int,
+    weekDates: List<OccupancyWeekDate>,
     onStartWeek: (Int) -> Unit,
     onEndWeek: (Int) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        WeekStepper("起始", startWeek, startWeek > 1, startWeek < endWeek, onStartWeek)
-        WeekStepper("结束", endWeek, endWeek > startWeek, endWeek < maxWeek, onEndWeek)
+        WeekStepper(
+            label = "起始",
+            week = startWeek,
+            date = weekDates.firstOrNull { it.week == startWeek },
+            canDecrease = startWeek > 1,
+            canIncrease = startWeek < endWeek,
+            onChange = onStartWeek,
+        )
+        WeekStepper(
+            label = "结束",
+            week = endWeek,
+            date = weekDates.firstOrNull { it.week == endWeek },
+            canDecrease = endWeek > startWeek,
+            canIncrease = endWeek < maxWeek,
+            onChange = onEndWeek,
+        )
     }
 }
 
@@ -386,6 +403,7 @@ private fun WeekRangeStepper(
 private fun WeekStepper(
     label: String,
     week: Int,
+    date: OccupancyWeekDate?,
     canDecrease: Boolean,
     canIncrease: Boolean,
     onChange: (Int) -> Unit,
@@ -395,7 +413,16 @@ private fun WeekStepper(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("$label：第 $week 周", style = MaterialTheme.typography.bodyLarge)
+        Column(modifier = Modifier.weight(1f)) {
+            Text("$label：第 $week 周", style = MaterialTheme.typography.bodyLarge)
+            date?.let {
+                Text(
+                    "${it.startMonthDay}-${it.endMonthDay}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(enabled = canDecrease, onClick = { onChange(week - 1) }) { Text("−") }
             OutlinedButton(enabled = canIncrease, onClick = { onChange(week + 1) }) { Text("+") }

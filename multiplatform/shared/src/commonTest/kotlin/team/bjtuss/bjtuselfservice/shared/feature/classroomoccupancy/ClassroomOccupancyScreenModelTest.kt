@@ -1,6 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.classroomoccupancy
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -271,6 +272,47 @@ class ClassroomOccupancyScreenModelTest {
         // 显式切到其它学期后按该学期 label 查找，找不到就返回 null。
         model.selectSemester(OccupancySemester("2026-2027-2-2", "2026-2027-2"))
         assertNull(model.weekDateOf(4))
+    }
+
+    @Test
+    fun calendarGapIsSelectableWithoutSendingAFakeTeachingWeek() = runBlocking {
+        val repository = FakeRepository(
+            semesterOptions = SemesterOptions(
+                selected = OccupancySemester("2026-2027-1-2", "2026-2027-1"),
+                all = listOf(OccupancySemester("2026-2027-1-2", "2026-2027-1")),
+            ),
+            weekDates = mapOf(
+                "2026-2027-1" to listOf(
+                    OccupancyWeekDate(3, "9/21", "9/27", LocalDate(2026, 9, 21)),
+                    OccupancyWeekDate(4, "10/12", "10/18", LocalDate(2026, 10, 12)),
+                ),
+            ),
+            rooms = listOf(sampleRoom()),
+        )
+        val model = ClassroomOccupancyScreenModel(repository, currentWeekProvider = { 3 })
+        model.initialize()
+        model.ensureSemestersLoaded()
+        model.ensureWeekDatesLoaded()
+
+        assertEquals(
+            listOf(3, null, null, 4),
+            model.weekSlots().map { it.teachingWeek },
+        )
+        model.selectBuilding(OCCUPANCY_BUILDINGS[2])
+        model.refresh()
+        val callsBeforeGap = repository.calls.size
+
+        model.selectNonTeachingWeek(LocalDate(2026, 9, 28))
+
+        assertTrue(model.state.value.isNonTeachingWeek)
+        assertEquals(LocalDate(2026, 9, 28), model.state.value.selectedNonTeachingWeekStart)
+        assertEquals(callsBeforeGap, repository.calls.size)
+
+        model.moveWeekBy(1)
+        assertEquals(LocalDate(2026, 10, 5), model.state.value.selectedNonTeachingWeekStart)
+        model.moveWeekBy(1)
+        assertEquals(4, model.state.value.selectedWeek)
+        assertEquals(4, repository.calls.last().first)
     }
 
     @Test

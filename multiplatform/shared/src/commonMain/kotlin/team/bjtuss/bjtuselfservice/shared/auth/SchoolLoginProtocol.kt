@@ -4,6 +4,7 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
 
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
+import team.bjtuss.bjtuselfservice.shared.network.looksLikeSessionExpired
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
 private const val MIS_SSO_URL = "https://mis.bjtu.edu.cn/auth/sso/?next=/"
@@ -40,7 +41,11 @@ class SchoolLoginProtocol(
                 headers = mapOf("Referer" to MIS_HOME_URL),
             ),
         )
-        return if (response.finalUrl.matchesEndpoint(MIS_HOME_URL)) {
+        return if (
+            response.statusCode in 200..299 &&
+                response.finalUrl.matchesEndpoint(MIS_HOME_URL) &&
+                !response.looksLikeSessionExpired()
+        ) {
             SessionProbeResult.Active
         } else {
             SessionProbeResult.Missing

@@ -33,10 +33,13 @@ class IosNativeSheetPresenter(
     private var title: String? = null
     private var confirmLabel: String? = null
     private var confirmEnabled: Boolean = true
+    private var todayLabel: String? = null
+    private var todayEnabled: Boolean = true
     private var dismissLabel: String? = null
     private var dismissEnabled: Boolean = true
     private var showDismissButton: Boolean = true
     private var confirmTarget: SheetActionTarget? = null
+    private var todayTarget: SheetActionTarget? = null
     private var dismissTarget: SheetActionTarget? = null
     private var sheetController: UIViewController? = null
     private var sheetDelegate: SheetDelegate? = null
@@ -48,6 +51,9 @@ class IosNativeSheetPresenter(
         confirmLabel: String?,
         confirmEnabled: Boolean,
         onConfirm: (() -> Unit)?,
+        todayLabel: String?,
+        todayEnabled: Boolean,
+        onToday: (() -> Unit)?,
         dismissLabel: String?,
         dismissEnabled: Boolean,
         showDismissButton: Boolean,
@@ -57,10 +63,13 @@ class IosNativeSheetPresenter(
         this.title = title
         this.confirmLabel = confirmLabel
         this.confirmEnabled = confirmEnabled
+        this.todayLabel = todayLabel
+        this.todayEnabled = todayEnabled
         this.dismissLabel = dismissLabel
         this.dismissEnabled = dismissEnabled
         this.showDismissButton = showDismissButton
         confirmTarget = onConfirm?.let(::SheetActionTarget)
+        todayTarget = onToday?.let(::SheetActionTarget)
         dismissTarget = if (showDismissButton) SheetActionTarget(onDismissRequest) else null
         sheetController?.let(::updateNativeHeader)
     }
@@ -84,6 +93,9 @@ class IosNativeSheetPresenter(
             confirmLabel = confirmLabel,
             confirmEnabled = confirmEnabled,
             confirmTarget = confirmTarget,
+            todayLabel = todayLabel,
+            todayEnabled = todayEnabled,
+            todayTarget = todayTarget,
             dismissLabel = dismissLabel,
             dismissEnabled = dismissEnabled,
             dismissTarget = dismissTarget,
@@ -107,6 +119,9 @@ class IosNativeSheetPresenter(
             confirmLabel = confirmLabel,
             confirmEnabled = confirmEnabled,
             confirmTarget = confirmTarget,
+            todayLabel = todayLabel,
+            todayEnabled = todayEnabled,
+            todayTarget = todayTarget,
             dismissLabel = dismissLabel,
             dismissEnabled = dismissEnabled,
             dismissTarget = dismissTarget,
@@ -118,6 +133,7 @@ class IosNativeSheetPresenter(
         sheetController = null
         sheetDelegate = null
         confirmTarget = null
+        todayTarget = null
         dismissTarget = null
         sheet.dismissViewControllerAnimated(flag = true, completion = null)
     }
@@ -126,6 +142,7 @@ class IosNativeSheetPresenter(
         sheetController = null
         sheetDelegate = null
         confirmTarget = null
+        todayTarget = null
         dismissTarget = null
         dismissRequest()
     }

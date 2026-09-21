@@ -10,6 +10,7 @@ import team.bjtuss.bjtuselfservice.shared.auth.CaptchaRecognizer
 import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.auth.SchoolLoginProtocol
 import team.bjtuss.bjtuselfservice.shared.auth.SchoolSessionRecovery
+import team.bjtuss.bjtuselfservice.shared.auth.SessionProbeResult
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
 import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
@@ -277,6 +278,7 @@ internal fun rememberAuthenticatedSession(
         homeworkFileGateway,
         coursewareDirectoryGateway,
         systemCalendarGateway,
+        sessionRecovery,
     ) {
         AuthenticatedSession(
             profile = profile,
@@ -300,6 +302,9 @@ internal fun rememberAuthenticatedSession(
             systemCalendarGateway = systemCalendarGateway,
             onLogout = { onLogout(profile.studentId) },
             reauthenticateSession = sessionRecovery::attempt,
+            probeSession = {
+                loginProtocol.checkSession() is SessionProbeResult.Active
+            },
         )
     }
     // 登录完成只更新可观察状态，不换会话实例：M17 原生壳按会话实例装配一级入口，

@@ -31,10 +31,24 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
 import team.bjtuss.bjtuselfservice.shared.security.createDesktopAccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.system.DesktopWindowHandle
 import team.bjtuss.bjtuselfservice.shared.system.DesktopWindowLifecycle
+import team.bjtuss.bjtuselfservice.shared.DesktopSyncStatusSmoke
 
 private const val CAPTCHA_VERIFICATION_ARGUMENT = "--verify-captcha-model="
+private const val SYNC_STATUS_SMOKE_ARGUMENT = "--sync-status-smoke"
 
 fun main(args: Array<String>) {
+    if (SYNC_STATUS_SMOKE_ARGUMENT in args) {
+        application {
+            Window(
+                onCloseRequest = { exitApplication() },
+                title = "同步状态 · 本地测试",
+                state = rememberWindowState(width = 1080.dp, height = 720.dp),
+            ) {
+                DesktopSyncStatusSmoke()
+            }
+        }
+        return
+    }
     val captchaRecognizer = DesktopCoreMlCaptchaRecognizer()
     args.firstOrNull { it.startsWith(CAPTCHA_VERIFICATION_ARGUMENT) }?.let { argument ->
         val image = File(argument.removePrefix(CAPTCHA_VERIFICATION_ARGUMENT))

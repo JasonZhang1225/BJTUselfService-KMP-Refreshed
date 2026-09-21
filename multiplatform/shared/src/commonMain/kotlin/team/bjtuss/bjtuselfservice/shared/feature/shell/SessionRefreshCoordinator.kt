@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.withLock
  */
 internal class SessionRefreshCoordinator(
     private val reauthenticate: (suspend () -> Boolean)?,
+    private val probeSession: (suspend () -> Boolean)? = null,
     private val onRecoveryStateChanged: (Boolean) -> Unit = {},
     private val maxRecoveryAttempts: Int = 2,
 ) {
@@ -22,11 +23,18 @@ internal class SessionRefreshCoordinator(
     private val mutex = Mutex()
     private var recoveryAttempts = 0
     private var recoverySucceeded = false
+    private var preflightResult: Boolean? = null
 
     suspend fun run(
         operation: suspend () -> Unit,
         sessionExpired: () -> Boolean,
     ) {
+        // A long-idle app can still have cached page state while the server-side
+        // cookie is gone. Probe once per refresh batch before any module request;
+        // the existing post-operation check remains the race-condition fallback.
+        // Let the module publish its normal SESSION_EXPIRED state when recovery
+        // itself failed, instead of silently doing nothing on the current page.
+        ensureSessionBeforeOperation()
         operation()
         if (!sessionExpired()) return
 
@@ -35,6 +43,27 @@ internal class SessionRefreshCoordinator(
                 operation()
                 if (!sessionExpired()) return
             }
+        }
+    }
+
+    private suspend fun ensureSessionBeforeOperation() {
+        val probe = probeSession ?: return
+        val result = mutex.withLock {
+            preflightResult ?: try {
+                probe().also { preflightResult = it }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // A probe timeout is not proof of an expired session; let the
+                // actual module request classify a transient network outage.
+                null
+            }
+        }
+        if (result != false) return
+
+        val recovered = attemptRecovery()
+        if (recovered) {
+            mutex.withLock { preflightResult = true }
         }
     }
 

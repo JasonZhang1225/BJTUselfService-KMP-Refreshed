@@ -152,6 +152,7 @@ private final class NativeChromeBinding {
     private var lastScrollEdgeState: Bool?
     private var retainedActionTargets: [NativeBarActionTarget] = []
     private var actionTargets: [NativeBarActionRole: NativeBarActionTarget] = [:]
+    private var actionButtons: [NativeBarActionRole: NativeBarIconButton] = [:]
     private var lastActionLayoutKey: NativeBarActionLayoutKey?
     private var pendingTitle: String?
     private var pendingAction: NativeBarAction?
@@ -210,7 +211,7 @@ private final class NativeChromeBinding {
         enabled: Bool = true,
     ) -> UIBarButtonItem {
         let button = NativeBarIconButton(symbolName: symbolName)
-        button.isEnabled = enabled
+        button.setVisualEnabled(enabled)
         if let onClick {
             let target = makeActionTarget(role: role, onInvoke: onClick)
             button.addTarget(
@@ -220,7 +221,47 @@ private final class NativeChromeBinding {
             )
         }
         button.accessibilityLabel = title
-        return UIBarButtonItem(customView: button)
+        actionButtons[role] = button
+        let item = UIBarButtonItem(customView: button)
+        if #available(iOS 26.0, *) {
+            // Let UIKit draw the one native glass surface around this item.
+            // The custom view contains only the icon; a second .glass() layer
+            // would make calendar/actions look like nested capsules.
+            item.sharesBackground = false
+        }
+        return item
+    }
+
+    private func fixedActionSpacing() -> UIBarButtonItem {
+        let item = UIBarButtonItem(barButtonSystemItem: .fixedSpace, target: nil, action: nil)
+        item.width = 8
+        return item
+    }
+
+    private func spinnerBarItem(title: String) -> UIBarButtonItem {
+        let button = NativeSpinnerButton(type: .system)
+        button.accessibilityLabel = title
+        button.accessibilityValue = "进行中"
+        button.isEnabled = false
+        button.alpha = 0.72
+
+        let spinner = UIActivityIndicatorView(style: .medium)
+        spinner.color = .secondaryLabel
+        spinner.startAnimating()
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        button.addSubview(spinner)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: button.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+            spinner.widthAnchor.constraint(equalToConstant: 20),
+            spinner.heightAnchor.constraint(equalToConstant: 20),
+        ])
+
+        let item = UIBarButtonItem(customView: button)
+        if #available(iOS 26.0, *) {
+            item.sharesBackground = false
+        }
+        return item
     }
 
     private func makeActionTarget(
@@ -238,6 +279,15 @@ private final class NativeChromeBinding {
         actionTargets[.status]?.update(action.onStatusClick)
         actionTargets[.extra]?.update(action.onExtraClick)
         actionTargets[.spinner]?.update(action.onStatusClick)
+    }
+
+    private func updateActionVisuals(_ action: NativeBarAction) {
+        actionButtons[.status]?.update(
+            symbolName: symbolName(for: action.status, kind: .status),
+            accessibilityLabel: action.status,
+        )
+        actionButtons[.refresh]?.accessibilityLabel = action.label
+        actionButtons[.extra]?.accessibilityLabel = action.extraLabel
     }
 
     private func symbolName(for label: String, kind: NativeBarActionItemKind) -> String {
@@ -265,10 +315,13 @@ private final class NativeChromeBinding {
         guard let action else {
             retainedActionTargets.removeAll()
             actionTargets.removeAll()
+            actionButtons.removeAll()
             lastActionLayoutKey = nil
-            controller.navigationItem.leftBarButtonItems = nil
-            controller.navigationItem.leftItemsSupplementBackButton = false
-            controller.navigationItem.rightBarButtonItems = nil
+            UIView.performWithoutAnimation {
+                controller.navigationItem.leftBarButtonItems = nil
+                controller.navigationItem.leftItemsSupplementBackButton = false
+                controller.navigationItem.rightBarButtonItems = nil
+            }
             apply(scrollEdge: false)
             return
         }
@@ -277,67 +330,50 @@ private final class NativeChromeBinding {
             // The only expected change here is the scroll-edge material or a
             // freshly captured Kotlin callback. Keep every UIKit view alive.
             updateActionTargets(action)
+            updateActionVisuals(action)
             apply(scrollEdge: action.scrolledUnder)
             return
         }
         lastActionLayoutKey = layoutKey
         retainedActionTargets.removeAll()
         actionTargets.removeAll()
+        actionButtons.removeAll()
         var items: [UIBarButtonItem] = []
         var leftItems: [UIBarButtonItem] = []
-        if action.busy {
-            // Busy feedback belongs to the native bar. A text item saying
-            // “刷新中” plus a Compose progress bar duplicates the same state and
-            // makes the page feel like two toolbars are fighting each other.
-            let statusLabel = action.status.isEmpty ? action.label : action.status
-            // Busy feedback is one compact native slot. Keeping the status text
-            // in accessibility rather than adding another wide text slot leaves
-            // enough room for the centered title even when a page also exposes
-            // a calendar/action button.
-            let button = NativeSpinnerButton(type: .system)
-            button.accessibilityLabel = statusLabel
-            button.accessibilityValue = "进行中"
-            let spinner = UIActivityIndicatorView(style: .medium)
-            spinner.color = .secondaryLabel
-            spinner.startAnimating()
-            if let onStatusClick = action.onStatusClick {
-                let target = makeActionTarget(role: .spinner, onInvoke: onStatusClick)
-                button.addTarget(
-                    target,
-                    action: #selector(NativeBarActionTarget.invoke(_:)),
-                    for: .touchUpInside,
-                )
-            }
-            spinner.translatesAutoresizingMaskIntoConstraints = false
-            button.addSubview(spinner)
-            NSLayoutConstraint.activate([
-                spinner.centerXAnchor.constraint(equalTo: button.centerXAnchor),
-                spinner.centerYAnchor.constraint(equalTo: button.centerYAnchor),
-                spinner.widthAnchor.constraint(equalToConstant: 20),
-                spinner.heightAnchor.constraint(equalToConstant: 20),
-            ])
-            items.append(UIBarButtonItem(customView: button))
-        } else if action.canRefresh {
-            items.append(
-                iconBarItem(
+        // Keep the same two-circle geometry while a background sync is running.
+        // Only the trailing circle changes from refresh icon to spinner, so an
+        // initial auto-sync cannot look like a second refresh or a toolbar swap.
+        let refreshItem = action.canRefresh
+            ? (action.busy
+                ? spinnerBarItem(title: action.label)
+                : iconBarItem(
                     title: action.label,
                     symbolName: symbolName(for: action.label, kind: .refresh),
                     role: .refresh,
                     onClick: action.onClick,
                 )
-            )
-        }
-        // UIKit 把 rightBarButtonItems 的第 0 项放在最右边：主操作（刷新）靠右，状态图标在它左边。
-        if !action.busy && !action.status.isEmpty {
-            items.append(
-                iconBarItem(
-                    title: action.status,
-                    symbolName: symbolName(for: action.status, kind: .status),
-                    role: .status,
-                    onClick: action.onStatusClick,
-                    enabled: action.onStatusClick != nil,
                 )
+            : nil
+        let statusItem = action.status.isEmpty
+            ? nil
+            : iconBarItem(
+                title: action.status,
+                symbolName: symbolName(for: action.status, kind: .status),
+                role: .status,
+                onClick: action.onStatusClick,
+                enabled: action.onStatusClick != nil,
             )
+
+        if let statusItem, let refreshItem {
+            // rightBarButtonItems is laid out from index 0 at the trailing
+            // edge, so refresh is first and status follows after a fixed gap.
+            items.append(refreshItem)
+            items.append(fixedActionSpacing())
+            items.append(statusItem)
+        } else if let statusItem {
+            items.append(statusItem)
+        } else if let refreshItem {
+            items.append(refreshItem)
         }
         if let extraLabel = action.extraLabel, let onExtraClick = action.onExtraClick {
             leftItems.append(
@@ -349,9 +385,11 @@ private final class NativeChromeBinding {
                 )
             )
         }
-        controller.navigationItem.leftItemsSupplementBackButton = !leftItems.isEmpty
-        controller.navigationItem.leftBarButtonItems = leftItems.isEmpty ? nil : leftItems
-        controller.navigationItem.rightBarButtonItems = items.isEmpty ? nil : items
+        UIView.performWithoutAnimation {
+            controller.navigationItem.leftItemsSupplementBackButton = !leftItems.isEmpty
+            controller.navigationItem.leftBarButtonItems = leftItems.isEmpty ? nil : leftItems
+            controller.navigationItem.rightBarButtonItems = items.isEmpty ? nil : items
+        }
         apply(scrollEdge: action.scrolledUnder)
     }
 
@@ -402,19 +440,17 @@ private enum NativeBarActionRole: Hashable {
 }
 
 private struct NativeBarActionLayoutKey: Equatable {
-    let status: String
+    let hasStatus: Bool
     let canRefresh: Bool
     let busy: Bool
-    let label: String
     let hasStatusAction: Bool
     let extraLabel: String?
     let hasExtraAction: Bool
 
     init(_ action: NativeBarAction) {
-        status = action.status
+        hasStatus = !action.status.isEmpty
         canRefresh = action.canRefresh
         busy = action.busy
-        label = action.label
         hasStatusAction = action.onStatusClick != nil
         extraLabel = action.extraLabel
         hasExtraAction = action.onExtraClick != nil
@@ -446,12 +482,26 @@ private enum NativeBarActionItemKind {
 private final class NativeBarIconButton: UIButton {
     init(symbolName: String) {
         super.init(frame: .zero)
+        update(symbolName: symbolName, accessibilityLabel: nil)
+        setVisualEnabled(true)
+    }
+
+    func update(symbolName: String, accessibilityLabel: String?) {
         let symbolConfiguration = UIImage.SymbolConfiguration(
             pointSize: 18,
             weight: .semibold,
         )
-        setImage(UIImage(systemName: symbolName, withConfiguration: symbolConfiguration), for: .normal)
-        tintColor = .label
+        let image = UIImage(systemName: symbolName, withConfiguration: symbolConfiguration)
+        setImage(image, for: .normal)
+        if let accessibilityLabel {
+            self.accessibilityLabel = accessibilityLabel
+        }
+    }
+
+    func setVisualEnabled(_ enabled: Bool) {
+        isEnabled = enabled
+        alpha = enabled ? 1.0 : 0.46
+        tintColor = enabled ? .label : .secondaryLabel
     }
 
     override var intrinsicContentSize: CGSize {

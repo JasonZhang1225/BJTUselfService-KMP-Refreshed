@@ -18,6 +18,9 @@ static inline void BJTUConfigureNativeSheetHeader(
     NSString *confirmLabel,
     BOOL confirmEnabled,
     id confirmTarget,
+    NSString *todayLabel,
+    BOOL todayEnabled,
+    id todayTarget,
     NSString *dismissLabel,
     BOOL dismissEnabled,
     id dismissTarget
@@ -38,7 +41,8 @@ static inline void BJTUConfigureNativeSheetHeader(
     navigation.view.opaque = NO;
     // Every iOS sheet gets a real UIKit navigation bar so dismissal remains a
     // native close action even when the shared body does not supply a title.
-    BOOL hasNativeHeader = title != nil || confirmLabel != nil || dismissLabel != nil || dismissTarget != nil;
+    BOOL hasNativeHeader = title != nil || confirmLabel != nil || todayLabel != nil ||
+        dismissLabel != nil || dismissTarget != nil;
     [navigation setNavigationBarHidden:!hasNativeHeader animated:NO];
     navigation.navigationBar.prefersLargeTitles = NO;
     navigation.navigationBar.translucent = YES;
@@ -82,15 +86,24 @@ static inline void BJTUConfigureNativeSheetHeader(
         content.navigationItem.leftBarButtonItem = nil;
     }
 
+    NSMutableArray<UIBarButtonItem *> *rightItems = [NSMutableArray array];
+    // UIKit lays out the first right item nearest the trailing edge. Keep
+    // “取消” at the edge and put the native “今天” action immediately before it.
     if (dismissLabel != nil && dismissTarget != nil) {
-        content.navigationItem.rightBarButtonItem = BJTUSheetButton(
-            dismissLabel, UIBarButtonItemStylePlain, dismissEnabled, dismissTarget);
+        [rightItems addObject:BJTUSheetButton(
+            dismissLabel, UIBarButtonItemStylePlain, dismissEnabled, dismissTarget)];
     } else if (hasNativeHeader && dismissTarget != nil) {
-        content.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
-            initWithBarButtonSystemItem:UIBarButtonSystemItemClose target:dismissTarget action:@selector(invoke:)];
-    } else {
-        content.navigationItem.rightBarButtonItem = nil;
+        [rightItems addObject:[[UIBarButtonItem alloc]
+            initWithBarButtonSystemItem:UIBarButtonSystemItemClose
+            target:dismissTarget
+            action:@selector(invoke:)]];
     }
+    if (todayLabel != nil && todayTarget != nil) {
+        [rightItems addObject:BJTUSheetButton(
+            todayLabel, UIBarButtonItemStylePlain, todayEnabled, todayTarget)];
+    }
+    content.navigationItem.rightBarButtonItem = nil;
+    content.navigationItem.rightBarButtonItems = rightItems.count > 0 ? rightItems : nil;
 }
 
 static inline UIViewController *BJTUCreateNativeSheetController(
@@ -99,6 +112,9 @@ static inline UIViewController *BJTUCreateNativeSheetController(
     NSString *confirmLabel,
     BOOL confirmEnabled,
     id confirmTarget,
+    NSString *todayLabel,
+    BOOL todayEnabled,
+    id todayTarget,
     NSString *dismissLabel,
     BOOL dismissEnabled,
     id dismissTarget
@@ -110,6 +126,9 @@ static inline UIViewController *BJTUCreateNativeSheetController(
         confirmLabel,
         confirmEnabled,
         confirmTarget,
+        todayLabel,
+        todayEnabled,
+        todayTarget,
         dismissLabel,
         dismissEnabled,
         dismissTarget

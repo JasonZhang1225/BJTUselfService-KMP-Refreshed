@@ -154,7 +154,7 @@ fun AuthenticatedDestinationApp(
 }
 
 @Composable
-private fun PlatformAppTheme(
+internal fun PlatformAppTheme(
     useDarkTheme: Boolean,
     dynamicColorEnabled: Boolean,
     content: @Composable (effectiveFontScale: Float) -> Unit,

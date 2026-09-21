@@ -58,6 +58,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +82,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import team.bjtuss.bjtuselfservice.shared.accessibleAlpha
+import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.currentPlatform
 import team.bjtuss.bjtuselfservice.shared.data.course.CourseScheduleSyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.course.Course
@@ -141,7 +144,7 @@ fun CourseScheduleWorkspace(
     onDismissCalendarExport: () -> Unit,
     onRefresh: () -> Unit,
     modifier: Modifier,
-) {
+                                        ) {
     var showSchedulePicker by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
     val weekScrollAccumulator = remember { CourseWeekScrollAccumulator() }
@@ -179,14 +182,14 @@ fun CourseScheduleWorkspace(
                         onOpenPicker = { showSchedulePicker = true },
                         onOpenDatePicker = { showDatePicker = true },
                     )
-                    if (state.scheduleCourses.isEmpty()) {
+                    if (state.scheduleCourses.isEmpty() && !state.isNonTeachingWeek) {
                         CourseEmptyState(state.scheduleType, onRefresh)
                     } else {
                         Row(
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
-                            if (state.dateOutsideTeachingWeeks) {
+                            if (state.dateOutsideTeachingWeeks && state.selectedNonTeachingWeekStart == null) {
                                 NonTeachingDateState(state.selectedDate, Modifier.weight(0.65f).fillMaxHeight())
                             } else {
                                 val weekPaneModifier = Modifier
@@ -214,7 +217,8 @@ fun CourseScheduleWorkspace(
                                         // 移动端只保留手指横滑；上一周/下一周按钮只留给宽屏/桌面。
                                         if (!useFingerWeekPager) {
                                             CourseWeekNavigationControls(
-                                                selectedWeek = state.selectedWeek,
+                                                canPrevious = model.canMoveWeekBy(-1),
+                                                canNext = model.canMoveWeekBy(1),
                                                 onPrevious = { model.moveWeekBy(-1) },
                                                 onNext = { model.moveWeekBy(1) },
                                             )
@@ -229,10 +233,17 @@ fun CourseScheduleWorkspace(
                                         )
                                     } else {
                                         AnimatedContent(
-                                            targetState = state.selectedWeek,
+                                                targetState = state.selectedWeek to state.selectedNonTeachingWeekStart,
                                             modifier = Modifier.weight(1f).fillMaxWidth(),
                                             transitionSpec = {
-                                                val movingForward = targetState > initialState
+                                                val targetDate = targetState.second
+                                                val initialDate = initialState.second
+                                                val movingForward = when {
+                                                    targetState.first != initialState.first ->
+                                                        targetState.first > initialState.first
+                                                    else -> targetDate != null &&
+                                                        (initialDate == null || targetDate >= initialDate)
+                                                }
                                                 val pagingSpring = spring<IntOffset>(
                                                     dampingRatio = Spring.DampingRatioNoBouncy,
                                                     stiffness = Spring.StiffnessMediumLow,
@@ -247,15 +258,22 @@ fun CourseScheduleWorkspace(
                                                     ) + fadeOut(tween(140)))
                                             },
                                             label = "desktop-course-week",
-                                        ) { week ->
-                                            WeekGrid(
+                                        ) { (week, nonTeachingStart) ->
+                                            if (nonTeachingStart != null) {
+                                                NonTeachingWeekGrid(
+                                                    startDate = nonTeachingStart,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                )
+                                            } else {
+                                                WeekGrid(
                                                 courses = coursesForWeek(state.scheduleCourses, week),
                                                 courseTypesByCode = courseTypesByCode,
                                                 weekStartDate = state.weekDate(week)?.startDate,
                                                 selectedCourseId = state.selectedCourseId,
                                                 onOpen = model::showCourseDetails,
                                                 modifier = Modifier.fillMaxSize(),
-                                            )
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -266,7 +284,7 @@ fun CourseScheduleWorkspace(
                             )
                         }
                     }
-                } else if (state.scheduleCourses.isEmpty()) {
+                } else if (state.scheduleCourses.isEmpty() && !state.isNonTeachingWeek) {
                     Column(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -353,33 +371,54 @@ fun CourseScheduleWorkspace(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    val weekPages = courseScheduleWeekPages(state)
                     FilterChip(
-                        selected = state.selectedWeek == 0,
+                        selected = state.selectedWeek == 0 && state.selectedNonTeachingWeekStart == null,
                         onClick = {
                             model.selectWeek(0)
                             showSchedulePicker = false
                         },
-                        label = { Text("全部") },
+                        label = { Text("全部教学周") },
                     )
-                    (1..COURSE_MAX_WEEK).forEach { week ->
-                        FilterChip(
-                            selected = state.selectedWeek == week,
-                            onClick = {
-                                model.selectWeek(week)
-                                showSchedulePicker = false
-                            },
-                            label = {
-                                Text(
-                                    if (state.scheduleType == CourseScheduleType.CURRENT &&
-                                        week == state.currentWeek
-                                    ) {
-                                        "第${week}周（当前）"
-                                    } else {
-                                        "第${week}周"
-                                    },
-                                )
-                            },
-                        )
+                    val datedPages = weekPages.filterNot { it.isOverview }
+                    if (datedPages.isEmpty()) {
+                        (1..COURSE_MAX_WEEK).forEach { week ->
+                            FilterChip(
+                                selected = state.selectedWeek == week &&
+                                    state.selectedNonTeachingWeekStart == null,
+                                onClick = {
+                                    model.selectWeek(week)
+                                    showSchedulePicker = false
+                                },
+                                label = { Text(courseWeekLabel(state, week)) },
+                            )
+                        }
+                    } else {
+                        datedPages.forEach { page ->
+                            FilterChip(
+                                selected = when {
+                                    page.isNonTeachingWeek ->
+                                        state.selectedNonTeachingWeekStart == page.startDate
+                                    else -> state.selectedNonTeachingWeekStart == null &&
+                                        state.selectedWeek == page.teachingWeek
+                                },
+                                onClick = {
+                                    when {
+                                        page.isNonTeachingWeek -> page.startDate?.let(model::selectNonTeachingWeek)
+                                        else -> page.teachingWeek?.let(model::selectWeek)
+                                    }
+                                    showSchedulePicker = false
+                                },
+                                label = {
+                                    CourseWeekChipLabel(
+                                        primary = page.teachingWeek?.let { week ->
+                                            courseWeekLabel(state, week)
+                                        } ?: "非教学周",
+                                        startDate = page.startDate,
+                                    )
+                                },
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.height(18.dp))
@@ -427,14 +466,18 @@ private fun CourseSummary(
     if (compact) {
         val isOverview = state.compactViewMode == CourseCompactViewMode.WEEK
         val compactWeekLabel = when {
-            state.dateOutsideTeachingWeeks -> "非教学周"
+            state.isNonTeachingWeek -> "非教学周"
             state.selectedWeek == 0 -> "全部教学周"
             else -> "第 ${state.selectedWeek} 周"
         }
-        val selectedDateSuffix = if (!isOverview && state.selectedWeek > 0) {
-            state.selectedDate?.let { " · ${it.displayChineseMonthDay()}" }.orEmpty()
-        } else {
-            ""
+        val selectedDateSuffix = when {
+            state.isNonTeachingWeek -> state.selectedNonTeachingWeekStart
+                ?.let { " · ${it.displayWeekRange()}" }
+                .orEmpty()
+            !isOverview && state.selectedWeek > 0 -> state.selectedDate
+                ?.let { " · ${it.displayChineseMonthDay()}" }
+                .orEmpty()
+            else -> ""
         }
         val subtitle = state.compactSummarySubtitle(includeToday = !isOverview)
         Row(
@@ -485,7 +528,10 @@ private fun CourseSummary(
         return
     }
     val weekLabel = when {
-        state.dateOutsideTeachingWeeks -> state.selectedDate?.displayDate() ?: "非教学周"
+        state.isNonTeachingWeek -> state.selectedNonTeachingWeekStart
+            ?.displayWeekRange()
+            ?: state.selectedDate?.displayDate()
+            ?: "非教学周"
         state.selectedWeek == 0 -> "全部教学周"
         else -> "第 ${state.selectedWeek} 周"
     }
@@ -570,37 +616,64 @@ private fun CourseDatePickerDialog(
     onSelect: (LocalDate) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val isIos = currentPlatform().family == PlatformFamily.IOS
     val initialMillis = selectedDate?.toEpochDays()?.times(MILLIS_PER_DAY)
-    val pickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
     val today = remember {
         Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+    }
+    var nativeSelectedDate by remember(selectedDate, today) {
+        mutableStateOf(selectedDate ?: today)
+    }
+    val pickerState = if (!isIos) {
+        rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+    } else {
+        null
     }
     AppleSheetOrAlert(
         onDismissRequest = onDismiss,
         title = "前往日期",
         confirmLabel = if (locateWeekOnly) "前往这一周" else "前往这一天",
-        confirmEnabled = pickerState.selectedDateMillis != null,
+        confirmEnabled = isIos || pickerState?.selectedDateMillis != null,
         onConfirm = {
-            pickerState.selectedDateMillis?.let { millis ->
-                onSelect(LocalDate.fromEpochDays(millis.floorDiv(MILLIS_PER_DAY)))
+            if (isIos) {
+                onSelect(nativeSelectedDate)
+            } else {
+                pickerState?.selectedDateMillis?.let { millis ->
+                    onSelect(LocalDate.fromEpochDays(millis.floorDiv(MILLIS_PER_DAY)))
+                }
             }
         },
+        todayLabel = if (isIos) "今天" else null,
+        onToday = if (isIos) ({ onSelect(today) }) else null,
         dismissLabel = "取消",
-        needsFullHeight = true,
+        needsFullHeight = false,
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
-            DatePicker(
-                state = pickerState,
-                title = null,
-                showModeToggle = true,
-            )
-            TextButton(
-                onClick = { onSelect(today) },
-                modifier = Modifier.align(Alignment.End),
-            ) {
-                Text("今天")
+            if (isIos) {
+                IosNativeDatePicker(
+                    selectedDate = nativeSelectedDate,
+                    onDateSelected = { nativeSelectedDate = it },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                DatePicker(
+                    state = requireNotNull(pickerState),
+                    title = null,
+                    showModeToggle = true,
+                )
+            }
+            if (!isIos) {
+                TextButton(
+                    onClick = {
+                        nativeSelectedDate = today
+                        onSelect(today)
+                    },
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text("今天")
+                }
             }
         }
     }
@@ -664,6 +737,38 @@ private fun LocalDate.displayMonthDay(): String = "${month.ordinal + 1}/${day}"
 private fun LocalDate.displayChineseMonthDay(): String = "${month.ordinal + 1}月${day}日"
 
 private fun LocalDate.displayDate(): String = "${year}年${month.ordinal + 1}月${day}日"
+
+private fun LocalDate.displayWeekRange(): String {
+    val end = plusDays(6)
+    return "${displayMonthDay()}–${end.displayMonthDay()}"
+}
+
+private fun courseWeekLabel(state: CourseScheduleUiState, week: Int): String =
+    if (state.scheduleType == CourseScheduleType.CURRENT && week == state.currentWeek) {
+        "第${week}周（当前）"
+    } else {
+        "第${week}周"
+    }
+
+@Composable
+private fun CourseWeekChipLabel(
+    primary: String,
+    startDate: LocalDate?,
+) {
+    if (startDate == null) {
+        Text(primary)
+    } else {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(primary, maxLines = 1)
+            Text(
+                startDate.displayWeekRange(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+    }
+}
 
 private fun CourseScheduleUiState.compactSummarySubtitle(includeToday: Boolean): String? {
     val currentWeekText = semesterStatusSubtitle()
@@ -734,6 +839,41 @@ private fun WeekGrid(
 }
 
 @Composable
+private fun NonTeachingWeekGrid(
+    startDate: LocalDate?,
+    modifier: Modifier,
+) {
+    Box(
+        modifier = modifier
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+            .padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                "非教学周",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                startDate?.let { "${it.displayChineseMonthDay()} 这一周" } ?: "校历未安排教学周",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                "校历未安排课程，作业或考试安排仍可能出现在首页日程。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
 private fun CourseGridCell(
     courses: List<Course>,
     courseTypesByCode: Map<String, CourseType>?,
@@ -795,7 +935,8 @@ private fun CourseGridCell(
 
 @Composable
 private fun CourseWeekNavigationControls(
-    selectedWeek: Int,
+    canPrevious: Boolean,
+    canNext: Boolean,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
 ) {
@@ -805,14 +946,14 @@ private fun CourseWeekNavigationControls(
     ) {
         CourseWeekNavigationButton(
             label = "‹",
-            contentDescription = if (selectedWeek == 1) "切换到全部教学周" else "切换到上一周",
-            enabled = selectedWeek > 0,
+            contentDescription = "切换到上一个周位",
+            enabled = canPrevious,
             onClick = onPrevious,
         )
         CourseWeekNavigationButton(
             label = "›",
-            contentDescription = "切换到下一周",
-            enabled = selectedWeek < COURSE_MAX_WEEK,
+            contentDescription = "切换到下一个周位",
+            enabled = canNext,
             onClick = onNext,
         )
     }
@@ -922,7 +1063,7 @@ private fun CourseCompactScrollableContent(
             onOpenDatePicker = onOpenDatePicker,
         )
         CompactViewModeSelector(state.compactViewMode, model::selectCompactViewMode)
-        if (state.dateOutsideTeachingWeeks) {
+        if (state.dateOutsideTeachingWeeks && state.selectedNonTeachingWeekStart == null) {
             NonTeachingDateState(state.selectedDate, Modifier.weight(1f).fillMaxWidth())
         } else if (state.compactViewMode == CourseCompactViewMode.DAY) {
             CompactDaySelector(state.selectedDay, model::selectDay)
@@ -1074,23 +1215,55 @@ private fun ExpandedWeekPager(
     model: CourseScheduleScreenModel,
     modifier: Modifier,
 ) {
-    val initialPage = state.selectedWeek.takeIf { it in 0..COURSE_MAX_WEEK }
-        ?: state.currentWeek.takeIf { it in 1..COURSE_MAX_WEEK }
-        ?: 0
-    val pagerState = rememberPagerState(initialPage = overviewPageForWeek(initialPage)) {
-        COURSE_OVERVIEW_PAGE_COUNT
+    val pages = remember(state.academicWeeks, state.selectedNonTeachingWeekStart) {
+        courseScheduleWeekPages(state)
     }
-    LaunchedEffect(pagerState.currentPage) {
-        val week = weekForOverviewPage(pagerState.currentPage)
-        if (state.selectedWeek != week) model.selectWeek(week)
+    val selectedPage = pages.indexOfFirst { page ->
+        when {
+            page.isOverview -> state.selectedWeek == 0 && state.selectedNonTeachingWeekStart == null
+            page.isNonTeachingWeek -> page.startDate == state.selectedNonTeachingWeekStart
+            else -> page.teachingWeek == state.selectedWeek
+        }
+    }.takeIf { it >= 0 } ?: 0
+    val pagerState = rememberPagerState(initialPage = selectedPage) { pages.size }
+    var programmaticTargetPage by remember { mutableStateOf<Int?>(null) }
+    val latestPages by rememberUpdatedState(pages)
+    val latestState by rememberUpdatedState(state)
+    LaunchedEffect(pagerState, pages) {
+        var firstSettledEmission = true
+        snapshotFlow { pagerState.settledPage }.collect { pageIndex ->
+            // Replacing the semester/校历 can rebuild the page list while UIKit/Compose
+            // still reports the old settled index. That first value is not a user swipe.
+            if (firstSettledEmission) {
+                firstSettledEmission = false
+                if (pageIndex != selectedPage) return@collect
+            }
+            val target = programmaticTargetPage
+            if (target != null) {
+                if (pageIndex == target) programmaticTargetPage = null
+                return@collect
+            }
+            val page = latestPages[pageIndex.coerceIn(latestPages.indices)]
+            when {
+                page.isOverview -> if (latestState.selectedWeek != 0 || latestState.selectedNonTeachingWeekStart != null) {
+                    model.selectWeek(0)
+                }
+                page.isNonTeachingWeek -> page.startDate?.let { start ->
+                    if (latestState.selectedNonTeachingWeekStart != start) model.selectNonTeachingWeek(start)
+                }
+                else -> page.teachingWeek?.let { week ->
+                    if (latestState.selectedWeek != week || latestState.selectedNonTeachingWeekStart != null) {
+                        model.selectWeek(week)
+                    }
+                }
+            }
+        }
     }
-    LaunchedEffect(state.selectedWeek) {
-        val target = overviewPageForWeek(state.selectedWeek)
-        if (target in 0..COURSE_MAX_WEEK &&
-            target != pagerState.currentPage &&
-            !pagerState.isScrollInProgress
-        ) {
-            pagerState.animateScrollToPage(target)
+    LaunchedEffect(selectedPage, pages) {
+        if (selectedPage != pagerState.currentPage && !pagerState.isScrollInProgress) {
+            programmaticTargetPage = selectedPage
+            pagerState.animateScrollToPage(selectedPage)
+            if (pagerState.settledPage == selectedPage) programmaticTargetPage = null
         }
     }
     HorizontalPager(
@@ -1099,14 +1272,20 @@ private fun ExpandedWeekPager(
         beyondViewportPageCount = 1,
         pageSpacing = 8.dp,
     ) { page ->
-        WeekGrid(
-            courses = coursesForWeek(state.scheduleCourses, page),
-            courseTypesByCode = courseTypesByCode,
-            weekStartDate = state.weekDate(page)?.startDate,
-            selectedCourseId = state.selectedCourseId,
-            onOpen = model::showCourseDetails,
-            modifier = Modifier.fillMaxSize(),
-        )
+        val weekPage = pages[page]
+        if (weekPage.isNonTeachingWeek) {
+            NonTeachingWeekGrid(weekPage.startDate, Modifier.fillMaxSize())
+        } else {
+            WeekGrid(
+                courses = coursesForWeek(state.scheduleCourses, weekPage.teachingWeek ?: 0),
+                courseTypesByCode = courseTypesByCode,
+                weekStartDate = weekPage.startDate
+                    ?: weekPage.teachingWeek?.let { state.weekDate(it)?.startDate },
+                selectedCourseId = state.selectedCourseId,
+                onOpen = model::showCourseDetails,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
 
@@ -1118,22 +1297,55 @@ private fun CompactWeekPager(
     onOpen: (Int) -> Unit,
     modifier: Modifier,
 ) {
-    // Page 0 是“全部教学周”，page 1..30 与教学周编号一一对应。
-    // 这样“全部”既是周选择器最左侧，也是手势分页的物理最左侧，不再回退到当前周。
-    val initialPage = state.selectedWeek.takeIf { it in 0..COURSE_MAX_WEEK }
-        ?: state.currentWeek.takeIf { it in 1..COURSE_MAX_WEEK }
-        ?: 0
-    val pagerState = rememberPagerState(initialPage = overviewPageForWeek(initialPage)) {
-        COURSE_OVERVIEW_PAGE_COUNT
+    // Page 0 仍是“全部教学周”；其后的页面严格按校历自然周排序，
+    // 中间缺失的周会显示为非教学周，而不是直接从第 3 周跳到第 4 周。
+    val pages = remember(state.academicWeeks, state.selectedNonTeachingWeekStart) {
+        courseScheduleWeekPages(state)
     }
-    LaunchedEffect(pagerState.currentPage) {
-        val week = weekForOverviewPage(pagerState.currentPage)
-        if (state.selectedWeek != week) model.selectWeek(week)
+    val selectedPage = pages.indexOfFirst { page ->
+        when {
+            page.isOverview -> state.selectedWeek == 0 && state.selectedNonTeachingWeekStart == null
+            page.isNonTeachingWeek -> page.startDate == state.selectedNonTeachingWeekStart
+            else -> page.teachingWeek == state.selectedWeek
+        }
+    }.takeIf { it >= 0 } ?: 0
+    val pagerState = rememberPagerState(initialPage = selectedPage) { pages.size }
+    var programmaticTargetPage by remember { mutableStateOf<Int?>(null) }
+    val latestPages by rememberUpdatedState(pages)
+    val latestState by rememberUpdatedState(state)
+    LaunchedEffect(pagerState, pages) {
+        var firstSettledEmission = true
+        snapshotFlow { pagerState.settledPage }.collect { pageIndex ->
+            if (firstSettledEmission) {
+                firstSettledEmission = false
+                if (pageIndex != selectedPage) return@collect
+            }
+            val target = programmaticTargetPage
+            if (target != null) {
+                if (pageIndex == target) programmaticTargetPage = null
+                return@collect
+            }
+            val page = latestPages[pageIndex.coerceIn(latestPages.indices)]
+            when {
+                page.isOverview -> if (latestState.selectedWeek != 0 || latestState.selectedNonTeachingWeekStart != null) {
+                    model.selectWeek(0)
+                }
+                page.isNonTeachingWeek -> page.startDate?.let { start ->
+                    if (latestState.selectedNonTeachingWeekStart != start) model.selectNonTeachingWeek(start)
+                }
+                else -> page.teachingWeek?.let { week ->
+                    if (latestState.selectedWeek != week || latestState.selectedNonTeachingWeekStart != null) {
+                        model.selectWeek(week)
+                    }
+                }
+            }
+        }
     }
-    LaunchedEffect(state.selectedWeek) {
-        val target = overviewPageForWeek(state.selectedWeek)
-        if (target in 0..COURSE_MAX_WEEK && target != pagerState.currentPage) {
-            pagerState.scrollToPage(target)
+    LaunchedEffect(selectedPage, pages) {
+        if (selectedPage != pagerState.currentPage) {
+            programmaticTargetPage = selectedPage
+            pagerState.scrollToPage(selectedPage)
+            if (pagerState.settledPage == selectedPage) programmaticTargetPage = null
         }
     }
     Column(
@@ -1160,15 +1372,20 @@ private fun CompactWeekPager(
             beyondViewportPageCount = 1,
             pageSpacing = 12.dp,
         ) { page ->
-            val week = page
-            CompactWeekGrid(
-                courses = coursesForWeek(state.scheduleCourses, week),
-                courseTypesByCode = courseTypesByCode,
-                aggregateAllWeeks = week == 0,
-                weekStartDate = state.weekDate(week)?.startDate,
-                onOpen = onOpen,
-                modifier = Modifier.fillMaxSize(),
-            )
+            val weekPage = pages[page]
+            if (weekPage.isNonTeachingWeek) {
+                NonTeachingWeekGrid(weekPage.startDate, Modifier.fillMaxSize())
+            } else {
+                CompactWeekGrid(
+                    courses = coursesForWeek(state.scheduleCourses, weekPage.teachingWeek ?: 0),
+                    courseTypesByCode = courseTypesByCode,
+                    aggregateAllWeeks = weekPage.isOverview,
+                    weekStartDate = weekPage.startDate
+                        ?: weekPage.teachingWeek?.let { state.weekDate(it)?.startDate },
+                    onOpen = onOpen,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }

@@ -10,6 +10,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.course.Course
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
+import team.bjtuss.bjtuselfservice.shared.network.looksLikeSessionExpired
 
 private const val TEACHER_URL =
     "https://aa.bjtu.edu.cn/course_selection/courseselectabsent/absent_list/"
@@ -151,7 +152,7 @@ class SchoolCourseScheduleRemoteDataSource(
             if (response.statusCode !in 200..299) {
                 throw CourseScheduleRemoteException(CourseScheduleRemoteFailure.NETWORK)
             }
-            if (!response.finalUrl.startsWith(SchoolEndpoints.AA_ORIGIN)) {
+            if (response.looksLikeSessionExpired() || !response.finalUrl.startsWith(SchoolEndpoints.AA_ORIGIN)) {
                 throw CourseScheduleRemoteException(CourseScheduleRemoteFailure.SESSION_EXPIRED)
             }
         }

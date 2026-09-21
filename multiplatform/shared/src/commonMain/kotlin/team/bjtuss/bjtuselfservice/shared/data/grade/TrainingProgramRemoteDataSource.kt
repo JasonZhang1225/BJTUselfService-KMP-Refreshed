@@ -8,6 +8,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.grade.CourseType
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
+import team.bjtuss.bjtuselfservice.shared.network.looksLikeSessionExpired
 
 private const val AA_PROGRAM_URL = "https://aa.bjtu.edu.cn/training/training/program/"
 
@@ -67,7 +68,7 @@ class SchoolTrainingProgramRemoteDataSource(
         if (response.statusCode !in 200..299) {
             throw GradeRemoteException(GradeRemoteFailure.NETWORK)
         }
-        if (!response.finalUrl.startsWith(SchoolEndpoints.AA_ORIGIN)) {
+        if (response.looksLikeSessionExpired() || !response.finalUrl.startsWith(SchoolEndpoints.AA_ORIGIN)) {
             throw GradeRemoteException(GradeRemoteFailure.SESSION_EXPIRED)
         }
         response

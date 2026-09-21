@@ -34,7 +34,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -44,10 +43,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -106,10 +103,8 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import androidx.navigationevent.NavigationEvent
 import team.bjtuss.bjtuselfservice.shared.LocalReduceMotion
-import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.PlatformInfo
 import team.bjtuss.bjtuselfservice.shared.WindowClass
-import team.bjtuss.bjtuselfservice.shared.currentPlatform
 import kotlin.math.PI
 import team.bjtuss.bjtuselfservice.shared.accessibleAlpha
 import team.bjtuss.bjtuselfservice.shared.data.grade.formatGradeDetailForDisplay
@@ -163,7 +158,6 @@ import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabContentSource
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSyncFailure
 import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
-import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.home.homeIdleStatusText
@@ -253,7 +247,8 @@ internal fun CompactAppTopBar(
                 Spacer(Modifier.width(8.dp))
             }
             // “登录中”优先于“同步中”，再回落到页面提供的空闲状态（如课表已同步）。
-            // 状态文案与刷新并入同一胶囊，避免「已同步」与孤立圆钮两截破碎感。
+            // 状态与刷新是两个独立动作：左侧查看同步详情，右侧执行刷新。
+            // 首页左侧可点，因此使用实色；其它页面只是状态展示，降低为灰色。
             val busyText = when {
                 isLoggingIn -> "登录中"
                 isRefreshing -> "同步中"
@@ -266,62 +261,22 @@ internal fun CompactAppTopBar(
                         onClick = onStatusClick,
                     )
                 }
-                idleStatusText != null && onStatusClick != null -> {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        TopBarStatusCapsule(
-                            text = idleStatusText,
-                            onClick = onStatusClick,
-                        )
+                idleStatusText != null || onRefresh != null -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        idleStatusText?.let { status ->
+                            TopBarStatusCircle(
+                                text = status,
+                                onClick = onStatusClick,
+                                enabled = onStatusClick != null,
+                            )
+                        }
                         onRefresh?.let { refresh ->
-                            TopBarRefreshCapsule(
+                            TopBarRefreshCircle(
                                 onClick = refresh,
                                 enabled = !isRefreshing && !isLoggingIn,
                             )
                         }
                     }
-                }
-                onRefresh != null -> {
-                    Surface(
-                        onClick = onRefresh,
-                        color = MaterialTheme.colorScheme.surfaceVariant.accessibleAlpha(0.55f),
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        shape = RoundedCornerShape(999.dp),
-                        modifier = Modifier.semantics {
-                            contentDescription = if (idleStatusText != null) {
-                                "$idleStatusText，点按刷新"
-                            } else {
-                                "刷新"
-                            }
-                        },
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            if (idleStatusText != null) {
-                                Text(
-                                    idleStatusText,
-                                    style = MaterialTheme.typography.labelMedium,
-                                )
-                                // 对勾只表示「已同步」；未同步/同步失败用刷新图标，避免「未同步 ✓」语义打架。
-                                if (idleStatusText == "已同步") {
-                                    TopBarSyncedIcon(modifier = Modifier.size(15.dp))
-                                } else {
-                                    TopBarRefreshIcon(modifier = Modifier.size(15.dp))
-                                }
-                            } else {
-                                TopBarRefreshIcon(modifier = Modifier.size(15.dp))
-                            }
-                        }
-                    }
-                }
-                idleStatusText != null -> {
-                    Text(
-                        idleStatusText,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             }
         }
@@ -371,51 +326,71 @@ internal fun TopBarBusyStatusCapsule(
 }
 
 @Composable
-internal fun TopBarStatusCapsule(
+internal fun TopBarStatusCircle(
     text: String,
-    onClick: () -> Unit,
+    onClick: (() -> Unit)?,
+    enabled: Boolean,
 ) {
-    Surface(
-        onClick = onClick,
-        color = MaterialTheme.colorScheme.surfaceVariant.accessibleAlpha(0.55f),
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        shape = RoundedCornerShape(999.dp),
-        modifier = Modifier.semantics {
-            contentDescription = "$text，点按查看同步详情"
-        },
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(text, style = MaterialTheme.typography.labelMedium)
-            if (text == "已同步") {
-                TopBarSyncedIcon(modifier = Modifier.size(15.dp))
+    val iconTint = if (enabled) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+    }
+    val modifier = Modifier
+        .size(32.dp)
+        .semantics {
+            contentDescription = if (enabled) {
+                "$text，点按查看同步详情"
             } else {
-                TopBarRefreshIcon(modifier = Modifier.size(15.dp))
+                text
             }
         }
+    val content: @Composable () -> Unit = {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            if (text == "已同步") {
+                TopBarSyncedIcon(modifier = Modifier.size(16.dp), tint = iconTint)
+            } else {
+                TopBarRefreshIcon(modifier = Modifier.size(16.dp), tint = iconTint)
+            }
+        }
+    }
+    if (enabled && onClick != null) {
+        Surface(
+            onClick = onClick,
+            color = MaterialTheme.colorScheme.surfaceVariant.accessibleAlpha(0.68f),
+            shape = CircleShape,
+            modifier = modifier,
+            content = content,
+        )
+    } else {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.accessibleAlpha(0.30f),
+            shape = CircleShape,
+            modifier = modifier,
+            content = content,
+        )
     }
 }
 
 @Composable
-internal fun TopBarRefreshCapsule(
+internal fun TopBarRefreshCircle(
     onClick: () -> Unit,
     enabled: Boolean,
 ) {
     Surface(
         onClick = onClick,
         enabled = enabled,
-        color = MaterialTheme.colorScheme.surfaceVariant.accessibleAlpha(0.55f),
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        shape = RoundedCornerShape(999.dp),
-        modifier = Modifier.semantics { contentDescription = "刷新" },
+        color = MaterialTheme.colorScheme.surfaceVariant.accessibleAlpha(if (enabled) 0.68f else 0.30f),
+        shape = CircleShape,
+        modifier = Modifier.size(32.dp).semantics { contentDescription = "刷新" },
     ) {
-        Text(
-            "刷新",
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-            style = MaterialTheme.typography.labelMedium,
+        TopBarRefreshIcon(
+            modifier = Modifier.size(16.dp),
+            tint = if (enabled) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+            },
         )
     }
 }
@@ -453,8 +428,10 @@ internal fun HomeSyncDetailsDialog(
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val scrollState = rememberScrollState()
-    AppleSheetOrAlert(
+    // This is a status surface, not a long-form dialog. Keeping it on the
+    // shared sheet path gives Android a bottom sheet, macOS a single flat
+    // surface, and iOS the UIKit detent with its native header.
+    AppleSheet(
         onDismissRequest = onDismiss,
         title = title,
         // iOS already supplies the native top-right X. Only expose an action
@@ -463,32 +440,25 @@ internal fun HomeSyncDetailsDialog(
         confirmLabel = if (canRetry) "重试" else null,
         onConfirm = if (canRetry) onRetry else null,
         dismissLabel = null,
-        // 模块清单可能长过半屏，直接以全屏展开。
-        needsFullHeight = true,
+        // The normal six-module list fits the native medium detent. When
+        // Physical Online adds a seventh row, start at large so the last
+        // status is not clipped; UIKit still keeps the native sheet gesture.
+        needsFullHeight = items.size > 6,
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp)
-                .fillMaxHeight()
-                .verticalScroll(scrollState)
-                .desktopTouchScroll(scrollState),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 4.dp),
         ) {
-            Text(
-                when {
-                    canRetry -> "本次同步有失败项目，点击“重试”后才会重新请求。"
-                    title == "登录中" -> "正在完成统一身份认证，页面数据会在登录完成后开始同步。"
-                    title == "同步中" -> "各模块正在并行同步，完成项会显示勾选。"
-                    else -> "当前登录会话与各模块的同步状态如下。"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // The sheet itself supplies the single material surface. A second
+            // rounded Surface here made the macOS panel look like a frame inside
+            // a frame and reduced the usable width on Android.
             items.forEachIndexed { index, item ->
                 HomeSyncDetailRow(item)
                 if (index != items.lastIndex) {
                     HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                        modifier = Modifier.padding(start = 36.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.accessibleAlpha(0.7f),
                     )
                 }
             }
@@ -499,7 +469,7 @@ internal fun HomeSyncDetailsDialog(
 @Composable
 internal fun HomeSyncDetailRow(item: HomeSyncItem) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -509,24 +479,35 @@ internal fun HomeSyncDetailRow(item: HomeSyncItem) {
         ) {
             when (item.state) {
                 HomeSyncItemState.SYNCING -> CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 1.8.dp,
+                    modifier = Modifier.size(15.dp),
+                    strokeWidth = 1.7.dp,
+                    color = MaterialTheme.colorScheme.primary,
                 )
-                HomeSyncItemState.SUCCESS -> TopBarSyncedIcon(Modifier.size(16.dp))
+                HomeSyncItemState.SUCCESS -> TopBarSyncedIcon(
+                    modifier = Modifier.size(15.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
                 HomeSyncItemState.FAILED -> Text(
                     "!",
+                    style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.error,
                     fontWeight = FontWeight.Bold,
                 )
                 HomeSyncItemState.WAITING -> Text(
-                    "·",
+                    "•",
+                    style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = FontWeight.Bold,
                 )
             }
         }
         Column(modifier = Modifier.weight(1f)) {
-            Text(item.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(
+                item.title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Medium,
+            )
             Text(
                 item.detail,
                 style = MaterialTheme.typography.bodySmall,

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.toLocalDateTime
@@ -21,6 +22,8 @@ import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OCCUPANCY_BU
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyBuilding
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancySemester
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
+import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.AcademicWeekSlot
+import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.academicWeekSlots
 
 /** 周次筛选范围，与教务 zc 下拉一致（可到 30）；MIN/MAX 供 UI 弹层复用。 */
 const val MIN_WEEK = 1
@@ -61,8 +64,13 @@ data class ClassroomOccupancyUiState(
     val selectedSemester: OccupancySemester? = null,
     val currentSemesterLabel: String? = null,
     val weekDates: Map<String, List<OccupancyWeekDate>> = emptyMap(),
+    /** 当前分页落在校历补出的自然周时使用；教室占用查询不向教务发送虚构周数。 */
+    val selectedNonTeachingWeekStart: LocalDate? = null,
     val queryState: ClassroomOccupancyQueryState = ClassroomOccupancyQueryState.Idle,
 ) {
+    val isNonTeachingWeek: Boolean
+        get() = selectedNonTeachingWeekStart != null
+
     val isLoading: Boolean
         get() = queryState == ClassroomOccupancyQueryState.Loading ||
             (queryState as? ClassroomOccupancyQueryState.Loaded)?.refreshing == true
@@ -143,9 +151,24 @@ class ClassroomOccupancyScreenModel(
 
     suspend fun selectWeek(week: Int) {
         val clamped = week.coerceIn(MIN_WEEK, MAX_WEEK)
-        if (clamped == mutableState.value.selectedWeek) return
-        mutableState.value = mutableState.value.copy(selectedWeek = clamped)
+        val current = mutableState.value
+        if (clamped == current.selectedWeek && current.selectedNonTeachingWeekStart == null) return
+        mutableState.value = current.copy(
+            selectedWeek = clamped,
+            selectedNonTeachingWeekStart = null,
+        )
         query()
+    }
+
+    /** 选择校历中明确留出的自然周；这类周没有可发送给 room_view 的教学周编号。 */
+    fun selectNonTeachingWeek(startDate: LocalDate) {
+        val current = mutableState.value
+        if (current.selectedNonTeachingWeekStart == startDate) return
+        mutableState.value = current.copy(
+            selectedWeek = 0,
+            selectedNonTeachingWeekStart = startDate,
+            queryState = ClassroomOccupancyQueryState.Idle,
+        )
     }
 
     fun selectBuilding(building: OccupancyBuilding) {
@@ -161,6 +184,7 @@ class ClassroomOccupancyScreenModel(
         mutableState.value = mutableState.value.copy(
             selectedSemester = semester,
             selectedWeek = mutableState.value.selectedWeek.coerceIn(MIN_WEEK, semesterMaxWeek(semester)),
+            selectedNonTeachingWeekStart = null,
             queryState = ClassroomOccupancyQueryState.Idle,
         )
         query()
@@ -176,6 +200,53 @@ class ClassroomOccupancyScreenModel(
         val state = mutableState.value
         val label = state.selectedSemester?.label ?: state.currentSemesterLabel ?: return null
         return state.weekDates[label]?.firstOrNull { it.week == week }
+    }
+
+    fun weekSlots(): List<AcademicWeekSlot> {
+        val state = mutableState.value
+        val label = state.selectedSemester?.label ?: state.currentSemesterLabel ?: return emptyList()
+        return academicWeekSlots(state.weekDates[label].orEmpty(), MAX_WEEK)
+    }
+
+    fun canMoveWeekBy(offset: Int): Boolean {
+        if (offset !in setOf(-1, 1)) return false
+        val current = mutableState.value
+        val slots = weekSlots()
+        if (slots.isEmpty()) {
+            return when (offset) {
+                -1 -> current.selectedWeek > MIN_WEEK
+                else -> current.selectedWeek < MAX_WEEK
+            }
+        }
+        val currentIndex = when {
+            current.selectedNonTeachingWeekStart != null -> slots.indexOfFirst {
+                it.startDate == current.selectedNonTeachingWeekStart
+            }
+            else -> slots.indexOfFirst { it.teachingWeek == current.selectedWeek }
+        }.takeIf { it >= 0 } ?: 0
+        return currentIndex + offset in slots.indices
+    }
+
+    suspend fun moveWeekBy(offset: Int) {
+        if (offset !in setOf(-1, 1)) return
+        val current = mutableState.value
+        val slots = weekSlots()
+        if (slots.isEmpty()) {
+            selectWeek((current.selectedWeek + offset).coerceIn(MIN_WEEK, MAX_WEEK))
+            return
+        }
+        val currentIndex = when {
+            current.selectedNonTeachingWeekStart != null -> slots.indexOfFirst {
+                it.startDate == current.selectedNonTeachingWeekStart
+            }
+            else -> slots.indexOfFirst { it.teachingWeek == current.selectedWeek }
+        }.takeIf { it >= 0 } ?: 0
+        val target = slots.getOrNull(currentIndex + offset) ?: return
+        if (target.isNonTeachingWeek) {
+            selectNonTeachingWeek(target.startDate)
+        } else {
+            target.teachingWeek?.let { selectWeek(it) }
+        }
     }
 
     suspend fun refresh() = query()
@@ -201,6 +272,7 @@ class ClassroomOccupancyScreenModel(
      * 不在网络调用外包 Mutex：持锁等待会把切周卡死，且取消等锁时易留下 refreshing=true。
      */
     private suspend fun query() {
+        if (mutableState.value.selectedNonTeachingWeekStart != null) return
         val building = mutableState.value.selectedBuilding ?: return
         val token = ++queryToken
         val week = mutableState.value.selectedWeek
