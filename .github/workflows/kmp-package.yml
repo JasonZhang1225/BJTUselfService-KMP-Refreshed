@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*-KMP*"
+      - "v*-Liquid*"
   workflow_dispatch:
 
 concurrency:
@@ -292,47 +293,8 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}：交大自由行 KMP 正式版
           prerelease: false
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
           files: dist/*
-          body: |
-            ## 1.7.7-KMP
-
-            本版本经过网络安全领域 SOTA 模型 GLM5.3 的网络与数据安全审查与冗余重构，在 1.7.6-KMP 基础上收口安全、代码结构与邮箱/首页体验。
-
-            ### 本版更新
-
-            - 安全审计修复：iOS/macOS Keychain 卸载残留清理、桌面「清除全部本地数据」、iOS 缓存数据库排除 iCloud 备份、Android 签名口令去默认回退（覆盖升级签名不变）。
-            - 代码结构重构（净删约 2900 行）：拆解 3811 行「万物文件」GradeScreen，应用壳层迁入 `feature/shell`；登录页内联 DI 装配抽为工厂；新增可关闭的统一日志 `AppLog`（release 关闭）；端点常量集中到 `SchoolEndpoints`；加载/空态等共享 UI 组件去重。
-            - 邮箱未读：修复未读邮件被误判为已读（Coremail 未读省略 `read` 键），列表未读蓝点/加粗正确显示；打开邮件后蓝点即时清除；首页「新邮件」改用邮箱实际未读数（微信式 99+ 封顶）。
-            - 首页「数据变动」新增物理在线；课程表列表视图按课程类型着色（与色块概览同源）。
-            - 修复同步进度条出现时把页面内容挤矮的布局抖动。
-
-            ### 版本
-
-            - Android `1.7.7-KMP`（versionCode `18`，默认 `arm64-v8a`）
-            - iOS `1.7.7-KMP`（Build `18`，未签名 IPA）
-            - macOS / Windows 安装器数值版本 `1.7.7`
-
-            ### 安装说明
-
-            | 文件 | 说明 |
-            | --- | --- |
-            | `BJTUSelfService-KMP-*-arm64-v8a.apk` | Android arm64-v8a，包名 `team.bjtuss.bjtuselfservice.kmp`。本地与 GitHub Actions 使用同一上传签名，可覆盖安装 |
-            | `BJTUSelfService-KMP-*-iOS-unsigned.ipa` | iOS 未签名，需侧载自签 |
-            | `BJTUselfServiceKMP-*.dmg` | macOS Apple Silicon |
-            | `BJTUselfServiceKMP-*.msi` | Windows x64 系统级安装 |
-
-            Windows 覆盖安装：先完全退出应用，不要先卸载（卸载会清登录）。若安装器只出现「修复/卸载」，请用：
-
-            `msiexec /i 文件名.msi REINSTALL=ALL REINSTALLMODE=vomus`
-
-            ### 已知限制
-
-            - 非正式商店签名 / 未公证；iOS unsigned IPA 需自行签名侧载；Mac 版可能需执行 `sudo xattr -r -d com.apple.quarantine /Applications/交大自由行 KMP.app`
-            - iOS unsigned IPA 需自行签名侧载，参考教程：[iOS 自签与安装指南](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/blob/main/docs/iOS-sign-guide.md)
-            - 物理在线的自动同步依赖校园网，离开校园网时只能读取已有缓存；真实文件提交仍需在可编辑作业上继续验收。
-            - 邮箱写信/回复已完成协议和界面接入，但真实发送、删除、移动、转发及附件写操作仍需单独验收。
-            - 小组件、系统通知等仍延后；Android 默认 APK 仅支持 `arm64-v8a`。
-            - Windows MSI 使用同一 UpgradeCode，支持同为 `1.7.7` 数值版本的安装包覆盖升级；建议直接运行 MSI，不要先卸载。
+          body_path: docs/releases/v1.7.8-Liquid.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
