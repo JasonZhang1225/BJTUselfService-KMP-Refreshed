@@ -222,7 +222,8 @@ internal fun MoreWorkspace(
             // 而列表本身要画到物理底边，玻璃才有内容可折射。
             .padding(
                 start = 16.dp,
-                top = 12.dp,
+                // 原生栏 underlap 时视口顶边贴屏幕顶，首组靠这份顶边距让开（其余平台恒 0）。
+                top = 12.dp + LocalTopBarClearance.current,
                 end = 16.dp,
                 bottom = 12.dp + LocalBottomBarClearance.current,
             ),

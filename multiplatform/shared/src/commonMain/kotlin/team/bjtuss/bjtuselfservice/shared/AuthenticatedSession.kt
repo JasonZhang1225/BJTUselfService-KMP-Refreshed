@@ -81,6 +81,16 @@ class AuthenticatedSession(
      */
     var glassTabBarBottomInsetDp: Float by mutableStateOf(0f)
 
+    /**
+     * 宿主原生导航栏实际占掉的顶部高度（点；iOS 上 1pt == 1dp），即导航栏 frame.maxY。
+     *
+     * 与底栏同一道理：内容要能伸进导航栏下面，原生 blur 才有东西可采样，而 UIKit 不会把
+     * 导航栏算进 Compose 的可用 inset（`WindowInsets.statusBars` 停在栏底），所以栏底高度
+     * 只能由宿主在布局时写进来。只在 opt-in 的页面以滚动内容顶边距消费（`LocalTopBarClearance`），
+     * 未 opt-in 的页面保持原来的 Spacer 占位，行为不变。
+     */
+    var glassTopBarInsetDp: Float by mutableStateOf(0f)
+
     /** 平台回到前台时递增；应用壳会针对当前页面的失效请求自动重试一次。 */
     val appResumeGeneration: StateFlow<Long> = appResumeGenerationState.asStateFlow()
 

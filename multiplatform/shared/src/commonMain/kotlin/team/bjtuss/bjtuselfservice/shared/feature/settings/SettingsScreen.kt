@@ -45,6 +45,7 @@ import team.bjtuss.bjtuselfservice.shared.update.annotatedInlineMarkdown
 import team.bjtuss.bjtuselfservice.shared.update.parseReleaseNotes
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 
 @Composable
 fun SettingsWorkspace(
@@ -106,7 +107,9 @@ fun SettingsWorkspace(
             .padding(
             horizontal = if (expanded) 8.dp else 16.dp,
             vertical = 14.dp,
-        ),
+        )
+            // 原生栏 underlap 时视口顶边贴屏幕顶，首项靠这份顶边距让开（其余平台恒 0）。
+            .padding(top = LocalTopBarClearance.current),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // 紧凑布局下 shell 顶栏已显示“设置”，页内不再重复；宽屏侧栏布局没有顶栏，保留页内标题。

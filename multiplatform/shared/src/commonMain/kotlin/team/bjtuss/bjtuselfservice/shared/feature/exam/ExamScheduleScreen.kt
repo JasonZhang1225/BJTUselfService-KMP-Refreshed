@@ -62,6 +62,7 @@ import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
 import team.bjtuss.bjtuselfservice.shared.feature.calendar.SingleExamCalendarSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 
@@ -83,27 +84,37 @@ fun ExamScheduleWorkspace(
     var showFilterSheet by remember { mutableStateOf(false) }
     var examToCalendar by remember { mutableStateOf<ExamSchedule?>(null) }
 
+    // 原生栏 underlap 时外层不再做布局占位（作业页同款）：视口顶边贴屏幕顶。
+    val topClearance = LocalTopBarClearance.current
     Column(
         modifier = if (expanded) {
             modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         } else {
-            modifier.padding(horizontal = 16.dp).padding(top = 8.dp)
+            modifier.padding(horizontal = 16.dp).padding(top = if (topClearance > 0.dp) 0.dp else 8.dp)
         },
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         // 同步进度条由 DestinationPage 钉在顶栏下，此处不再重复。
-        state.failure?.let { failure ->
-            ExamFailureBanner(
-                failure = failure,
-                hasContent = state.exams.isNotEmpty(),
-                onRetry = onRefresh,
-                onDismiss = model::dismissFailure,
-            )
+        // 失败横幅：宽屏仍钉顶部；紧凑端 underlap 时收进列表首项（外层已跳过）。
+        if (expanded || topClearance <= 0.dp) {
+            state.failure?.let { failure ->
+                ExamFailureBanner(
+                    failure = failure,
+                    hasContent = state.exams.isNotEmpty(),
+                    onRetry = onRefresh,
+                    onDismiss = model::dismissFailure,
+                )
+            }
         }
 
         when {
-            state.isLoading && state.exams.isEmpty() -> ExamLoadingState()
-            state.exams.isEmpty() -> ExamEmptyState(onRefresh)
+            // 短内容（加载/空）不滚动：留在栏下，老起笔位置（外层已无占位，这里补回）。
+            state.isLoading && state.exams.isEmpty() -> Box(
+                Modifier.fillMaxWidth().padding(top = 8.dp + topClearance),
+            ) { ExamLoadingState() }
+            state.exams.isEmpty() -> Box(
+                Modifier.fillMaxWidth().padding(top = 8.dp + topClearance),
+            ) { ExamEmptyState(onRefresh) }
             else -> {
                 if (expanded) {
                     // 与移动端一致：同步态在顶栏；Banner 内筛选入口；类型 chips 进 sheet（不再页内重复）。
@@ -145,6 +156,8 @@ fun ExamScheduleWorkspace(
                         state = state,
                         onOpenFilter = { showFilterSheet = true },
                         onOpen = model::showExamDetails,
+                        onRetry = onRefresh,
+                        onDismissFailure = model::dismissFailure,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                     state.selectedExam?.let { exam ->
@@ -348,15 +361,36 @@ private fun ExamScrollableContent(
     state: ExamScheduleUiState,
     onOpenFilter: () -> Unit,
     onOpen: (Int) -> Unit,
+    onRetry: () -> Unit = {},
+    onDismissFailure: () -> Unit = {},
     modifier: Modifier,
 ) {
     val listState = rememberLazyListState()
+    // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
+    val topClearance = LocalTopBarClearance.current
     LazyColumn(
         state = listState,
         modifier = modifier.desktopTouchScroll(listState),
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(bottom = 18.dp),
+        contentPadding = PaddingValues(
+            // 首项靠内部顶边距让开原生栏（外层已不再占位）：8.dp 还原起笔位置。
+            top = 8.dp + topClearance,
+            bottom = 18.dp,
+        ),
     ) {
+        // underlap 时失败横幅也收进列表（外层已跳过），平时保持外层旧布局。
+        if (topClearance > 0.dp) {
+            state.failure?.let { failure ->
+                item(key = "exam-failure") {
+                    ExamFailureBanner(
+                        failure = failure,
+                        hasContent = state.exams.isNotEmpty(),
+                        onRetry = onRetry,
+                        onDismiss = onDismissFailure,
+                    )
+                }
+            }
+        }
         item(key = "exam-summary") {
             ExamSummary(state = state, onOpenFilter = onOpenFilter)
         }

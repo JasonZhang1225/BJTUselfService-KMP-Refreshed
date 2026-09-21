@@ -89,6 +89,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LegacySmartTransportWarning
 import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
 
@@ -115,11 +116,15 @@ fun HomeworkWorkspace(
     // 只灌缓存；网络自动同步由 shell 在登录成功后触发。
     LaunchedEffect(model) { model.initialize(refreshFromNetwork = false) }
 
+    // 原生栏 underlap 时外层不再做布局占位：视口顶边贴屏幕顶，首项靠列表内部顶边距让开；
+    // 否则内容止于栏底、栏后只剩纯色（之前无模糊的根因）。非 underlap 路径保持 8.dp 不变。
+    val topClearance = LocalTopBarClearance.current
+    val compactTopPad = if (topClearance > 0.dp) 0.dp else 8.dp
     Column(
         modifier = if (expanded) {
             modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         } else {
-            modifier.padding(horizontal = 16.dp).padding(top = 8.dp)
+            modifier.padding(horizontal = 16.dp).padding(top = compactTopPad)
         },
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -130,18 +135,27 @@ fun HomeworkWorkspace(
         }
 
         // 同步进度条由 DestinationPage 钉在顶栏下，此处不再重复。
-        state.failure?.let { failure ->
-            HomeworkFailureBanner(
-                failure = failure,
-                hasContent = state.homework.isNotEmpty(),
-                onRetry = onRefresh,
-                onDismiss = model::dismissFailure,
-            )
+        // 失败横幅：宽屏仍钉在工作区顶部；紧凑端 underlap 时跟 legacy 提示一样收进列表第一项，
+        // 否则它会以布局占位把列表视口顶下去、内容进不了栏后。
+        if (expanded || LocalTopBarClearance.current <= 0.dp) {
+            state.failure?.let { failure ->
+                HomeworkFailureBanner(
+                    failure = failure,
+                    hasContent = state.homework.isNotEmpty(),
+                    onRetry = onRefresh,
+                    onDismiss = model::dismissFailure,
+                )
+            }
         }
 
         when {
-            state.isLoading && state.homework.isEmpty() -> HomeworkLoadingState()
-            state.homework.isEmpty() -> HomeworkEmptyState(onRefresh)
+            // 短内容（加载/空）不滚动：留在栏下，老起笔位置（外层已无占位，这里补回）。
+            state.isLoading && state.homework.isEmpty() -> Box(
+                Modifier.fillMaxWidth().padding(top = 8.dp + topClearance),
+            ) { HomeworkLoadingState() }
+            state.homework.isEmpty() -> Box(
+                Modifier.fillMaxWidth().padding(top = 8.dp + topClearance),
+            ) { HomeworkEmptyState(onRefresh) }
             else -> {
                 if (expanded) {
                     // 与移动端一致：同步态在顶栏；Banner 内筛选入口；课程/过期/排序进 sheet。
@@ -207,6 +221,8 @@ fun HomeworkWorkspace(
                         legacyWarningVisible = legacyWarningVisible,
                         onDismissLegacyWarning = onDismissLegacyWarning,
                         onOpenFilter = { showFilterSheet = true },
+                        onRetry = onRefresh,
+                        onDismissFailure = model::dismissFailure,
                         onOpen = { key ->
                             transfer.fileFeedback = null
                             // 必须先同步写完选中再 push，否则详情页打开时 selectedHomework 仍为空；
@@ -461,7 +477,8 @@ fun HomeworkDetailWorkspace(
             .verticalScroll(detailScrollState)
             .desktopTouchScroll(detailScrollState)
             .padding(horizontal = 24.dp)
-            .padding(top = 12.dp, bottom = 28.dp),
+            // 原生栏 underlap 时视口顶边贴屏幕顶，首项靠这份顶边距让开（其余平台恒 0）。
+            .padding(top = 12.dp + LocalTopBarClearance.current, bottom = 28.dp),
     ) {
         state.selectedHomework?.let { selected ->
             HomeworkDetailSheetBody(
@@ -775,9 +792,13 @@ private fun HomeworkScrollableContent(
     onDismissLegacyWarning: () -> Unit = {},
     onOpenFilter: () -> Unit,
     onOpen: (String) -> Unit,
+    onRetry: () -> Unit = {},
+    onDismissFailure: () -> Unit = {},
     modifier: Modifier,
 ) {
     val listState = rememberLazyListState()
+    // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
+    val topClearance = LocalTopBarClearance.current
     LaunchedEffect(state.sortOrder, state.hideExpired, state.selectedCourses) {
         listState.scrollToItem(0)
     }
@@ -785,8 +806,26 @@ private fun HomeworkScrollableContent(
         state = listState,
         modifier = modifier.desktopTouchScroll(listState),
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(bottom = 18.dp + LocalBottomBarClearance.current),
+        contentPadding = PaddingValues(
+            // 首项靠内部顶边距让开原生栏（外层已不再占位，见 Workspace）：8.dp 还原原来的
+            // 列表起笔位置，clearance 让内容从栏底开始、滚起来穿进栏后供原生 blur 采样。
+            top = 8.dp + topClearance,
+            bottom = 18.dp + LocalBottomBarClearance.current,
+        ),
     ) {
+        // underlap 时失败横幅也收进列表（外层已跳过），平时保持外层旧布局，见 Workspace。
+        if (topClearance > 0.dp) {
+            state.failure?.let { failure ->
+                item(key = "homework-failure") {
+                    HomeworkFailureBanner(
+                        failure = failure,
+                        hasContent = state.homework.isNotEmpty(),
+                        onRetry = onRetry,
+                        onDismiss = onDismissFailure,
+                    )
+                }
+            }
+        }
         if (legacyWarningVisible) {
             item(key = "homework-legacy-warning") {
                 LegacySmartTransportWarning(onDismiss = onDismissLegacyWarning)

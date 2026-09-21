@@ -223,12 +223,11 @@ private final class NativeChromeBinding {
         button.accessibilityLabel = title
         actionButtons[role] = button
         let item = UIBarButtonItem(customView: button)
-        if #available(iOS 26.0, *) {
-            // Let UIKit draw the one native glass surface around this item.
-            // The custom view contains only the icon; a second .glass() layer
-            // would make calendar/actions look like nested capsules.
-            item.sharesBackground = false
-        }
+        // NOTE: do NOT set sharesBackground = false here. Verified live (lldb + screenshot):
+        // when every item opts out of the shared background, UIKit builds no background view
+        // at all (_UIBarBackground stays empty) and the bar renders transparent no matter what
+        // appearance is assigned. Default sharing gives the Settings-style frosted bar; the
+        // icon itself stays a plain glyph, no nested capsules.
         return item
     }
 
@@ -258,9 +257,7 @@ private final class NativeChromeBinding {
         ])
 
         let item = UIBarButtonItem(customView: button)
-        if #available(iOS 26.0, *) {
-            item.sharesBackground = false
-        }
+        // Same as iconBarItem: keep the shared bar background so _UIBarBackground is built.
         return item
     }
 
@@ -394,9 +391,13 @@ private final class NativeChromeBinding {
     }
 
     /// Compose cannot expose a UIScrollView to UINavigationBar, so keep the
-    /// edge state in the native host. The navigation bar itself remains a
-    /// transparent, compact UIKit bar; it does not add a gradient, blur, or
-    /// another material layer over the Compose content.
+    /// edge state in the native host. At the scroll top the bar stays
+    /// transparent (page background shows through, unchanged); once Compose
+    /// reports content scrolled underneath, the bar switches to the system
+    /// default background so the render stack applies the native blur /
+    /// Liquid Glass material itself. No handmade blur view is added here:
+    /// the removed `NativeNavigationBarBackgroundView` (custom
+    /// UIVisualEffectView + gradient mask) is superseded by this.
     ///
     /// Keep the title hierarchy stable. Compose's Skia scroll container is not
     /// a UIKit scroll view, so manually switching large-title display modes
@@ -406,11 +407,12 @@ private final class NativeChromeBinding {
         guard let controller, let navigationController = controller.navigationController else { return }
         guard lastScrollEdgeState != scrollEdge else { return }
         lastScrollEdgeState = scrollEdge
+        // The bar background itself always stays transparent; the Liquid Glass surface is
+        // the dedicated overlay (NativeNavigationBarGlassView), toggled below. Rationale,
+        // all verified live: manually built appearances ignore configureWith* on iOS 27,
+        // and sharesBackground=false suppresses _UIBarBackground entirely — so the
+        // appearance path can only do titles, never glass.
         let appearance = UINavigationBarAppearance()
-        // Keep the system bar transparent in both scroll states. There is no
-        // additional background layer here: the title bar is just the native
-        // UIKit title/actions over the page content.
-        appearance.configureWithTransparentBackground()
         appearance.backgroundColor = .clear
         appearance.shadowColor = .clear
         appearance.titleTextAttributes = [
@@ -429,6 +431,7 @@ private final class NativeChromeBinding {
             navigationController.navigationBar.scrollEdgeAppearance = appearance
             navigationController.view.layoutIfNeeded()
         }
+        (navigationController as? TabRootNavigationController)?.setTopGlassVisible(scrollEdge)
     }
 }
 
@@ -522,6 +525,42 @@ private final class NativeSpinnerButton: UIButton {
     }
 }
 
+/// Title-bar Liquid Glass: a real glass surface spanning the status + navigation area,
+/// below the bar's own title/actions and above the Compose content.
+///
+/// Why an overlay instead of UINavigationBarAppearance.backgroundEffect (verified live):
+/// manually built appearances ignore configureWith* on iOS 27, and
+/// sharesBackground=false suppresses _UIBarBackground entirely. The overlay uses the
+/// same Regular glass as the native sheets (see BJTUInstallNativeSheetMaterial), so the
+/// title bar refracts like the system TabBar instead of frosting like a plain blur.
+/// Visibility is driven by scroll-edge state; at the top the bar stays transparent.
+private final class NativeNavigationBarGlassView: UIVisualEffectView {
+    init() {
+        super.init(effect: Self.barGlassEffect())
+        backgroundColor = .clear
+        isOpaque = false
+        isUserInteractionEnabled = false
+        autoresizingMask = [.flexibleWidth, .flexibleBottomMargin]
+        // Hidden until content actually scrolls underneath (native scroll-edge semantics).
+        alpha = 0
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private static func barGlassEffect() -> UIVisualEffect {
+        if #available(iOS 26.0, *) {
+            let glass = UIGlassEffect(style: .regular)
+            glass.isInteractive = true
+            return glass
+        } else {
+            return UIBlurEffect(style: .systemMaterial)
+        }
+    }
+}
+
 /// One native UILabel is overlaid on the navigation bar's own coordinate space.
 /// `UINavigationItem.title` deliberately avoids this because UIKit shifts it to
 /// avoid a long trailing action group; the app needs a title that stays centered
@@ -560,6 +599,10 @@ private final class TabRootNavigationController: UINavigationController, UINavig
     private let selectTab: (String) -> Void
     private var centeredTitleLabel: NativeCenteredNavigationTitle?
     private var navigationBarHiddenState: Bool?
+    /// 原生导航栏实际占掉的顶部高度（栏底 maxY，含状态栏），推给 Compose 做滚动内容顶边距：
+    /// 内容要能伸进栏后，玻璃才有东西可折射。栏隐藏时推 0。镜像底栏的容差推送。
+    private var pushedTopInset: CGFloat = -1
+    private var navigationBarGlassView: NativeNavigationBarGlassView?
     /// 根页 ↔ 被压入的二级页切换时通知宿主：底栏被 push 藏起来时同步隐藏。
     var onBarVisibilityChanged: ((Bool) -> Void)?
 
@@ -589,7 +632,12 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         super.viewDidLoad()
         guard viewControllers.isEmpty else { return }
         navigationBar.clipsToBounds = false
-        navigationBar.backgroundColor = .clear
+        // 注意：不要在这里直接设 navigationBar.backgroundColor。栏背景完全由
+        // NativeNavigationBarGlassView（真玻璃）提供，appearance 只负责透明底 + 藏系统标题；
+        // 直接写死 .clear 会把材质压成"看穿到纯色"。
+        let glassView = NativeNavigationBarGlassView()
+        navigationBarGlassView = glassView
+        view.insertSubview(glassView, belowSubview: navigationBar)
         let binding = NativeChromeBinding()
         let root = MainViewControllerKt.NativeTabRootViewController(
             session: session,
@@ -692,9 +740,34 @@ private final class TabRootNavigationController: UINavigationController, UINavig
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        if let glassView = navigationBarGlassView {
+            let barFrame = navigationBar.frame
+            glassView.frame = CGRect(
+                x: 0,
+                y: 0,
+                width: view.bounds.width,
+                height: navigationBar.isHidden ? 0 : barFrame.maxY,
+            )
+            glassView.isHidden = navigationBar.isHidden
+            view.bringSubviewToFront(glassView)
+            view.bringSubviewToFront(navigationBar)
+        }
         if let centeredTitleLabel {
             navigationBar.bringSubviewToFront(centeredTitleLabel)
         }
+        let topInset = navigationBar.isHidden ? 0 : navigationBar.frame.maxY
+        if abs(topInset - pushedTopInset) > 0.5 {
+            pushedTopInset = topInset
+            session.glassTopBarInsetDp = Float(topInset)
+        }
+    }
+
+    /// Show/hide the Liquid Glass surface behind the title bar (driven by scroll-edge state).
+    func setTopGlassVisible(_ visible: Bool) {
+        guard let glassView = navigationBarGlassView else { return }
+        let alpha: CGFloat = visible ? 1 : 0
+        guard glassView.alpha != alpha else { return }
+        glassView.alpha = alpha
     }
 
     /// 只有一页例外不显示系统栏：没有标题的页（写信这类自绘返回的页）。一级 tab 根页现在也有标题，

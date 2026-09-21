@@ -935,6 +935,30 @@ fun AuthenticatedAppShell(
          * 最后一节课被玻璃条盖住。这类页面要的恰恰是「整张表停在底栏上方」。
          */
         keepsBottomBarInset: Boolean = false,
+        /**
+         * 本页内容滚进原生导航栏后面（真原生模糊用）。
+         *
+         * 为 true 且原生标题栏接管时，不再用实心 Spacer 占位，改由滚动容器吃
+         * [LocalTopBarClearance] 顶边距：列表从屏幕顶开始画、首项靠顶边距让开，
+         * 滚起来后内容穿进栏后，原生玻璃才有东西可折射。默认 false：未迁移的页面
+         * 保持原来的 Spacer 布局，零回归。
+         */
+        scrollUnderTopBar: Boolean = false,
+        /**
+         * 本页不吃「内容伸进原生栏」那条特例，改回真实布局内边距（顶栏版 keepsBottomBarInset）。
+         *
+         * 课程表「色块概览」这类**不可纵向滚动**的全览表格用它：整张表停在栏下方，
+         * 另加 8.dp 呼吸（与底栏镜像）。
+         */
+        keepsTopBarInset: Boolean = false,
+        /**
+         * 原生栏不随滚动变化（无透明 ↔ 玻璃过渡），栏保持顶部时的纯色样子。
+         *
+         * 给视口到不了栏后的页面用（课表/课件/教室详情/占用详情：固定头挡在列表上方，
+         * 内容永远滚不进栏后，过渡只会凭空闪一下）。布局保持 Spacer 老样子，
+         * 顶栏右侧同步状态照常进原生栏；与其他页互不影响，逐页开关。
+         */
+        staticTopBar: Boolean = false,
         content: @Composable () -> Unit,
     ) {
         val effectiveRefreshAction = refreshAction ?: refresh
@@ -1008,7 +1032,21 @@ fun AuthenticatedAppShell(
                 var scrolledUnderBarPx by remember { mutableFloatStateOf(0f) }
                 val topFadeHeight = 52.dp
                 val topFadeHeightPx = with(LocalDensity.current) { topFadeHeight.toPx() }
-                val topFadeActive = nativeTitleBarActive && !keepsComposeTopBar
+                val topFadeActive = nativeTitleBarActive && !keepsComposeTopBar && !staticTopBar
+                // 真原生 underlap：接管 + opt-in 的页面跳过实心 Spacer，内容从屏幕顶开始画；
+                // 顶边距取宿主实测栏高与状态栏二者的较大值，首帧（宿主未回报前）也不错位。
+                // 非玻璃壳/未 opt-in 页面 clearance 恒 0，走原来的 Spacer/自绘顶栏，老样子。
+                // keepsTopBarInset 的不可滚页面改回布局内边距（停在栏下 + 8.dp 呼吸）。
+                val useTopUnderlap = topFadeActive && scrollUnderTopBar
+                val measuredTopInset = maxOf(
+                    WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
+                    session.glassTopBarInsetDp.dp,
+                )
+                val topBarClearance = if (useTopUnderlap && !keepsTopBarInset) {
+                    measuredTopInset
+                } else {
+                    0.dp
+                }
                 // Read the scroll state during composition so changes from the nested-scroll
                 // connection invalidate this block and reach the UIKit navigation bar.
                 val nativeScrolledUnder = topFadeActive && scrolledUnderBarPx > 0f
@@ -1049,7 +1087,9 @@ fun AuthenticatedAppShell(
                     }
                     onNativeActionChanged(nativeBarAction)
                 }
-                if (nativeTitleBarActive && !keepsComposeTopBar) {
+                if (useTopUnderlap) {
+                    // 内容自己从屏幕顶画起，首项靠 LocalTopBarClearance 让开；这里不占位。
+                } else if (nativeTitleBarActive && !keepsComposeTopBar) {
                     Spacer(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1078,6 +1118,12 @@ fun AuthenticatedAppShell(
                 // a second Compose gradient over the content.
                 Box(
                     modifier = Modifier.weight(1f).fillMaxWidth().then(
+                        if (useTopUnderlap && keepsTopBarInset) {
+                            Modifier.padding(top = measuredTopInset + 8.dp)
+                        } else {
+                            Modifier
+                        },
+                    ).then(
                         if (topFadeActive) {
                             Modifier.nestedScroll(
                                 object : NestedScrollConnection {
@@ -1100,13 +1146,17 @@ fun AuthenticatedAppShell(
                                         // short/non-scrollable page (notably Physical Online)
                                         // from toggling the navigation-bar state. Keep the
                                         // scrolled-under state while the list is moving back
-                                        // through its content; reset only when the child reports
-                                        // downward overscroll at the actual top edge.
+                                        // through its content; reset only on genuine top-edge
+                                        // overscroll (child consumed nothing, downward remainder).
+                                        // The old `available.y > 0f` alone also fired mid-list
+                                        // (downward scrolls consume AND leave remainder), which
+                                        // cleared the state at rest and left the bar transparent
+                                        // with content behind it — exactly the reported symptom.
                                         if (consumed.y < 0f) {
                                             scrolledUnderBarPx =
                                                 (scrolledUnderBarPx - consumed.y)
                                                     .coerceIn(0f, topFadeHeightPx)
-                                        } else if (available.y > 0f) {
+                                        } else if (consumed.y == 0f && available.y > 0f) {
                                             scrolledUnderBarPx = 0f
                                         }
                                         return Offset.Zero
@@ -1121,6 +1171,7 @@ fun AuthenticatedAppShell(
                     CompositionLocalProvider(
                         LocalBottomBarClearance provides
                             if (glassScrollUnderBar) compactBottomBarOverlayPadding else 0.dp,
+                        LocalTopBarClearance provides topBarClearance,
                     ) {
                         content()
                     }
@@ -1184,6 +1235,7 @@ fun AuthenticatedAppShell(
                 ),
                 onStatusClick = { homeSyncDialogVisible = true },
                 syncFailureItems = homeSyncFailureItems,
+                scrollUnderTopBar = true,
             ) {
                 HomeWorkspace(
                     model = homeModel,
@@ -1223,6 +1275,7 @@ fun AuthenticatedAppShell(
                 isRefreshing = gradeState.isRefreshing,
                 showBack = false,
                 modifier = modifier,
+                scrollUnderTopBar = true,
                 // 与课表一致：同步态在顶栏右上，banner 内只放成绩摘要与筛选入口。
                 idleStatusText = when {
                     gradeState.failure != null -> "同步失败"
@@ -1260,6 +1313,10 @@ fun AuthenticatedAppShell(
                 // 色块概览是不可纵向滚动的全览表格，必须整张停在玻璃底栏上方；
                 // 切到按日列表（可滚动）时又回到「延伸进底栏」的常态。
                 keepsBottomBarInset = courseState.compactViewMode == CourseCompactViewMode.WEEK,
+                // 顶栏 underlap 暂不启用：按日列表视口被固定的摘要/模式/日期三段头挡在栏下，
+                // 内容到不了栏后；硬上只会把三段头顶进状态栏。等表头随滚 redesign 再议。
+                // 且关闭滚动过渡：栏后永远是纯色，过渡只会凭空闪一下。
+                staticTopBar = true,
             ) {
                 CourseScheduleWorkspace(
                     state = courseState,
@@ -1281,6 +1338,7 @@ fun AuthenticatedAppShell(
                 isRefreshing = examState.isRefreshing,
                 showBack = true,
                 modifier = modifier,
+                scrollUnderTopBar = true,
                 // 与成绩/作业一致：同步态顶栏右上，banner 内放类型筛选入口。
                 idleStatusText = when {
                     examState.failure != null -> "同步失败"
@@ -1306,6 +1364,7 @@ fun AuthenticatedAppShell(
                 isRefreshing = homeworkState.isRefreshing,
                 showBack = false,
                 modifier = modifier,
+                scrollUnderTopBar = true,
                 // 与课表/成绩一致：同步态在顶栏右上，banner 内只放摘要与筛选入口。
                 idleStatusText = when {
                     homeworkState.failure != null -> "同步失败"
@@ -1342,6 +1401,9 @@ fun AuthenticatedAppShell(
                 isRefreshing = coursewareState.isRefreshing,
                 showBack = true,
                 modifier = modifier,
+                // 顶栏 underlap 暂不启用：引导行与课程标题行固定在列表上方，视口到不了栏后。
+                // 且关闭滚动过渡：栏后永远是纯色，过渡只会凭空闪一下。
+                staticTopBar = true,
                 // 与成绩/作业一致：右上角「已同步」+ sync 同一胶囊，勿只留孤图标。
                 idleStatusText = when {
                     coursewareState.failure != null -> "同步失败"
@@ -1370,6 +1432,7 @@ fun AuthenticatedAppShell(
                 isRefreshing = false,
                 showBack = true,
                 modifier = modifier,
+                scrollUnderTopBar = true,
             ) {
                 SchoolCalendarArticleWorkspace(
                     expanded = expanded,
@@ -1384,6 +1447,7 @@ fun AuthenticatedAppShell(
                 isRefreshing = false,
                 showBack = true,
                 modifier = modifier,
+                scrollUnderTopBar = true,
             ) {
                 ReportCardDownloadWorkspace(
                     model = otherFunctionModel,
@@ -1399,6 +1463,7 @@ fun AuthenticatedAppShell(
                 showBack = true,
                 modifier = modifier,
                 idleStatusText = classroomIdleStatusText(classroomState),
+                scrollUnderTopBar = true,
             ) {
                 ClassroomWorkspace(
                     model = classroomModel,
@@ -1424,6 +1489,7 @@ fun AuthenticatedAppShell(
                 isRefreshing = false,
                 showBack = true,
                 modifier = modifier,
+                scrollUnderTopBar = true,
             ) {
                 ClassroomOccupancyWorkspace(
                     model = classroomOccupancyModel,
@@ -1449,6 +1515,9 @@ fun AuthenticatedAppShell(
                 showBack = true,
                 modifier = modifier,
                 idleStatusText = classroomIdleStatusText(classroomState),
+                // 顶栏 underlap 暂不启用：搜索框与筛选芯片固定在列表上方，视口到不了栏后。
+                // 且关闭滚动过渡：栏后永远是纯色，过渡只会凭空闪一下。
+                staticTopBar = true,
             ) {
                 ClassroomBuildingWorkspace(
                     model = classroomModel,
@@ -1464,6 +1533,9 @@ fun AuthenticatedAppShell(
                 isRefreshing = classroomOccupancyState.isLoading,
                 showBack = true,
                 modifier = modifier,
+                // 顶栏 underlap 暂不启用：周/图例/星期三段筛选头固定在列表上方，视口到不了栏后。
+                // 且关闭滚动过渡：栏后永远是纯色，过渡只会凭空闪一下。
+                staticTopBar = true,
             ) {
                 ClassroomOccupancyBuildingWorkspace(
                     model = classroomOccupancyModel,
@@ -1479,6 +1551,7 @@ fun AuthenticatedAppShell(
                 isRefreshing = false,
                 showBack = true,
                 modifier = modifier,
+                scrollUnderTopBar = true,
             ) {
                 HomeworkDetailWorkspace(
                     model = homeworkModel,
@@ -1494,6 +1567,7 @@ fun AuthenticatedAppShell(
                 isRefreshing = false,
                 showBack = true,
                 modifier = modifier,
+                scrollUnderTopBar = true,
             ) {
                 SettingsWorkspace(
                     model = settingsModel,
@@ -1548,6 +1622,7 @@ fun AuthenticatedAppShell(
                 isRefreshing = mailboxMessageLoading,
                 showBack = true,
                 modifier = modifier,
+                scrollUnderTopBar = true,
             ) {
                 MailboxWorkspace(
                     model = mailboxModel,
@@ -1589,6 +1664,7 @@ fun AuthenticatedAppShell(
                 // 非底栏路由 push 进来时才显示系统返回按钮。
                 showBack = isPushedHostDestination,
                 modifier = modifier,
+                scrollUnderTopBar = true,
                 idleStatusText = when {
                     (phyVlabState.failure != null || phyVlabState.casLoginRequired) &&
                         phyVlabState.contentSource == PhyVlabContentSource.CACHE -> "同步失败·正显示缓存"
@@ -1626,6 +1702,7 @@ fun AuthenticatedAppShell(
                 isRefreshing = phyVlabState.isDetailLoading,
                 showBack = true,
                 modifier = modifier,
+                scrollUnderTopBar = true,
             ) {
                 PhyVlabDetailWorkspace(
                     model = phyVlabModel,
@@ -1642,6 +1719,7 @@ fun AuthenticatedAppShell(
                 isRefreshing = false,
                 showBack = false,
                 modifier = modifier,
+                scrollUnderTopBar = true,
             ) {
                 MoreWorkspace(
                     phyVlabEnabled = phyVlabEnabled,

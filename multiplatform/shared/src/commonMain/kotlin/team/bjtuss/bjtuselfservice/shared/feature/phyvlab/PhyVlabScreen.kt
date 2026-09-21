@@ -35,6 +35,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ModalBottomSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -126,9 +127,14 @@ fun PhyVlabWorkspace(
         uploadFeedback = null
     }
 
+    // 原生栏 underlap 时居中态保持老位置（外层无占位，这里按栏高补回）。
+    val topClearance = LocalTopBarClearance.current
     Column(modifier = modifier.fillMaxSize()) {
         if (holdNetwork) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.fillMaxSize().padding(top = topClearance),
+                contentAlignment = Alignment.Center,
+            ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -140,7 +146,10 @@ fun PhyVlabWorkspace(
             return
         }
         if (state.isLoading && state.courses.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.fillMaxSize().padding(top = topClearance),
+                contentAlignment = Alignment.Center,
+            ) {
                 CircularProgressIndicator()
             }
             return
@@ -148,28 +157,36 @@ fun PhyVlabWorkspace(
         val failureForBanner = state.failure ?: PhyVlabSyncFailure.SESSION_EXPIRED.takeIf {
             state.casLoginRequired && state.contentSource == PhyVlabContentSource.CACHE
         }
-        failureForBanner?.let { failure ->
-            PhyVlabFailureBanner(
-                failure = failure,
-                hasCachedContent = state.contentSource == PhyVlabContentSource.CACHE,
-                cachedAtEpochMillis = state.cachedAtEpochMillis,
-                onRetry = refresh,
-            )
+        // underlap 时横幅收进列表首项；其余路径保持外层旧布局（作业页同款）。
+        if (topClearance <= 0.dp) {
+            failureForBanner?.let { failure ->
+                PhyVlabFailureBanner(
+                    failure = failure,
+                    hasCachedContent = state.contentSource == PhyVlabContentSource.CACHE,
+                    cachedAtEpochMillis = state.cachedAtEpochMillis,
+                    onRetry = refresh,
+                )
+            }
         }
         // CAS 失效时如果仍有本地快照，继续展示只读缓存；用户可从右上角重试，
         // 不让校园网外的离线场景退化成空白/登录阻断页。
         if (state.casLoginRequired && state.contentSource != PhyVlabContentSource.CACHE) {
-            PhyVlabCasLoginRequiredState(
-                onRetry = refresh,
-                onLogout = onLogout,
-            )
+            // 短内容不滚动：留在栏下，老居中位置（外层无占位，这里按栏高补回）。
+            Box(Modifier.fillMaxSize().padding(top = topClearance), contentAlignment = Alignment.Center) {
+                PhyVlabCasLoginRequiredState(
+                    onRetry = refresh,
+                    onLogout = onLogout,
+                )
+            }
             return
         }
         if (state.courses.isEmpty()) {
-            PhyVlabEmptyState(
-                onRetry = refresh,
-                onOpenWeb = { onOpenCourse("https://phyvlab.bjtu.edu.cn/my/courses.php") },
-            )
+            Box(Modifier.fillMaxSize().padding(top = topClearance), contentAlignment = Alignment.Center) {
+                PhyVlabEmptyState(
+                    onRetry = refresh,
+                    onOpenWeb = { onOpenCourse("https://phyvlab.bjtu.edu.cn/my/courses.php") },
+                )
+            }
             return
         }
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -183,9 +200,28 @@ fun PhyVlabWorkspace(
                 modifier = Modifier
                     .fillMaxSize()
                     .desktopTouchScroll(listState),
-                contentPadding = PaddingValues(horizontal = horizontalInset, vertical = 12.dp),
+                contentPadding = PaddingValues(
+                    // 首项靠内部顶边距让开原生栏：12.dp 还原起笔位置（外层已不再占位）。
+                    start = horizontalInset,
+                    top = 12.dp + topClearance,
+                    end = horizontalInset,
+                    bottom = 12.dp,
+                ),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                // underlap 时失败横幅收进列表首项（外层已去掉），平时不占位。
+                if (topClearance > 0.dp) {
+                    failureForBanner?.let { failure ->
+                        item(key = "phyvlab-failure") {
+                            PhyVlabFailureBanner(
+                                failure = failure,
+                                hasCachedContent = state.contentSource == PhyVlabContentSource.CACHE,
+                                cachedAtEpochMillis = state.cachedAtEpochMillis,
+                                onRetry = refresh,
+                            )
+                        }
+                    }
+                }
                 item(key = "courses") {
                     Text("我的课程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 }
@@ -654,7 +690,10 @@ private fun PhyVlabAssignmentDetailContent(
             .then(if (fullScreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth().heightIn(max = 680.dp))
             .verticalScroll(scrollState)
             .desktopTouchScroll(scrollState)
-            .padding(horizontal = 24.dp, vertical = 12.dp),
+            .padding(horizontal = 24.dp, vertical = 12.dp)
+            // 原生栏 underlap 时视口顶边贴屏幕顶，首项靠这份顶边距让开。
+            // 只在全屏路由页生效：sheet 里的复用不受影响（且 sheet 路径本就没有 clearance）。
+            .padding(top = if (fullScreen) LocalTopBarClearance.current else 0.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(activity.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)

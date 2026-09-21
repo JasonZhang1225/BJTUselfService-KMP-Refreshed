@@ -74,6 +74,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailComposeDraft
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailMessage
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailSummary
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.util.SchoolRichTextBlock
 import team.bjtuss.bjtuselfservice.shared.util.schoolRichTextToBlocks
@@ -1124,7 +1125,13 @@ private fun MailboxDetailPane(
         modifier = modifier
             .verticalScroll(scrollState)
             .desktopTouchScroll(scrollState)
-            .padding(horizontal = if (compact) 18.dp else 28.dp, vertical = 12.dp),
+            // 原生栏 underlap 时视口顶边贴屏幕顶，首项靠这份顶边距让开。
+            // 只在全屏路由页生效：宽屏侧栏与内嵌详情不受影响（那些路径本来就没有 clearance）。
+            .padding(
+                horizontal = if (compact) 18.dp else 28.dp,
+                vertical = 12.dp,
+            )
+            .padding(top = if (fullScreen) LocalTopBarClearance.current else 0.dp),
     ) {
         if (waitingForMessage) {
             Box(

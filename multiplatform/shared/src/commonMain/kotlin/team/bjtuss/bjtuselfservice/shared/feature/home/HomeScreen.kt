@@ -3,6 +3,7 @@ package team.bjtuss.bjtuselfservice.shared.feature.home
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Spring
@@ -222,7 +223,8 @@ fun HomeWorkspace(
         contentPadding = PaddingValues(
             start = if (expanded) 8.dp else 16.dp,
             end = if (expanded) 8.dp else 16.dp,
-            top = 14.dp,
+            // 原生栏 underlap 时首项靠这份顶边距让开，视口本身画到屏幕顶（底栏同理）。
+            top = 14.dp + LocalTopBarClearance.current,
             // 玻璃 TabBar 浮在列表之上：末项靠这份尾部留白让开，视口本身画到物理底边。
             bottom = 14.dp + LocalBottomBarClearance.current,
         ),

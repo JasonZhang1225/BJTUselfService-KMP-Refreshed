@@ -36,6 +36,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.otherfunction.OtherFunctionFail
 import team.bjtuss.bjtuselfservice.shared.domain.otherfunction.OtherFunctionTask
 import team.bjtuss.bjtuselfservice.shared.domain.otherfunction.OtherFunctionTaskState
 import team.bjtuss.bjtuselfservice.shared.domain.otherfunction.ReportCardLanguage
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 
 const val SCHOOL_CALENDAR_ARTICLE_URL = "https://mp.weixin.qq.com/s/_O3Jwni5D2ZB93fmczCYmQ"
 
@@ -133,7 +134,8 @@ private fun OtherFunctionPageScaffold(
         modifier = if (expanded) {
             modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         } else {
-            modifier.padding(horizontal = 16.dp).padding(top = 14.dp)
+            // 短静态页不滚动：留在原生栏下（老起笔 14.dp + 栏高，其余平台恒 0 不变）。
+            modifier.padding(horizontal = 16.dp).padding(top = 14.dp + LocalTopBarClearance.current)
         },
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {

@@ -65,6 +65,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomCapacity
 import team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomSortDirection
 import team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomSortField
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 
 /** iPhone 两级列表（原生 push 详情）、macOS 列表—详情并排的教室人数估计页面。 */
@@ -170,13 +171,19 @@ private fun BuildingList(
 ) {
     // 与成绩/作业/更多一致：紧凑端水平 16.dp，避免卡片贴边占满屏宽。
     val listState = rememberLazyListState()
+    // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
+    val topClearance = LocalTopBarClearance.current
     LazyColumn(
         state = listState,
         modifier = modifier
             .desktopTouchScroll(listState)
             .padding(horizontal = 16.dp)
-            .padding(top = 8.dp),
-        contentPadding = PaddingValues(bottom = 16.dp),
+            .padding(top = if (topClearance > 0.dp) 0.dp else 8.dp),
+        contentPadding = PaddingValues(
+            // 首项靠内部顶边距让开原生栏（外层已不再占位）：8.dp 还原起笔位置。
+            top = 8.dp + topClearance,
+            bottom = 16.dp,
+        ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (introBannerVisible) {

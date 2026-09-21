@@ -115,6 +115,7 @@ import team.bjtuss.bjtuselfservice.shared.data.grade.formatGradeDetailForDisplay
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.usesLegacySmartTransportFor
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
 import team.bjtuss.bjtuselfservice.shared.data.grade.GradeSyncFailure
@@ -228,28 +229,38 @@ internal fun GradeWorkspace(
         }
     }
 
+    // 原生栏 underlap 时外层不再做布局占位（作业页同款）：视口顶边贴屏幕顶。
+    val topClearance = LocalTopBarClearance.current
     Column(
         modifier = if (expanded) {
             modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         } else {
             // 与课表/作业紧凑顶距对齐，避免 banner 视觉偏大。
-            modifier.padding(horizontal = 16.dp).padding(top = 8.dp)
+            modifier.padding(horizontal = 16.dp).padding(top = if (topClearance > 0.dp) 0.dp else 8.dp)
         },
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         // 同步态在 DestinationPage 顶栏；此处不再放页内「同步成绩」。
-        state.failure?.let { failure ->
-            GradeFailureBanner(
-                failure = failure,
-                hasContent = state.grades.isNotEmpty(),
-                onRetry = onRefresh,
-                onDismiss = model::dismissFailure,
-            )
+        // 失败横幅：宽屏仍钉顶部；紧凑端 underlap 时收进列表首项（外层已跳过）。
+        if (expanded || topClearance <= 0.dp) {
+            state.failure?.let { failure ->
+                GradeFailureBanner(
+                    failure = failure,
+                    hasContent = state.grades.isNotEmpty(),
+                    onRetry = onRefresh,
+                    onDismiss = model::dismissFailure,
+                )
+            }
         }
 
         when {
-            state.isLoading && state.grades.isEmpty() -> GradeLoadingState()
-            state.grades.isEmpty() -> GradeEmptyState(onRefresh)
+            // 短内容（加载/空）不滚动：留在栏下，老起笔位置（外层已无占位，这里补回）。
+            state.isLoading && state.grades.isEmpty() -> Box(
+                Modifier.fillMaxWidth().padding(top = 8.dp + topClearance),
+            ) { GradeLoadingState() }
+            state.grades.isEmpty() -> Box(
+                Modifier.fillMaxWidth().padding(top = 8.dp + topClearance),
+            ) { GradeEmptyState(onRefresh) }
             else -> {
                 if (expanded) {
                     GradeSummaryCard(
@@ -282,6 +293,8 @@ internal fun GradeWorkspace(
                         gradeInfo = gradeInfo,
                         model = model,
                         onOpenFilter = { showFilterSheet = true },
+                        onRetry = onRefresh,
+                        onDismissFailure = model::dismissFailure,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                     state.selectedGrade?.let { grade ->
@@ -730,9 +743,13 @@ private fun GradeScrollableContent(
     gradeInfo: GradeInfoResult,
     model: GradeScreenModel,
     onOpenFilter: () -> Unit,
+    onRetry: () -> Unit = {},
+    onDismissFailure: () -> Unit = {},
     modifier: Modifier,
 ) {
     val listState = rememberLazyListState()
+    // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
+    val topClearance = LocalTopBarClearance.current
     // 稳定 key 重排时 LazyColumn 会锚定旧 item，导致跳到列表尾；排序变化时回顶。
     LaunchedEffect(state.sortOrder) {
         listState.scrollToItem(0)
@@ -741,8 +758,25 @@ private fun GradeScrollableContent(
         state = listState,
         modifier = modifier.desktopTouchScroll(listState),
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(bottom = 20.dp + LocalBottomBarClearance.current),
+        contentPadding = PaddingValues(
+            // 首项靠内部顶边距让开原生栏（外层已不再占位）：8.dp 还原起笔位置。
+            top = 8.dp + topClearance,
+            bottom = 20.dp + LocalBottomBarClearance.current,
+        ),
     ) {
+        // underlap 时失败横幅也收进列表（外层已跳过），平时保持外层旧布局。
+        if (topClearance > 0.dp) {
+            state.failure?.let { failure ->
+                item(key = "grade-failure") {
+                    GradeFailureBanner(
+                        failure = failure,
+                        hasContent = state.grades.isNotEmpty(),
+                        onRetry = onRetry,
+                        onDismiss = onDismissFailure,
+                    )
+                }
+            }
+        }
         item(key = "grade-summary") {
             GradeSummaryCard(
                 state = state,
