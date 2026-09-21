@@ -509,3 +509,55 @@
   `screencapture -x -o -l<windowID> out.png`，id 用一小段 `swiftc` 脚本调 `CGWindowListCopyWindowInfo` 取
   （JXA 拿不到 `CFArray` 桥接、`python3 + ctypes` 那条段错误）；按 `kCGWindowOwnerName` 过滤会撞上安装版与开发实例同名，
   要按窗口标题过滤。klib 勘查必须 `grep -a` 且不套 `head`（当晚一次 `head -12` 让我误判 `NSToolbarDelegate` 未导出）。
+
+## M17 Liquid：液态玻璃壳与 1.7.8-Liquid 四端发布（2026-09-19～09-21，自 memory.md 归档）
+
+> 计划 `docs/migration/m17-apple-liquid-glass-shell-plan.md`；发布文档 `docs/releases/v1.7.8-Liquid.md`；
+> 发布提交 `a109448`（分支 `Liquid`，已推送 `mine/Liquid`）。 Liquid iOS 主线已按用户要求标记完成。
+
+- **发布链**：全平台 `1.7.8-Liquid`、Android/iOS/macOS build code `19`，jpackage 安装器保留三段数字 `1.7.8`。
+  产物复制到 `/Users/zjg/Downloads`：macOS DMG（Apple release metadata + 严格 ad-hoc 签名校验通过）、
+  Android `arm64-v8a` debug APK（安装 `Pixel_10_Pro_XL`，`dumpsys` 确认 versionCode 19）、
+  iOS unsigned IPA（`xcodebuild -sdk iphoneos Release` + 无签名，仅 `Payload/`，需开发者证书重签名后才能装真机）。
+- **原生 sheet 架构**：`AppleSheet.kt` 经 `LocalNativeSheetPresenter` 交给 `IosNativeSheetPresenter` +
+  `UIKitSheetBridge.h/.def`，驱动真实 `UISheetPresentationController`（page sheet、medium/large detent、系统 grabber、
+  交互式 dismiss）；Compose `ModalBottomSheet` 仅 Android/桌面回退。Compose root `opaque = false` 且独立 root 继承
+  Material scheme/typography/shapes 防深色回退；`UIGlassEffectStyleRegular` 同用于 detent/background effect 与
+  sheet 根 `UIVisualEffectView`，无自绘颜色/渐变/圆角；标题与确认/取消/关闭走 `UINavigationBar`/`UIBarButtonItem`，
+  公共 API 可空标题 + `showDismissButton`。
+- **sheet 覆盖面**：同步面板 `HomeSyncDetailsDialog`（iOS ≤6 行 medium、第 7 行自动展开 large）、课表日期
+  `AppleSheetOrAlert`（UIKit `UIDatePicker`，原生「今天」紧邻「取消」）、成绩/课程/考试详情（考试 full-height 防按钮裁切）、
+  课件详情全高 sheet、完美校园无标题 sheet（左侧蓝色「打开完美校园」+ 右侧关闭 X）、校园网充值、邮箱发送确认、
+  物理在线提交/上传、设置清理/更新提示、验证码恢复与静默登录失败提示；非 iOS 保持 Material fallback 同语义。
+- **原生导航栏**：一级 tab 根页与二级 push 页统一 UIKit 紧凑标题（动态 21pt 半粗、居中标签唯一承载）；
+  动作统一 32×32 SF Symbol、结构键缓存滚动不重建；忙碌态原生 `UIActivityIndicatorView` 占真实槽位（点击打开同步面板）；
+  日历动作在左侧；顶栏透明 `UINavigationBarAppearance`，按用户要求移除 Blur/渐变/alpha mask，`prefersLargeTitles = false`。
+- **原生 tab 宿主**：`ContentView.swift` 用 `UITabBar` + 每项独立 `TabRootNavigationController` 绕过五项 More 限制；
+  物理在线一级 tab（`bottomNavSections(true)` 含 PHYVLAB，More 仅总开关）；开关增删 tab 在关闭动画事务中同时更新
+  item 集合与选中项；首页宿主启动物理在线自动同步。
+- **登录与同步**：`entryLoggingIn` 发布为 `NativeBarAction`；首页刷新先开同步 sheet 再并行刷新；同步面板 iOS 仅右上角 X、
+  有失败项才出现「重试」；native title-bar 页不再画 `LinearProgressIndicator`。
+- **列表与课表细节**：作业明文提示成为 `LazyColumn` 首 item 随滚动离开；`AcademicWeekSlot` 把相邻教学周间的自然周
+  展开为独立非教学周，贯通周数弹层/日期跳转/日历导出周范围/教室占用（非教学周只显占位框）；课表 Pager 只监听
+  `settledPage` + 程序滚动目标标记，消除中间动画页写回造成的闪烁。
+- **密码保存**：勾选状态即时同步安全存储、取消即清除；正式路径仅 `AppleKeychainCredentialVault`，无明文/NSUserDefaults 回退
+  （未签名模拟器 Keychain `-34018` 属签名边界）；`AccountPreferences` 区分「明确关闭」与「旧版本无标记」，启动恢复并补写
+  标记（含迁移回归测试）；烟测改用隔离 service/account/preferences key + synthetic fixture（此前 DEBUG `--security-smoke`
+  误用生产 service 并在结束时清除，曾擦掉模拟器已存凭据）。
+- **验证记录**：`:shared:desktopTest` 515 通过、`:shared:iosSimulatorArm64Test` 488 通过（须 Java 21；默认 Java 25.0.1
+  触发旧 Kotlin/IntelliJ 解析器兼容错误）；iOS 27 Simulator 构建 + `--sheet-smoke`、`--security-smoke`
+  （`SECURITY_SMOKE_PASS`）通过；Device Hub iPhone 18 Pro 已登录会话逐项复核 sheet/detent/标题/spinner/tab/完美校园/
+  校园网充值/考试详情全高；Android 深色模式实机截图确认七行同步状态免滚动全可见；macOS `--sync-status-smoke` 通过。
+  模拟器因签名身份更换替换了 App 容器，旧 Keychain 登录态不可复用，自动登录视觉复现待用户重登。全程未输入、输出或复制
+  真实账号/密码/验证码。
+- **未验收移交**：各类 sheet 最终审美、边缘返回、减少透明度、iOS 26 以下回退壳、iPad 宽屏、首页卡片交互待用户主观确认；
+  unsigned IPA 未上真机。
+
+## 安全复查（2026-09-21，只读，未改代码）
+
+- GLM 只读复查 `1.7.8-Liquid`（网络层/本地存储/登出清理与卸载残留/依赖版本四路并行探查 + 联网 CVE 检索）：
+  上轮（2026-09-17 审计 + 2026-09-18 修复）全部保持有效、无回归、无高危。剩余中危 4 项：M1 WebView 持久 Cookie
+  登出不清理（Android `CookieManager` / iOS 持久 `WKWebsiteDataStore`）；M2 iOS 卸载后 Keychain 凭据残留（系统行为）；
+  M3 macOS 无卸载清理（Application Support/Keychain/prefs 残留）；M4 桌面与 Windows 明文 SQLite 缓存（成绩/作业/档案）。
+  低危 L1-L10（VACUUM、服务端登出、桌面日志开关、phyvlab replace 前缀化、Gradle wrapper 哈希、OkHttp 版本锁定等）。
+  报告：`docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-21.md`。修复由用户后续进行。
