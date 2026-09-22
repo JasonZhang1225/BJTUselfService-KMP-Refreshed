@@ -90,6 +90,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
+import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollState
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LegacySmartTransportWarning
 import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
 
@@ -472,6 +474,8 @@ fun HomeworkDetailWorkspace(
     val state by model.state.collectAsState()
     val transfer = rememberHomeworkTransferState(model, fileGateway, onReauthenticate)
     val detailScrollState = rememberScrollState()
+    // 真实偏移上报给壳层算玻璃浓度。
+    ReportTopScrollState(detailScrollState)
     Column(
         modifier = modifier
             .verticalScroll(detailScrollState)
@@ -799,6 +803,8 @@ private fun HomeworkScrollableContent(
     val listState = rememberLazyListState()
     // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
     val topClearance = LocalTopBarClearance.current
+    // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
+    ReportTopScrollListState(listState)
     LaunchedEffect(state.sortOrder, state.hideExpired, state.selectedCourses) {
         listState.scrollToItem(0)
     }

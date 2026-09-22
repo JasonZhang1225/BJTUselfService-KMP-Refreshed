@@ -116,6 +116,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
 import team.bjtuss.bjtuselfservice.shared.usesLegacySmartTransportFor
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
 import team.bjtuss.bjtuselfservice.shared.data.grade.GradeSyncFailure
@@ -750,6 +751,8 @@ private fun GradeScrollableContent(
     val listState = rememberLazyListState()
     // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
     val topClearance = LocalTopBarClearance.current
+    // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
+    ReportTopScrollListState(listState)
     // 稳定 key 重排时 LazyColumn 会锚定旧 item，导致跳到列表尾；排序变化时回顶。
     LaunchedEffect(state.sortOrder) {
         listState.scrollToItem(0)

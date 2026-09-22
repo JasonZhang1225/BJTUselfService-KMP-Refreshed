@@ -36,6 +36,8 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ModalBottomSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
+import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -108,6 +110,8 @@ fun PhyVlabWorkspace(
     var uploadFeedback by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     var activityOrderDescending by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
     val listState = rememberLazyListState()
+    // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
+    ReportTopScrollListState(listState)
     val displayedActivities = orderPhyVlabActivities(state.activities, activityOrderDescending)
     val nowEpochSeconds = rememberPhyVlabNowEpochSeconds()
 
@@ -674,6 +678,8 @@ private fun PhyVlabAssignmentDetailContent(
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
+    // 真实偏移上报给壳层算玻璃浓度；只在全屏路由页生效（sheet 里复用不受影响）。
+    if (fullScreen) ReportTopScrollState(scrollState)
     val openedAt = activity.openText?.let(::formatPhyVlabDateTime)
     val dueAt = activity.dueText?.let(::formatPhyVlabDateTime)
     val submittedAt = detail?.submissionDateText?.let(::formatPhyVlabDateTime)

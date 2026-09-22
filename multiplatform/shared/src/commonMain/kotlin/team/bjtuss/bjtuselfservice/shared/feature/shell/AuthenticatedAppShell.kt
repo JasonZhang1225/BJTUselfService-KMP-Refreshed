@@ -91,12 +91,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -1029,10 +1025,16 @@ fun AuthenticatedAppShell(
                     SideEffect { onNativeTitleChanged(title) }
                 }
                 val nativeSyncBusy = isRefreshing || sessionRecoveryInProgress
-                var scrolledUnderBarPx by remember { mutableFloatStateOf(0f) }
                 val topFadeHeight = 52.dp
                 val topFadeHeightPx = with(LocalDensity.current) { topFadeHeight.toPx() }
                 val topFadeActive = nativeTitleBarActive && !keepsComposeTopBar && !staticTopBar
+                // 页面上报的真实滚动偏移（像素），见 LocalReportTopScroll。直接读列表状态，
+                // fling/跳转/回顶都不会漂移；上报源只在 composition 里读它，重组开销与之前相当。
+                // lambda 用 remember 稳住实例，避免每次重组都让消费方连带重组。
+                val topScrollOffsetPx = remember { mutableFloatStateOf(0f) }
+                val reportTopScroll: (Float) -> Unit = remember {
+                    { offsetPx -> topScrollOffsetPx.floatValue = offsetPx }
+                }
                 // 真原生 underlap：接管 + opt-in 的页面跳过实心 Spacer，内容从屏幕顶开始画；
                 // 顶边距取宿主实测栏高与状态栏二者的较大值，首帧（宿主未回报前）也不错位。
                 // 非玻璃壳/未 opt-in 页面 clearance 恒 0，走原来的 Spacer/自绘顶栏，老样子。
@@ -1047,9 +1049,16 @@ fun AuthenticatedAppShell(
                 } else {
                     0.dp
                 }
-                // Read the scroll state during composition so changes from the nested-scroll
-                // connection invalidate this block and reach the UIKit navigation bar.
-                val nativeScrolledUnder = topFadeActive && scrolledUnderBarPx > 0f
+                // Read the scroll state during composition so page-reported offsets reach
+                // the UIKit navigation bar. Glass intensity follows real depth (0 at top,
+                // 1 past the transition zone): it persists through the whole return journey
+                // and clears exactly when content leaves the bar — no early fade.
+                val nativeScrollProgress =
+                    if (topFadeActive && scrollUnderTopBar && topFadeHeightPx > 0f) {
+                        (topScrollOffsetPx.floatValue / topFadeHeightPx).coerceIn(0f, 1f)
+                    } else {
+                        0f
+                    }
                 SideEffect {
                     val nativeBarAction = when {
                         !hostBarTakesOver -> null
@@ -1071,7 +1080,7 @@ fun AuthenticatedAppShell(
                                 onStatusClick = statusClickHandler,
                                 extraLabel = topBarActionLabel,
                                 onExtraClick = onTopBarActionClick,
-                                scrolledUnder = nativeScrolledUnder,
+                                scrollProgress = nativeScrollProgress,
                             )
                         else ->
                             // No visible bar item is needed, but UIKit still
@@ -1082,7 +1091,7 @@ fun AuthenticatedAppShell(
                                 busy = false,
                                 label = "",
                                 onClick = {},
-                                scrolledUnder = nativeScrolledUnder,
+                                scrollProgress = nativeScrollProgress,
                             )
                     }
                     onNativeActionChanged(nativeBarAction)
@@ -1112,10 +1121,10 @@ fun AuthenticatedAppShell(
                         },
                     )
                 }
-                // Compose's Skia scroll container is not a UIScrollView, so it cannot drive
-                // UINavigationBar's automatic scroll-edge observer. The host receives this
-                // boolean and changes the native navigation-bar appearance instead of painting
-                // a second Compose gradient over the content.
+                // Scroll progress comes from the page's own list state
+                // (LocalReportTopScroll), not from gesture accumulation: flings, snaps
+                // and programmatic jumps all land in the list state itself, so the glass
+                // persists until content truly leaves the bar.
                 Box(
                     modifier = Modifier.weight(1f).fillMaxWidth().then(
                         if (useTopUnderlap && keepsTopBarInset) {
@@ -1123,55 +1132,13 @@ fun AuthenticatedAppShell(
                         } else {
                             Modifier
                         },
-                    ).then(
-                        if (topFadeActive) {
-                            Modifier.nestedScroll(
-                                object : NestedScrollConnection {
-                                    override fun onPreScroll(
-                                        available: Offset,
-                                        source: NestedScrollSource,
-                                    ): Offset {
-                                        // Do not infer scrolling from the finger gesture itself:
-                                        // a non-scrollable page can receive the same drag. The
-                                        // child reports what it actually consumed in onPostScroll.
-                                        return Offset.Zero
-                                    }
-
-                                    override fun onPostScroll(
-                                        consumed: Offset,
-                                        available: Offset,
-                                        source: NestedScrollSource,
-                                    ): Offset {
-                                        // Only consumed deltas count. This prevents a drag on a
-                                        // short/non-scrollable page (notably Physical Online)
-                                        // from toggling the navigation-bar state. Keep the
-                                        // scrolled-under state while the list is moving back
-                                        // through its content; reset only on genuine top-edge
-                                        // overscroll (child consumed nothing, downward remainder).
-                                        // The old `available.y > 0f` alone also fired mid-list
-                                        // (downward scrolls consume AND leave remainder), which
-                                        // cleared the state at rest and left the bar transparent
-                                        // with content behind it — exactly the reported symptom.
-                                        if (consumed.y < 0f) {
-                                            scrolledUnderBarPx =
-                                                (scrolledUnderBarPx - consumed.y)
-                                                    .coerceIn(0f, topFadeHeightPx)
-                                        } else if (consumed.y == 0f && available.y > 0f) {
-                                            scrolledUnderBarPx = 0f
-                                        }
-                                        return Offset.Zero
-                                    }
-                                },
-                            )
-                        } else {
-                            Modifier
-                        }
                     ),
                 ) {
                     CompositionLocalProvider(
                         LocalBottomBarClearance provides
                             if (glassScrollUnderBar) compactBottomBarOverlayPadding else 0.dp,
                         LocalTopBarClearance provides topBarClearance,
+                        LocalReportTopScroll provides reportTopScroll,
                     ) {
                         content()
                     }
@@ -1586,8 +1553,9 @@ fun AuthenticatedAppShell(
                     mailboxReadyState?.isListLoading == true,
                 showBack = true,
                 onBack = mailboxBack,
-                // 邮箱右上角是直接可执行的列表刷新，不显示「已同步」状态文案。
-                idleStatusText = "刷新",
+                // 邮箱右上角只有一个可执行的列表刷新圆钮：不要再传 idleStatusText，
+                // 否则状态圆圈也会画一个刷新 glyph，和刷新圆钮重复成两个。
+                // 同步中时顶栏显示 KMP 风格「同步中」胶囊。
                 topBarAction = mailboxReadyState?.let {
                     {
                         MailboxTopBarActions(

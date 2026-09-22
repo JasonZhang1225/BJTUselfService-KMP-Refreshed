@@ -37,8 +37,11 @@ class NativeBarAction(
     /** 页面级动作的文字（如课程表「添加到日历」）；null 表示本页没有。 */
     val extraLabel: String? = null,
     val onExtraClick: (() -> Unit)? = null,
-    /** Native navigation-bar material state; true once Compose content is scrolled under it. */
-    val scrolledUnder: Boolean = false,
+    /**
+     * 内容滚进原生栏的进度（0 为顶部，1 为完全盖住过渡带），宿主据此直接驱动玻璃透明度，
+     * 玻璃跟手而不是在布尔边沿闪现。过渡带高度由发送方按栏高折算。
+     */
+    val scrollProgress: Float = 0f,
 )
 
 /** 原生底栏实际承载的一级入口；物理在线开启后与主分支一样是一级 tab。 */

@@ -77,6 +77,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.SLOT_TIME_RA
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 
 private val weekdayLabels = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
@@ -214,6 +215,8 @@ private fun OccupancyBuildingList(
     val listState = rememberLazyListState()
     // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
     val topClearance = LocalTopBarClearance.current
+    // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
+    ReportTopScrollListState(listState)
     LazyColumn(
         state = listState,
         modifier = modifier

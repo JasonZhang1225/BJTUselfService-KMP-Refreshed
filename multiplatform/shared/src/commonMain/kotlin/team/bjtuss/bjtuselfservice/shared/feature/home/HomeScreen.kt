@@ -3,6 +3,7 @@ package team.bjtuss.bjtuselfservice.shared.feature.home
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalReportTopScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -142,6 +143,22 @@ fun HomeWorkspace(
     val uriHandler = LocalUriHandler.current
     val campusDestination = campusCardDestination(platform.family)
     val pageListState = rememberLazyListState()
+    // 首页首项是整张日程卡，高过顶栏过渡带。通用上报只看 firstVisibleItemScrollOffset，
+    // 而 Compose 在首项还没穿过视口顶边（contentPadding 这段）时把它钳成 0，卡片已经
+    // 进栏、玻璃却还是透明。这里改读首项相对静止位置的位移：静止为 0，上滑立刻有值，
+    // 下拉过滚仍是 0。只这一页这样做，其他页的矮首项走原来的上报。
+    val reportTopScroll = LocalReportTopScroll.current
+    LaunchedEffect(pageListState, reportTopScroll) {
+        snapshotFlow {
+            val layout = pageListState.layoutInfo
+            val first = layout.visibleItemsInfo.firstOrNull { it.index == 0 }
+            when {
+                first == null && layout.visibleItemsInfo.isNotEmpty() -> Float.MAX_VALUE
+                first == null -> 0f
+                else -> (-first.offset).toFloat().coerceAtLeast(0f)
+            }
+        }.collect { reportTopScroll(it) }
+    }
     var dialog by remember { mutableStateOf<HomeDialog?>(null) }
     var selectedChangeDomain by remember { mutableStateOf<HomeChangeDomain?>(null) }
     var actionMessage by remember { mutableStateOf<String?>(null) }
@@ -219,6 +236,7 @@ fun HomeWorkspace(
 
     val status = state.status
     LazyColumn(
+        state = pageListState,
         modifier = modifier.fillMaxSize().desktopTouchScroll(pageListState),
         contentPadding = PaddingValues(
             start = if (expanded) 8.dp else 16.dp,

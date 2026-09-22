@@ -149,7 +149,7 @@ private final class NativeNavigationController: UINavigationController, UINaviga
 /// 并让宿主重算导航栏显隐——空标题代表「本页自绘顶栏」，系统玻璃栏不该出现。
 private final class NativeChromeBinding {
     weak var controller: UIViewController?
-    private var lastScrollEdgeState: Bool?
+    private var lastGlassProgress: CGFloat = -1
     private var retainedActionTargets: [NativeBarActionTarget] = []
     private var actionTargets: [NativeBarActionRole: NativeBarActionTarget] = [:]
     private var actionButtons: [NativeBarActionRole: NativeBarIconButton] = [:]
@@ -319,16 +319,17 @@ private final class NativeChromeBinding {
                 controller.navigationItem.leftItemsSupplementBackButton = false
                 controller.navigationItem.rightBarButtonItems = nil
             }
-            apply(scrollEdge: false)
+            ensureTransparentBar()
+            applyGlassProgress(0)
             return
         }
         let layoutKey = NativeBarActionLayoutKey(action)
         if layoutKey == lastActionLayoutKey {
-            // The only expected change here is the scroll-edge material or a
+            // The only expected change here is the scroll-driven glass progress or a
             // freshly captured Kotlin callback. Keep every UIKit view alive.
             updateActionTargets(action)
             updateActionVisuals(action)
-            apply(scrollEdge: action.scrolledUnder)
+            applyGlassProgress(CGFloat(action.scrollProgress))
             return
         }
         lastActionLayoutKey = layoutKey
@@ -387,31 +388,23 @@ private final class NativeChromeBinding {
             controller.navigationItem.leftBarButtonItems = leftItems.isEmpty ? nil : leftItems
             controller.navigationItem.rightBarButtonItems = items.isEmpty ? nil : items
         }
-        apply(scrollEdge: action.scrolledUnder)
+        ensureTransparentBar()
+        applyGlassProgress(CGFloat(action.scrollProgress))
     }
 
-    /// Compose cannot expose a UIScrollView to UINavigationBar, so keep the
-    /// edge state in the native host. At the scroll top the bar stays
-    /// transparent (page background shows through, unchanged); once Compose
-    /// reports content scrolled underneath, the bar switches to the system
-    /// default background so the render stack applies the native blur /
-    /// Liquid Glass material itself. No handmade blur view is added here:
-    /// the removed `NativeNavigationBarBackgroundView` (custom
-    /// UIVisualEffectView + gradient mask) is superseded by this.
+    /// Transparent bar background setup (titles only). Assigned on structural changes;
+    /// the glass itself is a dedicated overlay driven per-frame below.
+    ///
+    /// Rationale, all verified live: manually built appearances ignore configureWith*
+    /// on iOS 27, and sharesBackground=false suppresses _UIBarBackground entirely — so
+    /// the appearance path can only do titles, never glass.
     ///
     /// Keep the title hierarchy stable. Compose's Skia scroll container is not
     /// a UIKit scroll view, so manually switching large-title display modes
     /// leaves UIKit's old large-title height behind. The title stays compact
     /// while the content moves underneath it.
-    func apply(scrollEdge: Bool) {
+    private func ensureTransparentBar() {
         guard let controller, let navigationController = controller.navigationController else { return }
-        guard lastScrollEdgeState != scrollEdge else { return }
-        lastScrollEdgeState = scrollEdge
-        // The bar background itself always stays transparent; the Liquid Glass surface is
-        // the dedicated overlay (NativeNavigationBarGlassView), toggled below. Rationale,
-        // all verified live: manually built appearances ignore configureWith* on iOS 27,
-        // and sharesBackground=false suppresses _UIBarBackground entirely — so the
-        // appearance path can only do titles, never glass.
         let appearance = UINavigationBarAppearance()
         appearance.backgroundColor = .clear
         appearance.shadowColor = .clear
@@ -431,7 +424,17 @@ private final class NativeChromeBinding {
             navigationController.navigationBar.scrollEdgeAppearance = appearance
             navigationController.view.layoutIfNeeded()
         }
-        (navigationController as? TabRootNavigationController)?.setTopGlassVisible(scrollEdge)
+    }
+
+    /// Glass intensity follows scroll depth directly (0 top → 1). Direct tracking needs
+    /// no animation: it cannot lag the finger, overshoot, or flash, and it is
+    /// Reduce-Motion-safe (no autonomous motion). Epsilon cuts redundant writes.
+    private func applyGlassProgress(_ progress: CGFloat) {
+        guard let controller, let navigationController = controller.navigationController else { return }
+        if abs(progress - lastGlassProgress) > 0.005 {
+            lastGlassProgress = progress
+            (navigationController as? TabRootNavigationController)?.setTopGlassAlpha(progress)
+        }
     }
 }
 
@@ -554,6 +557,12 @@ private final class NativeNavigationBarGlassView: UIVisualEffectView {
         if #available(iOS 26.0, *) {
             let glass = UIGlassEffect(style: .regular)
             glass.isInteractive = true
+            // Pull the glass tone toward the page background so the bar doesn't read as
+            // a separate bright band over dark content (or vice versa in light mode).
+            // Explicit provider (not withAlphaComponent) so it keeps following traits.
+            glass.tintColor = UIColor { traits in
+                appBackgroundUIColor.resolvedColor(with: traits).withAlphaComponent(0.4)
+            }
             return glass
         } else {
             return UIBlurEffect(style: .systemMaterial)
@@ -762,12 +771,12 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         }
     }
 
-    /// Show/hide the Liquid Glass surface behind the title bar (driven by scroll-edge state).
-    func setTopGlassVisible(_ visible: Bool) {
+    /// Glass intensity tracks scroll depth directly (no animation): position-driven alpha
+    /// cannot lag the finger or flash, and it introduces no autonomous motion
+    /// (Reduce-Motion-safe by construction).
+    func setTopGlassAlpha(_ progress: CGFloat) {
         guard let glassView = navigationBarGlassView else { return }
-        let alpha: CGFloat = visible ? 1 : 0
-        guard glassView.alpha != alpha else { return }
-        glassView.alpha = alpha
+        glassView.alpha = min(max(progress, 0), 1)
     }
 
     /// 只有一页例外不显示系统栏：没有标题的页（写信这类自绘返回的页）。一级 tab 根页现在也有标题，

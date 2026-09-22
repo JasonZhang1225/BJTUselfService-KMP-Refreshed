@@ -200,6 +200,8 @@ internal fun MoreWorkspace(
     modifier: Modifier,
 ) {
     val pageScrollState = rememberScrollState()
+    // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
+    ReportTopScrollState(pageScrollState)
     val sections = listOf(
         MoreListSection(
             header = "校园",

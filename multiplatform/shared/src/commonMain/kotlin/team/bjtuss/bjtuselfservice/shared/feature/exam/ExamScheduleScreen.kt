@@ -63,6 +63,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.calendar.SingleExamCalendarShe
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 
@@ -368,6 +369,8 @@ private fun ExamScrollableContent(
     val listState = rememberLazyListState()
     // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
     val topClearance = LocalTopBarClearance.current
+    // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
+    ReportTopScrollListState(listState)
     LazyColumn(
         state = listState,
         modifier = modifier.desktopTouchScroll(listState),

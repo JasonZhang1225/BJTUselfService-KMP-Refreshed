@@ -75,6 +75,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailMessage
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailSummary
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollState
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.util.SchoolRichTextBlock
 import team.bjtuss.bjtuselfservice.shared.util.schoolRichTextToBlocks
@@ -1119,6 +1120,8 @@ private fun MailboxDetailPane(
 ) {
     val message = state.selectedMessage
     val scrollState = rememberScrollState()
+    // 真实偏移上报给壳层算玻璃浓度；只在全屏路由页生效（侧栏/内嵌不受影响）。
+    if (fullScreen) ReportTopScrollState(scrollState)
     val waitingForMessage = state.isMessageLoading ||
         (fullScreen && message == null && state.pendingMessageId != null && state.failure == null)
     Column(

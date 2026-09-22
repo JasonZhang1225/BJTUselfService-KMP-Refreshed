@@ -66,6 +66,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomSortDirectio
 import team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomSortField
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 
 /** iPhone 两级列表（原生 push 详情）、macOS 列表—详情并排的教室人数估计页面。 */
@@ -173,6 +174,8 @@ private fun BuildingList(
     val listState = rememberLazyListState()
     // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
     val topClearance = LocalTopBarClearance.current
+    // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
+    ReportTopScrollListState(listState)
     LazyColumn(
         state = listState,
         modifier = modifier

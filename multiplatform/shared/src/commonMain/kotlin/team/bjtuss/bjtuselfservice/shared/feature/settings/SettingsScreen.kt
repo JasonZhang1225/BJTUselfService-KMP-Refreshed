@@ -46,6 +46,7 @@ import team.bjtuss.bjtuselfservice.shared.update.parseReleaseNotes
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollState
 
 @Composable
 fun SettingsWorkspace(
@@ -62,6 +63,8 @@ fun SettingsWorkspace(
     var confirmWipe by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val pageScrollState = rememberScrollState()
+    // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
+    ReportTopScrollState(pageScrollState)
 
     if (confirmClear) {
         AppleSheetOrAlert(
