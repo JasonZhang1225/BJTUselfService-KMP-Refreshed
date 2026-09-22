@@ -1,8 +1,8 @@
 # BJTUselfService KMP 实时工作记忆
 
-> 最后更新：2026-09-21（安全复查轮，Liquid 里程碑归档）
-> 当前分支：`Liquid`，HEAD `f81da61`（发布标签 `v1.7.8-Liquid` 指向 `a109448`，已推送 `mine/Liquid`）。
-> 工作区未提交：`history_full.md`、`memory.md`（本文件整理）、`docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-21.md`（本轮新增）。
+> 最后更新：2026-09-22（iOS 标题栏玻璃跟手修正已提交并推送 `mine/Liquid`）
+> 当前分支：`Liquid`，HEAD `5ced798`，已与 `mine/Liquid` 对齐（`v1.7.8-Liquid` 标签仍在 `fcfdb09`，Release 已按该提交发布）。
+> 工作区：干净。
 > `history_full.md` 是只读历史归档；本文件只记录当前事实、未决事项和下一步，不重复历史细节。
 
 ## 当前目标
