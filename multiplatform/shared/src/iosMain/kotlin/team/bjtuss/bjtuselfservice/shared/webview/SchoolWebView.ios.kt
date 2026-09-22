@@ -14,6 +14,7 @@ import platform.Foundation.NSHTTPCookieValue
 import platform.Foundation.NSDate
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLRequest
+import platform.Foundation.create
 import platform.UIKit.UIApplication
 import platform.WebKit.WKNavigationAction
 import platform.WebKit.WKNavigationActionPolicy
