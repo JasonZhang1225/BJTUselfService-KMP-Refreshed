@@ -13,6 +13,7 @@ private const val CAS_LOGIN_PREFIX = "https://cas.bjtu.edu.cn/auth/login/?next="
 private val CAS_REFRESH_LOGIN_URL =
     "${SchoolEndpoints.CAS_ORIGIN}/auth/login/?next=%2Fauth%2Fsso%2F%3Fnext%3D%2F"
 private const val AA_MODULE_URL = "https://mis.bjtu.edu.cn/module/module/10/"
+private const val CAS_LOGOUT_URL = "https://cas.bjtu.edu.cn/auth/logout/"
 
 sealed interface SessionProbeResult {
     data object Active : SessionProbeResult
@@ -197,7 +198,22 @@ class SchoolLoginProtocol(
         return response.finalUrl.matchesEndpoint(SchoolEndpoints.AA_HOME_URL)
     }
 
-    fun logout() = transport.clearSession()
+    /**
+     * Best-effort single sign-out. The CAS endpoint invalidates the server-side SSO
+     * session carried by this transport. Local cookies are always destroyed even when
+     * the school endpoint is unavailable.
+     */
+    suspend fun logout(): Boolean {
+        val serverCleared = runCatching {
+            val response = transport.execute(
+                SchoolHttpRequest(SchoolHttpMethod.GET, CAS_LOGOUT_URL),
+            )
+            response.statusCode in 200..399 &&
+                response.finalUrl.startsWith("https://cas.bjtu.edu.cn/auth/")
+        }.getOrDefault(false)
+        transport.clearSession()
+        return serverCleared
+    }
 }
 
 private fun String.matchesEndpoint(expected: String): Boolean =

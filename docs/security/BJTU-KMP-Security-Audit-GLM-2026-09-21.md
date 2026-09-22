@@ -133,3 +133,54 @@
 3. **M3** macOS 卸载残留（脚本 + 全量清除补删文件）
 4. **M2** iOS Keychain 残留（文案 / 重装检测，产品决策）
 5. 低危项按 L1→L10 顺次处理，L6/L7 属一次性供应链加固
+
+---
+
+## 七、P1–P2 修复实施记录（2026-09-23）
+
+本节记录审计后的实际修复；上文保留审计时点的原始结论，避免覆盖历史证据。
+
+### P1 修复
+
+- **M1 WebView 残留：已修复。** Android 退出时等待清除 `CookieManager`、
+  DOM Storage 并 flush；iOS 学校 WebView 与预热 WebView 改用
+  `WKWebsiteDataStore.nonPersistent()`，退出时另行清理旧版本默认持久仓库。
+  清理失败进入用户可见的退出反馈。
+- **M4 桌面明文缓存：已修复。** macOS/Windows 的 SQLDelight 文本字段改用
+  AES-256-GCM；普通值使用随机 nonce，账号范围、设置键和复合主键使用
+  HMAC 派生 nonce 的确定性密文以保留等值查询；整数标识经密钥驱动的
+  64 位 Feistel 置换，避免 `user_id` 等标识明文入库。macOS 密钥保存在 Keychain，
+  Windows 密钥经 DPAPI 保护后保存。首次升级删除旧明文数据库并重建；安装标记
+  使中途失败时下次启动仍会重新执行迁移。
+- **M3 macOS 全量清理：已修复到应用能力边界。** `clearAll()` 删除全部表后执行
+  WAL `TRUNCATE` checkpoint 与 `VACUUM`，避免仅逻辑删行；全量清理使用
+  `AccountSecurityCoordinator.purge()` 删除凭据和“记住密码”偏好键本身。
+  DMG 拖拽删除仍无法获得系统卸载回调，README 继续保留手动路径。
+- **M2 iOS Keychain 重装残留：已修复。** 删除“缺失偏好标记时迁移旧凭据”的
+  兼容分支；`remember_credentials=false` 或标记缺失均清除 Keychain，不再把
+  卸载重装误判成旧版本升级。
+
+### P2 修复
+
+- 登出先请求 `https://cas.bjtu.edu.cn/auth/logout/` 使 CAS 服务端会话失效，
+  无论请求成功与否都销毁本地 Cookie；服务端失败会显示给用户。
+- Gradle 9.3.1 分发包固定官方 SHA-256；Wrapper JAR 重新生成并与官方 checksum
+  匹配；所有执行 Gradle 的 GitHub Actions job 在构建前运行官方 Wrapper 校验。
+- Android 从停止更新的 `pytorch_android 2.1.0` 迁移到 ONNX Runtime 1.30.0。
+  新模型与确定性 PyTorch 基线的 logits 最大绝对误差约 `1.14e-5`，argmax 序列一致；
+  模型 SHA-256 已写入 `tools/captcha/validation_manifest.json`。
+- 显式固定 OkHttp `5.3.2`，不再仅依赖 Ktor 传递解析；桌面发行日志默认关闭，
+  仅显式设置 `-Dbjtu.debug.logging=true` 时启用。
+- 修正冻结旧 Android 发布流水线对 `v*-Liquid*` 标签的误匹配：Liquid 标签只走
+  KMP 打包流水线，避免旧工程的历史 TLS/凭据缺陷被重新发布。
+
+### 已执行验证
+
+- `:shared:desktopTest` 全量 531 项通过，覆盖缓存原回归、AES-GCM 随机/确定性
+  往返、篡改拒绝、各类学业缓存原始字节无测试个人明文、Keychain/偏好协调逻辑。
+- `:windowsApp:compileKotlinWindows :windowsApp:windowsTest` 全量通过。
+- `:shared:compileAndroidMain :androidApp:compileDebugKotlin` 通过（仅编译，不签名打包）。
+- ONNX checker + ONNX Runtime 对转换模型执行成功，argmax 与基线一致。
+- iOS Kotlin/Native 因当前 Windows 主机无法处理 UIKit cinterop，仍需 macOS CI/真机
+  完成编译与退出/卸载重装端到端验证。新增 `kmp-security-check.yml`，在 Liquid
+  推送或 PR 时运行 iOS 编译及 macOS 测试；当前本地修改尚未推送，门禁结果未产生。

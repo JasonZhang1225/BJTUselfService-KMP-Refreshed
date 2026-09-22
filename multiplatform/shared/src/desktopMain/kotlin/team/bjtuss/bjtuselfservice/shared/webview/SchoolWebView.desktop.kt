@@ -62,3 +62,6 @@ actual fun openExternalUrl(url: String) {
         }
     }
 }
+
+// 桌面端不内嵌网页，也不接收 Ktor Cookie，因此没有独立网页会话可清理。
+actual suspend fun clearSchoolWebViewData(): Boolean = true

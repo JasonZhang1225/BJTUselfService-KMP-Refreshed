@@ -16,7 +16,7 @@ from evaluate_model import decode
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 SOURCE = REPOSITORY_ROOT / "app/src/main/assets/model.pt"
-DEPLOYMENT = REPOSITORY_ROOT / "multiplatform/androidApp/src/main/assets/BJTUCaptcha.pt"
+DEPLOYMENT = REPOSITORY_ROOT / "app/src/main/assets/model.pt"
 MANIFEST = Path(__file__).with_name("validation_manifest.json")
 
 

@@ -74,8 +74,11 @@ kotlin {
 
         androidMain.dependencies {
             implementation(libs.ktor.client.okhttp)
+            // Pin the concrete engine dependency instead of relying on Ktor's
+            // transitive version so security review and upgrades are explicit.
+            implementation(libs.okhttp)
             implementation(libs.sqldelight.android.driver)
-            implementation(libs.pytorch.android)
+            implementation(libs.onnxruntime.android)
         }
 
         // iOS 原生（appleMain 是 Apple 各端的公共上游）：网络走 Darwin(URLSession)，缓存库走原生 sqlite driver。

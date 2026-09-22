@@ -199,7 +199,9 @@ internal fun rememberAuthenticatedSession(
                 runCatching { cacheStore.clearAccount(profile.studentId) }.isSuccess
             },
             wipeAllLocalData = {
-                runCatching { cacheStore.clearAll() }.isSuccess && securityCoordinator.clear()
+                val cacheCleared = runCatching { cacheStore.clearAll() }.isSuccess
+                val credentialsPurged = securityCoordinator.purge()
+                cacheCleared && credentialsPurged
             },
             checkLatestRelease = { AppUpdateChecker.fetchLatest(transport) },
         )

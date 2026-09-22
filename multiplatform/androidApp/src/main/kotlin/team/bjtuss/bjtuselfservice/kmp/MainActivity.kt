@@ -9,7 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import team.bjtuss.bjtuselfservice.shared.App
 import team.bjtuss.bjtuselfservice.shared.cache.createAndroidCacheStore
 import team.bjtuss.bjtuselfservice.shared.security.createAndroidAccountSecurityStore
-import team.bjtuss.bjtuselfservice.shared.auth.AndroidTorchCaptchaRecognizer
+import team.bjtuss.bjtuselfservice.shared.auth.AndroidOnnxCaptchaRecognizer
 import team.bjtuss.bjtuselfservice.shared.logging.AppLog
 
 class MainActivity : ComponentActivity() {
@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
         val accountSecurityStore = createAndroidAccountSecurityStore(this)
         val cacheStoreHandle = createAndroidCacheStore(this)
         val homeworkFileGateway = AndroidHomeworkFileGateway(this)
-        val captchaRecognizer = AndroidTorchCaptchaRecognizer(this)
+        val captchaRecognizer = AndroidOnnxCaptchaRecognizer(this)
         setContent {
             App(
                 accountSecurityStore = accountSecurityStore,

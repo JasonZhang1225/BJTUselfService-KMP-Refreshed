@@ -10,13 +10,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import torch
+import onnxruntime as ort
 from PIL import Image
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_ANDROID_MODEL = (
-    REPOSITORY_ROOT / "multiplatform/androidApp/src/main/assets/BJTUCaptcha.pt"
+    REPOSITORY_ROOT / "multiplatform/androidApp/src/main/assets/BJTUCaptcha.onnx"
 )
 DEFAULT_APPLE_MODEL = (
     REPOSITORY_ROOT
@@ -73,16 +73,19 @@ def main() -> None:
     args = parser.parse_args()
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    torch_model = torch.jit.load(str(args.android_model), map_location="cpu").eval()
+    onnx_model = ort.InferenceSession(
+        str(args.android_model),
+        providers=["CPUExecutionProvider"],
+    )
 
-    torch_correct = 0
+    onnx_correct = 0
     apple_correct = 0
     accepted_correct = 0
     false_accepts = 0
     argmax_equal = 0
     maximum_delta = 0.0
 
-    print("file  expected  pytorch(confidence)  coreml(confidence)  result")
+    print("file  expected  onnx(confidence)  coreml(confidence)  result")
     for sample in manifest["samples"]:
         path = args.image_directory / sample["file"]
         actual_hash = sha256(path)
@@ -92,9 +95,8 @@ def main() -> None:
         if image.size != (130, 42):
             image = image.resize((130, 42), Image.Resampling.BILINEAR)
         pixels = np.asarray(image, dtype=np.float32)
-        tensor = torch.from_numpy(pixels.transpose(2, 0, 1) / 255.0).unsqueeze(0)
-        with torch.no_grad():
-            torch_logits = torch_model(tensor).numpy()
+        tensor = np.expand_dims(pixels.transpose(2, 0, 1) / 255.0, axis=0)
+        onnx_logits = onnx_model.run(["logits"], {"captcha": tensor})[0]
         helper = subprocess.run(
             [str(args.apple_helper), str(args.apple_compiled_model)],
             input=path.read_bytes(),
@@ -108,18 +110,18 @@ def main() -> None:
             raise RuntimeError(
                 f"invalid Core ML helper output for {path}: {helper.stderr.decode('utf-8')}"
             )
-        torch_result = decode(torch_logits)
+        onnx_result = decode(onnx_logits)
         apple_result = decode(apple_logits)
         expected = sample["expression"]
-        torch_ok = torch_result.expression == expected
+        onnx_ok = onnx_result.expression == expected
         apple_ok = apple_result.expression == expected
-        torch_correct += int(torch_ok)
+        onnx_correct += int(onnx_ok)
         apple_correct += int(apple_ok)
         accepted = apple_result.confidence >= args.minimum_confidence
         accepted_correct += int(accepted and apple_ok)
         false_accepts += int(accepted and not apple_ok)
         same_classes = np.array_equal(
-            np.asarray(torch_logits).reshape(8, 15).argmax(axis=1),
+            np.asarray(onnx_logits).reshape(8, 15).argmax(axis=1),
             np.asarray(apple_logits).reshape(8, 15).argmax(axis=1),
         )
         argmax_equal += int(same_classes)
@@ -127,22 +129,22 @@ def main() -> None:
             maximum_delta,
             float(
                 np.abs(
-                    np.asarray(torch_logits).reshape(8, 15)
+                    np.asarray(onnx_logits).reshape(8, 15)
                     - np.asarray(apple_logits).reshape(8, 15)
                 ).max()
             ),
         )
-        result = "PASS" if torch_ok and apple_ok and same_classes else "FAIL"
+        result = "PASS" if onnx_ok and apple_ok and same_classes else "FAIL"
         print(
             f"{sample['file']:>4}  {expected:<8}  "
-            f"{torch_result.expression:<8}({torch_result.confidence:.3f})  "
+            f"{onnx_result.expression:<8}({onnx_result.confidence:.3f})  "
             f"{apple_result.expression:<8}({apple_result.confidence:.3f})  {result}"
         )
 
     total = len(manifest["samples"])
     print()
     print(f"samples={total}")
-    print(f"pytorch_expression_accuracy={torch_correct / total:.4f} ({torch_correct}/{total})")
+    print(f"onnx_expression_accuracy={onnx_correct / total:.4f} ({onnx_correct}/{total})")
     print(f"coreml_expression_accuracy={apple_correct / total:.4f} ({apple_correct}/{total})")
     print(f"backend_argmax_equal={argmax_equal / total:.4f} ({argmax_equal}/{total})")
     print(f"backend_max_abs={maximum_delta}")

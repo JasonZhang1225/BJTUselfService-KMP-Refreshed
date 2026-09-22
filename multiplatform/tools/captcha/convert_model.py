@@ -7,18 +7,16 @@ import shutil
 from collections import OrderedDict
 from pathlib import Path
 
-import coremltools as ct
 import numpy as np
 import torch
-from PIL import Image
 from torch import nn
 from torch.nn import functional as functional
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SOURCE = REPOSITORY_ROOT / "app/src/main/assets/model.pt"
-DEFAULT_ANDROID_OUTPUT = (
-    REPOSITORY_ROOT / "multiplatform/androidApp/src/main/assets/BJTUCaptcha.pt"
+DEFAULT_ANDROID_ONNX_OUTPUT = (
+    REPOSITORY_ROOT / "multiplatform/androidApp/src/main/assets/BJTUCaptcha.onnx"
 )
 DEFAULT_APPLE_OUTPUT = (
     REPOSITORY_ROOT / "multiplatform/iosApp/iosApp/BJTUCaptcha.mlpackage"
@@ -129,8 +127,9 @@ def sha256(path: Path) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
-    parser.add_argument("--android-output", type=Path, default=DEFAULT_ANDROID_OUTPUT)
+    parser.add_argument("--android-onnx-output", type=Path, default=DEFAULT_ANDROID_ONNX_OUTPUT)
     parser.add_argument("--apple-output", type=Path, default=DEFAULT_APPLE_OUTPUT)
+    parser.add_argument("--skip-apple", action="store_true")
     args = parser.parse_args()
 
     source = torch.jit.load(str(args.source), map_location="cpu")
@@ -167,54 +166,85 @@ def main() -> None:
         traced_logits = traced(example).numpy()
     trace_delta = float(np.abs(expected - traced_logits).max())
 
-    args.android_output.parent.mkdir(parents=True, exist_ok=True)
-    traced.save(str(args.android_output))
-
-    core_ml = ct.convert(
-        traced,
-        inputs=[
-            ct.ImageType(
-                name="captcha",
-                shape=example.shape,
-                scale=1.0 / 255.0,
-                color_layout=ct.colorlayout.RGB,
-            ),
-        ],
-        outputs=[ct.TensorType(name="logits", dtype=np.float32)],
-        convert_to="mlprogram",
-        minimum_deployment_target=ct.target.iOS15,
-        compute_precision=ct.precision.FLOAT32,
+    args.android_onnx_output.parent.mkdir(parents=True, exist_ok=True)
+    torch.onnx.export(
+        deployment,
+        (example,),
+        str(args.android_onnx_output),
+        input_names=["captcha"],
+        output_names=["logits"],
+        opset_version=18,
+        do_constant_folding=True,
+        dynamo=False,
     )
-    core_ml.author = "BJTUselfService Contributors"
-    core_ml.short_description = "本地识别北交大 CAS 算术验证码"
-    core_ml.version = "1.0"
-    core_ml.input_description["captcha"] = "130×42 RGB 像素；模型内转换为 CHW [0,1] 后再中心化到 [-1,1]"
-    core_ml.output_description["logits"] = "CTC 时间优先 logits [8,1,15]"
-    core_ml.user_defined_metadata["source_sha256"] = sha256(args.source)
-    core_ml.user_defined_metadata["charset"] = " <blank>,0,1,2,3,4,5,6,7,8,9,+,-,*,="
-    core_ml.user_defined_metadata["normalization"] = "RGB/255 then x*2-1"
-    if args.apple_output.exists():
-        shutil.rmtree(args.apple_output)
-    args.apple_output.parent.mkdir(parents=True, exist_ok=True)
-    core_ml.save(str(args.apple_output))
 
-    core_ml_logits = core_ml.predict({"captcha": Image.fromarray(example_pixels, mode="RGB")})["logits"]
-    core_ml_delta = np.abs(expected - core_ml_logits)
-    argmax_equal = bool(
-        np.array_equal(expected.argmax(-1), core_ml_logits.argmax(-1))
+    import onnx
+    import onnxruntime as ort
+
+    onnx.checker.check_model(onnx.load(str(args.android_onnx_output)))
+    onnx_session = ort.InferenceSession(
+        str(args.android_onnx_output),
+        providers=["CPUExecutionProvider"],
     )
-    if not argmax_equal:
-        raise RuntimeError("Core ML argmax sequence differs from PyTorch")
+    onnx_logits = onnx_session.run(
+        ["logits"],
+        {"captcha": example.numpy()},
+    )[0]
+    onnx_delta = np.abs(expected - onnx_logits)
+    if not np.array_equal(expected.argmax(-1), onnx_logits.argmax(-1)):
+        raise RuntimeError("ONNX argmax sequence differs from PyTorch")
+
+    core_ml_delta = None
+    if not args.skip_apple:
+        import coremltools as ct
+        from PIL import Image
+
+        core_ml = ct.convert(
+            traced,
+            inputs=[
+                ct.ImageType(
+                    name="captcha",
+                    shape=example.shape,
+                    scale=1.0 / 255.0,
+                    color_layout=ct.colorlayout.RGB,
+                ),
+            ],
+            outputs=[ct.TensorType(name="logits", dtype=np.float32)],
+            convert_to="mlprogram",
+            minimum_deployment_target=ct.target.iOS15,
+            compute_precision=ct.precision.FLOAT32,
+        )
+        core_ml.author = "BJTUselfService Contributors"
+        core_ml.short_description = "本地识别北交大 CAS 算术验证码"
+        core_ml.version = "1.0"
+        core_ml.input_description["captcha"] = "130×42 RGB 像素；模型内转换为 CHW [0,1] 后再中心化到 [-1,1]"
+        core_ml.output_description["logits"] = "CTC 时间优先 logits [8,1,15]"
+        core_ml.user_defined_metadata["source_sha256"] = sha256(args.source)
+        core_ml.user_defined_metadata["charset"] = " <blank>,0,1,2,3,4,5,6,7,8,9,+,-,*,="
+        core_ml.user_defined_metadata["normalization"] = "RGB/255 then x*2-1"
+        if args.apple_output.exists():
+            shutil.rmtree(args.apple_output)
+        args.apple_output.parent.mkdir(parents=True, exist_ok=True)
+        core_ml.save(str(args.apple_output))
+
+        core_ml_logits = core_ml.predict({"captcha": Image.fromarray(example_pixels, mode="RGB")})["logits"]
+        core_ml_delta = np.abs(expected - core_ml_logits)
+        if not np.array_equal(expected.argmax(-1), core_ml_logits.argmax(-1)):
+            raise RuntimeError("Core ML argmax sequence differs from PyTorch")
 
     print(f"source_sha256={sha256(args.source)}")
     print(f"training_mode_rebuild_max_abs={training_delta}")
     print(f"unrolled_lstm_max_abs={unrolled_delta}")
     print(f"eval_trace_max_abs={trace_delta}")
-    print(f"coreml_max_abs={float(core_ml_delta.max())}")
-    print(f"coreml_mean_abs={float(core_ml_delta.mean())}")
-    print(f"argmax_equal={argmax_equal}")
-    print(f"android_model={args.android_output}")
-    print(f"apple_model={args.apple_output}")
+    print(f"onnx_max_abs={float(onnx_delta.max())}")
+    print(f"onnx_mean_abs={float(onnx_delta.mean())}")
+    if core_ml_delta is not None:
+        print(f"coreml_max_abs={float(core_ml_delta.max())}")
+        print(f"coreml_mean_abs={float(core_ml_delta.mean())}")
+    print("argmax_equal=True")
+    print(f"android_onnx_model={args.android_onnx_output}")
+    if not args.skip_apple:
+        print(f"apple_model={args.apple_output}")
 
 
 if __name__ == "__main__":

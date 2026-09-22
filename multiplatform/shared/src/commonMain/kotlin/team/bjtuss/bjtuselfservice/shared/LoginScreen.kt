@@ -69,6 +69,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import org.jetbrains.compose.resources.decodeToImageBitmap
 import team.bjtuss.bjtuselfservice.shared.auth.AuthenticationResult
 import team.bjtuss.bjtuselfservice.shared.auth.AutomaticLoginCoordinator
@@ -146,6 +147,7 @@ import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityCoordinator
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.security.CredentialRestoreResult
 import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
+import team.bjtuss.bjtuselfservice.shared.webview.clearSchoolWebViewData
 
 @Composable
 fun LoginRoute(
@@ -186,6 +188,7 @@ fun LoginRoute(
         mutableStateOf(securityCoordinator.canStoreCredentials)
     }
     var storageReady by remember { mutableStateOf(false) }
+    var logoutCleanupPending by remember { mutableStateOf(false) }
     var storageMessage by remember { mutableStateOf<String?>(null) }
     var postLoginStorageFailure by remember { mutableStateOf<String?>(null) }
     var automationMessage by remember { mutableStateOf<String?>(null) }
@@ -346,6 +349,7 @@ fun LoginRoute(
 
     fun startAutomaticLogin() {
         if (
+            logoutCleanupPending ||
             state is LoginState.CheckingSession ||
             state is LoginState.SubmittingCredentials ||
             state is LoginState.LinkingAcademicSystem
@@ -381,8 +385,14 @@ fun LoginRoute(
                 restored.credentials
             }
         }
-        if (cacheStoreHandle.state == CacheOpenState.RECOVERED_AFTER_RESET) {
-            storageMessage = "本地缓存损坏，已安全重建。"
+        when (cacheStoreHandle.state) {
+            CacheOpenState.RECOVERED_AFTER_RESET -> {
+                storageMessage = "本地缓存损坏，已安全重建。"
+            }
+            CacheOpenState.MIGRATED_TO_ENCRYPTED -> {
+                storageMessage = "本地缓存已升级为加密格式，请重新同步离线数据和设置。"
+            }
+            CacheOpenState.OPENED -> Unit
         }
         storageReady = true
 
@@ -454,7 +464,9 @@ fun LoginRoute(
     }
 
     fun logout(accountScope: String) {
-        if (protocol.isInitialized()) protocol.value.logout()
+        if (logoutCleanupPending) return
+        logoutCleanupPending = true
+        val currentProtocol = if (protocol.isInitialized()) protocol.value else null
         username = ""
         password = ""
         captchaAnswer = ""
@@ -470,15 +482,28 @@ fun LoginRoute(
         postLoginStorageFailure = null
         state = reduceLoginState(state, LoginEvent.Logout)
         scope.launch {
-            val secureCleared = securityCoordinator.clear()
-            val cacheCleared = accountScope.isBlank() || runCatching {
-                cacheStore.clearAccount(accountScope)
-            }.isSuccess
-            storageMessage = when {
-                !secureCleared && !cacheCleared -> "会话已退出，但安全存储和本地缓存清除失败。"
-                !secureCleared -> "会话已退出，但系统安全存储清除失败。"
-                !cacheCleared -> "会话已退出，但本地缓存清除失败。"
-                else -> null
+            // CAS 请求需要当前 Cookie，但不应阻塞本机敏感数据清理；并发执行，
+            // 最后再汇总服务端结果供用户查看。
+            try {
+                val serverLogout = async {
+                    runCatching { currentProtocol?.logout() ?: true }.getOrDefault(false)
+                }
+                val webDataCleared = runCatching { clearSchoolWebViewData() }.getOrDefault(false)
+                val secureCleared = runCatching { securityCoordinator.clear() }.getOrDefault(false)
+                val cacheCleared = accountScope.isBlank() || runCatching {
+                    cacheStore.clearAccount(accountScope)
+                }.isSuccess
+                val serverSessionCleared = serverLogout.await()
+                val failures = buildList {
+                    if (!serverSessionCleared) add("学校服务端会话")
+                    if (!webDataCleared) add("网页会话")
+                    if (!secureCleared) add("系统安全存储")
+                    if (!cacheCleared) add("本地缓存")
+                }
+                storageMessage = failures.takeIf(List<String>::isNotEmpty)
+                    ?.joinToString(separator = "、", prefix = "会话已退出，但", postfix = "清除失败。")
+            } finally {
+                logoutCleanupPending = false
             }
         }
     }
@@ -578,7 +603,7 @@ fun LoginRoute(
             password = password,
             canRememberCredentials = securityCoordinator.canStoreCredentials,
             rememberCredentials = rememberCredentials,
-            storageReady = storageReady,
+            storageReady = storageReady && !logoutCleanupPending,
             storageMessage = storageMessage,
             automationMessage = automationMessage,
             onUsernameChange = { username = it },
@@ -603,13 +628,15 @@ fun LoginRoute(
         manualDialogChallenge = null
         manualDialogAttempts = 0
         manualDialogMessage = null
-        if (protocol.isInitialized()) protocol.value.logout()
+        val currentProtocol = if (protocol.isInitialized()) protocol.value else null
         username = ""
         password = ""
         captchaAnswer = ""
         rememberCredentials = securityCoordinator.canStoreCredentials
         state = LoginState.SignedOut
         scope.launch {
+            currentProtocol?.logout()
+            clearSchoolWebViewData()
             securityCoordinator.clear()
         }
     }

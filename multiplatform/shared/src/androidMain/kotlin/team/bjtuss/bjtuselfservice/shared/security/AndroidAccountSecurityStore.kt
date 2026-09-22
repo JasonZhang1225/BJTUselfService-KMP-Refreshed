@@ -104,14 +104,17 @@ private class AndroidAccountPreferences(context: Context) : AccountPreferences {
     override suspend fun shouldRememberCredentials(): Boolean =
         preferences.getBoolean(REMEMBER_CREDENTIALS_KEY, false)
 
-    override suspend fun hasRememberCredentialsSetting(): Boolean =
-        preferences.contains(REMEMBER_CREDENTIALS_KEY)
-
     override suspend fun setShouldRememberCredentials(enabled: Boolean) {
         val committed = preferences.edit()
             .putBoolean(REMEMBER_CREDENTIALS_KEY, enabled)
             .commit()
         if (!committed) error("Unable to commit account preferences")
+    }
+
+    override suspend fun clearRememberCredentialsSetting() {
+        if (!preferences.edit().remove(REMEMBER_CREDENTIALS_KEY).commit()) {
+            error("Unable to clear account preferences")
+        }
     }
 
     private companion object {

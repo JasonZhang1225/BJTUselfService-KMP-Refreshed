@@ -237,6 +237,27 @@ class CacheStoreTest {
     }
 
     @Test
+    fun fullWipeRemovesDeletedTextFromDatabaseAndWalFiles() = withTemporaryDirectory { directory ->
+        val marker = "AUDIT-PERSONAL-SECRET-7b4d85e6"
+        val handle = createDesktopCacheStore(directory)
+        try {
+            handle.store.putMetadata("student-a", "private-note", marker)
+            assertEquals(marker, handle.store.metadata("student-a", "private-note"))
+            handle.store.clearAll()
+            assertEquals(0L, handle.store.rowCount())
+        } finally {
+            handle.store.close()
+        }
+        listOf(
+            File(directory, "bjtuselfservice_cache.db"),
+            File(directory, "bjtuselfservice_cache.db-wal"),
+            File(directory, "bjtuselfservice_cache.db-shm"),
+        ).filter(File::exists).forEach { file ->
+            assertFalse(marker in file.readBytes().toString(Charsets.UTF_8), file.name)
+        }
+    }
+
+    @Test
     fun invalidScopeAndCorruptPreferenceFallbackAreSafe() {
         val store = inMemoryStore()
         try {

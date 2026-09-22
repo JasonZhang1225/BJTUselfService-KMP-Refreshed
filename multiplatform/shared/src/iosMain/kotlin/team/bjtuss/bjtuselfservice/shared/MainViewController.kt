@@ -6,6 +6,7 @@ import platform.CoreGraphics.CGRectMake
 import platform.UIKit.UIViewController
 import platform.WebKit.WKWebView
 import platform.WebKit.WKWebViewConfiguration
+import platform.WebKit.WKWebsiteDataStore
 import team.bjtuss.bjtuselfservice.shared.cache.createAppleCacheStore
 import team.bjtuss.bjtuselfservice.shared.security.createAppleAccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.files.IosHomeworkFileGateway
@@ -140,9 +141,12 @@ private fun createMainViewController(
     onOpenNativeRoute: (String) -> Unit,
 ): UIViewController = run {
     if (prewarmedWebView == null) {
+        val configuration = WKWebViewConfiguration().apply {
+            websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore()
+        }
         prewarmedWebView = WKWebView(
             frame = CGRectMake(0.0, 0.0, 0.0, 0.0),
-            configuration = WKWebViewConfiguration(),
+            configuration = configuration,
         )
     }
     val accountSecurityStore = createAppleAccountSecurityStore(accessibleAfterFirstUnlock = true)

@@ -11,6 +11,7 @@ import platform.Foundation.NSHTTPCookieDomain
 import platform.Foundation.NSHTTPCookieName
 import platform.Foundation.NSHTTPCookiePath
 import platform.Foundation.NSHTTPCookieValue
+import platform.Foundation.NSDate
 import platform.Foundation.NSURL
 import platform.Foundation.NSURLRequest
 import platform.UIKit.UIApplication
@@ -19,7 +20,10 @@ import platform.WebKit.WKNavigationActionPolicy
 import platform.WebKit.WKNavigationDelegateProtocol
 import platform.WebKit.WKWebView
 import platform.WebKit.WKWebViewConfiguration
+import platform.WebKit.WKWebsiteDataStore
 import platform.darwin.NSObject
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 @OptIn(ExperimentalForeignApi::class)
 private class WebNavDelegate(
@@ -63,6 +67,10 @@ actual fun SchoolWebView(
         accessibilityEnabled = true,
         factory = {
             val config = WKWebViewConfiguration()
+            // 学校网页登录态只属于当前 App 登录会话，不应进入 iOS 的持久
+            // WebsiteDataStore。Compose 移除 WebView 后 Cookie 与 DOM Storage
+            // 会随该临时 store 一起释放。
+            config.websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore()
             val webView = WKWebView(frame = CGRectMake(0.0, 0.0, 0.0, 0.0), configuration = config)
             webView.navigationDelegate = delegate
             val store = config.websiteDataStore.httpCookieStore
@@ -108,4 +116,19 @@ actual fun openExternalUrl(url: String) {
         options = emptyMap<Any?, Any>(),
         completionHandler = null,
     )
+}
+
+@OptIn(ExperimentalForeignApi::class)
+actual suspend fun clearSchoolWebViewData(): Boolean = suspendCoroutine { continuation ->
+    // 新 WebView 使用 nonPersistentDataStore；这里额外清理旧版本曾写入的
+    // defaultDataStore，作为覆盖升级后的迁移收口，并等待 WebKit 完成。
+    try {
+        WKWebsiteDataStore.defaultDataStore().removeDataOfTypes(
+            dataTypes = WKWebsiteDataStore.allWebsiteDataTypes(),
+            modifiedSince = NSDate.distantPast,
+            completionHandler = { continuation.resume(true) },
+        )
+    } catch (_: Exception) {
+        continuation.resume(false)
+    }
 }

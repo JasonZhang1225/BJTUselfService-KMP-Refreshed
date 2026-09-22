@@ -12,47 +12,60 @@ class MacOsKeychainCredentialVault(
     private val service: String = "team.bjtuss.bjtuselfservice.kmp.credentials",
     private val account: String = "primary",
 ) : CredentialVault {
-    override suspend fun save(credentials: Credentials) {
-        val clearStatus = withQuery { SecurityApi.INSTANCE.SecItemDelete(it) }
-        if (clearStatus != ERR_SEC_SUCCESS && clearStatus != ERR_SEC_ITEM_NOT_FOUND) {
-            throw vaultError(CredentialVaultOperation.SAVE, clearStatus)
-        }
+    private val item = MacOsKeychainItem(service, account)
 
-        val status = withQuery(payload = encodeCredentialPayload(credentials)) {
-            SecurityApi.INSTANCE.SecItemAdd(it, null)
-        }
-        if (status != ERR_SEC_SUCCESS) {
-            throw vaultError(CredentialVaultOperation.SAVE, status)
-        }
+    override suspend fun save(credentials: Credentials) {
+        item.save(encodeCredentialPayload(credentials), CredentialVaultOperation.SAVE)
     }
 
     override suspend fun load(): Credentials? {
+        val bytes = item.load(CredentialVaultOperation.LOAD) ?: return null
+        return decodeCredentialPayload(bytes)
+            ?: throw vaultError(CredentialVaultOperation.LOAD, ERR_SEC_SUCCESS)
+    }
+
+    override suspend fun clear() {
+        item.clear(CredentialVaultOperation.CLEAR)
+    }
+}
+
+/** Generic-password Keychain item shared by credentials and the desktop cache key. */
+internal class MacOsKeychainItem(
+    private val service: String,
+    private val account: String,
+) {
+    fun save(payload: ByteArray, operation: CredentialVaultOperation) {
+        val clearStatus = withQuery { SecurityApi.INSTANCE.SecItemDelete(it) }
+        if (clearStatus != ERR_SEC_SUCCESS && clearStatus != ERR_SEC_ITEM_NOT_FOUND) {
+            throw vaultError(operation, clearStatus)
+        }
+        val status = withQuery(payload = payload) { SecurityApi.INSTANCE.SecItemAdd(it, null) }
+        if (status != ERR_SEC_SUCCESS) throw vaultError(operation, status)
+    }
+
+    fun load(operation: CredentialVaultOperation): ByteArray? {
         val result = PointerByReference()
         val status = withQuery(returnData = true) {
             SecurityApi.INSTANCE.SecItemCopyMatching(it, result)
         }
         if (status == ERR_SEC_ITEM_NOT_FOUND) return null
-        if (status != ERR_SEC_SUCCESS) {
-            throw vaultError(CredentialVaultOperation.LOAD, status)
-        }
+        if (status != ERR_SEC_SUCCESS) throw vaultError(operation, status)
 
-        val data = result.value ?: throw vaultError(CredentialVaultOperation.LOAD, status)
+        val data = result.value ?: throw vaultError(operation, status)
         return try {
             val length = CoreFoundationApi.INSTANCE.CFDataGetLength(data)
-            val bytes = CoreFoundationApi.INSTANCE.CFDataGetBytePtr(data)
+            CoreFoundationApi.INSTANCE.CFDataGetBytePtr(data)
                 ?.getByteArray(0, length.toInt())
                 ?: byteArrayOf()
-            decodeCredentialPayload(bytes)
-                ?: throw vaultError(CredentialVaultOperation.LOAD, status)
         } finally {
             CoreFoundationApi.INSTANCE.CFRelease(data)
         }
     }
 
-    override suspend fun clear() {
+    fun clear(operation: CredentialVaultOperation) {
         val status = withQuery { SecurityApi.INSTANCE.SecItemDelete(it) }
         if (status != ERR_SEC_SUCCESS && status != ERR_SEC_ITEM_NOT_FOUND) {
-            throw vaultError(CredentialVaultOperation.CLEAR, status)
+            throw vaultError(operation, status)
         }
     }
 

@@ -59,18 +59,16 @@ class AccountSecurityCoordinatorTest {
     }
 
     @Test
-    fun missingRememberMarkerMigratesExistingSecureCredentials() = runSuspend {
-        val credentials = Credentials("student", "secret")
-        val vault = FakeCredentialVault().apply { saved = credentials }
-        val preferences = FakeAccountPreferences(enabled = false, settingExists = false)
+    fun fullPurgeRemovesVaultAndPreferenceMarker() = runSuspend {
+        val vault = FakeCredentialVault().apply { saved = Credentials("student", "secret") }
+        val preferences = FakeAccountPreferences(enabled = true)
         val coordinator = AccountSecurityCoordinator(AccountSecurityStore(vault, preferences))
 
-        assertEquals(
-            credentials,
-            assertIs<CredentialRestoreResult.Restored>(coordinator.restore()).credentials,
-        )
-        assertTrue(preferences.enabled)
-        assertEquals(0, vault.clearCount)
+        assertTrue(coordinator.purge())
+        assertFalse(preferences.enabled)
+        assertEquals(null, vault.saved)
+        assertTrue(vault.clearCount > 0)
+        assertEquals(1, preferences.clearSettingCount)
     }
 
     @Test
@@ -124,14 +122,18 @@ private class FakeCredentialVault(
 
 private class FakeAccountPreferences(
     var enabled: Boolean = false,
-    private val settingExists: Boolean = true,
 ) : AccountPreferences {
-    override suspend fun shouldRememberCredentials(): Boolean = enabled
+    var clearSettingCount: Int = 0
 
-    override suspend fun hasRememberCredentialsSetting(): Boolean = settingExists
+    override suspend fun shouldRememberCredentials(): Boolean = enabled
 
     override suspend fun setShouldRememberCredentials(enabled: Boolean) {
         this.enabled = enabled
+    }
+
+    override suspend fun clearRememberCredentialsSetting() {
+        enabled = false
+        clearSettingCount++
     }
 }
 
