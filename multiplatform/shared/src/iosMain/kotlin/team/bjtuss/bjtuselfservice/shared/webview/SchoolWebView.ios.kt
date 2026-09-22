@@ -125,7 +125,7 @@ actual suspend fun clearSchoolWebViewData(): Boolean = suspendCoroutine { contin
     try {
         WKWebsiteDataStore.defaultDataStore().removeDataOfTypes(
             dataTypes = WKWebsiteDataStore.allWebsiteDataTypes(),
-            modifiedSince = NSDate.distantPast,
+            modifiedSince = NSDate.create(timeIntervalSince1970 = 0.0),
             completionHandler = { continuation.resume(true) },
         )
     } catch (_: Exception) {
