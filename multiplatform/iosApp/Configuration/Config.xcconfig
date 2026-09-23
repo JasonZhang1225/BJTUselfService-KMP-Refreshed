@@ -2,7 +2,7 @@ PRODUCT_NAME = 交大自由行 KMP
 BUNDLE_ID = team.bjtuss.bjtuselfservice.kmp.ios
 TEAM_ID =
 
-IPHONEOS_DEPLOYMENT_TARGET = 15.0
+IPHONEOS_DEPLOYMENT_TARGET = 16.0
 SWIFT_VERSION = 5.0
 
 FRAMEWORK_SEARCH_PATHS = $(inherited) $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)

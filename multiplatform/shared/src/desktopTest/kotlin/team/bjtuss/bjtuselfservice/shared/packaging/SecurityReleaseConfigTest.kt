@@ -62,6 +62,12 @@ class SecurityReleaseConfigTest {
         assertTrue("android:protectionLevel=\"signature\"" in manifest)
         assertTrue("android:permission=\"team.bjtuss.bjtuselfservice.kmp.permission.SECURITY_SMOKE\"" in manifest)
     }
+
+    @Test
+    fun iosDeploymentTargetIsAtLeast16() {
+        val config = root.resolve("multiplatform/iosApp/Configuration/Config.xcconfig").readText()
+        assertTrue("IPHONEOS_DEPLOYMENT_TARGET = 16.0" in config)
+    }
 }
 
 private fun sha256(file: File): String {

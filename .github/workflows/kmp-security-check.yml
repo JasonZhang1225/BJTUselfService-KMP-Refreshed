@@ -42,6 +42,14 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
 
+      - name: Verify iOS minimum version
+        run: |
+          for configuration in Debug Release; do
+            xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp \
+              -configuration "$configuration" -sdk iphonesimulator -showBuildSettings |
+              grep -Eq '^[[:space:]]*IPHONEOS_DEPLOYMENT_TARGET = 16\.0$'
+          done
+
       - name: Compile iOS and test macOS security paths
         run: |
           chmod +x ./gradlew
