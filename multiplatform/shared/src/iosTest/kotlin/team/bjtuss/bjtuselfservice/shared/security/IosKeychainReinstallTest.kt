@@ -19,15 +19,22 @@ class IosKeychainReinstallTest {
         )
         val vault = requireNotNull(store.credentialVault)
         try {
-            vault.save(Credentials("synthetic-student", "synthetic-password"))
-            // iOS uninstall removes UserDefaults while the Keychain item survives.
-            store.preferences.clearRememberCredentialsSetting()
+            try {
+                vault.save(Credentials("synthetic-student", "synthetic-password"))
+                // iOS uninstall removes UserDefaults while the Keychain item survives.
+                store.preferences.clearRememberCredentialsSetting()
 
-            assertIs<CredentialRestoreResult.Empty>(AccountSecurityCoordinator(store).restore())
-            assertNull(vault.load())
-        } finally {
-            vault.clear()
-            store.preferences.clearRememberCredentialsSetting()
+                assertIs<CredentialRestoreResult.Empty>(AccountSecurityCoordinator(store).restore())
+                assertNull(vault.load())
+            } finally {
+                vault.clear()
+                store.preferences.clearRememberCredentialsSetting()
+            }
+        } catch (error: CredentialVaultException) {
+            throw AssertionError(
+                "iOS Keychain ${error.operation} returned OSStatus ${error.platformStatus}",
+                error,
+            )
         }
     }
 }
