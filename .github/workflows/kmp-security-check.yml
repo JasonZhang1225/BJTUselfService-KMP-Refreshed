@@ -46,3 +46,11 @@ jobs:
         run: |
           chmod +x ./gradlew
           ./gradlew :shared:iosSimulatorArm64Test :shared:desktopTest --stacktrace
+
+      - name: Upload iOS test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-test-reports
+          path: multiplatform/shared/build/test-results/iosSimulatorArm64Test/
+          if-no-files-found: warn
