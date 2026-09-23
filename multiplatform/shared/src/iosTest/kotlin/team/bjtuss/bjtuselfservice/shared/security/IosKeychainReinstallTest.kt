@@ -5,8 +5,10 @@ import platform.Foundation.NSUUID
 import platform.Security.errSecNotAvailable
 import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class IosKeychainReinstallTest {
     @Test
@@ -21,8 +23,11 @@ class IosKeychainReinstallTest {
         val fixtureVault = InMemoryCredentialVault()
         try {
             fixtureVault.save(Credentials("synthetic-student", "synthetic-password"))
+            store.preferences.setShouldRememberCredentials(true)
+            assertTrue(store.preferences.shouldRememberCredentials())
             // NSUserDefaults is the real iOS implementation; uninstall removes this marker.
             store.preferences.clearRememberCredentialsSetting()
+            assertFalse(store.preferences.shouldRememberCredentials())
 
             assertIs<CredentialRestoreResult.Empty>(
                 AccountSecurityCoordinator(store.copy(credentialVault = fixtureVault)).restore(),
@@ -56,7 +61,10 @@ class IosKeychainReinstallTest {
             throw error
         }
         try {
+            store.preferences.setShouldRememberCredentials(true)
+            assertTrue(store.preferences.shouldRememberCredentials())
             store.preferences.clearRememberCredentialsSetting()
+            assertFalse(store.preferences.shouldRememberCredentials())
             assertIs<CredentialRestoreResult.Empty>(AccountSecurityCoordinator(store).restore())
             assertNull(vault.load())
         } finally {
