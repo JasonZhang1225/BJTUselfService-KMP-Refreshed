@@ -176,11 +176,12 @@
 
 ### 已执行验证
 
-- `:shared:desktopTest` 全量 531 项通过，覆盖缓存原回归、AES-GCM 随机/确定性
+- `:shared:desktopTest` 在 macOS CI 全量 532 项通过，覆盖缓存原回归、AES-GCM 随机/确定性
   往返、篡改拒绝、各类学业缓存原始字节无测试个人明文、Keychain/偏好协调逻辑。
-- `:windowsApp:compileKotlinWindows :windowsApp:windowsTest` 全量通过。
+- `:windowsApp:compileKotlinWindows :windowsApp:windowsTest` 全量通过；独立测试节点
+  验证缓存密钥经 DPAPI 加密持久化，且可跨实例读回。
 - `:shared:compileAndroidMain :androidApp:compileDebugKotlin` 通过（仅编译，不签名打包）。
 - ONNX checker + ONNX Runtime 对转换模型执行成功，argmax 与基线一致。
-- iOS Kotlin/Native 因当前 Windows 主机无法处理 UIKit cinterop，仍需 macOS CI/真机
-  完成编译与退出/卸载重装端到端验证。新增 `kmp-security-check.yml`，在 Liquid
-  推送或 PR 时运行 iOS 编译及 macOS 测试；当前本地修改尚未推送，门禁结果未产生。
+- PR #4 的 macOS 门禁（run `35800148828`）已完成 iOS Kotlin/Native 编译及
+  macOS 全量测试。真实 iOS 设备上的登出网站数据清理、卸载重装后 Keychain 清理
+  仍需设备端到端验收，不能以编译或单元测试代替。

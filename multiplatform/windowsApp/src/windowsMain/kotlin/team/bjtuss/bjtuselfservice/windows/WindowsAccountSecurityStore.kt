@@ -109,10 +109,11 @@ internal data class WindowsCacheKey(
 )
 
 /** Cache key is DPAPI-bound to the current Windows user; only ciphertext enters prefs. */
-internal fun loadOrCreateWindowsCacheKey(): WindowsCacheKey {
-    val preferences = Preferences.userRoot().node(
+internal fun loadOrCreateWindowsCacheKey(
+    preferences: Preferences = Preferences.userRoot().node(
         "/team/bjtuss/bjtuselfservice/kmp/cache",
-    )
+    ),
+): WindowsCacheKey {
     val entropy = "team.bjtuss.bjtuselfservice.kmp.cache-key.v1".encodeToByteArray()
     preferences.get(CACHE_KEY_PAYLOAD, null)?.let { encoded ->
         val key = Dpapi.cryptUnprotect(Base64.getDecoder().decode(encoded), entropy)
