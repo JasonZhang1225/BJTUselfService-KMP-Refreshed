@@ -628,20 +628,9 @@ fun LoginRoute(
     }
 
     fun dismissFallbackChallenge() {
-        manualDialogChallenge = null
-        manualDialogAttempts = 0
-        manualDialogMessage = null
-        val currentProtocol = if (protocol.isInitialized()) protocol.value else null
-        username = ""
-        password = ""
-        captchaAnswer = ""
-        rememberCredentials = securityCoordinator.canStoreCredentials
-        state = LoginState.SignedOut
-        scope.launch {
-            currentProtocol?.logout()
-            clearSchoolWebViewData()
-            securityCoordinator.clear()
-        }
+        // Treat abandoning a partially authenticated CAS challenge exactly like
+        // logout: block another login until server, WebView, and vault cleanup ends.
+        logout(accountScope = "")
     }
 
     val fallbackChallenge = manualDialogChallenge

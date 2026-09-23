@@ -145,7 +145,8 @@
 - **M1 WebView 残留：已修复。** Android 退出时等待清除 `CookieManager`、
   DOM Storage 并 flush；iOS 学校 WebView 与预热 WebView 改用
   `WKWebsiteDataStore.nonPersistent()`，退出时另行清理旧版本默认持久仓库。
-  清理失败进入用户可见的退出反馈。
+  清理失败进入用户可见的退出反馈。放弃手动验证码挑战也复用同一登出流程，
+  在服务端、WebView 和凭据清理完成前禁止开始下一次登录。
 - **M4 桌面明文缓存：已修复。** macOS/Windows 的 SQLDelight 文本字段改用
   AES-256-GCM；普通值使用随机 nonce，账号范围、设置键和复合主键使用
   HMAC 派生 nonce 的确定性密文以保留等值查询；整数标识经密钥驱动的
