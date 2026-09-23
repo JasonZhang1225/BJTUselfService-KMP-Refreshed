@@ -6,6 +6,22 @@
 - **审计方式**：纯只读（4 个并行探查代理覆盖网络层 / 本地存储 / 登出清理与卸载残留 / 依赖版本 + 联网 CVE 检索），未修改、创建或删除任何项目文件
 - **审计范围**：`multiplatform/`（活跃 KMP 工程：Android / iOS / macOS / Windows）；根 `app/` 冻结工程按惯例跳过
 
+## 当前状态（2026-09-23）
+
+**代码修复已完成，待真机验证。** P1/P2 修复已提交至 [草稿 PR #4](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/4)，
+最新 Android 与 Apple CI 门禁通过；用户确认最低 iOS 版本提高到 16.0。
+PR 暂不合并，待用户之后在 Mac/iPhone 上完成以下验收：
+
+- iPhone 卸载并以相同 Bundle ID 重装后，不得恢复残留 Keychain 凭据；
+- 登录后登出，学校网页需重新认证，且 CAS 服务端会话确已失效；
+- macOS 执行“清除全部本地数据”后立即退出，重启后不能恢复凭据或缓存；
+- Android 真机验证登录、验证码识别与登出流程。
+
+CI 中 iOS 模拟器的原生 Keychain 测试返回 OSStatus `-25291`（`errSecNotAvailable`），
+该测试宿主没有可用 Keychain；协调器与真实 `NSUserDefaults` 的重装标记测试通过，
+但不能替代 iPhone 原生 Keychain 验收。Windows DPAPI 附加熵仍为可选残余项，
+见下方 P2 实施记录。P0 凭据轮换由用户负责，用户确认暂按已解决处理。
+
 ---
 
 ## 总体结论
