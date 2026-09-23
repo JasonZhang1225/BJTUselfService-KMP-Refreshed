@@ -463,7 +463,7 @@ fun LoginRoute(
         }
     }
 
-    fun logout(accountScope: String) {
+    fun logout(accountScope: String, fullWipe: Boolean = false) {
         if (logoutCleanupPending) return
         logoutCleanupPending = true
         val currentProtocol = if (protocol.isInitialized()) protocol.value else null
@@ -489,7 +489,9 @@ fun LoginRoute(
                     runCatching { currentProtocol?.logout() ?: true }.getOrDefault(false)
                 }
                 val webDataCleared = runCatching { clearSchoolWebViewData() }.getOrDefault(false)
-                val secureCleared = runCatching { securityCoordinator.clear() }.getOrDefault(false)
+                val secureCleared = runCatching {
+                    if (fullWipe) securityCoordinator.purge() else securityCoordinator.clear()
+                }.getOrDefault(false)
                 val cacheCleared = accountScope.isBlank() || runCatching {
                     cacheStore.clearAccount(accountScope)
                 }.isSuccess
@@ -557,7 +559,8 @@ fun LoginRoute(
             homeworkFileGateway = homeworkFileGateway,
             coursewareDirectoryGateway = coursewareDirectoryGateway,
             systemCalendarGateway = systemCalendarGateway,
-            onLogout = ::logout,
+            onLogout = { accountScope -> logout(accountScope) },
+            onPurgeLogout = { accountScope -> logout(accountScope, fullWipe = true) },
         )
         SideEffect {
             onAuthenticatedSessionChanged(authenticatedSession)

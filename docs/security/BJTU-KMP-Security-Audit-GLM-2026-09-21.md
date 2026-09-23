@@ -154,7 +154,8 @@
   使中途失败时下次启动仍会重新执行迁移。
 - **M3 macOS 全量清理：已修复到应用能力边界。** `clearAll()` 删除全部表后执行
   WAL `TRUNCATE` checkpoint 与 `VACUUM`，避免仅逻辑删行；全量清理使用
-  `AccountSecurityCoordinator.purge()` 删除凭据和“记住密码”偏好键本身。
+  `AccountSecurityCoordinator.purge()` 删除凭据和“记住密码”偏好键本身，
+  成功后立即退出当前会话，防止后台同步马上重新写入缓存。
   DMG 拖拽删除仍无法获得系统卸载回调，README 继续保留手动路径。
 - **M2 iOS Keychain 重装残留：已修复。** 删除“缺失偏好标记时迁移旧凭据”的
   兼容分支；`remember_credentials=false` 或标记缺失均清除 Keychain，不再把

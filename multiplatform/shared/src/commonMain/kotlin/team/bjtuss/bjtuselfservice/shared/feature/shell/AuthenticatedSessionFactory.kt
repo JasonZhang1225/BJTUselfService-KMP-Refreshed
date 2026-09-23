@@ -92,6 +92,7 @@ internal fun rememberAuthenticatedSession(
     coursewareDirectoryGateway: CoursewareDirectoryGateway,
     systemCalendarGateway: SystemCalendarGateway,
     onLogout: (String) -> Unit,
+    onPurgeLogout: (String) -> Unit,
 ): AuthenticatedSession {
     val smartPlatformEndpoint = remember(platform.family) {
         smartPlatformEndpointFor(platform.family)
@@ -201,7 +202,11 @@ internal fun rememberAuthenticatedSession(
             wipeAllLocalData = {
                 val cacheCleared = runCatching { cacheStore.clearAll() }.isSuccess
                 val credentialsPurged = securityCoordinator.purge()
-                cacheCleared && credentialsPurged
+                val wiped = cacheCleared && credentialsPurged
+                // Stay signed out after a full wipe, or background sync could
+                // immediately recreate personal cache rows from this live session.
+                if (wiped) onPurgeLogout(profile.studentId)
+                wiped
             },
             checkLatestRelease = { AppUpdateChecker.fetchLatest(transport) },
         )
