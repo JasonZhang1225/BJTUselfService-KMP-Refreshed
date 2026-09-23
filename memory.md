@@ -1,7 +1,7 @@
 # BJTUselfService KMP 实时工作记忆
 
 > 最后更新：2026-09-23（安全审计 P1/P2 修复完成，待 Mac/iPhone 真机验收）
-> 当前分支：`Liquid`，HEAD `8767173`；安全修复推送到 `codex/security-p1-p2`，草稿 PR #4 指向 `Liquid`，未合并。
+> 当前分支：`Liquid`；安全修复推送到 `codex/security-p1-p2`，草稿 PR #4 指向 `Liquid`，未合并。
 > 工作区：保留用户已有未跟踪 `.workbuddy/`，未修改。
 > `history_full.md` 是只读历史归档；本文件只记录当前事实、未决事项和下一步，不重复历史细节。
 
