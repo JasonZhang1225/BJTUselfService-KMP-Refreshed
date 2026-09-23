@@ -103,13 +103,13 @@ class CacheStoreTest {
 
     @Test
     fun fileDatabaseRestoresAfterCloseAndReopen() = withTemporaryDirectory { directory ->
-        val first = createDesktopCacheStore(directory)
+        val first = openDesktopCacheStore(directory, PlaintextCacheValueProtector)
         assertEquals(CacheOpenState.OPENED, first.state)
         first.store.replaceGrades("student-a", listOf(sampleGrade("restart")))
         first.store.putSetting("ordinary-setting", "kept")
         first.store.close()
 
-        val reopened = createDesktopCacheStore(directory)
+        val reopened = openDesktopCacheStore(directory, PlaintextCacheValueProtector)
         try {
             assertEquals(CacheOpenState.OPENED, reopened.state)
             assertEquals("课程-restart", reopened.store.grades("student-a").single().courseName)
@@ -138,7 +138,7 @@ class CacheStoreTest {
             legacyDriver.execute(null, "PRAGMA user_version = 1", 0).value
             legacyDriver.close()
 
-            val migrated = createDesktopCacheStore(directory)
+            val migrated = openDesktopCacheStore(directory, PlaintextCacheValueProtector)
             try {
                 assertEquals(CacheOpenState.OPENED, migrated.state)
                 assertTrue(migrated.store.grades("student-a").isEmpty())
@@ -171,7 +171,7 @@ class CacheStoreTest {
             legacyDriver.execute(null, "PRAGMA user_version = 2", 0).value
             legacyDriver.close()
 
-            val migrated = createDesktopCacheStore(directory)
+            val migrated = openDesktopCacheStore(directory, PlaintextCacheValueProtector)
             try {
                 assertEquals(CacheOpenState.OPENED, migrated.state)
                 assertEquals(
@@ -226,7 +226,7 @@ class CacheStoreTest {
         val databaseFile = File(directory, "bjtuselfservice_cache.db")
         databaseFile.writeText("not-a-sqlite-database")
 
-        val recovered = createDesktopCacheStore(directory)
+        val recovered = openDesktopCacheStore(directory, PlaintextCacheValueProtector)
         try {
             assertEquals(CacheOpenState.RECOVERED_AFTER_RESET, recovered.state)
             assertEquals(0L, recovered.store.rowCount())
@@ -237,9 +237,36 @@ class CacheStoreTest {
     }
 
     @Test
+    fun encryptedDesktopUpgradeResetsLegacyPlaintextCacheOnce() = withTemporaryDirectory { directory ->
+        val legacy = openDesktopCacheStore(directory, PlaintextCacheValueProtector)
+        legacy.store.putMetadata("student-a", "profile_name", "LEGACY-PERSONAL-DATA-5e9c")
+        legacy.store.close()
+
+        val protector = JvmAesCacheValueProtector(ByteArray(32) { (it + 1).toByte() })
+        val upgraded = openDesktopCacheStore(directory, protector, cacheKeyCreated = true)
+        try {
+            assertEquals(CacheOpenState.MIGRATED_TO_ENCRYPTED, upgraded.state)
+            assertEquals(0L, upgraded.store.rowCount())
+            upgraded.store.putMetadata("student-a", "profile_name", "加密后的姓名")
+        } finally {
+            upgraded.store.close()
+        }
+
+        val reopened = openDesktopCacheStore(directory, protector)
+        try {
+            assertEquals(CacheOpenState.OPENED, reopened.state)
+            assertEquals("加密后的姓名", reopened.store.metadata("student-a", "profile_name"))
+        } finally {
+            reopened.store.close()
+        }
+        val database = File(directory, "bjtuselfservice_cache.db")
+        assertFalse("LEGACY-PERSONAL-DATA-5e9c" in database.readBytes().toString(Charsets.UTF_8))
+    }
+
+    @Test
     fun fullWipeRemovesDeletedTextFromDatabaseAndWalFiles() = withTemporaryDirectory { directory ->
         val marker = "AUDIT-PERSONAL-SECRET-7b4d85e6"
-        val handle = createDesktopCacheStore(directory)
+        val handle = openDesktopCacheStore(directory, PlaintextCacheValueProtector)
         try {
             handle.store.putMetadata("student-a", "private-note", marker)
             assertEquals(marker, handle.store.metadata("student-a", "private-note"))

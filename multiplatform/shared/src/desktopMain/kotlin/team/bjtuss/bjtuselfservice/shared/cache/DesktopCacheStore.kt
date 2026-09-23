@@ -13,26 +13,31 @@ fun createDesktopCacheStore(
         "Library/Application Support/BJTUselfServiceKMP",
     ),
 ): CacheStoreHandle {
+    require(System.getProperty("os.name").startsWith("Mac", ignoreCase = true)) {
+        "桌面缓存工厂仅供 macOS 使用；Windows 请使用 DPAPI 缓存工厂。"
+    }
+    val key = loadOrCreateMacOsCacheKey()
+    val protector = JvmAesCacheValueProtector(key.bytes).also { key.bytes.fill(0) }
+    return openDesktopCacheStore(baseDirectory, protector, key.created)
+}
+
+/** Allows schema and encryption migration tests without touching the user's Keychain. */
+internal fun openDesktopCacheStore(
+    baseDirectory: File,
+    protector: CacheValueProtector,
+    cacheKeyCreated: Boolean = false,
+): CacheStoreHandle {
     require(baseDirectory.isDirectory || baseDirectory.mkdirs()) {
         "无法创建本地缓存目录。"
     }
     val databaseFile = File(baseDirectory, CACHE_DATABASE_FILE_NAME)
     val encryptionMarker = File(baseDirectory, CACHE_ENCRYPTION_MARKER)
-    val key = if (System.getProperty("os.name").startsWith("Mac", ignoreCase = true)) {
-        loadOrCreateMacOsCacheKey()
-    } else {
-        // desktopMain tests also run on Windows; the production Windows app has
-        // its own DPAPI-backed factory below and never takes this branch.
-        null
-    }
     val cacheFilesExist = desktopCacheFiles(databaseFile).any(File::exists)
-    val resetNeeded = key != null && cacheFilesExist && (!encryptionMarker.isFile || key.created)
+    val resetNeeded = !protector.isIdentity && cacheFilesExist &&
+        (!encryptionMarker.isFile || cacheKeyCreated)
     if (resetNeeded) {
         deleteDesktopCacheFiles(databaseFile)
     }
-    val protector = key?.let {
-        JvmAesCacheValueProtector(it.bytes).also { _ -> it.bytes.fill(0) }
-    } ?: PlaintextCacheValueProtector
     return openCacheStoreWithRecovery(
         openDriver = {
             JdbcSqliteDriver(
@@ -46,7 +51,7 @@ fun createDesktopCacheStore(
         },
         protector = protector,
     ).let { handle ->
-        if (key != null) encryptionMarker.writeText("v1\n")
+        if (!protector.isIdentity) encryptionMarker.writeText("v1\n")
         if (resetNeeded) handle.copy(state = CacheOpenState.MIGRATED_TO_ENCRYPTED) else handle
     }
 }
