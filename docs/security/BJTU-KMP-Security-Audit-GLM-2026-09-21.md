@@ -183,5 +183,9 @@
 - `:shared:compileAndroidMain :androidApp:compileDebugKotlin` 通过（仅编译，不签名打包）。
 - ONNX checker + ONNX Runtime 对转换模型执行成功，argmax 与基线一致。
 - PR #4 的 macOS 门禁（run `35800148828`）已完成 iOS Kotlin/Native 编译及
-  macOS 全量测试。真实 iOS 设备上的登出网站数据清理、卸载重装后 Keychain 清理
-  仍需设备端到端验收，不能以编译或单元测试代替。
+  macOS 全量测试。新增 iOS 模拟器测试验证真实 `NSUserDefaults` 标记消失后，
+  协调器会清除保险库凭据。CI 中的 Kotlin/Native 测试可执行文件访问原生
+  Keychain 返回 OSStatus `-25291`（`errSecNotAvailable`）；原生往返测试仅在
+  Keychain 可用时执行，不能将该条件性测试视为原生 Keychain 已验收。
+  真实 iOS 设备上的登出网站数据清理、卸载重装后 Keychain 清理仍需
+  设备端到端验收，不能以编译或单元测试代替。
