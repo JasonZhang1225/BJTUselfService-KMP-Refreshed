@@ -1649,8 +1649,8 @@ fun AuthenticatedAppShell(
                     fileGateway = homeworkFileGateway,
                     onRefresh = refresh,
                     showDetailSheet = !useNativeSecondaryRoutes,
-                    onOpenCourse = { url -> onOpenExternalUrl(url.replace("http://", "https://")) },
-                    onOpenActivity = { url -> onOpenExternalUrl(url.replace("http://", "https://")) },
+                    onOpenCourse = { url -> onOpenExternalUrl(upgradePhyVlabUrlToHttps(url)) },
+                    onOpenActivity = { url -> onOpenExternalUrl(upgradePhyVlabUrlToHttps(url)) },
                     onOpenActivityDetail = { activity ->
                         // 先写入选中作业再 push，详情页会基于同一 session model 读取并加载详情。
                         phyVlabModel.showActivityDetails(activity)
@@ -1676,7 +1676,7 @@ fun AuthenticatedAppShell(
                     model = phyVlabModel,
                     fileGateway = homeworkFileGateway,
                     onRetry = retryPhyVlabDetail,
-                    onOpenActivity = { url -> onOpenExternalUrl(url.replace("http://", "https://")) },
+                    onOpenActivity = { url -> onOpenExternalUrl(upgradePhyVlabUrlToHttps(url)) },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -1988,3 +1988,6 @@ fun AuthenticatedAppShell(
         }
     }
 }
+
+internal fun upgradePhyVlabUrlToHttps(url: String): String =
+    if (url.startsWith("http://", ignoreCase = true)) "https://${url.substring(7)}" else url

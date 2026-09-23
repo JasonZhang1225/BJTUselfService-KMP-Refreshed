@@ -171,8 +171,14 @@
   模型 SHA-256 已写入 `tools/captcha/validation_manifest.json`。
 - 显式固定 OkHttp `5.3.2`，不再仅依赖 Ktor 传递解析；桌面发行日志默认关闭，
   仅显式设置 `-Dbjtu.debug.logging=true` 时启用。
+- 物理实验平台外链只升级开头的 `http://`，不再误改查询参数里的 URL；
+  Android debug 专用 `SecuritySmokeActivity` 现在要求签名级权限，
+  不再允许其他签名的应用直接启动。
 - 修正冻结旧 Android 发布流水线对 `v*-Liquid*` 标签的误匹配：Liquid 标签只走
   KMP 打包流水线，避免旧工程的历史 TLS/凭据缺陷被重新发布。
+- L9 的 DPAPI 附加熵仍为编译期常量：实际安全边界是 Windows 用户派生密钥；
+  把随机熵与密文放在同一用户偏好存储中并不能提高同用户入侵场景下的保密性，
+  因而未作表面化替换。L10（最低 iOS 15→16）会改变设备支持范围，待产品决策。
 
 ### 已执行验证
 
@@ -181,6 +187,8 @@
 - `:windowsApp:compileKotlinWindows :windowsApp:windowsTest` 全量通过；独立测试节点
   验证缓存密钥经 DPAPI 加密持久化，且可跨实例读回。
 - `:shared:compileAndroidMain :androidApp:compileDebugKotlin` 通过（仅编译，不签名打包）。
+- 物理实验平台 URL 定向回归测试通过；Android debug 合并后 Manifest 已核实
+  `SecuritySmokeActivity` 的 `signature` 权限保护（仅处理 Manifest，未签名打包）。
 - ONNX checker + ONNX Runtime 对转换模型执行成功，argmax 与基线一致。
 - PR #4 的 macOS 门禁（run `35800148828`）已完成 iOS Kotlin/Native 编译及
   macOS 全量测试。新增 iOS 模拟器测试验证真实 `NSUserDefaults` 标记消失后，

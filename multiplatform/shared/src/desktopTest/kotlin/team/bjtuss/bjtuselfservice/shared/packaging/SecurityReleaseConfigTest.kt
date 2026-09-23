@@ -55,6 +55,13 @@ class SecurityReleaseConfigTest {
         val legacyRelease = root.resolve(".github/workflows/release.yml").readText()
         assertTrue("!contains(github.ref_name, 'Liquid')" in legacyRelease)
     }
+
+    @Test
+    fun debugSecuritySmokeActivityRequiresSignaturePermission() {
+        val manifest = root.resolve("multiplatform/androidApp/src/debug/AndroidManifest.xml").readText()
+        assertTrue("android:protectionLevel=\"signature\"" in manifest)
+        assertTrue("android:permission=\"team.bjtuss.bjtuselfservice.kmp.permission.SECURITY_SMOKE\"" in manifest)
+    }
 }
 
 private fun sha256(file: File): String {
