@@ -45,4 +45,4 @@ jobs:
       - name: Compile iOS and test macOS security paths
         run: |
           chmod +x ./gradlew
-          ./gradlew :shared:compileKotlinIosSimulatorArm64 :shared:desktopTest --stacktrace
+          ./gradlew :shared:iosSimulatorArm64Test :shared:desktopTest --stacktrace
