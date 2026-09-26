@@ -45,8 +45,8 @@ data class GradeUiState(
     val excludedCourseTypes: Set<CourseType> = emptySet(),
     /** null = 性质映射未加载（从未同步成功），此时不应把全部课程当“其他类别”。 */
     val courseTypesByCode: Map<String, CourseType>? = null,
-    /** 默认逆序：教务 ln+lr 原序倒排。 */
-    val sortOrder: GradeSortOrder = GradeSortOrder.ORIGINAL_REVERSED,
+    /** 默认直接展示教务网页 ln+lr 行序。 */
+    val sortOrder: GradeSortOrder = GradeSortOrder.ORIGINAL,
     val selectionMode: Boolean = false,
     val selectedGradeId: Int? = null,
     val isLoading: Boolean = true,
@@ -325,7 +325,7 @@ class GradeScreenModel(
 
     /**
      * 筛选面板：点左侧维度胶囊。已在该维度则不动方向；切维度时落到该维默认方向
-     * （教务原序→逆序 / 分数→从高到低）。
+     * （教务原序→正序 / 分数→从高到低）。
      */
     fun selectSortCategory(byScore: Boolean) {
         val current = mutableState.value.sortOrder
@@ -336,7 +336,7 @@ class GradeScreenModel(
         }
         if (alreadyInCategory) return
         setSortOrder(
-            if (byScore) GradeSortOrder.DESCENDING else GradeSortOrder.ORIGINAL_REVERSED,
+            if (byScore) GradeSortOrder.DESCENDING else GradeSortOrder.ORIGINAL,
         )
     }
 

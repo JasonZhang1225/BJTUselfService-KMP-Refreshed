@@ -13,7 +13,7 @@ Apple 两端可在没有开发者账号的范围内完成的发布元数据缺�
 ## iOS / iPadOS
 
 - Bundle ID：`team.bjtuss.bjtuselfservice.kmp.ios`。
-- 支持 iPhone 与 iPad，最低 iOS 15.0；不声明相机、麦克风、照片、位置、联系人或蓝牙权限。
+- 支持 iPhone 与 iPad；2026-09-23 安全审查后经用户确认，最低 iOS 版本提高到 16.0。该决定不追溯改变下文 2026-07-31 的构建验证记录；不声明相机、麦克风、照片、位置、联系人或蓝牙权限。
 - `Info.plist` 不含 ATS 全局放宽；iOS 只为智慧教学固定 IP 和公开教室域名 `yaya.csoci.com` 加域名级 `NSExceptionAllowsInsecureHTTPLoads`。ATS 不能约束端口/路径，因此共享层分别继续锁定既有智慧教学白名单与 `http://yaya.csoci.com:2333/api/classnum/`；教室请求使用独立、无登录 Cookie 的 transport。
 - 新增 `Assets.xcassets/AppIcon.appiconset`，由单张 1024 × 1024、无透明通道主图生成 iPhone/iPad 图标。
 - 第一个图标版本在 iPad 主屏 Computer Use 复核中显得过小；v2 放大同一吉祥物并保留安全边距。重新安装后主屏远距离识别度明显改善，角色、八条黄色光芒和应用名称均可辨识。

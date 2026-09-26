@@ -1,6 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.cache
 
 import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.db.QueryResult
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
 import team.bjtuss.bjtuselfservice.shared.cache.db.CacheDatabaseSql
 import team.bjtuss.bjtuselfservice.shared.domain.course.Course
@@ -29,6 +30,7 @@ data class AppPreferences(
 enum class CacheOpenState {
     OPENED,
     RECOVERED_AFTER_RESET,
+    MIGRATED_TO_ENCRYPTED,
 }
 
 data class CacheStoreHandle(
@@ -44,6 +46,7 @@ class CacheDatabaseOpenException(cause: Throwable) :
  */
 class CacheStore(
     private val driver: SqlDriver,
+    private val protector: CacheValueProtector = PlaintextCacheValueProtector,
 ) {
     private val database = CacheDatabaseSql(driver)
     private val queries = database.cacheQueries
@@ -51,22 +54,22 @@ class CacheStore(
     fun rowCount(): Long = queries.countAllRows().executeAsOne()
 
     fun grades(accountScope: String): List<Grade> = queries.selectGradesByAccount(
-        account_scope = requireAccountScope(accountScope),
+        account_scope = protectedAccountScope(accountScope),
     ) { id, courseName, teacher, score, credits, year, semester, detail ->
         Grade(
             id = id.toIntChecked(),
-            courseName = courseName,
-            courseTeacher = teacher,
-            courseScore = score,
-            courseCredits = credits,
-            courseYear = year,
-            semester = semester,
-            detail = detail,
+            courseName = protector.unprotect(courseName),
+            courseTeacher = protector.unprotect(teacher),
+            courseScore = protector.unprotect(score),
+            courseCredits = protector.unprotect(credits),
+            courseYear = protector.unprotect(year),
+            semester = protector.unprotect(semester),
+            detail = protector.unprotect(detail),
         )
     }.executeAsList()
 
     fun replaceGrades(accountScope: String, grades: List<Grade>) {
-        val scope = requireAccountScope(accountScope)
+        val scope = protectedAccountScope(accountScope)
         queries.transaction {
             replaceGradesInTransaction(scope, grades)
         }
@@ -83,7 +86,7 @@ class CacheStore(
         selections: List<GradeSelectionRecord>,
         courseTypes: Map<String, String>? = null,
     ) {
-        val scope = requireAccountScope(accountScope)
+        val scope = protectedAccountScope(accountScope)
         queries.transaction {
             replaceGradesInTransaction(scope, grades)
             replaceGradeSelectionsInTransaction(scope, selections)
@@ -95,34 +98,34 @@ class CacheStore(
 
     /** 课程号 → 课程性质中文原文（必修/限选/任选），枚举转换在 data 层完成。 */
     fun programCourseTypes(accountScope: String): Map<String, String> =
-        queries.selectProgramCourseTypesByAccount(requireAccountScope(accountScope))
+        queries.selectProgramCourseTypesByAccount(protectedAccountScope(accountScope))
             .executeAsList()
-            .associate { it.course_id to it.course_type }
+            .associate { protector.unprotect(it.course_id) to protector.unprotect(it.course_type) }
 
     fun replaceProgramCourseTypes(accountScope: String, courseTypes: Map<String, String>) {
-        val scope = requireAccountScope(accountScope)
+        val scope = protectedAccountScope(accountScope)
         queries.transaction {
             replaceProgramCourseTypesInTransaction(scope, courseTypes)
         }
     }
 
     fun courses(accountScope: String): List<Course> = queries.selectCoursesByAccount(
-        account_scope = requireAccountScope(accountScope),
+        account_scope = protectedAccountScope(accountScope),
     ) { id, courseId, courseName, teacher, locationIndex, time, place, currentSemester ->
         Course(
             id = id.toIntChecked(),
-            courseId = courseId,
-            courseName = courseName,
-            courseTeacher = teacher,
-            courseLocationIndex = locationIndex.toIntChecked(),
-            courseTime = time,
-            coursePlace = place,
-            isCurrentSemester = currentSemester != 0L,
+            courseId = protector.unprotect(courseId),
+            courseName = protector.unprotect(courseName),
+            courseTeacher = protector.unprotect(teacher),
+            courseLocationIndex = protector.unprotectNumber(locationIndex).toIntChecked(),
+            courseTime = protector.unprotect(time),
+            coursePlace = protector.unprotect(place),
+            isCurrentSemester = protector.unprotectNumber(currentSemester) != 0L,
         )
     }.executeAsList()
 
     fun replaceCourses(accountScope: String, courses: List<Course>) {
-        val scope = requireAccountScope(accountScope)
+        val scope = protectedAccountScope(accountScope)
         queries.transaction {
             replaceCoursesInTransaction(scope, courses)
         }
@@ -136,95 +139,99 @@ class CacheStore(
 
     /** 课程行与它们对应的当前周提示属于同一个账号快照。 */
     fun replaceCourseSnapshot(accountScope: String, courses: List<Course>, currentWeek: Int) {
-        val scope = requireAccountScope(accountScope)
+        val scope = protectedAccountScope(accountScope)
         val safeWeek = currentWeek.takeIf { it in 1..COURSE_MAX_WEEK } ?: 0
         queries.transaction {
             replaceCoursesInTransaction(scope, courses)
-            queries.putMetadata(scope, COURSE_CURRENT_WEEK_KEY, safeWeek.toString())
+            queries.putMetadata(
+                scope,
+                protectedKey(COURSE_CURRENT_WEEK_KEY),
+                protector.protect(safeWeek.toString()),
+            )
         }
     }
 
     fun exams(accountScope: String): List<ExamSchedule> = queries.selectExamsByAccount(
-        account_scope = requireAccountScope(accountScope),
+        account_scope = protectedAccountScope(accountScope),
     ) { id, examType, courseName, timeAndPlace, status, detail ->
         ExamSchedule(
             id = id.toIntChecked(),
-            examType = examType,
-            courseName = courseName,
-            examTimeAndPlace = timeAndPlace,
-            examStatus = status,
-            detail = detail,
+            examType = protector.unprotect(examType),
+            courseName = protector.unprotect(courseName),
+            examTimeAndPlace = protector.unprotect(timeAndPlace),
+            examStatus = protector.unprotect(status),
+            detail = protector.unprotect(detail),
         )
     }.executeAsList()
 
     fun replaceExams(accountScope: String, exams: List<ExamSchedule>) {
-        val scope = requireAccountScope(accountScope)
+        val scope = protectedAccountScope(accountScope)
         queries.transaction {
             queries.deleteExamsByAccount(scope)
             exams.forEach { exam ->
                 queries.insertExam(
                     scope,
-                    exam.examType,
-                    exam.courseName,
-                    exam.examTimeAndPlace,
-                    exam.examStatus,
-                    exam.detail,
+                    protector.protect(exam.examType),
+                    protector.protect(exam.courseName),
+                    protector.protect(exam.examTimeAndPlace),
+                    protector.protect(exam.examStatus),
+                    protector.protect(exam.detail),
                 )
             }
         }
     }
 
     fun homework(accountScope: String): List<Homework> = queries.selectHomeworkByAccount(
-        account_scope = requireAccountScope(accountScope),
+        account_scope = protectedAccountScope(accountScope),
     ) { id, upId, idSnId, score, userId, courseId, courseName, title, content,
         createDate, endTime, openDate, status, submitCount, allCount, subStatus,
         scoreId, homeworkType ->
         Homework(
             id = id.toIntChecked(),
-            upId = upId.toIntChecked(),
-            idSnId = idSnId?.toIntChecked(),
-            score = score,
-            userId = userId.toIntChecked(),
-            courseId = courseId.toIntChecked(),
-            courseName = courseName,
-            title = title,
-            content = content,
-            createDate = createDate,
-            endTime = endTime,
-            openDate = openDate,
-            status = status.toIntChecked(),
-            submitCount = submitCount.toIntChecked(),
-            allCount = allCount.toIntChecked(),
-            subStatus = subStatus,
-            scoreId = scoreId.toIntChecked(),
-            homeworkType = homeworkType.toIntChecked(),
+            upId = protector.unprotectNumber(upId).toIntChecked(),
+            idSnId = idSnId?.let(protector::unprotectNumber)?.toIntChecked(),
+            score = protector.unprotect(score),
+            userId = protector.unprotectNumber(userId).toIntChecked(),
+            courseId = protector.unprotectNumber(courseId).toIntChecked(),
+            courseName = protector.unprotect(courseName),
+            title = protector.unprotect(title),
+            content = protector.unprotect(content),
+            createDate = protector.unprotect(createDate),
+            endTime = protector.unprotect(endTime),
+            openDate = protector.unprotect(openDate),
+            status = protector.unprotectNumber(status).toIntChecked(),
+            submitCount = protector.unprotectNumber(submitCount).toIntChecked(),
+            allCount = protector.unprotectNumber(allCount).toIntChecked(),
+            subStatus = protector.unprotect(subStatus),
+            scoreId = protector.unprotectNumber(scoreId).toIntChecked(),
+            homeworkType = protector.unprotectNumber(homeworkType).toIntChecked(),
         )
     }.executeAsList()
 
     fun replaceHomework(accountScope: String, homework: List<Homework>) {
-        val scope = requireAccountScope(accountScope)
+        val scope = protectedAccountScope(accountScope)
         queries.transaction {
             queries.deleteHomeworkByAccount(scope)
             homework.forEach { item ->
                 queries.insertHomework(
                     scope,
-                    item.upId.toLong(),
-                    item.idSnId?.toLong(),
-                    item.score,
-                    item.userId.toLong(),
-                    item.courseId.toLong(),
-                    item.courseName,
-                    item.title,
-                    item.content,
-                    item.createDate,
-                    item.endTime,
-                    item.openDate,
-                    item.status.toLong(),
-                    item.submitCount.toLong(),
-                    item.allCount.toLong(),
-                    item.subStatus,
-                    item.scoreId.toLong(),
-                    item.homeworkType.toLong(),
+                    protector.protectNumber(item.upId.toLong()),
+                    item.idSnId?.toLong()?.let(protector::protectNumber),
+                    protector.protect(item.score),
+                    protector.protectNumber(item.userId.toLong()),
+                    protector.protectNumber(item.courseId.toLong()),
+                    protector.protect(item.courseName),
+                    protector.protect(item.title),
+                    protector.protect(item.content),
+                    protector.protect(item.createDate),
+                    protector.protect(item.endTime),
+                    protector.protect(item.openDate),
+                    protector.protectNumber(item.status.toLong()),
+                    protector.protectNumber(item.submitCount.toLong()),
+                    protector.protectNumber(item.allCount.toLong()),
+                    protector.protect(item.subStatus),
+                    protector.protectNumber(item.scoreId.toLong()),
+                    protector.protectNumber(item.homeworkType.toLong()),
                 )
             }
         }
@@ -232,32 +239,45 @@ class CacheStore(
 
     fun gradeSelections(accountScope: String): List<GradeSelectionRecord> =
         queries.selectGradeSelectionsByAccount(
-            account_scope = requireAccountScope(accountScope),
+            account_scope = protectedAccountScope(accountScope),
         ) { courseName, teacher, year, semester, score, credits, occurrence ->
             GradeSelectionRecord(
-                courseName = courseName,
-                courseTeacher = teacher,
-                courseYear = year,
-                semester = semester,
-                lastKnownScore = score,
-                lastKnownCredits = credits,
-                occurrence = occurrence.toIntChecked(),
+                courseName = protector.unprotect(courseName),
+                courseTeacher = protector.unprotect(teacher),
+                courseYear = protector.unprotect(year),
+                semester = protector.unprotect(semester),
+                lastKnownScore = protector.unprotect(score),
+                lastKnownCredits = protector.unprotect(credits),
+                occurrence = protector.unprotectNumber(occurrence).toIntChecked(),
             )
-        }.executeAsList()
+        }.executeAsList().sortedWith(
+            compareBy<GradeSelectionRecord>(
+                GradeSelectionRecord::courseYear,
+                GradeSelectionRecord::semester,
+                GradeSelectionRecord::courseName,
+                GradeSelectionRecord::courseTeacher,
+                GradeSelectionRecord::occurrence,
+            ),
+        )
 
     fun replaceGradeSelections(accountScope: String, records: List<GradeSelectionRecord>) {
-        val scope = requireAccountScope(accountScope)
+        val scope = protectedAccountScope(accountScope)
         queries.transaction {
             replaceGradeSelectionsInTransaction(scope, records)
         }
     }
 
     fun metadata(accountScope: String, key: String): String? =
-        queries.selectMetadata(requireAccountScope(accountScope), requireKey(key))
+        queries.selectMetadata(protectedAccountScope(accountScope), protectedKey(key))
             .executeAsOneOrNull()
+            ?.let(protector::unprotect)
 
     fun putMetadata(accountScope: String, key: String, value: String) {
-        queries.putMetadata(requireAccountScope(accountScope), requireKey(key), value)
+        queries.putMetadata(
+            protectedAccountScope(accountScope),
+            protectedKey(key),
+            protector.protect(value),
+        )
     }
 
     /**
@@ -275,22 +295,24 @@ class CacheStore(
     }
 
     fun saveCachedProfile(profile: StudentProfile) {
-        val scope = requireAccountScope(profile.studentId)
+        val scope = protectedAccountScope(profile.studentId)
         queries.transaction {
-            queries.putMetadata(scope, PROFILE_NAME_KEY, profile.name)
-            queries.putMetadata(scope, PROFILE_IDENTITY_KEY, profile.identity)
-            queries.putMetadata(scope, PROFILE_DEPARTMENT_KEY, profile.department)
+            queries.putMetadata(scope, protectedKey(PROFILE_NAME_KEY), protector.protect(profile.name))
+            queries.putMetadata(scope, protectedKey(PROFILE_IDENTITY_KEY), protector.protect(profile.identity))
+            queries.putMetadata(scope, protectedKey(PROFILE_DEPARTMENT_KEY), protector.protect(profile.department))
         }
     }
 
-    fun setting(key: String): String? = queries.selectSetting(requireKey(key)).executeAsOneOrNull()
+    fun setting(key: String): String? = queries.selectSetting(protectedKey(key))
+        .executeAsOneOrNull()
+        ?.let(protector::unprotect)
 
     fun putSetting(key: String, value: String) {
-        queries.putSetting(requireKey(key), value)
+        queries.putSetting(protectedKey(key), protector.protect(value))
     }
 
     fun deleteSetting(key: String) {
-        queries.deleteSetting(requireKey(key))
+        queries.deleteSetting(protectedKey(key))
     }
 
     fun preferences(): AppPreferences = AppPreferences(
@@ -322,6 +344,7 @@ class CacheStore(
     }
 
     fun claimLegacyAccountData(accountScope: String) {
+        if (!protector.isIdentity) return
         val scope = requireAccountScope(accountScope)
         queries.transaction {
             queries.claimLegacyGrades(scope)
@@ -332,7 +355,7 @@ class CacheStore(
     }
 
     fun clearAccount(accountScope: String) {
-        val scope = requireAccountScope(accountScope)
+        val scope = protectedAccountScope(accountScope)
         queries.transaction {
             queries.deleteGradesByAccount(scope)
             queries.deleteCoursesByAccount(scope)
@@ -355,6 +378,21 @@ class CacheStore(
             queries.deleteAllMetadata()
             queries.deleteAllSettings()
         }
+        // SQLite 默认不会立即擦除空闲页，WAL 也可能保留旧内容。清空后压缩
+        // 主库并截断 WAL，使“清除全部本地数据”不只是逻辑删除。
+        driver.executeQuery(
+            identifier = null,
+            sql = "PRAGMA wal_checkpoint(TRUNCATE)",
+            mapper = { cursor ->
+                check(cursor.next().value && cursor.getLong(0) == 0L) {
+                    "无法截断本地缓存 WAL。"
+                }
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+            binders = null,
+        ).value
+        driver.execute(null, "VACUUM", 0).value
     }
 
     fun close() {
@@ -366,13 +404,13 @@ class CacheStore(
         grades.forEach { grade ->
             queries.insertGrade(
                 scope,
-                grade.courseName,
-                grade.courseTeacher,
-                grade.courseScore,
-                grade.courseCredits,
-                grade.courseYear,
-                grade.semester,
-                grade.detail,
+                protector.protect(grade.courseName),
+                protector.protect(grade.courseTeacher),
+                protector.protect(grade.courseScore),
+                protector.protect(grade.courseCredits),
+                protector.protect(grade.courseYear),
+                protector.protect(grade.semester),
+                protector.protect(grade.detail),
             )
         }
     }
@@ -385,13 +423,13 @@ class CacheStore(
         records.forEach { record ->
             queries.insertGradeSelection(
                 scope,
-                record.courseName,
-                record.courseTeacher,
-                record.courseYear,
-                record.semester,
-                record.lastKnownScore,
-                record.lastKnownCredits,
-                record.occurrence.toLong(),
+                protector.protectStable(record.courseName),
+                protector.protectStable(record.courseTeacher),
+                protector.protectStable(record.courseYear),
+                protector.protectStable(record.semester),
+                protector.protect(record.lastKnownScore),
+                protector.protect(record.lastKnownCredits),
+                protector.protectNumber(record.occurrence.toLong()),
             )
         }
     }
@@ -403,7 +441,11 @@ class CacheStore(
         queries.deleteProgramCourseTypesByAccount(scope)
         courseTypes.forEach { (courseId, courseType) ->
             if (courseId.isBlank() || courseType.isBlank()) return@forEach
-            queries.insertProgramCourseType(scope, courseId, courseType)
+            queries.insertProgramCourseType(
+                scope,
+                protector.protectStable(courseId),
+                protector.protect(courseType),
+            )
         }
     }
 
@@ -412,16 +454,21 @@ class CacheStore(
         courses.forEach { course ->
             queries.insertCourse(
                 scope,
-                course.courseId,
-                course.courseName,
-                course.courseTeacher,
-                course.courseLocationIndex.toLong(),
-                course.courseTime,
-                course.coursePlace,
-                if (course.isCurrentSemester) 1L else 0L,
+                protector.protect(course.courseId),
+                protector.protect(course.courseName),
+                protector.protect(course.courseTeacher),
+                protector.protectNumber(course.courseLocationIndex.toLong()),
+                protector.protect(course.courseTime),
+                protector.protect(course.coursePlace),
+                protector.protectNumber(if (course.isCurrentSemester) 1L else 0L),
             )
         }
     }
+
+    private fun protectedAccountScope(value: String): String =
+        protector.protectStable(requireAccountScope(value))
+
+    private fun protectedKey(value: String): String = protector.protectStable(requireKey(value))
 
     private fun booleanSetting(key: String, default: Boolean): Boolean = when (setting(key)) {
         "true" -> true
@@ -433,11 +480,12 @@ class CacheStore(
 fun openCacheStoreWithRecovery(
     openDriver: () -> SqlDriver,
     deleteStorage: () -> Unit,
+    protector: CacheValueProtector = PlaintextCacheValueProtector,
 ): CacheStoreHandle {
     fun openAndProbe(): CacheStore {
         val driver = openDriver()
         return try {
-            CacheStore(driver).also(CacheStore::rowCount)
+            CacheStore(driver, protector).also(CacheStore::rowCount)
         } catch (error: Exception) {
             runCatching(driver::close)
             throw error

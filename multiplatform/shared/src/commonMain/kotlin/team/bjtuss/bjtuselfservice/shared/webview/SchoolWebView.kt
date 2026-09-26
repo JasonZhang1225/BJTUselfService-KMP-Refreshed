@@ -19,3 +19,11 @@ expect fun SchoolWebView(
 
 /** 用系统浏览器/默认方式打开一个外部链接。 */
 expect fun openExternalUrl(url: String)
+
+/**
+ * 清除学校内嵌网页容器持有的 Cookie、DOM Storage 与磁盘缓存。
+ *
+ * 退出账号时必须与 Ktor 会话一起调用，避免 WebView 的独立 Cookie jar
+ * 在账号切换后继续带出上一账号的邮箱/MIS 会话。
+ */
+expect suspend fun clearSchoolWebViewData(): Boolean

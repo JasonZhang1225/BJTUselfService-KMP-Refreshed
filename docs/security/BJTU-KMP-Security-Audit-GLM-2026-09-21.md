@@ -6,6 +6,24 @@
 - **审计方式**：纯只读（4 个并行探查代理覆盖网络层 / 本地存储 / 登出清理与卸载残留 / 依赖版本 + 联网 CVE 检索），未修改、创建或删除任何项目文件
 - **审计范围**：`multiplatform/`（活跃 KMP 工程：Android / iOS / macOS / Windows）；根 `app/` 冻结工程按惯例跳过
 
+## 当前状态（2026-09-26）
+
+**代码修复与 macOS 正式安装验收已完成，其余设备待验。** P1/P2 修复已提交至 [草稿 PR #4](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/4)，
+Android 与 Apple CI 门禁已通过；用户确认最低 iOS 版本提高到 16.0。
+PR 暂不合并，仍需完成以下验收：
+
+- iPhone 卸载并以相同 Bundle ID 重装后，不得恢复残留 Keychain 凭据；
+- 登录后登出，学校网页需重新认证，且 CAS 服务端会话确已失效；
+- Android 真机验证登录、验证码识别与登出流程。
+
+macOS 已在本机从安全分支 DMG 覆盖现有安装，并通过应用内“清除全部本地数据”
+完成真实安装验收；过程与结果见文末记录。
+
+CI 中 iOS 模拟器的原生 Keychain 测试返回 OSStatus `-25291`（`errSecNotAvailable`），
+该测试宿主没有可用 Keychain；协调器与真实 `NSUserDefaults` 的重装标记测试通过，
+但不能替代 iPhone 原生 Keychain 验收。Windows DPAPI 附加熵仍为可选残余项，
+见下方 P2 实施记录。P0 凭据轮换由用户负责，用户确认暂按已解决处理。
+
 ---
 
 ## 总体结论
@@ -133,3 +151,106 @@
 3. **M3** macOS 卸载残留（脚本 + 全量清除补删文件）
 4. **M2** iOS Keychain 残留（文案 / 重装检测，产品决策）
 5. 低危项按 L1→L10 顺次处理，L6/L7 属一次性供应链加固
+
+---
+
+## 七、P1–P2 修复实施记录（2026-09-23）
+
+本节记录审计后的实际修复；上文保留审计时点的原始结论，避免覆盖历史证据。
+
+### P1 修复
+
+- **M1 WebView 残留：已修复。** Android 退出时等待清除 `CookieManager`、
+  DOM Storage 并 flush；iOS 学校 WebView 与预热 WebView 改用
+  `WKWebsiteDataStore.nonPersistent()`，退出时另行清理旧版本默认持久仓库。
+  清理失败进入用户可见的退出反馈。放弃手动验证码挑战也复用同一登出流程，
+  在服务端、WebView 和凭据清理完成前禁止开始下一次登录。
+- **M4 桌面明文缓存：已修复。** macOS/Windows 的 SQLDelight 文本字段改用
+  AES-256-GCM；普通值使用随机 nonce，账号范围、设置键和复合主键使用
+  HMAC 派生 nonce 的确定性密文以保留等值查询；整数标识经密钥驱动的
+  64 位 Feistel 置换，避免 `user_id` 等标识明文入库。macOS 密钥保存在 Keychain，
+  Windows 密钥经 DPAPI 保护后保存。首次升级删除旧明文数据库并重建；安装标记
+  使中途失败时下次启动仍会重新执行迁移。
+- **M3 macOS 全量清理：已修复到应用能力边界。** `clearAll()` 删除全部表后执行
+  WAL `TRUNCATE` checkpoint 与 `VACUUM`，避免仅逻辑删行；全量清理使用
+  `AccountSecurityCoordinator.purge()` 删除凭据和“记住密码”偏好键本身，
+  成功后立即退出当前会话，防止后台同步马上重新写入缓存。
+  DMG 拖拽删除仍无法获得系统卸载回调，README 继续保留手动路径。
+- **M2 iOS Keychain 重装残留：已修复。** 删除“缺失偏好标记时迁移旧凭据”的
+  兼容分支；`remember_credentials=false` 或标记缺失均清除 Keychain，不再把
+  卸载重装误判成旧版本升级。
+
+### P2 修复
+
+- 登出先请求 `https://cas.bjtu.edu.cn/auth/logout/` 使 CAS 服务端会话失效，
+  无论请求成功与否都销毁本地 Cookie；服务端失败会显示给用户。
+- Gradle 9.3.1 分发包固定官方 SHA-256；Wrapper JAR 重新生成并与官方 checksum
+  匹配；所有执行 Gradle 的 GitHub Actions job 在构建前运行官方 Wrapper 校验。
+- Android 从停止更新的 `pytorch_android 2.1.0` 迁移到 ONNX Runtime 1.30.0。
+  新模型与确定性 PyTorch 基线的 logits 最大绝对误差约 `1.14e-5`，argmax 序列一致；
+  模型 SHA-256 已写入 `tools/captcha/validation_manifest.json`。
+- 显式固定 OkHttp `5.3.2`，不再仅依赖 Ktor 传递解析；桌面发行日志默认关闭，
+  仅显式设置 `-Dbjtu.debug.logging=true` 时启用。
+- 物理实验平台外链只升级开头的 `http://`，不再误改查询参数里的 URL；
+  Android debug 专用 `SecuritySmokeActivity` 现在要求签名级权限，
+  不再允许其他签名的应用直接启动。
+- 修正冻结旧 Android 发布流水线对 `v*-Liquid*` 标签的误匹配：Liquid 标签只走
+  KMP 打包流水线，避免旧工程的历史 TLS/凭据缺陷被重新发布。
+- L9 的 DPAPI 附加熵仍为编译期常量：实际安全边界是 Windows 用户派生密钥；
+  把随机熵与密文放在同一用户偏好存储中并不能提高同用户入侵场景下的保密性，
+  因而未作表面化替换。L10 经用户确认，最低 iOS 版本已由 15.0 提高到 16.0，
+  iOS 15 设备将不再能安装后续版本。
+
+### 已执行验证
+
+- `:shared:desktopTest` 在 macOS CI 全量 532 项通过，覆盖缓存原回归、AES-GCM 随机/确定性
+  往返、篡改拒绝、各类学业缓存原始字节无测试个人明文、Keychain/偏好协调逻辑。
+- `:windowsApp:compileKotlinWindows :windowsApp:windowsTest` 全量通过；独立测试节点
+  验证缓存密钥经 DPAPI 加密持久化，且可跨实例读回。
+- `:shared:compileAndroidMain :androidApp:compileDebugKotlin` 通过（仅编译，不签名打包）。
+- 物理实验平台 URL 定向回归测试通过；Android debug 合并后 Manifest 已核实
+  `SecuritySmokeActivity` 的 `signature` 权限保护（仅处理 Manifest，未签名打包）。
+- ONNX checker + ONNX Runtime 对转换模型执行成功，argmax 与基线一致。
+- PR #4 的 macOS 门禁（run `35800148828`）已完成 iOS Kotlin/Native 编译及
+  macOS 全量测试。新增 iOS 模拟器测试验证真实 `NSUserDefaults` 标记消失后，
+  协调器会清除保险库凭据。CI 中的 Kotlin/Native 测试可执行文件访问原生
+  Keychain 返回 OSStatus `-25291`（`errSecNotAvailable`）；原生往返测试仅在
+  Keychain 可用时执行，不能将该条件性测试视为原生 Keychain 已验收。
+  真实 iOS 设备上的登出网站数据清理、卸载重装后 Keychain 清理仍需
+  设备端到端验收，不能以编译或单元测试代替。
+
+### macOS 本机收尾验证（2026-09-26）
+
+- 从安全分支在 Apple Silicon Mac 上运行 `:shared:desktopTest`：537 项通过，0 失败；
+  原有 macOS Keychain 合成凭据测试实际执行，未被平台条件跳过。
+- 新增 `MacOsFullWipeIntegrationTest`，在独立 Keychain 服务、独立 Java Preferences
+  节点与临时 SQLite 目录中完成合成账号写入、全量清理、关闭并重新打开：凭据、
+  记住密码标记与缓存记录均未恢复。单测 1 项通过，0 跳过。
+- `:desktopApp:createDistributable` 与 `:desktopApp:packageDmg` 成功；最终 DMG
+  通过 `hdiutil verify`，镜像内应用通过 `codesign --verify --deep --strict`，
+  Bundle ID 为 `team.bjtuss.bjtuselfservice.kmp.macos`，最低系统版本为 12.0，
+  `Contents/Resources/PrivacyInfo.xcprivacy` 存在。
+- 经用户明确授权，关闭正在运行的旧版后，从上述已校验 DMG 覆盖
+  `/Applications/交大自由行 KMP.app`。升级后应用正常启动并恢复既有登录态；
+  旧缓存按加密迁移策略重建。
+- 在正式应用设置页确认“清除全部本地数据”，界面立即回到空白登录页。
+  随后只读核验 SQLite 八张业务/设置表合计 0 行、正式 Keychain 登录凭据条目不存在、
+  Java Preferences 的记住密码标记不存在；完全退出并重新启动后仍停留在空白登录页，
+  未自动恢复登录。macOS 正式安装的 M3/M4 验收通过。
+- 缓存加密密钥条目仍留在 Keychain；其本身不含账号或缓存数据，README 已说明
+  拖拽卸载后的手动删除方法。本地 DMG 为 ad-hoc 签名，未进行 Developer ID 公证，
+  此验证不代表正式分发签名验收。CAS 服务端会话失效与 iOS WebView 清理另待验证。
+
+### macOS 成绩行序回归修正（2026-09-26）
+
+- 加密缓存回归测试确认：成绩按传入行序写入，关闭并重新打开数据库后仍按同一顺序读取。
+  加密字段没有参与成绩行的排序。
+- 成绩页旧默认值是“教务原序倒排”，不等同于用户要求的“教务网页当次行序”。
+  现默认改为正序：完整保留教务 `ln`、`lr` 网页抓取的行序；逆序只做整表翻转。
+  点选排序方向后自动关闭筛选面板，立即显示变更，并在面板中写明两者含义。
+- 本机桌面全量 539 项测试通过、0 失败；重新打包的 DMG 通过镜像校验。
+  覆盖本机应用后实测默认原序、切逆序、切回正序均生效，现停留在正序。
+- 按用户反馈将方向按钮调整为“正序”在前、“逆序”在后，默认值仍为正序。
+  再次覆盖安装时抓到 macOS 课表触控板原生桥接在 AWT 界面线程同步进入 AppKit，
+  曾使启动后的辅助功能查询超时；改为后台创建，取消时释放已创建的 host。
+  修复后本机界面可进入成绩筛选，按钮顺序与原序首项已核对。

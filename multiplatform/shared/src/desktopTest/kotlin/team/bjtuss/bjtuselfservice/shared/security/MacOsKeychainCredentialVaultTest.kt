@@ -8,21 +8,25 @@ import kotlin.test.assertNull
 
 class MacOsKeychainCredentialVaultTest {
     @Test
-    fun syntheticCredentialRoundTripUsesSystemKeychain() = runSuspend {
-        val vault = MacOsKeychainCredentialVault(
-            service = "team.bjtuss.bjtuselfservice.kmp.credentials.desktop-smoke",
-            account = "synthetic-fixture",
-        )
-        val fixture = Credentials("fixture-student", "fixture-password-安全")
+    fun syntheticCredentialRoundTripUsesSystemKeychain() {
+        // desktopTest also runs on Windows CI; Security.framework only exists on macOS.
+        if (!System.getProperty("os.name").startsWith("Mac", ignoreCase = true)) return
+        runSuspend {
+            val vault = MacOsKeychainCredentialVault(
+                service = "team.bjtuss.bjtuselfservice.kmp.credentials.desktop-smoke",
+                account = "synthetic-fixture",
+            )
+            val fixture = Credentials("fixture-student", "fixture-password-安全")
 
-        try {
-            vault.clear()
-            vault.save(fixture)
-            assertEquals(fixture, vault.load())
-        } finally {
-            vault.clear()
+            try {
+                vault.clear()
+                vault.save(fixture)
+                assertEquals(fixture, vault.load())
+            } finally {
+                vault.clear()
+            }
+            assertNull(vault.load())
         }
-        assertNull(vault.load())
     }
 }
 

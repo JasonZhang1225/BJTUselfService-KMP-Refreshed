@@ -1,35 +1,41 @@
 # BJTUselfService KMP 实时工作记忆
 
-> 最后更新：2026-09-22（iOS 标题栏玻璃跟手修正已提交并推送 `mine/Liquid`）
-> 当前分支：`Liquid`，HEAD `5ced798`，已与 `mine/Liquid` 对齐（`v1.7.8-Liquid` 标签仍在 `fcfdb09`，Release 已按该提交发布）。
-> 工作区：干净。
+> 最后更新：2026-09-26（安全升级 Mac 验收及成绩原序回归）
+> 当前分支：`codex/security-p1-p2`；草稿 PR #4 指向 `Liquid`，未合并。
+> 工作区：保留用户已有未跟踪 `.workbuddy/`，未修改。
 > `history_full.md` 是只读历史归档；本文件只记录当前事实、未决事项和下一步，不重复历史细节。
 
 ## 当前目标
 
-- 安全复查遗留项修复：按报告第六节优先级推进（用户明确「后续来修」，尚未开始）。
-- Liquid 视觉最终验收：各类 sheet 审美、边缘返回、减少透明度、iOS 26 以下回退壳、iPad 宽屏、首页卡片交互，待用户主观确认。
-- iOS 真机签名安装：unsigned IPA 需开发者证书重签名后才能上真机。
+- 安全审计 P1/P2 代码修复已完成；Mac 正式安装的全量清理体验已验收通过，iPhone/Android 与 CAS/WebView 待验，PR 暂不合并。
+- P0 凭据轮换由用户处理，用户确认暂按已解决。
+- 本轮按用户确认将最低 iOS 版本从 15.0 提高到 16.0。
+- iOS 真机安装需要 Mac/Xcode 与可用签名；设备端验收步骤列于 PR #4。
 
 ## 本阶段已做到
 
 - 2026-09-21 完成只读安全复查（1.7.8-Liquid）：上轮安全修复全部保持、无回归、无高危；新增中危 M1（WebView Cookie 登出不清理）、M2（iOS Keychain 卸载残留）、M3（macOS 无卸载清理）、M4（桌面/Windows 明文缓存）+ 低危 L1-L10，报告在 `docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-21.md`。
+- 2026-09-23 完成 M1-M4 与审查低危项的本轮修复：登出清理平台 WebView 数据并请求 CAS 注销；桌面缓存 AES-GCM 加密、旧库升级时重建；macOS 全量清理截断 WAL/VACUUM、删除凭据和偏好标记并退出；iOS 缺少安装内“记住密码”标记时清除残留 Keychain 项。另修正验证码放弃路径的清理竞态、phyvlab 外链改写、debug 安全测试页面导出权限、Wrapper 哈希、OkHttp 固定版本、验证码 ONNX 迁移、桌面日志默认开启和旧 Liquid 标签误触发旧发布流水线。
+- 最新 CI `35825484777` 通过：Android `:shared:compileAndroidMain :androidApp:compileDebugKotlin` 编译成功；iOS 模拟器 503 项测试 0 失败，桌面 536 项通过；Xcode Debug/Release deployment target 均为 16.0。原生 Keychain 测试在 CI 因 OSStatus `-25291` 无可用服务而未实际执行，须真机验收。
+- 2026-09-26 Mac 本机：桌面全量 537 项通过；隔离集成测试用真实 Keychain、独立 Preferences 与临时数据库验证清理后重开无残留；DMG 构建、镜像校验和镜像内应用严格签名校验通过。用户授权后覆盖 `/Applications/交大自由行 KMP.app`，升级启动恢复原登录态；在设置页全量清理后立即退出，八张缓存/设置表合计 0 行、正式登录 Keychain 条目与偏好标记均不存在，重启仍为登录页。缓存加密密钥保留，README 有手动删除说明；本地 DMG 未经公证。
+- 用户反馈加密升级后成绩默认行序与原来不同，且切换正逆序看不出效果。确认加密缓存写入和重开均保留抓取行序；成绩页旧默认却是原序倒排，筛选面板也遮住切换结果。按用户明确要求改为默认教务网页当次行序、逆序整表翻转，并在点方向后关闭面板。本机桌面 539 项通过、DMG 重新打包及校验通过；覆盖安装后默认、逆序、切回正序均在 UI 验证，当前停在正序。
+- 用户随后要求按钮“正序”在前、“逆序”在后，已改并覆盖本机安装。安装复测时抓到课表触控板原生桥接从 AWT 界面线程同步进入 AppKit 导致辅助功能读取超时，改为后台创建并在取消时释放；本机重新构建、539 项桌面测试通过，成绩筛选按钮位置与原序首项实测正确。
+- 用户确认最低 iOS 版本提到 16.0；L9 DPAPI 编译期附加熵作为可选残余项保留（同用户偏好存储的随机熵无法提升其威胁边界）。
 - Liquid 里程碑与 1.7.8-Liquid 四端发布已归档至 `history_full.md`「M17 Liquid」节；四端产物在 `/Users/zjg/Downloads`。
 - GitHub Release `v1.7.8-Liquid` 已正式发布，自动流水线 run `35579588977` 全部成功，发布页为 `https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases/tag/v1.7.8-Liquid`；发布正文已补齐，包含四个 CI 产物。
 
 ## 当前痛点（≤8 条）
 
-- 安全复查 4 个中危均未修，M1（登出清 WebView Cookie）改动小收益大、最优先。
-- iOS 模拟器因签名身份更换替换了 App 容器，无可读取 Keychain 登录态，自动登录视觉复现待用户重新登录。
+- 安全审计报告剩余设备验收：iPhone Keychain 卸载重装清理、带登录态的 CAS/WebView 登出、Android 真机验证码效果。
+- 草稿 PR #4 `https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/4` 待上述设备验收后再合并；CI 中 unsigned iOS 测试宿主的 Keychain 未覆盖。
 - iOS 标题栏真玻璃全页铺开（本轮提交）：`fcfdb09` 已推 `mine/Liquid`，tag `v1.7.8-Liquid` 改绑过去，kmp-package 四件全绿换新。玻璃跟手：桥接改连续 `scrollProgress`，各页上报真实偏移（`LocalReportTopScroll`，首项之后视为全盖）；首页首项是整张高卡，通用上报在其进栏时仍读 0，改为读首项 `offset` 负值（静止 0/上滑即有值/过滚仍 0，其他页不动；之前 `beforeContentPadding - offset` 静止也糊的方案已撤回）。课表/课件/教室详情/占用详情用 `staticTopBar` 保持静态栏；邮箱列表去重刷新图标。短内容留栏下、横幅收进列表首项；其余平台零影响。真机滚动态用户已确认完美。
-- 桌面端 `AppLog` 分发构建默认开启（低危 L3），与 Android release 不对齐。
 - Compose Material3 alpha 依赖 compileSdk 37 豁免开关（`android.experimental.disableCompileSdkChecks`），正式版后应移除。
 
 ## 接下来 1～3 个阶段
 
-1. 修 M1：登出/会话失效时清 Android `CookieManager` 与 iOS `WKWebsiteDataStore`，补回归测试。
-2. 修 M3/M4：macOS 卸载残留（脚本 + 全量清除补删文件/prefs/Keychain 条目）与桌面/Windows 明文缓存处理。
-3. Liquid 视觉验收收口 + iOS 真机重签名安装验证。
+1. 在 iPhone/Android 按 PR #4 验收清单完成真机测试，并核实带登录态的 CAS/WebView 登出；Mac 已验收。
+2. 根据设备结果修复必要问题；验收通过后更新 PR 状态并决定合并。
+3. 单独处理 Material3 alpha/compileSdk 豁免与其他未决的产品支持问题。
 
 ## 相关文件
 

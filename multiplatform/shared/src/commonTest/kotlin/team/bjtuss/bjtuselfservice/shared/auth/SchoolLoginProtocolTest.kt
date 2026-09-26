@@ -5,6 +5,7 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.coroutines.startCoroutine
@@ -127,13 +128,25 @@ class SchoolLoginProtocolTest {
                     """<form id="redirect" action="https://aa.bjtu.edu.cn/sso"></form>""",
                 ),
                 response("https://aa.bjtu.edu.cn/notice/item?source=sso"),
+                response("https://cas.bjtu.edu.cn/auth/login/"),
             ),
         )
         val protocol = SchoolLoginProtocol(transport)
 
         assertTrue(protocol.linkAcademicSystem())
-        protocol.logout()
+        assertTrue(protocol.logout())
         assertEquals(1, transport.clearCount)
+        assertEquals("https://cas.bjtu.edu.cn/auth/logout/", transport.requests.last().url)
+    }
+
+    @Test
+    fun logoutAlwaysClearsLocalCookiesWhenServerLogoutFails() = runSuspend {
+        val transport = QueueTransport(emptyList())
+        val protocol = SchoolLoginProtocol(transport)
+
+        assertFalse(protocol.logout())
+        assertEquals(1, transport.clearCount)
+        assertEquals("https://cas.bjtu.edu.cn/auth/logout/", transport.requests.single().url)
     }
 
     private fun response(finalUrl: String, body: String = "", status: Int = 200) = SchoolHttpResponse(

@@ -15,11 +15,13 @@ private class DesktopAccountPreferences : AccountPreferences {
     override suspend fun shouldRememberCredentials(): Boolean =
         preferences.getBoolean(REMEMBER_CREDENTIALS_KEY, false)
 
-    override suspend fun hasRememberCredentialsSetting(): Boolean =
-        preferences.get(REMEMBER_CREDENTIALS_KEY, null) != null
-
     override suspend fun setShouldRememberCredentials(enabled: Boolean) {
         preferences.putBoolean(REMEMBER_CREDENTIALS_KEY, enabled)
+        preferences.flush()
+    }
+
+    override suspend fun clearRememberCredentialsSetting() {
+        preferences.remove(REMEMBER_CREDENTIALS_KEY)
         preferences.flush()
     }
 

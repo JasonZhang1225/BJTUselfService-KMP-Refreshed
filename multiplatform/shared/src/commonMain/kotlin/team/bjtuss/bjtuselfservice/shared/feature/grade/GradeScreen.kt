@@ -329,7 +329,14 @@ internal fun GradeWorkspace(
             title = "筛选与计算",
             needsFullHeight = true,
         ) {
-            GradeFilterSheet(state = state, model = model)
+            GradeFilterSheet(
+                state = state,
+                model = model,
+                onSortOrderSelected = { order ->
+                    model.setSortOrder(order)
+                    showFilterSheet = false
+                },
+            )
         }
     }
 }
@@ -463,6 +470,7 @@ private fun RankBarsIcon(
 private fun GradeFilterSheet(
     state: GradeUiState,
     model: GradeScreenModel,
+    onSortOrderSelected: (GradeSortOrder) -> Unit,
 ) {
     val semesterOptions = state.semesterOptions
     val allSemestersSelected =
@@ -552,30 +560,37 @@ private fun GradeFilterSheet(
                 if (byScore) {
                     FilterChip(
                         selected = state.sortOrder == GradeSortOrder.DESCENDING,
-                        onClick = { model.setSortOrder(GradeSortOrder.DESCENDING) },
+                        onClick = { onSortOrderSelected(GradeSortOrder.DESCENDING) },
                         shape = RoundedCornerShape(percent = 50),
                         label = { Text("从高到低") },
                     )
                     FilterChip(
                         selected = state.sortOrder == GradeSortOrder.ASCENDING,
-                        onClick = { model.setSortOrder(GradeSortOrder.ASCENDING) },
+                        onClick = { onSortOrderSelected(GradeSortOrder.ASCENDING) },
                         shape = RoundedCornerShape(percent = 50),
                         label = { Text("从低到高") },
                     )
                 } else {
                     FilterChip(
-                        selected = state.sortOrder == GradeSortOrder.ORIGINAL_REVERSED,
-                        onClick = { model.setSortOrder(GradeSortOrder.ORIGINAL_REVERSED) },
-                        shape = RoundedCornerShape(percent = 50),
-                        label = { Text("逆序") },
-                    )
-                    FilterChip(
                         selected = state.sortOrder == GradeSortOrder.ORIGINAL,
-                        onClick = { model.setSortOrder(GradeSortOrder.ORIGINAL) },
+                        onClick = { onSortOrderSelected(GradeSortOrder.ORIGINAL) },
                         shape = RoundedCornerShape(percent = 50),
                         label = { Text("正序") },
                     )
+                    FilterChip(
+                        selected = state.sortOrder == GradeSortOrder.ORIGINAL_REVERSED,
+                        onClick = { onSortOrderSelected(GradeSortOrder.ORIGINAL_REVERSED) },
+                        shape = RoundedCornerShape(percent = 50),
+                        label = { Text("逆序") },
+                    )
                 }
+            }
+            if (!byScore) {
+                Text(
+                    "正序与教务网页行序一致；逆序将整张列表倒排。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 

@@ -31,7 +31,7 @@
 
 ### 🔐 智能登录
 - 免验证码自动登录 MIS 系统
-- 本地 PyTorch 模型验证码识别，无需服务器参与
+- Android 本地 ONNX / Apple Core ML 验证码识别，无需第三方服务参与
 - 登录状态持久化，打开即用
 
 ### 📚 学业管理
@@ -144,20 +144,22 @@ iOS 未签名 IPA 的自签与安装请参考 [iOS 自签与安装指南](docs/i
 
 ## 🔒 隐私与安全
 
-- ✅ 验证码通过本地 PyTorch 模型识别，**不上传任何数据到第三方服务器**
+- ✅ 验证码通过本地 ONNX/Core ML 模型识别，**不上传任何数据到第三方服务器**
 - ✅ 账号密码仅存储在本地设备
-- ✅ 教室人数侦测是唯一需要与服务器通信的功能
+- ✅ Android Keystore、Apple Keychain、Windows DPAPI 保存登录凭据
+- ✅ macOS/Windows 离线缓存字段使用系统密钥支持的 AES-256-GCM 加密
 
 ### 🗑️ 卸载与本地数据清理
 
-- **Android / iOS**：卸载即清除应用私有数据。iOS 端在启动时会检测「卸载重装」并自动清除残留的 Keychain 凭据；缓存数据库已设置不随 iCloud/iTunes 备份上云。
+- **Android / iOS**：卸载即清除应用私有数据。iOS 重装后因安装内“记住密码”标记缺失，会删除残留 Keychain 凭据而不会静默恢复；缓存数据库已设置不随 iCloud/iTunes 备份上云。
 - **Windows**：MSI 卸载会自动删除 `%LOCALAPPDATA%\BJTUselfServiceKMP`（离线缓存）和 `HKCU\Software\JavaSoft\Prefs\team\bjtuss\bjtuselfservice`（DPAPI 加密凭据）；升级安装不会清数据。
 - **macOS**：拖拽删除 `.app` 不会清除用户数据。卸载前请在应用内「设置 → 本地数据与会话 → 清除全部本地数据」执行全量清理；如已删除应用，可手动删除：
-  - `~/Library/Application Support/BJTUselfServiceKMP/`（离线缓存）
+  - `~/Library/Application Support/BJTUselfServiceKMP/`（AES-256-GCM 加密离线缓存）
   - 「钥匙串访问」中服务名为 `team.bjtuss.bjtuselfservice.kmp.credentials` 的条目（登录凭据）
+  - 「钥匙串访问」中服务名为 `team.bjtuss.bjtuselfservice.kmp.cache-key` 的条目（缓存随机密钥，本身不含个人数据）
   - `~/Library/Preferences/` 下 `team/bjtuss/bjtuselfservice` 相关的偏好文件（记住密码标记）
 
-安全审计与修复记录见 [docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-17.md](docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-17.md)。
+安全审计与修复记录见 [docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-21.md](docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-21.md)。
 
 ## 🤝 贡献者
 

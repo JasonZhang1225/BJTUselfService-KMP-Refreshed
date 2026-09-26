@@ -1,5 +1,7 @@
 {
   "description": "2026-08-01 从北交大 CAS 匿名获取并人工核对的固定验证码模型冒烟集",
+  "source_model_sha256": "7059482d85836fa9fa64cae359226519b98b6b1cbd931f6e420c010074ef15aa",
+  "android_onnx_sha256": "a2f7bb2eb2174c8947d3e5ae656c40a6b62ac787c172765f2bb4cfb9f0682f7e",
   "image_width": 130,
   "image_height": 42,
   "samples": [

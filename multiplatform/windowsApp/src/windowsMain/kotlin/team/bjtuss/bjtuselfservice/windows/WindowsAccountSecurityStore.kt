@@ -7,6 +7,7 @@ import com.sun.jna.Pointer
 import com.sun.jna.WString
 import com.sun.jna.ptr.PointerByReference
 import java.util.Base64
+import java.security.SecureRandom
 import java.util.prefs.Preferences
 import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.security.AccountPreferences
@@ -92,10 +93,42 @@ private class WindowsAccountPreferences : AccountPreferences {
         preferences.flush()
     }
 
+    override suspend fun clearRememberCredentialsSetting() {
+        preferences.remove(REMEMBER_CREDENTIALS_KEY)
+        preferences.flush()
+    }
+
     private companion object {
         const val REMEMBER_CREDENTIALS_KEY = "remember_credentials"
     }
 }
+
+internal data class WindowsCacheKey(
+    val bytes: ByteArray,
+    val created: Boolean,
+)
+
+/** Cache key is DPAPI-bound to the current Windows user; only ciphertext enters prefs. */
+internal fun loadOrCreateWindowsCacheKey(
+    preferences: Preferences = Preferences.userRoot().node(
+        "/team/bjtuss/bjtuselfservice/kmp/cache",
+    ),
+): WindowsCacheKey {
+    val entropy = "team.bjtuss.bjtuselfservice.kmp.cache-key.v1".encodeToByteArray()
+    preferences.get(CACHE_KEY_PAYLOAD, null)?.let { encoded ->
+        val key = Dpapi.cryptUnprotect(Base64.getDecoder().decode(encoded), entropy)
+        require(key.size == 32) { "Invalid cache encryption key" }
+        return WindowsCacheKey(key, created = false)
+    }
+
+    val key = ByteArray(32).also(SecureRandom()::nextBytes)
+    val encrypted = Dpapi.cryptProtect(key, entropy)
+    preferences.put(CACHE_KEY_PAYLOAD, Base64.getEncoder().encodeToString(encrypted))
+    preferences.flush()
+    return WindowsCacheKey(key, created = true)
+}
+
+private const val CACHE_KEY_PAYLOAD = "cache_key_payload"
 
 /** JNA 绑定 crypt32 的 DPAPI；只在此文件内使用，业务层不接触 JNA。 */
 internal object Dpapi {

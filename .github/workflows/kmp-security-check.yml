@@ -1,0 +1,101 @@
+name: KMP security checks
+
+on:
+  push:
+    branches: [Liquid]
+    paths:
+      - "multiplatform/**"
+      - ".github/workflows/kmp-security-check.yml"
+  pull_request:
+    paths:
+      - "multiplatform/**"
+      - ".github/workflows/kmp-security-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android compile security check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: multiplatform
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Create isolated compile-only signing fixture
+        run: |
+          keytool -genkeypair -noprompt -keystore "$RUNNER_TEMP/compile-only.keystore" \
+            -storepass ci-compile-only -keypass ci-compile-only -alias ci-compile \
+            -dname "CN=CI Compile Only" -keyalg RSA -keysize 2048 -validity 1
+
+      - name: Compile Android without packaging
+        env:
+          BJTU_ANDROID_KEYSTORE: ${{ runner.temp }}/compile-only.keystore
+          BJTU_ANDROID_STORE_PASSWORD: ci-compile-only
+          BJTU_ANDROID_KEY_ALIAS: ci-compile
+          BJTU_ANDROID_KEY_PASSWORD: ci-compile-only
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :shared:compileAndroidMain :androidApp:compileDebugKotlin --stacktrace
+
+  apple:
+    name: iOS compile and macOS security tests
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: multiplatform
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Select Xcode 26
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Verify iOS minimum version
+        run: |
+          for configuration in Debug Release; do
+            xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp \
+              -configuration "$configuration" -sdk iphonesimulator -showBuildSettings |
+              grep -Eq '^[[:space:]]*IPHONEOS_DEPLOYMENT_TARGET = 16\.0$'
+          done
+
+      - name: Compile iOS and test macOS security paths
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :shared:iosSimulatorArm64Test :shared:desktopTest --stacktrace
+
+      - name: Upload iOS test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-test-reports
+          path: multiplatform/shared/build/test-results/iosSimulatorArm64Test/
+          if-no-files-found: warn

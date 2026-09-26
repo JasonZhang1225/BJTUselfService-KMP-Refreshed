@@ -1,7 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission
+        android:name="team.bjtuss.bjtuselfservice.kmp.permission.SECURITY_SMOKE"
+        android:protectionLevel="signature" />
     <application>
         <activity
             android:name=".SecuritySmokeActivity"
-            android:exported="true" />
+            android:exported="true"
+            android:permission="team.bjtuss.bjtuselfservice.kmp.permission.SECURITY_SMOKE" />
     </application>
 </manifest>

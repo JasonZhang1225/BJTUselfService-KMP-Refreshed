@@ -29,11 +29,12 @@ private class AppleAccountPreferences(
     override suspend fun shouldRememberCredentials(): Boolean =
         defaults.boolForKey(rememberCredentialsKey)
 
-    override suspend fun hasRememberCredentialsSetting(): Boolean =
-        defaults.objectForKey(rememberCredentialsKey) != null
-
     override suspend fun setShouldRememberCredentials(enabled: Boolean) {
         defaults.setBool(enabled, forKey = rememberCredentialsKey)
+    }
+
+    override suspend fun clearRememberCredentialsSetting() {
+        defaults.removeObjectForKey(rememberCredentialsKey)
     }
 }
 
