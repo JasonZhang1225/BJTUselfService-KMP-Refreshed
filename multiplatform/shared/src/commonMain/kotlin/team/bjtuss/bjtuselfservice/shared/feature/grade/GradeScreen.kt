@@ -572,16 +572,16 @@ private fun GradeFilterSheet(
                     )
                 } else {
                     FilterChip(
-                        selected = state.sortOrder == GradeSortOrder.ORIGINAL_REVERSED,
-                        onClick = { onSortOrderSelected(GradeSortOrder.ORIGINAL_REVERSED) },
-                        shape = RoundedCornerShape(percent = 50),
-                        label = { Text("逆序") },
-                    )
-                    FilterChip(
                         selected = state.sortOrder == GradeSortOrder.ORIGINAL,
                         onClick = { onSortOrderSelected(GradeSortOrder.ORIGINAL) },
                         shape = RoundedCornerShape(percent = 50),
                         label = { Text("正序") },
+                    )
+                    FilterChip(
+                        selected = state.sortOrder == GradeSortOrder.ORIGINAL_REVERSED,
+                        onClick = { onSortOrderSelected(GradeSortOrder.ORIGINAL_REVERSED) },
+                        shape = RoundedCornerShape(percent = 50),
+                        label = { Text("逆序") },
                     )
                 }
             }

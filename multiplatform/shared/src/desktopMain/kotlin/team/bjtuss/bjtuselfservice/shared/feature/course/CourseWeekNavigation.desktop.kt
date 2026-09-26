@@ -1,8 +1,12 @@
 package team.bjtuss.bjtuselfservice.shared.feature.course
 
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -17,6 +21,11 @@ import com.sun.jna.Library
 import com.sun.jna.Native
 import com.sun.jna.Pointer
 import java.awt.EventQueue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import team.bjtuss.bjtuselfservice.shared.desktopCredentialWindowHandle
 import team.bjtuss.bjtuselfservice.shared.locateInputSourceHelper
@@ -33,24 +42,30 @@ internal actual fun Modifier.courseWeekScrollNavigation(
     val windowHandle = desktopCredentialWindowHandle.longValue
     val bridge = remember(windowHandle) { MacTrackpadPagerBridge.loadOrNull() }
     val latestDirection = rememberUpdatedState(onDirection)
-    val nativeHost = remember(windowHandle, bridge) {
-        if (windowHandle == 0L || bridge == null) {
-            null
-        } else {
+    var nativeHost by remember(windowHandle, bridge) { mutableStateOf<NativeTrackpadPagerHost?>(null) }
+    // The native constructor synchronously enters AppKit. Compose runs this modifier on
+    // the AWT event thread, so creating the host here can stall the whole window while
+    // AppKit is handling accessibility or mouse events. Keep that call off the event thread.
+    LaunchedEffect(windowHandle, bridge) {
+        if (windowHandle == 0L || bridge == null) return@LaunchedEffect
+        val created = withContext(Dispatchers.Default + NonCancellable) {
             NativeTrackpadPagerHost.create(bridge, windowHandle) { direction ->
                 EventQueue.invokeLater { latestDirection.value(direction) }
             }
         }
+        if (currentCoroutineContext().isActive) nativeHost = created else created?.close()
     }
 
     DisposableEffect(nativeHost) {
-        onDispose { nativeHost?.close() }
+        val host = nativeHost
+        onDispose { host?.close() }
     }
 
-    if (nativeHost != null) {
+    val activeHost = nativeHost
+    if (activeHost != null) {
         val density = LocalDensity.current.density
         this.onGloballyPositioned { coordinates ->
-            nativeHost.updateFrame(coordinates.boundsInWindow(), density)
+            activeHost.updateFrame(coordinates.boundsInWindow(), density)
         }
     } else {
         this.onPointerEvent(PointerEventType.Scroll) { event ->
