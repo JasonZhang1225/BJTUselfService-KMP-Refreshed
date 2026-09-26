@@ -9,8 +9,8 @@ on:
 jobs:
   build-and-release:
     name: Build & Release APK
-    # 冻结根 Android 的正式包。KMP 标签走 kmp-package.yml，避免把 v1.7.0 工程打进 KMP Release。
-    if: ${{ !contains(github.ref_name, 'KMP') && !contains(github.ref_name, 'Liquid') }}
+    # 冻结根 Android 只保留 v1.7.0。1.7.9 起的无后缀标签属于 KMP，由 kmp-package.yml 打包。
+    if: ${{ github.event_name == 'workflow_dispatch' || github.ref_name == 'v1.7.0' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

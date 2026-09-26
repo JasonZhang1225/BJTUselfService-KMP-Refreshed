@@ -628,10 +628,9 @@ private fun HomeAgendaSection(
     }
 
     if (useFingerWeekPager && !isWeekResolved) {
-        // Do not expose an index-based pager while the calendar is still
-        // changing. A pager can keep its old index while the list behind that
-        // index is replaced, which is the source of the apparent week-1 swipe
-        // during startup. The final resolved pager is created below at once.
+        // 校历还在变时不用按页码记住位置的周页：页码会留在旧下标，
+        // 后面的周列表一换，启动时就会看起来像被滑到第 1 周。
+        // 点选日期仍使用下面的内容过渡；周数确认后再换成手指横滑页。
         HomeAgendaWeekCard(
             homework = homework,
             exams = exams,
@@ -644,7 +643,6 @@ private fun HomeAgendaSection(
             isWeekResolved = isWeekResolved,
             isWeekPending = weekValueIsPending,
             showWeekButtons = false,
-            animateAgendaMotion = false,
             onOpenHomework = onOpenHomework,
             onOpenExams = onOpenExams,
             onOpenPhyVlab = onOpenPhyVlab,
@@ -955,8 +953,6 @@ private fun HomeAgendaWeekCard(
      * 移动端只保留手指横滑（与课表一致），按钮只留给宽屏/桌面。
      */
     showWeekButtons: Boolean = true,
-    /** 启动周数校准完成后才开启日程内容动画。 */
-    animateAgendaMotion: Boolean = true,
     onOpenHomework: () -> Unit,
     onOpenExams: () -> Unit,
     onOpenPhyVlab: () -> Unit,
@@ -1004,54 +1000,50 @@ private fun HomeAgendaWeekCard(
                 onSelectDate = onSelectDate,
                 modifier = Modifier.fillMaxWidth(),
             )
-            if (animateAgendaMotion) {
-                AnimatedContent(
-                    targetState = selectedDay.date,
-                    transitionSpec = {
-                        val direction = if (targetState >= initialState) 1 else -1
-                        (
-                            slideInHorizontally(
+            AnimatedContent(
+                targetState = selectedDay.date,
+                transitionSpec = {
+                    val direction = if (targetState >= initialState) 1 else -1
+                    (
+                        slideInHorizontally(
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = 420f,
+                            ),
+                        ) { width -> direction * width / 3 } +
+                            fadeIn(
                                 animationSpec = spring(
                                     dampingRatio = Spring.DampingRatioNoBouncy,
                                     stiffness = 420f,
                                 ),
-                            ) { width -> direction * width / 3 } +
-                                fadeIn(
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
-                                        stiffness = 420f,
-                                    ),
-                                )
-                            ) togetherWith (
-                            slideOutHorizontally(
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioNoBouncy,
-                                    stiffness = 420f,
-                                ),
-                            ) { width -> -direction * width / 3 } +
-                                fadeOut(
-                                    animationSpec = spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
-                                        stiffness = 420f,
-                                    ),
-                                )
-                            ) using SizeTransform(
-                                clip = false,
-                                sizeAnimationSpec = { _, _ ->
-                                    spring(
-                                        dampingRatio = Spring.DampingRatioNoBouncy,
-                                        stiffness = 320f,
-                                    )
-                                },
                             )
-                    },
-                    label = "home-agenda-day-transition",
-                ) { date ->
-                    val day = weekAgenda.days.firstOrNull { it.date == date } ?: selectedDay
-                    AgendaSelectedDayContent(day, onOpenHomework, onOpenExams, onOpenPhyVlab)
-                }
-            } else {
-                AgendaSelectedDayContent(selectedDay, onOpenHomework, onOpenExams, onOpenPhyVlab)
+                        ) togetherWith (
+                        slideOutHorizontally(
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = 420f,
+                            ),
+                        ) { width -> -direction * width / 3 } +
+                            fadeOut(
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = 420f,
+                                ),
+                            )
+                        ) using SizeTransform(
+                            clip = false,
+                            sizeAnimationSpec = { _, _ ->
+                                spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = 320f,
+                                )
+                            },
+                        )
+                },
+                label = "home-agenda-day-transition",
+            ) { date ->
+                val day = weekAgenda.days.firstOrNull { it.date == date } ?: selectedDay
+                AgendaSelectedDayContent(day, onOpenHomework, onOpenExams, onOpenPhyVlab)
             }
         }
     }

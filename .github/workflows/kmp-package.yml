@@ -5,6 +5,9 @@ on:
     tags:
       - "v*-KMP*"
       - "v*-Liquid*"
+      # 1.7.9 起应用版本不再带 KMP/Liquid 后缀。v1.7.0 仍是冻结根 Android 标签，
+      # 由各打包任务跳过，避免和 release.yml 一起打出两套包。
+      - "v*"
   workflow_dispatch:
 
 concurrency:
@@ -20,6 +23,7 @@ env:
 jobs:
   android:
     name: Android arm64 debug APK
+    if: ${{ github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -99,6 +103,7 @@ jobs:
 
   windows:
     name: Windows MSI
+    if: ${{ github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0' }}
     runs-on: windows-latest
     defaults:
       run:
@@ -167,6 +172,7 @@ jobs:
 
   macos:
     name: macOS DMG
+    if: ${{ github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0' }}
     runs-on: macos-15
     timeout-minutes: 60
     defaults:
@@ -219,6 +225,7 @@ jobs:
   ios:
     name: iOS unsigned IPA
     # Compose 1.12 链接 UIViewLayoutRegion，需要 iOS 26 SDK / Xcode 26。
+    if: ${{ github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0' }}
     runs-on: macos-26
     timeout-minutes: 90
     defaults:
