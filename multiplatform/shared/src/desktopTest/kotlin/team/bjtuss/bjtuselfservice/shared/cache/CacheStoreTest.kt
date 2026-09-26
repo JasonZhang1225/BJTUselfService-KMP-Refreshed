@@ -264,6 +264,29 @@ class CacheStoreTest {
     }
 
     @Test
+    fun encryptedGradesKeepTheExactSchoolRowOrderAfterReopen() = withTemporaryDirectory { directory ->
+        val protector = JvmAesCacheValueProtector(ByteArray(32) { (it + 1).toByte() })
+        val schoolRows = listOf(sampleGrade("first"), sampleGrade("second"), sampleGrade("third"))
+        val first = openDesktopCacheStore(directory, protector, cacheKeyCreated = true)
+        try {
+            first.store.replaceGrades("student-a", schoolRows)
+            assertEquals(schoolRows.map(Grade::courseName), first.store.grades("student-a").map(Grade::courseName))
+        } finally {
+            first.store.close()
+        }
+
+        val reopened = openDesktopCacheStore(directory, protector)
+        try {
+            assertEquals(
+                schoolRows.map(Grade::courseName),
+                reopened.store.grades("student-a").map(Grade::courseName),
+            )
+        } finally {
+            reopened.store.close()
+        }
+    }
+
+    @Test
     fun fullWipeRemovesDeletedTextFromDatabaseAndWalFiles() = withTemporaryDirectory { directory ->
         val marker = "AUDIT-PERSONAL-SECRET-7b4d85e6"
         val handle = openDesktopCacheStore(directory, PlaintextCacheValueProtector)

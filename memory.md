@@ -1,6 +1,6 @@
 # BJTUselfService KMP 实时工作记忆
 
-> 最后更新：2026-09-26（安全升级 Mac 正式安装验收通过）
+> 最后更新：2026-09-26（安全升级 Mac 验收及成绩原序回归）
 > 当前分支：`codex/security-p1-p2`；草稿 PR #4 指向 `Liquid`，未合并。
 > 工作区：保留用户已有未跟踪 `.workbuddy/`，未修改。
 > `history_full.md` 是只读历史归档；本文件只记录当前事实、未决事项和下一步，不重复历史细节。
@@ -18,6 +18,7 @@
 - 2026-09-23 完成 M1-M4 与审查低危项的本轮修复：登出清理平台 WebView 数据并请求 CAS 注销；桌面缓存 AES-GCM 加密、旧库升级时重建；macOS 全量清理截断 WAL/VACUUM、删除凭据和偏好标记并退出；iOS 缺少安装内“记住密码”标记时清除残留 Keychain 项。另修正验证码放弃路径的清理竞态、phyvlab 外链改写、debug 安全测试页面导出权限、Wrapper 哈希、OkHttp 固定版本、验证码 ONNX 迁移、桌面日志默认开启和旧 Liquid 标签误触发旧发布流水线。
 - 最新 CI `35825484777` 通过：Android `:shared:compileAndroidMain :androidApp:compileDebugKotlin` 编译成功；iOS 模拟器 503 项测试 0 失败，桌面 536 项通过；Xcode Debug/Release deployment target 均为 16.0。原生 Keychain 测试在 CI 因 OSStatus `-25291` 无可用服务而未实际执行，须真机验收。
 - 2026-09-26 Mac 本机：桌面全量 537 项通过；隔离集成测试用真实 Keychain、独立 Preferences 与临时数据库验证清理后重开无残留；DMG 构建、镜像校验和镜像内应用严格签名校验通过。用户授权后覆盖 `/Applications/交大自由行 KMP.app`，升级启动恢复原登录态；在设置页全量清理后立即退出，八张缓存/设置表合计 0 行、正式登录 Keychain 条目与偏好标记均不存在，重启仍为登录页。缓存加密密钥保留，README 有手动删除说明；本地 DMG 未经公证。
+- 用户反馈加密升级后成绩默认行序与原来不同，且切换正逆序看不出效果。确认加密缓存写入和重开均保留抓取行序；成绩页旧默认却是原序倒排，筛选面板也遮住切换结果。按用户明确要求改为默认教务网页当次行序、逆序整表翻转，并在点方向后关闭面板。本机桌面 539 项通过、DMG 重新打包及校验通过；覆盖安装后默认、逆序、切回正序均在 UI 验证，当前停在正序。
 - 用户确认最低 iOS 版本提到 16.0；L9 DPAPI 编译期附加熵作为可选残余项保留（同用户偏好存储的随机熵无法提升其威胁边界）。
 - Liquid 里程碑与 1.7.8-Liquid 四端发布已归档至 `history_full.md`「M17 Liquid」节；四端产物在 `/Users/zjg/Downloads`。
 - GitHub Release `v1.7.8-Liquid` 已正式发布，自动流水线 run `35579588977` 全部成功，发布页为 `https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases/tag/v1.7.8-Liquid`；发布正文已补齐，包含四个 CI 产物。

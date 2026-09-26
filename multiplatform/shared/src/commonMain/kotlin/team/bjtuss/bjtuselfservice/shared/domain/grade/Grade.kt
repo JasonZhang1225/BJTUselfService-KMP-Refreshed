@@ -30,14 +30,13 @@ data class GradeSelectionRecord(
 /**
  * 成绩列表排序。
  *
- * 教务返回的列表偏「旧在前」：UI「逆序」对应 [ORIGINAL_REVERSED]，
- * 「正序」对应 [ORIGINAL]（ln+lr 原序）。
+ * 「正序」严格保留教务网页 ln+lr 的行序；「逆序」将整张列表倒排。
  * - [DESCENDING] / [ASCENDING]：按分数（从高到低 / 从低到高）
  */
 enum class GradeSortOrder {
-    /** 教务原序（偏旧→新），UI 称正序 */
+    /** 教务网页原序，UI 称正序 */
     ORIGINAL,
-    /** 教务原序倒排（偏新学期在前），UI 称逆序，默认展示 */
+    /** 教务网页原序倒排，UI 称逆序 */
     ORIGINAL_REVERSED,
     /** 分数从低到高 */
     ASCENDING,

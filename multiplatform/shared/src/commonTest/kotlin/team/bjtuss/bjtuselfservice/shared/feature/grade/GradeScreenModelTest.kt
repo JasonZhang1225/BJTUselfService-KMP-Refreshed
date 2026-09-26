@@ -37,6 +37,30 @@ class GradeScreenModelTest {
     }
 
     @Test
+    fun defaultAndReverseUseSchoolRowOrderAcrossSemesters() = runBlocking {
+        val schoolRows = listOf(
+            grade(7, semester = "2025-2026-2"),
+            grade(3, semester = "2025-2026-1"),
+            grade(8, semester = "2025-2026-2"),
+        )
+        val snapshot = GradeSnapshot(schoolRows, emptySet())
+        val model = GradeScreenModel(
+            FakeRepository(loaded = snapshot, refreshed = GradeRefreshResult.Success(snapshot)),
+        )
+        model.initialize(refreshFromNetwork = false)
+
+        assertEquals(GradeSortOrder.ORIGINAL, model.state.value.sortOrder)
+        assertEquals(listOf(7, 3, 8), model.state.value.visibleGrades.map(Grade::id))
+        model.setSortOrder(GradeSortOrder.ORIGINAL_REVERSED)
+        assertEquals(listOf(8, 3, 7), model.state.value.visibleGrades.map(Grade::id))
+        model.setSortOrder(GradeSortOrder.ORIGINAL)
+        assertEquals(listOf(7, 3, 8), model.state.value.visibleGrades.map(Grade::id))
+        model.setSortOrder(GradeSortOrder.DESCENDING)
+        model.selectSortCategory(byScore = false)
+        assertEquals(GradeSortOrder.ORIGINAL, model.state.value.sortOrder)
+    }
+
+    @Test
     fun refreshFailureKeepsCacheAndExposesRetryState() = runBlocking {
         val cached = GradeSnapshot(listOf(grade(1)), emptySet())
         val model = GradeScreenModel(
