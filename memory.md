@@ -1,6 +1,6 @@
 # BJTUselfService KMP 实时工作记忆
 
-> 最后更新：2026-09-26（1.7.9 进入 main，发布标签为 `v1.7.9`）
+> 最后更新：2026-09-26（`v1.7.9` 四端 CI 打包成功，发布页已挂上四个安装包）
 > 当前分支：`main`。集成分支只保留 `main`。
 > 工作区：发布提交包含全端 `1.7.9` / 构建号 20、日程加载中的日期动画，以及 `docs/releases/v1.7.9.md`。
 > `history_full.md` 是只读历史归档；本文件只记录当前事实、未决事项和下一步，不重复历史细节。
@@ -14,7 +14,7 @@
 
 ## 本阶段已做到
 
-- 2026-09-26 发布 `1.7.9`：Android `versionName` / iOS `CFBundleShortVersionString` / 桌面与 Windows 安装器 / `CURRENT_VERSION` 均为 `1.7.9`，Android、iOS、macOS 构建号为 20。发布说明是 `docs/releases/v1.7.9.md`，标签 `v1.7.9` 触发 KMP 打包，不触发冻结 Android 的 `release.yml`。
+- 2026-09-26 发布 `v1.7.9`：run `36226768700` 的 Android、Windows、macOS、iOS 和 GitHub Release 全部成功。发布页 `https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases/tag/v1.7.9` 含 APK、未签名 IPA、DMG、MSI。显示版本 `1.7.9`，Android/iOS/macOS 构建号 20。冻结 Android 流水线对该标签已跳过。`Liquid` 与 `codex/security-p1-p2` 的本地和远端分支已删除，只留 `main`。
 - 2026-09-26 首页日程在「日程加载中」时，iOS/Android 点选日期也会播放内容过渡。横滑切周仍等周数确认后再启用。本地曾覆盖 `~/Downloads` 的 APK 与未签名 IPA；正式四端包以 CI 发布页为准。
 - 2026-09-26 PR #4 已并入 `main`（合并提交 `0f773c0`）。上游 `origin`（HFDLYS）未动。
 - 2026-09-21 完成只读安全复查（1.7.8-Liquid）：上轮安全修复全部保持、无回归、无高危；新增中危 M1（WebView Cookie 登出不清理）、M2（iOS Keychain 卸载残留）、M3（macOS 无卸载清理）、M4（桌面/Windows 明文缓存）+ 低危 L1-L10，报告在 `docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-21.md`。
@@ -43,7 +43,7 @@
 ## 相关文件
 
 - 安全复查报告：`docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-21.md`（本轮）、`docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-17.md`（上轮）。
-- Liquid 计划与发布：`docs/migration/m17-apple-liquid-glass-shell-plan.md`、`docs/releases/v1.7.8-Liquid.md`。
+- Liquid 计划与发布：`docs/migration/m17-apple-liquid-glass-shell-plan.md`、`docs/releases/v1.7.8-Liquid.md`、`docs/releases/v1.7.9.md`。
 
 ## 维护规则
 
