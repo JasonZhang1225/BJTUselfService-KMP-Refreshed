@@ -6,16 +6,18 @@
 - **审计方式**：纯只读（4 个并行探查代理覆盖网络层 / 本地存储 / 登出清理与卸载残留 / 依赖版本 + 联网 CVE 检索），未修改、创建或删除任何项目文件
 - **审计范围**：`multiplatform/`（活跃 KMP 工程：Android / iOS / macOS / Windows）；根 `app/` 冻结工程按惯例跳过
 
-## 当前状态（2026-09-23）
+## 当前状态（2026-09-26）
 
-**代码修复已完成，待真机验证。** P1/P2 修复已提交至 [草稿 PR #4](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/4)，
-最新 Android 与 Apple CI 门禁通过；用户确认最低 iOS 版本提高到 16.0。
-PR 暂不合并，待用户之后在 Mac/iPhone 上完成以下验收：
+**代码修复与 macOS 正式安装验收已完成，其余设备待验。** P1/P2 修复已提交至 [草稿 PR #4](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/4)，
+Android 与 Apple CI 门禁已通过；用户确认最低 iOS 版本提高到 16.0。
+PR 暂不合并，仍需完成以下验收：
 
 - iPhone 卸载并以相同 Bundle ID 重装后，不得恢复残留 Keychain 凭据；
 - 登录后登出，学校网页需重新认证，且 CAS 服务端会话确已失效；
-- macOS 执行“清除全部本地数据”后立即退出，重启后不能恢复凭据或缓存；
 - Android 真机验证登录、验证码识别与登出流程。
+
+macOS 已在本机从安全分支 DMG 覆盖现有安装，并通过应用内“清除全部本地数据”
+完成真实安装验收；过程与结果见文末记录。
 
 CI 中 iOS 模拟器的原生 Keychain 测试返回 OSStatus `-25291`（`errSecNotAvailable`），
 该测试宿主没有可用 Keychain；协调器与真实 `NSUserDefaults` 的重装标记测试通过，
@@ -228,6 +230,13 @@ CI 中 iOS 模拟器的原生 Keychain 测试返回 OSStatus `-25291`（`errSecN
   通过 `hdiutil verify`，镜像内应用通过 `codesign --verify --deep --strict`，
   Bundle ID 为 `team.bjtuss.bjtuselfservice.kmp.macos`，最低系统版本为 12.0，
   `Contents/Resources/PrivacyInfo.xcprivacy` 存在。
-- 本机 `/Applications/交大自由行 KMP.app` 正在运行且已有用户缓存。因此未对正式安装
-  执行覆盖安装或“清除全部本地数据”，也未用真实账号验收界面；此项仍待用户在可接受
-  清除本地缓存和退出登录时完成。此次验证不能替代正式安装上的端到端验收。
+- 经用户明确授权，关闭正在运行的旧版后，从上述已校验 DMG 覆盖
+  `/Applications/交大自由行 KMP.app`。升级后应用正常启动并恢复既有登录态；
+  旧缓存按加密迁移策略重建。
+- 在正式应用设置页确认“清除全部本地数据”，界面立即回到空白登录页。
+  随后只读核验 SQLite 八张业务/设置表合计 0 行、正式 Keychain 登录凭据条目不存在、
+  Java Preferences 的记住密码标记不存在；完全退出并重新启动后仍停留在空白登录页，
+  未自动恢复登录。macOS 正式安装的 M3/M4 验收通过。
+- 缓存加密密钥条目仍留在 Keychain；其本身不含账号或缓存数据，README 已说明
+  拖拽卸载后的手动删除方法。本地 DMG 为 ad-hoc 签名，未进行 Developer ID 公证，
+  此验证不代表正式分发签名验收。CAS 服务端会话失效与 iOS WebView 清理另待验证。
