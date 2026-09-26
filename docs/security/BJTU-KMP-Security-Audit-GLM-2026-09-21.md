@@ -216,3 +216,18 @@ CI 中 iOS 模拟器的原生 Keychain 测试返回 OSStatus `-25291`（`errSecN
   Keychain 可用时执行，不能将该条件性测试视为原生 Keychain 已验收。
   真实 iOS 设备上的登出网站数据清理、卸载重装后 Keychain 清理仍需
   设备端到端验收，不能以编译或单元测试代替。
+
+### macOS 本机收尾验证（2026-09-26）
+
+- 从安全分支在 Apple Silicon Mac 上运行 `:shared:desktopTest`：537 项通过，0 失败；
+  原有 macOS Keychain 合成凭据测试实际执行，未被平台条件跳过。
+- 新增 `MacOsFullWipeIntegrationTest`，在独立 Keychain 服务、独立 Java Preferences
+  节点与临时 SQLite 目录中完成合成账号写入、全量清理、关闭并重新打开：凭据、
+  记住密码标记与缓存记录均未恢复。单测 1 项通过，0 跳过。
+- `:desktopApp:createDistributable` 与 `:desktopApp:packageDmg` 成功；最终 DMG
+  通过 `hdiutil verify`，镜像内应用通过 `codesign --verify --deep --strict`，
+  Bundle ID 为 `team.bjtuss.bjtuselfservice.kmp.macos`，最低系统版本为 12.0，
+  `Contents/Resources/PrivacyInfo.xcprivacy` 存在。
+- 本机 `/Applications/交大自由行 KMP.app` 正在运行且已有用户缓存。因此未对正式安装
+  执行覆盖安装或“清除全部本地数据”，也未用真实账号验收界面；此项仍待用户在可接受
+  清除本地缓存和退出登录时完成。此次验证不能替代正式安装上的端到端验收。
