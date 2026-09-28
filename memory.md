@@ -1,8 +1,8 @@
 # BJTUselfService KMP 实时工作记忆
 
-> 最后更新：2026-09-26（`v1.7.9` 四端 CI 打包成功，发布页已挂上四个安装包）
-> 当前分支：`main`。集成分支只保留 `main`。
-> 工作区：发布提交包含全端 `1.7.9` / 构建号 20、日程加载中的日期动画，以及 `docs/releases/v1.7.9.md`；本轮液态玻璃优化收尾改动（见下）已提交。
+> 最后更新：2026-09-29（首页「日程加载中」修复已提交并推到 mine/main，未打标签）
+> 当前分支：`main`。
+> 工作区：版本 1.8.0 与设置页文案已在 `e5e21eb`；日程加载修复随本次提交推送。未触发打包。
 > `history_full.md` 是只读历史归档；本文件只记录当前事实、未决事项和下一步，不重复历史细节。
 
 ## 当前目标
@@ -14,6 +14,8 @@
 
 ## 本阶段已做到
 
+- 2026-09-28 首页停在「日程加载中」：校历确认当天是教学周空档（秋假）后，课表刷新仍把 `weekResolved` 清掉；校历请求失败或被挂起取消后，手动刷新也不补拉。同步行只看课表来源，所以面板可以写「课程表与校历周数 / 已完成」。已改为空档保持确认（首页显示「非教学周」），刷新和回到前台会补拉未确认的校历，校历失败时这一行改为失败。`:shared:desktopTest` 的 `CourseScheduleScreenModelTest` 通过。
+- 2026-09-29 含上述修复打出未签名 IPA：`~/Downloads/BJTUSelfService-KMP-1.8.0-iOS-unsigned.ipa`（41879726 字节，SHA-256 `f8dd6068dbc9aad5fa6c00f905897b867a335a949a45e00b223e324b94a291b6`），1.8.0 / Build 21，Bundle ID `team.bjtuss.bjtuselfservice.kmp.ios`，arm64，无签名无 PlugIns。Xcode 27.0 `generic/platform=iOS` Release `BUILD SUCCEEDED`。需自行签名侧载，未上真机。临时 DerivedData 已删。
 - 2026-09-26 发布 `v1.7.9`：run `36226768700` 的 Android、Windows、macOS、iOS 和 GitHub Release 全部成功。发布页 `https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases/tag/v1.7.9` 含 APK、未签名 IPA、DMG、MSI。显示版本 `1.7.9`，Android/iOS/macOS 构建号 20。冻结 Android 流水线对该标签已跳过。`Liquid` 与 `codex/security-p1-p2` 的本地和远端分支已删除，只留 `main`。`docs/releases/v1.7.8-Liquid.md` 与 `v1.7.9.md` 已改成 GitHub 发布页上改过的正文。
 - 2026-09-26 首页日程在「日程加载中」时，iOS/Android 点选日期也会播放内容过渡。横滑切周仍等周数确认后再启用。本地曾覆盖 `~/Downloads` 的 APK 与未签名 IPA；正式四端包以 CI 发布页为准。
 - 2026-09-26 PR #4 已并入 `main`（合并提交 `0f773c0`）。上游 `origin`（HFDLYS）未动。
@@ -39,7 +41,7 @@
 ## 当前痛点（≤8 条）
 
 - 安全审计报告剩余设备验收：iPhone Keychain 卸载重装清理、带登录态的 CAS/WebView 登出、Android 真机验证码效果。CI 中 unsigned iOS 测试宿主的 Keychain 未覆盖。
-- 日程加载中的日期动画尚未在真机复测。正式包未公证；iOS IPA 仍需自行签名。
+- 「校历已完成但首页仍停在日程加载中」的修复已打进下载目录的未签名 IPA，尚未自行签名安装，也还没在真机复测。正式包未公证。
 - iOS 标题栏真玻璃全页铺开（本轮提交）：`fcfdb09` 已推 `mine/Liquid`，tag `v1.7.8-Liquid` 改绑过去，kmp-package 四件全绿换新。玻璃跟手：桥接改连续 `scrollProgress`，各页上报真实偏移（`LocalReportTopScroll`，首项之后视为全盖）；首页首项是整张高卡，通用上报在其进栏时仍读 0，改为读首项 `offset` 负值（静止 0/上滑即有值/过滚仍 0，其他页不动；之前 `beforeContentPadding - offset` 静止也糊的方案已撤回）。课表/课件/教室详情/占用详情用 `staticTopBar` 保持静态栏；邮箱列表去重刷新图标。短内容留栏下、横幅收进列表首项；其余平台零影响。真机滚动态用户已确认完美。
 - Compose Material3 alpha 依赖 compileSdk 37 豁免开关（`android.experimental.disableCompileSdkChecks`），正式版后应移除。
 - `SecurityReleaseConfigTest.gradleDistributionAndWrapperArePinnedAndCiValidatesThem` 在 HEAD 已失败（要 `release.yml` 含 Liquid 守卫，文件中没有；本轮未动该文件）：全量 553 项中唯一失败项，与本轮改动无关，修它等于改 CI 发布守卫，需单独决策。

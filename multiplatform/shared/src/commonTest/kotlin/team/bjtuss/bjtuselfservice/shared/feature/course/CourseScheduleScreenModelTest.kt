@@ -50,21 +50,16 @@ class CourseScheduleScreenModelTest {
         assertFalse(model.state.value.weekResolved)
         assertTrue(model.state.value.hasCachedWeek)
 
-        // 阶段 2：远端刷新到达。裸周数 1 不得覆盖显示值。
+        // 阶段 2：刷新课表时教学周仍未确认，会补拉校历。
+        // 远端裸周数 1 不得先写进 UI，最终只能是校历周。
         model.refresh()
-        assertEquals(cachedWeek, model.state.value.currentWeek)
-        assertFalse(model.state.value.weekResolved)
+        assertEquals(calendarWeek, model.state.value.currentWeek)
+        assertTrue(model.state.value.weekResolved)
+        assertFalse(model.state.value.calendarFailed)
 
-        // 阶段 3：校历按日期给出唯一权威值。
         model.ensureCalendarLoaded()
         assertEquals(calendarWeek, model.state.value.currentWeek)
         assertTrue(model.state.value.weekResolved)
-
-        // 全程只允许出现 cachedWeek -> calendarWeek 一次跳变，绝不出现 remoteBareWeek。
-        val seenWeeks = mutableListOf<Int>()
-        seenWeeks += cachedWeek
-        seenWeeks += model.state.value.currentWeek
-        assertFalse(remoteBareWeek in seenWeeks)
     }
 
     @Test
@@ -413,6 +408,70 @@ class CourseScheduleScreenModelTest {
 
         assertEquals(26, model.state.value.currentWeek)
         assertEquals(26, model.state.value.selectedWeek)
+        assertTrue(model.state.value.weekResolved)
+        assertFalse(model.state.value.calendarFailed)
+    }
+
+    @Test
+    fun refreshKeepsConfirmedHolidayGapInsteadOfAgendaLoading() = runBlocking {
+        // 2026-09-28 实机：秋假空档（9 月 28 日不在任何教学周）里，校历已经确认是非教学周，
+        // 但紧接着的课表刷新把 weekResolved 清掉，首页一直显示「日程加载中」。
+        // 同步行只看课表来源，所以面板仍写「课程表与校历周数 / 已完成」。
+        val today = LocalDate(2026, 9, 28)
+        val snapshot = CourseScheduleSnapshot(listOf(course(1, week = 3)), 1)
+        val model = CourseScheduleScreenModel(
+            repository = FakeRepository(snapshot, snapshot),
+            calendarRepository = FakeCalendarRepository(
+                weeks = listOf(
+                    week(3, LocalDate(2026, 9, 21)),
+                    week(4, LocalDate(2026, 10, 12)),
+                ),
+            ),
+            todayProvider = { today },
+        )
+
+        model.initialize(refreshFromNetwork = false)
+        model.ensureCalendarLoaded()
+        assertEquals(0, model.state.value.currentWeek)
+        assertTrue(model.state.value.weekResolved)
+
+        model.refresh()
+        assertEquals(0, model.state.value.currentWeek)
+        assertEquals(0, model.state.value.selectedWeek)
+        assertTrue(model.state.value.weekResolved)
+        assertFalse(model.state.value.calendarFailed)
+        assertEquals(CourseScheduleContentSource.NETWORK, model.state.value.source)
+    }
+
+    @Test
+    fun refreshRetriesCalendarWhenTheFirstLoadReturnsNothing() = runBlocking {
+        val today = LocalDate(2026, 9, 16)
+        val calendar = FakeCalendarRepository(
+            weeks = listOf(
+                week(1, LocalDate(2026, 9, 7)),
+                week(2, LocalDate(2026, 9, 14)),
+            ),
+            failFirstFetches = 1,
+        )
+        val snapshot = CourseScheduleSnapshot(listOf(course(1, week = 2)), 1)
+        val model = CourseScheduleScreenModel(
+            repository = FakeRepository(snapshot, snapshot),
+            calendarRepository = calendar,
+            todayProvider = { today },
+        )
+
+        model.initialize(refreshFromNetwork = false)
+        model.ensureCalendarLoaded()
+        assertFalse(model.state.value.weekResolved)
+        assertTrue(model.state.value.calendarFailed)
+        assertEquals(1, calendar.fetchCount)
+
+        model.refresh()
+        assertEquals(2, calendar.fetchCount)
+        assertTrue(model.state.value.weekResolved)
+        assertFalse(model.state.value.calendarFailed)
+        assertEquals(2, model.state.value.currentWeek)
+        assertEquals(2, model.state.value.selectedWeek)
     }
 
     @Test
@@ -611,7 +670,7 @@ class CourseScheduleScreenModelTest {
             repository = FakeRepository(snapshot, snapshot),
             calendarRepository = FakeCalendarRepository(listOf(week(2, LocalDate(2026, 9, 14)))),
         )
-        model.initialize()
+        model.initialize(refreshFromNetwork = false)
         model.selectWeek(2)
         model.selectDay(4)
         model.ensureCalendarLoaded()
@@ -832,8 +891,10 @@ class CourseScheduleScreenModelTest {
         private val weeks: List<OccupancyWeekDate>,
         private val selectedLabel: String = "2026-2027-1",
         private val allWeekDates: Map<String, List<OccupancyWeekDate>> = mapOf(selectedLabel to weeks),
+        private val failFirstFetches: Int = 0,
     ) : ClassroomOccupancyRepository {
         private val semester = OccupancySemester("$selectedLabel-1", selectedLabel)
+        var fetchCount = 0
 
         override suspend fun fetchOccupancy(
             week: Int,
@@ -846,8 +907,10 @@ class CourseScheduleScreenModelTest {
             all = listOf(semester),
         )
 
-        override suspend fun fetchWeekDates(): Map<String, List<OccupancyWeekDate>> =
-            allWeekDates
+        override suspend fun fetchWeekDates(): Map<String, List<OccupancyWeekDate>> {
+            fetchCount += 1
+            return if (fetchCount <= failFirstFetches) emptyMap() else allWeekDates
+        }
     }
 
     private fun week(number: Int, start: LocalDate) = OccupancyWeekDate(

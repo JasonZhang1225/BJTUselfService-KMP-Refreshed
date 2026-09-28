@@ -292,9 +292,11 @@ fun AuthenticatedAppShell(
         examBusy = examState.isLoading || examState.isRefreshing,
         examFailed = examState.failure != null,
         examReady = examState.source != null,
+        // 课表来源只说明课程列表到了。教学周未确认时不能显示「已完成」，
+        // 否则秋假空档或校历失败时，面板已完成、首页仍停在「日程加载中」。
         courseBusy = courseState.isLoading || courseState.isRefreshing || courseState.isCalendarLoading,
-        courseFailed = courseState.failure != null,
-        courseReady = courseState.source != null,
+        courseFailed = courseState.failure != null || courseState.calendarFailed,
+        courseReady = courseState.source != null && courseState.weekResolved,
         phyVlabEnabled = phyVlabEnabled,
         phyVlabBusy = phyVlabEnabled && phyVlabState.isLoading,
         phyVlabFailed = phyVlabEnabled && (phyVlabState.failure != null || phyVlabState.casLoginRequired),
@@ -579,7 +581,9 @@ fun AuthenticatedAppShell(
         }
     }
 
-    // 回到前台时只对已经明确处于 SESSION_EXPIRED 的当前页面自动重试一次；
+    // 回到前台时，教学周仍未确认就补拉校历：长时间挂起会取消进行中的校历请求，
+    // 只恢复 SESSION_EXPIRED 的业务请求修不好「日程加载中」。
+    // 已经明确处于 SESSION_EXPIRED 的当前页面再自动重试一次；
     // 失败后保留当前错误页，不弹回登录页，把再次恢复的主动权交给右上角刷新。
     val latestRoute = rememberUpdatedState(currentRoute)
     LaunchedEffect(session) {
@@ -592,6 +596,9 @@ fun AuthenticatedAppShell(
 
         session.appResumeGeneration.collect { generation ->
             if (!session.claimAppResume(generation) || entryLoggingIn) return@collect
+            if (!courseScheduleModel.state.value.weekResolved) {
+                courseScheduleModel.ensureCalendarLoaded()
+            }
             when (latestRoute.value) {
                 PhyVlabDetailRoute -> retryIfExpired(
                     operation = { phyVlabModel.loadSelectedActivityDetail(force = true) },
