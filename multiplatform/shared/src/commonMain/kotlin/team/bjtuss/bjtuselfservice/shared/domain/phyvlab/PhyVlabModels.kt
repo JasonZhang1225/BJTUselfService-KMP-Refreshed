@@ -59,4 +59,9 @@ data class PhyVlabEvent(
     val eventUrl: String? = null,
     // 旧缓存和旧调用方没有类型信息时，按物理在线的日历截止事件处理。
     val kind: PhyVlabEventKind = PhyVlabEventKind.DEADLINE,
+    /**
+     * 是否已做：课程页完成标记或详情提交信息折叠后的信号，供首页标绿使用。
+     * 未知时为 false（红色提醒），不猜测。
+     */
+    val submitted: Boolean = false,
 )

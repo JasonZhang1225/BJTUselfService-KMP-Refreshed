@@ -3,7 +3,7 @@ package team.bjtuss.bjtuselfservice.shared.feature.home
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
-import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalReportTopScroll
+import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -16,6 +16,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
@@ -99,7 +100,9 @@ import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeDomain
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeRecord
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeStatus
 import team.bjtuss.bjtuselfservice.shared.domain.home.buildHomeAgenda
+import team.bjtuss.bjtuselfservice.shared.domain.home.isHomeAgendaDayFullySubmitted
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
+import team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkSubmitted
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEventKind
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseWeekScrollAccumulator
@@ -143,22 +146,11 @@ fun HomeWorkspace(
     val uriHandler = LocalUriHandler.current
     val campusDestination = campusCardDestination(platform.family)
     val pageListState = rememberLazyListState()
-    // 首页首项是整张日程卡，高过顶栏过渡带。通用上报只看 firstVisibleItemScrollOffset，
-    // 而 Compose 在首项还没穿过视口顶边（contentPadding 这段）时把它钳成 0，卡片已经
-    // 进栏、玻璃却还是透明。这里改读首项相对静止位置的位移：静止为 0，上滑立刻有值，
-    // 下拉过滚仍是 0。只这一页这样做，其他页的矮首项走原来的上报。
-    val reportTopScroll = LocalReportTopScroll.current
-    LaunchedEffect(pageListState, reportTopScroll) {
-        snapshotFlow {
-            val layout = pageListState.layoutInfo
-            val first = layout.visibleItemsInfo.firstOrNull { it.index == 0 }
-            when {
-                first == null && layout.visibleItemsInfo.isNotEmpty() -> Float.MAX_VALUE
-                first == null -> 0f
-                else -> (-first.offset).toFloat().coerceAtLeast(0f)
-            }
-        }.collect { reportTopScroll(it) }
-    }
+    // 和其它页用同一套上报：读 firstVisibleItemScrollOffset（有快照契约）。
+    // 之前这里自制了一套读 layoutInfo.visibleItemsInfo 首项位移的版本，数学上和通用版
+    // 完全等价（静止 0、上滑 S-P、下拉过滚 0、首项出视口 MAX），却在当前 Compose 下不再
+    // 可靠触发重算，上报卡在 0 导致首页顶栏玻璃丢失，而作业页一直正常。改回统一实现。
+    ReportTopScrollListState(pageListState)
     var dialog by remember { mutableStateOf<HomeDialog?>(null) }
     var selectedChangeDomain by remember { mutableStateOf<HomeChangeDomain?>(null) }
     var actionMessage by remember { mutableStateOf<String?>(null) }
@@ -348,6 +340,23 @@ private enum class HomeDialog { CampusCard, Network }
 
 private fun mondayOf(date: LocalDate): LocalDate =
     date.minus(date.dayOfWeek.isoDayNumber - 1, DateTimeUnit.DAY)
+
+/**
+ * 首页自动跟随的目标周：用户手动选周后永不覆盖（异步结果不得把用户正在看的周顶掉）；
+ * 未确认时不跟随；其它情况下只要目标与当前不同就跟随。
+ *
+ * 比较必须用整个槽（含周号）而不仅是开始日期：启动时无校历的回退槽与校历确认后的
+ * 真实槽可能落在同一天（都是本周一），只比日期会把错误的第 1 周永远留在台面上。
+ */
+internal fun nextAutoFollowedWeekSlot(
+    selectedSlot: AcademicWeekSlot,
+    automaticSlot: AcademicWeekSlot?,
+    weekWasManuallySelected: Boolean,
+): AcademicWeekSlot? {
+    if (weekWasManuallySelected) return null
+    if (automaticSlot == null) return null
+    return if (automaticSlot != selectedSlot) automaticSlot else null
+}
 
 /** 首页与课表共用校历时间轴；没有校历时保留旧的 1..30 周兜底。 */
 private fun homeAgendaWeekSlots(
@@ -595,10 +604,8 @@ private fun HomeAgendaSection(
         else -> weekSlots.firstOrNull { it.startDate == todayMonday }
     }
     LaunchedEffect(currentWeek, academicWeeks, isWeekResolved) {
-        if (!weekWasManuallySelected) {
-            automaticSlot?.let { slot ->
-                if (selectedSlot.startDate != slot.startDate) selectedSlot = slot
-            }
+        nextAutoFollowedWeekSlot(selectedSlot, automaticSlot, weekWasManuallySelected)?.let { slot ->
+            selectedSlot = slot
         }
     }
 
@@ -1231,6 +1238,20 @@ private fun DueSoonHomeworkSummary(
     }
 }
 
+/** 当天截止项全部已做时的格子底色/字色；浅色深绿字、深色浅绿字，保证对比度。 */
+@Composable
+private fun doneDayContainerColor(): Color =
+    if (isSystemInDarkTheme()) Color(0xFF1E4B2C) else Color(0xFFD9EEDF)
+
+@Composable
+private fun doneDayContentColor(): Color =
+    if (isSystemInDarkTheme()) Color(0xFFA9E2B8) else Color(0xFF0C4A26)
+
+/** 单条已做事项的“截止”二字颜色。 */
+@Composable
+private fun doneDeadlineLabelColor(): Color =
+    if (isSystemInDarkTheme()) Color(0xFF7EDB96) else Color(0xFF146C39)
+
 @Composable
 private fun AgendaDayCell(
     day: HomeAgendaDay,
@@ -1242,16 +1263,19 @@ private fun AgendaDayCell(
     val hasDeadline = day.homeworkDue.isNotEmpty() || day.phyVlabEvents.any {
         it.kind == PhyVlabEventKind.DEADLINE
     }
+    // 当天截止项全部已做 → 整天标绿；有一项没做仍标红。
+    val allDone = isHomeAgendaDayFullySubmitted(day)
     val cellColor = when {
+        allDone -> doneDayContainerColor()
         hasDeadline -> MaterialTheme.colorScheme.errorContainer
         selected -> MaterialTheme.colorScheme.primaryContainer
         isToday -> MaterialTheme.colorScheme.secondaryContainer
         else -> MaterialTheme.colorScheme.surfaceVariant
     }
-    val cellContentColor = if (hasDeadline) {
-        MaterialTheme.colorScheme.onErrorContainer
-    } else {
-        MaterialTheme.colorScheme.onSurface
+    val cellContentColor = when {
+        allDone -> doneDayContentColor()
+        hasDeadline -> MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.onSurface
     }
     Surface(
         onClick = onClick,
@@ -1271,10 +1295,10 @@ private fun AgendaDayCell(
                 if (day.eventCount == 0) "—" else "${day.eventCount}项",
                 style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center,
-                color = if (hasDeadline) {
-                    MaterialTheme.colorScheme.onErrorContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
+                color = when {
+                    allDone -> doneDayContentColor()
+                    hasDeadline -> MaterialTheme.colorScheme.onErrorContainer
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
             )
         }
@@ -1297,7 +1321,13 @@ private fun AgendaDayDetails(
             AgendaEventRow("开始", item.title, item.courseName, onOpenHomework)
         }
         day.homeworkDue.forEach { item ->
-            AgendaEventRow("截止", item.title, "${item.courseName} · ${item.endTime}", onOpenHomework)
+            AgendaEventRow(
+                type = "截止",
+                title = item.title,
+                detail = "${item.courseName} · ${item.endTime}",
+                onClick = onOpenHomework,
+                done = isHomeworkSubmitted(item),
+            )
         }
         day.exams.forEach { exam ->
             AgendaEventRow("考试", exam.courseName, exam.examTimeAndPlace, onOpenExams)
@@ -1308,6 +1338,7 @@ private fun AgendaDayDetails(
                 title = event.title,
                 detail = formatPhyVlabAgendaDate(event),
                 onClick = onOpenPhyVlab,
+                done = event.submitted,
             )
         }
     }
@@ -1319,6 +1350,7 @@ private fun AgendaEventRow(
     title: String,
     detail: String,
     onClick: () -> Unit,
+    done: Boolean = false,
 ) {
     val isDeadline = type.contains("截止")
     Surface(
@@ -1334,7 +1366,11 @@ private fun AgendaEventRow(
         ) {
             Text(
                 type,
-                color = if (isDeadline) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                color = when {
+                    done -> doneDeadlineLabelColor()
+                    isDeadline -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.primary
+                },
                 fontWeight = FontWeight.SemiBold,
             )
             Column(modifier = Modifier.weight(1f)) {

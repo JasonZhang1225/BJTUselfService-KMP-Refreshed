@@ -40,6 +40,8 @@ import team.bjtuss.bjtuselfservice.shared.data.home.examChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.data.home.gradeChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.data.home.homeworkChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.data.home.phyvlabChangeRecorder
+import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferences
+import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferencesStore
 import team.bjtuss.bjtuselfservice.shared.data.homework.CacheStoreHomeworkLocalDataSource
 import team.bjtuss.bjtuselfservice.shared.data.homework.DefaultHomeworkRepository
 import team.bjtuss.bjtuselfservice.shared.data.homework.SchoolHomeworkRemoteDataSource
@@ -155,7 +157,18 @@ internal fun rememberAuthenticatedSession(
         )
     }
     val homeworkModel = remember(homeworkRepository, homeChangeFeed) {
-        HomeworkScreenModel(homeworkRepository, homeworkChangeRecorder(homeChangeFeed))
+        HomeworkScreenModel(
+            homeworkRepository,
+            homeworkChangeRecorder(homeChangeFeed),
+            filterStore = object : HomeworkFilterPreferencesStore {
+                override fun load(): HomeworkFilterPreferences =
+                    cacheStore.homeworkFilter(profile.studentId)
+
+                override fun save(preferences: HomeworkFilterPreferences) {
+                    cacheStore.saveHomeworkFilter(profile.studentId, preferences)
+                }
+            },
+        )
     }
     val coursewareRepository = remember(profile.studentId, cacheStore, smartPlatformEndpoint) {
         DefaultCoursewareRepository(

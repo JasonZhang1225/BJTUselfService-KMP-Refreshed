@@ -15,6 +15,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWee
 import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkDueSoon
+import team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkSubmitted
 import team.bjtuss.bjtuselfservice.shared.domain.homework.parseSchoolLocalDateTime
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEventKind
@@ -102,6 +103,23 @@ fun resolveHomeAgendaWeekStart(
     val fallbackMonday = today.minus(today.dayOfWeek.isoDayNumber - 1, DateTimeUnit.DAY)
     val anchorStart = weekDates.firstOrNull { it.week == anchorWeek }?.startDate ?: fallbackMonday
     return anchorStart.plus(selectedWeek - anchorWeek, DateTimeUnit.DAY)
+}
+
+/**
+ * 当天截止项是否全部已做：有一项没做仍算未完成（红色），全部已提交才整天标绿；
+ * 当天没有截止项时返回 false，不影响原有配色。
+ *
+ * 物理在线事件的已做信号由物理在线页在组装事件时写入
+ * （课程页完成标记或详情提交信息）；未知时为 false。开始事件和考试不参与判定。
+ */
+fun isHomeAgendaDayFullySubmitted(day: HomeAgendaDay): Boolean {
+    val hasDeadline = day.homeworkDue.isNotEmpty() ||
+        day.phyVlabEvents.any { it.kind == PhyVlabEventKind.DEADLINE }
+    if (!hasDeadline) return false
+    return day.homeworkDue.all(::isHomeworkSubmitted) &&
+        day.phyVlabEvents
+            .filter { it.kind == PhyVlabEventKind.DEADLINE }
+            .all(PhyVlabEvent::submitted)
 }
 
 fun homeworkStartDate(homework: Homework): LocalDate? =

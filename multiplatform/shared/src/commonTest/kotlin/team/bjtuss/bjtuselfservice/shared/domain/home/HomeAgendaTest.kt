@@ -6,7 +6,9 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
@@ -172,6 +174,76 @@ class HomeAgendaTest {
             phyVlabEventDate(deadline.copy(kind = PhyVlabEventKind.START), TimeZone.UTC),
         )
     }
+
+    @Test
+    fun fullySubmittedDayNeedsEveryHomeworkDone() {
+        // 过期与否不影响颜色：过期没做还是红色，没过期但做了就是绿色。
+        val expiredUndone = homework(title = "过期没做", endTime = "2026-10-10 00:00")
+        val futureUndone = homework(title = "没过期没做", endTime = "2026-10-13 00:00")
+        val futureDone = homework(
+            title = "没过期但做了",
+            endTime = "2026-10-13 00:00",
+            subStatus = "已提交",
+        )
+        val expiredDone = homework(
+            title = "过期但做了",
+            endTime = "2026-10-10 00:00",
+        ).copy(idSnId = 7)
+
+        // 一天只有一项：做了就绿，没做就红（过没过期都一样）。
+        assertTrue(isHomeAgendaDayFullySubmitted(dayWith(expiredDone)))
+        assertTrue(isHomeAgendaDayFullySubmitted(dayWith(futureDone)))
+        assertFalse(isHomeAgendaDayFullySubmitted(dayWith(expiredUndone)))
+        assertFalse(isHomeAgendaDayFullySubmitted(dayWith(futureUndone)))
+
+        // 三项：一项没做仍是红，全部做了才绿。
+        assertFalse(isHomeAgendaDayFullySubmitted(dayWith(expiredDone, futureDone, futureUndone)))
+        assertTrue(isHomeAgendaDayFullySubmitted(dayWith(expiredDone, futureDone)))
+
+        // 当天没有截止项：不标绿。
+        assertFalse(
+            isHomeAgendaDayFullySubmitted(
+                HomeAgendaDay(
+                    date = LocalDate(2026, 10, 11),
+                    homeworkStarting = listOf(expiredUndone),
+                    homeworkDue = emptyList(),
+                    exams = emptyList(),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun phyVlabDeadlineUsesEventSubmittedSignal() {
+        val done = homework(title = "已做", endTime = "2026-10-12 00:00", subStatus = "已提交")
+        val deadline = PhyVlabEvent(
+            id = "1",
+            title = "chap1",
+            dateText = "10月11日",
+            dayTimestamp = 0L,
+        )
+        // 未知的提交状态按未完成处理：当天不会整天标绿。
+        assertFalse(isHomeAgendaDayFullySubmitted(dayWith(done).copy(phyVlabEvents = listOf(deadline))))
+        // 物理在线页写入已做信号后，当天可以整天标绿。
+        assertTrue(
+            isHomeAgendaDayFullySubmitted(
+                dayWith(done).copy(phyVlabEvents = listOf(deadline.copy(submitted = true))),
+            ),
+        )
+        // 开始事件不参与判定。
+        assertTrue(
+            isHomeAgendaDayFullySubmitted(
+                dayWith(done).copy(phyVlabEvents = listOf(deadline.copy(kind = PhyVlabEventKind.START))),
+            ),
+        )
+    }
+
+    private fun dayWith(vararg items: Homework) = HomeAgendaDay(
+        date = LocalDate(2026, 10, 11),
+        homeworkStarting = emptyList(),
+        homeworkDue = items.toList(),
+        exams = emptyList(),
+    )
 
     private fun homework(
         title: String = "作业",

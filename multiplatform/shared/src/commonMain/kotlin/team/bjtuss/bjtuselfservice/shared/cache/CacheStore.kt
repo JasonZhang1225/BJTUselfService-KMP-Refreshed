@@ -9,6 +9,10 @@ import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
 import team.bjtuss.bjtuselfservice.shared.domain.grade.Grade
 import team.bjtuss.bjtuselfservice.shared.domain.grade.GradeSelectionRecord
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
+import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferences
+import team.bjtuss.bjtuselfservice.shared.domain.homework.decodeHomeworkFilterCourses
+import team.bjtuss.bjtuselfservice.shared.domain.homework.decodeHomeworkSortOrder
+import team.bjtuss.bjtuselfservice.shared.domain.homework.encodeHomeworkFilterCourses
 
 data class AppPreferences(
     val autoSyncGrades: Boolean = true,
@@ -267,6 +271,30 @@ class CacheStore(
         }
     }
 
+    /**
+     * 作业筛选面板的上次状态（按账号存）：课程多选、隐藏过期/已提交、排序。
+     * 退出登录清账号数据时一起清除；课程名对不上当前数据时读取方自行裁剪。
+     */
+    fun homeworkFilter(accountScope: String): HomeworkFilterPreferences {
+        val scope = requireAccountScope(accountScope)
+        return HomeworkFilterPreferences(
+            selectedCourses = decodeHomeworkFilterCourses(metadata(scope, HOMEWORK_FILTER_COURSES_KEY)),
+            hideExpired = metadata(scope, HOMEWORK_FILTER_HIDE_EXPIRED_KEY) == "true",
+            hideSubmitted = metadata(scope, HOMEWORK_FILTER_HIDE_SUBMITTED_KEY) == "true",
+            sortOrder = decodeHomeworkSortOrder(metadata(scope, HOMEWORK_FILTER_SORT_KEY)),
+        )
+    }
+
+    fun saveHomeworkFilter(accountScope: String, preferences: HomeworkFilterPreferences) {
+        val scope = requireAccountScope(accountScope)
+        queries.transaction {
+            putMetadata(scope, HOMEWORK_FILTER_COURSES_KEY, encodeHomeworkFilterCourses(preferences.selectedCourses))
+            putMetadata(scope, HOMEWORK_FILTER_HIDE_EXPIRED_KEY, preferences.hideExpired.toString())
+            putMetadata(scope, HOMEWORK_FILTER_HIDE_SUBMITTED_KEY, preferences.hideSubmitted.toString())
+            putMetadata(scope, HOMEWORK_FILTER_SORT_KEY, preferences.sortOrder.name)
+        }
+    }
+
     fun metadata(accountScope: String, key: String): String? =
         queries.selectMetadata(protectedAccountScope(accountScope), protectedKey(key))
             .executeAsOneOrNull()
@@ -517,6 +545,10 @@ private object SettingKey {
     const val SHOW_PHYVLAB_IN_BOTTOM_NAV = "show_phyvlab_in_bottom_nav"
 }
 
+private const val HOMEWORK_FILTER_COURSES_KEY = "homework_filter_courses"
+private const val HOMEWORK_FILTER_HIDE_EXPIRED_KEY = "homework_filter_hide_expired"
+private const val HOMEWORK_FILTER_HIDE_SUBMITTED_KEY = "homework_filter_hide_submitted"
+private const val HOMEWORK_FILTER_SORT_KEY = "homework_filter_sort"
 private const val COURSE_CURRENT_WEEK_KEY = "course_current_week"
 private const val COURSE_MAX_WEEK = 30
 private const val PROFILE_NAME_KEY = "profile_name"

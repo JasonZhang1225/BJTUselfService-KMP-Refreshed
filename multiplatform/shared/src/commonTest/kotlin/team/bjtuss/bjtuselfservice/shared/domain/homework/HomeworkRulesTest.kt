@@ -46,6 +46,60 @@ class HomeworkRulesTest {
     }
 
     @Test
+    fun hideSubmittedFiltersStatusAndRecordId() {
+        val unsubmitted = homework(1, "课程", "2026-07-30 09:00")
+        val submittedByStatus = homework(2, "课程", "2026-07-30 09:00", subStatus = "已提交")
+        val submittedByRecord = homework(3, "课程", "2026-07-30 09:00").copy(idSnId = 31)
+        val items = listOf(unsubmitted, submittedByStatus, submittedByRecord)
+
+        assertTrue(isHomeworkSubmitted(submittedByStatus))
+        assertTrue(isHomeworkSubmitted(submittedByRecord))
+        assertFalse(isHomeworkSubmitted(unsubmitted))
+        assertEquals(
+            listOf(1, 2, 3),
+            filterHomework(items, emptySet(), hideExpired = false, now = now).map { it.id },
+        )
+        assertEquals(
+            listOf(1),
+            filterHomework(
+                items,
+                emptySet(),
+                hideExpired = false,
+                now = now,
+                hideSubmitted = true,
+            ).map { it.id },
+        )
+    }
+
+    @Test
+    fun filterCourseCodecToleratesMalformedInput() {
+        assertEquals(emptySet(), decodeHomeworkFilterCourses(null))
+        assertEquals(emptySet(), decodeHomeworkFilterCourses(""))
+        assertEquals(emptySet(), decodeHomeworkFilterCourses("not json"))
+        val encoded = encodeHomeworkFilterCourses(setOf("课程A", "面向对象程序设计（C++）"))
+        assertEquals(setOf("课程A", "面向对象程序设计（C++）"), decodeHomeworkFilterCourses(encoded))
+        // 空白与超长课程名在编解码两端都被丢掉。
+        assertEquals(emptySet(), decodeHomeworkFilterCourses("[\"\", \"   \"]"))
+        assertEquals(
+            emptySet(),
+            decodeHomeworkFilterCourses("[\"${"x".repeat(200)}\"]"),
+        )
+        assertEquals(
+            setOf("课程A"),
+            decodeHomeworkFilterCourses("[\"课程A\", \"\", \"${"y".repeat(200)}\"]"),
+        )
+    }
+
+    @Test
+    fun sortOrderCodecFallsBackToOriginal() {
+        assertEquals(HomeworkSortOrder.ORIGINAL, decodeHomeworkSortOrder(null))
+        assertEquals(HomeworkSortOrder.ORIGINAL, decodeHomeworkSortOrder(""))
+        assertEquals(HomeworkSortOrder.ORIGINAL, decodeHomeworkSortOrder("BOGUS"))
+        assertEquals(HomeworkSortOrder.ASCENDING, decodeHomeworkSortOrder("ASCENDING"))
+        assertEquals(HomeworkSortOrder.DESCENDING, decodeHomeworkSortOrder("DESCENDING"))
+    }
+
+    @Test
     fun dueSoonUsesInclusiveWholeHourWindowAndSkipsSubmittedWork() {
         val dueIn48Hours = homework(1, "课程", "2026-08-01 08:59")
         val dueLater = homework(2, "课程", "2026-08-01 09:01")

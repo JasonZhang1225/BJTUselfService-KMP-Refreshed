@@ -513,8 +513,8 @@ private fun HomeworkSummary(
     state: HomeworkUiState,
     onOpenFilter: (() -> Unit)? = null,
 ) {
-    // 仅课程/过期过滤算「筛选」；改排序不算。
-    val filtered = state.selectedCourses.isNotEmpty() || state.hideExpired
+    // 仅课程/过期/已提交过滤算「筛选」；改排序不算。
+    val filtered = state.selectedCourses.isNotEmpty() || state.hideExpired || state.hideSubmitted
     val subtitle = buildString {
         append(
             if (state.dueSoonCount > 0) {
@@ -644,7 +644,7 @@ private fun HomeworkBehaviorFilters(state: HomeworkUiState, model: HomeworkScree
     }
 }
 
-/** 截止时间：两个圆角矩形，互斥（显示全部 / 隐藏已过期）。 */
+/** 截止时间：两个圆角矩形，互斥（显示全部 / 隐藏已过期），另加独立的隐藏已提交。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HomeworkDeadlineFilterChips(
@@ -666,6 +666,12 @@ private fun HomeworkDeadlineFilterChips(
             onClick = { model.setHideExpired(true) },
             shape = RoundedCornerShape(10.dp),
             label = { Text("隐藏已过期") },
+        )
+        FilterChip(
+            selected = state.hideSubmitted,
+            onClick = { model.setHideSubmitted(!state.hideSubmitted) },
+            shape = RoundedCornerShape(10.dp),
+            label = { Text("隐藏已提交") },
         )
     }
 }
@@ -805,7 +811,7 @@ private fun HomeworkScrollableContent(
     val topClearance = LocalTopBarClearance.current
     // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
     ReportTopScrollListState(listState)
-    LaunchedEffect(state.sortOrder, state.hideExpired, state.selectedCourses) {
+    LaunchedEffect(state.sortOrder, state.hideExpired, state.hideSubmitted, state.selectedCourses) {
         listState.scrollToItem(0)
     }
     LazyColumn(
@@ -857,7 +863,9 @@ private fun HomeworkScrollableContent(
             items(state.visibleHomework, key = Homework::stableKey) { item ->
                 HomeworkCard(
                     item = item,
-                    selected = item.stableKey() == state.selectedHomeworkKey,
+                    // 紧凑端详情是独立二级页（原生 push），返回时没有可靠的 pop 回调可清选中；
+                    // 选中高亮只在宽屏双栏有意义，这里一律不渲染，避免返回后旧选中颜色残留。
+                    selected = false,
                     onOpen = onOpen,
                 )
             }

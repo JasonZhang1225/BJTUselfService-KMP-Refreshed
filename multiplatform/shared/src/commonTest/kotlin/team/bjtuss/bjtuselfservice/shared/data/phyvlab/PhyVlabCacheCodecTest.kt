@@ -53,6 +53,7 @@ class PhyVlabCacheCodecTest {
                     dayTimestamp = activity.dueTimestamp!!,
                     eventUrl = activity.activityUrl,
                     kind = PhyVlabEventKind.DEADLINE,
+                    submitted = true,
                 ),
             ),
             assignmentDetails = listOf(

@@ -20,6 +20,8 @@ import team.bjtuss.bjtuselfservice.shared.domain.change.recordSafely
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkDetail
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferences
+import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferencesStore
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkSortOrder
 import team.bjtuss.bjtuselfservice.shared.domain.homework.SubmittedHomeworkAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.homework.dueSoonHomeworkCount
@@ -40,6 +42,7 @@ data class HomeworkUiState(
     val homework: List<Homework> = emptyList(),
     val selectedCourses: Set<String> = emptySet(),
     val hideExpired: Boolean = false,
+    val hideSubmitted: Boolean = false,
     val sortOrder: HomeworkSortOrder = HomeworkSortOrder.ORIGINAL,
     val selectedHomeworkKey: String? = null,
     val detail: HomeworkDetail? = null,
@@ -64,7 +67,7 @@ data class HomeworkUiState(
 
     val visibleHomework: List<Homework>
         get() = sortHomework(
-            filterHomework(homework, selectedCourses, hideExpired, now),
+            filterHomework(homework, selectedCourses, hideExpired, now, hideSubmitted),
             sortOrder,
         )
 
@@ -83,6 +86,7 @@ class HomeworkScreenModel(
     private val nowProvider: () -> LocalDateTime = {
         clock.now().toLocalDateTime(timeZone)
     },
+    private val filterStore: HomeworkFilterPreferencesStore? = null,
 ) {
     private val mutableState = MutableStateFlow(
         HomeworkUiState(timeZone = timeZone, now = nowProvider()),
@@ -117,6 +121,7 @@ class HomeworkScreenModel(
             if (!refreshFromNetwork) {
                 mutableState.value = mutableState.value.copy(isLoading = false, isRefreshing = false)
             }
+            restoreFilterPreferences()
         }
         if (refreshFromNetwork && !networkAutoSyncStarted) {
             networkAutoSyncStarted = true
@@ -196,6 +201,7 @@ class HomeworkScreenModel(
             fileFailure = null,
             now = nowProvider(),
         )
+        persistFilters()
     }
 
     fun clearCourseFilter() {
@@ -211,6 +217,7 @@ class HomeworkScreenModel(
             fileFailure = null,
             now = nowProvider(),
         )
+        persistFilters()
     }
 
     fun setHideExpired(hideExpired: Boolean) {
@@ -226,6 +233,23 @@ class HomeworkScreenModel(
             fileFailure = null,
             now = nowProvider(),
         )
+        persistFilters()
+    }
+
+    fun setHideSubmitted(hideSubmitted: Boolean) {
+        detailRequestKey = null
+        mutableState.value = mutableState.value.copy(
+            hideSubmitted = hideSubmitted,
+            selectedHomeworkKey = null,
+            detail = null,
+            submittedAttachments = emptyList(),
+            isDetailLoading = false,
+            isSubmittedAttachmentsLoading = false,
+            detailFailure = null,
+            fileFailure = null,
+            now = nowProvider(),
+        )
+        persistFilters()
     }
 
     fun cycleSortOrder() {
@@ -240,6 +264,42 @@ class HomeworkScreenModel(
     fun setSortOrder(order: HomeworkSortOrder) {
         if (mutableState.value.sortOrder == order) return
         mutableState.value = mutableState.value.copy(sortOrder = order, now = nowProvider())
+        persistFilters()
+    }
+
+    /**
+     * 上次筛选状态恢复：课程只保留当前数据里还存在的，不存在的课程名自动丢掉。
+     * 恢复失败（无缓存/读取异常）就保持默认不筛选，不阻断正常加载。
+     */
+    private fun restoreFilterPreferences() {
+        val store = filterStore ?: return
+        val prefs = runCatching(store::load).getOrNull() ?: return
+        val current = mutableState.value
+        mutableState.value = current.copy(
+            selectedCourses = prefs.selectedCourses.filterTo(
+                mutableSetOf(),
+                current.courseOptions::contains,
+            ),
+            hideExpired = prefs.hideExpired,
+            hideSubmitted = prefs.hideSubmitted,
+            sortOrder = prefs.sortOrder,
+            now = nowProvider(),
+        )
+    }
+
+    private fun persistFilters() {
+        val store = filterStore ?: return
+        val current = mutableState.value
+        runCatching {
+            store.save(
+                HomeworkFilterPreferences(
+                    selectedCourses = current.selectedCourses,
+                    hideExpired = current.hideExpired,
+                    hideSubmitted = current.hideSubmitted,
+                    sortOrder = current.sortOrder,
+                ),
+            )
+        }
     }
 
     /**

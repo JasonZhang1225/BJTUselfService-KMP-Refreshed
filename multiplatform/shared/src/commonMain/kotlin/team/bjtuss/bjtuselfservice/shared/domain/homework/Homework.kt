@@ -3,6 +3,9 @@ package team.bjtuss.bjtuselfservice.shared.domain.homework
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 
 data class Homework(
     val id: Int = 0,
@@ -88,6 +91,50 @@ enum class HomeworkSortOrder {
     DESCENDING,
 }
 
+/**
+ * 作业筛选面板的上次状态：每次打开面板都要恢复成这样。
+ * 普通 UI 偏好，不含账号、Cookie 或会话信息，可以进普通缓存。
+ */
+data class HomeworkFilterPreferences(
+    val selectedCourses: Set<String> = emptySet(),
+    val hideExpired: Boolean = false,
+    val hideSubmitted: Boolean = false,
+    val sortOrder: HomeworkSortOrder = HomeworkSortOrder.ORIGINAL,
+)
+
+/** 筛选偏好读写口；跨进程/重启 persistence 由调用方（缓存）提供，null 表示不持久化。 */
+interface HomeworkFilterPreferencesStore {
+    fun load(): HomeworkFilterPreferences
+    fun save(preferences: HomeworkFilterPreferences)
+}
+
+private const val HOMEWORK_FILTER_MAX_COURSES = 200
+private const val HOMEWORK_FILTER_MAX_COURSE_LENGTH = 128
+
+private val homeworkFilterJson = Json { ignoreUnknownKeys = true }
+
+/** 课程名可能含标点符号，用 JSON 数组存取；非法输入一律按空集处理。 */
+internal fun encodeHomeworkFilterCourses(courses: Set<String>): String =
+    homeworkFilterJson.encodeToString(
+        ListSerializer(String.serializer()),
+        courses.filter { it.isNotBlank() && it.length <= HOMEWORK_FILTER_MAX_COURSE_LENGTH }
+            .take(HOMEWORK_FILTER_MAX_COURSES),
+    )
+
+internal fun decodeHomeworkFilterCourses(raw: String?): Set<String> {
+    if (raw.isNullOrBlank()) return emptySet()
+    return runCatching {
+        homeworkFilterJson.decodeFromString(ListSerializer(String.serializer()), raw)
+    }.getOrDefault(emptyList())
+        .filter { it.isNotBlank() && it.length <= HOMEWORK_FILTER_MAX_COURSE_LENGTH }
+        .take(HOMEWORK_FILTER_MAX_COURSES)
+        .toSet()
+}
+
+internal fun decodeHomeworkSortOrder(raw: String?): HomeworkSortOrder =
+    runCatching { HomeworkSortOrder.valueOf(raw?.trim().orEmpty()) }
+        .getOrDefault(HomeworkSortOrder.ORIGINAL)
+
 /** 解析服务端固定格式 yyyy-MM-dd HH:mm，不读取系统时钟。 */
 fun parseSchoolLocalDateTime(value: String): LocalDateTime? = try {
     LocalDateTime.parse(value.replace(' ', 'T'))
@@ -95,17 +142,23 @@ fun parseSchoolLocalDateTime(value: String): LocalDateTime? = try {
     null
 }
 
+/** 已提交口径与详情页/提交链路一致：服务端状态或已存在提交记录均算已提交。 */
+fun isHomeworkSubmitted(homework: Homework): Boolean =
+    homework.subStatus == "已提交" || homework.idSnId != null
+
 fun filterHomework(
     homework: List<Homework>,
     selectedCourses: Set<String>,
     hideExpired: Boolean,
     now: LocalDateTime,
+    hideSubmitted: Boolean = false,
 ): List<Homework> = homework.filter { item ->
     val deadline = parseSchoolLocalDateTime(item.endTime)
     val hasValidDate = deadline?.let { it > now } ?: true
     val dateMatches = !hideExpired || hasValidDate
     val courseMatches = selectedCourses.isEmpty() || item.courseName in selectedCourses
-    dateMatches && courseMatches
+    val submittedMatches = !hideSubmitted || !isHomeworkSubmitted(item)
+    dateMatches && courseMatches && submittedMatches
 }
 
 /**

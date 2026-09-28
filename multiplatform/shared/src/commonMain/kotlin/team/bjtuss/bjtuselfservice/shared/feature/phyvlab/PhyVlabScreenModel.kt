@@ -197,7 +197,7 @@ class PhyVlabScreenModel(
                     .distinctBy { it.courseId to it.id }
                 changeRecorder.recordSafely(previousActivities, afterActivities)
             }
-            scheduleEvents = fetchedScheduleEvents.distinctBy(PhyVlabEvent::id)
+            scheduleEvents = resolveEventSubmitted(fetchedScheduleEvents.distinctBy(PhyVlabEvent::id))
             assignmentDetailsByActivity.keys.retainAll(
                 activitiesByCourse.values.flatten().map { it.cacheKey() }.toSet(),
             )
@@ -390,7 +390,7 @@ class PhyVlabScreenModel(
         try {
             when (val result = repository.fetchEvents(next)) {
                 is PhyVlabEventsResult.Success -> {
-                    scheduleEvents = mergeEvents(scheduleEvents, result.events)
+                    scheduleEvents = resolveEventSubmitted(mergeEvents(scheduleEvents, result.events))
                     mutableState.value = mutableState.value.copy(
                         events = eventsForSelectedCourse(mutableState.value.selectedCourse, next),
                         agendaEvents = scheduleEvents,
@@ -418,9 +418,11 @@ class PhyVlabScreenModel(
                     val activityEvents = result.activities.flatMap { activity ->
                         listOfNotNull(activity.toStartEvent(), activity.toDeadlineEvent())
                     }
-                    scheduleEvents = mergeEvents(
-                        scheduleEvents.filterNot { it.id.startsWith("activity-${course.id}-") },
-                        activityEvents,
+                    scheduleEvents = resolveEventSubmitted(
+                        mergeEvents(
+                            scheduleEvents.filterNot { it.id.startsWith("activity-${course.id}-") },
+                            activityEvents,
+                        ),
                     )
                     val month = lastRequestedMonthSeconds ?: currentBeijingMonthStartSeconds()
                     val refreshedAt = Clock.System.now().toEpochMilliseconds()
@@ -481,11 +483,12 @@ class PhyVlabScreenModel(
         val activityEvents = snapshot.activities.flatMap { activity ->
             listOfNotNull(activity.toStartEvent(), activity.toDeadlineEvent())
         }
-        scheduleEvents = mergeEvents(snapshot.events, activityEvents)
         assignmentDetailsByActivity.clear()
         snapshot.assignmentDetails.forEach { cached ->
             assignmentDetailsByActivity[ActivityCacheKey(cached.courseId, cached.activityId)] = cached.detail
         }
+        // 先装详情再决议：缓存的提交信息也要能点亮事件。
+        scheduleEvents = resolveEventSubmitted(mergeEvents(snapshot.events, activityEvents))
         val monthStart = currentBeijingMonthStartSeconds()
         val selectedCourse = snapshot.courses.firstOrNull()
         mutableState.value = mutableState.value.copy(
@@ -566,6 +569,46 @@ class PhyVlabScreenModel(
         return eventsForMonth(visible, monthStart)
     }
 
+    /**
+     * 日历事件本身不带提交状态；用活动 id 前缀或活动链接把它关联到已知活动，
+     * 补上已做信号（课程页完成标记或缓存的详情提交信息任一成立即算已做）。
+     * 关联不上时保持 false，不猜测。
+     */
+    private fun resolveEventSubmitted(events: List<PhyVlabEvent>): List<PhyVlabEvent> {
+        if (events.none { !it.submitted }) return events
+        val activities = activitiesByCourse.values.flatten()
+        if (activities.isEmpty()) return events
+        val submittedByUrl = activities.associate { it.activityUrl to submittedSignal(it) }
+        // 活动派生事件只带了课程页标记；详情有提交信息时也要补上，所以已标记的也要重算。
+        return events.map { event ->
+            event.copy(submitted = findSubmittedActivity(event, activities, submittedByUrl))
+        }
+    }
+
+    private fun submittedSignal(activity: PhyVlabActivity): Boolean =
+        activity.completed ||
+            assignmentDetailsByActivity[activity.cacheKey()]
+                ?.let(::phyVlabAssignmentDetailHasSubmission) == true
+
+    private fun findSubmittedActivity(
+        event: PhyVlabEvent,
+        activities: List<PhyVlabActivity>,
+        submittedByUrl: Map<String, Boolean>,
+    ): Boolean {
+        // 活动派生事件 id 形如 activity-<courseId>-<activityId>-<due|start>。
+        val idParts = event.id.split("-")
+        if (idParts.size >= 4 && idParts[0] == "activity") {
+            val courseId = idParts[1].toIntOrNull()
+            val activityId = idParts[2].toIntOrNull()
+            if (courseId != null && activityId != null) {
+                activities.firstOrNull { it.courseId == courseId && it.id == activityId }
+                    ?.let { return submittedSignal(it) }
+            }
+        }
+        event.eventUrl?.let { url -> submittedByUrl[url]?.let { return it } }
+        return false
+    }
+
     private suspend fun establishSessionWithRecovery(): PhyVlabSessionResult {
         val initial = sessionProtocol.establishSession()
         val needsRecovery = initial == PhyVlabSessionResult.CasLoginRequired ||
@@ -613,6 +656,7 @@ private fun PhyVlabActivity.toStartEvent(): PhyVlabEvent? = openTimestamp?.let {
         dayTimestamp = timestamp,
         eventUrl = activityUrl,
         kind = PhyVlabEventKind.START,
+        submitted = completed,
     )
 }
 
@@ -624,23 +668,31 @@ private fun PhyVlabActivity.toDeadlineEvent(): PhyVlabEvent? = dueTimestamp?.let
         dayTimestamp = timestamp,
         eventUrl = activityUrl,
         kind = PhyVlabEventKind.DEADLINE,
+        submitted = completed,
     )
-}
-
-private fun eventsForMonth(events: List<PhyVlabEvent>, monthStart: Long): List<PhyVlabEvent> {
-    val nextMonth = beijingMonthStartSecondsSafe(monthStart, 1) ?: return events
-    return events.filter { it.dayTimestamp in monthStart until nextMonth }
-        .sortedWith(compareBy<PhyVlabEvent> { it.dayTimestamp }.thenBy { it.title })
 }
 
 private fun mergeEvents(
     primary: List<PhyVlabEvent>,
     secondary: List<PhyVlabEvent>,
 ): List<PhyVlabEvent> = (primary + secondary)
-    .distinctBy { event ->
+    .groupBy { event ->
         "${event.kind.name}:${event.eventUrl ?: "id:${event.id}"}"
     }
+    .values
+    .map { duplicates ->
+        // 同一事项的日历事件与活动事件可能各带一半信息；已做信号取或。
+        duplicates.first().let { first ->
+            if (duplicates.any(PhyVlabEvent::submitted)) first.copy(submitted = true) else first
+        }
+    }
     .sortedWith(compareBy<PhyVlabEvent> { it.dayTimestamp }.thenBy { it.title })
+
+private fun eventsForMonth(events: List<PhyVlabEvent>, monthStart: Long): List<PhyVlabEvent> {
+    val nextMonth = beijingMonthStartSecondsSafe(monthStart, 1) ?: return events
+    return events.filter { it.dayTimestamp in monthStart until nextMonth }
+        .sortedWith(compareBy<PhyVlabEvent> { it.dayTimestamp }.thenBy { it.title })
+}
 
 private fun monthLabelFor(timestamp: Long): String = kotlin.time.Instant.fromEpochSeconds(timestamp)
     .toLocalDateTime(TimeZone.of("Asia/Shanghai"))

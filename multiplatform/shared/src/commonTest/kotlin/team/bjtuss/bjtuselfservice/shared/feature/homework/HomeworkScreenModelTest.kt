@@ -18,6 +18,8 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkDetail
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferences
+import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferencesStore
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkSortOrder
 import team.bjtuss.bjtuselfservice.shared.domain.homework.SubmittedHomeworkAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.homework.stableKey
@@ -65,6 +67,139 @@ class HomeworkScreenModelTest {
         model.dismissDetails()
         assertEquals(null, model.state.value.selectedHomework)
         assertTrue(model.state.value.detail == null)
+    }
+
+    @Test
+    fun hideSubmittedFiltersVisibleHomework() = runBlocking {
+        val unsubmitted = homework(1, "程序设计", "2026-08-01 08:00")
+        val submitted = homework(2, "程序设计", "2026-08-01 08:00").copy(subStatus = "已提交")
+        val model = model(FakeRepository(HomeworkSnapshot(listOf(unsubmitted, submitted)), HomeworkSnapshot(listOf(unsubmitted, submitted))))
+
+        model.initialize()
+        assertEquals(listOf(1, 2), model.state.value.visibleHomework.map(Homework::id))
+
+        model.setHideSubmitted(true)
+        assertTrue(model.state.value.hideSubmitted)
+        assertEquals(listOf(1), model.state.value.visibleHomework.map(Homework::id))
+
+        model.setHideSubmitted(false)
+        assertEquals(listOf(1, 2), model.state.value.visibleHomework.map(Homework::id))
+    }
+
+    @Test
+    fun filterPreferencesPersistAndRestoreAcrossModels() = runBlocking {
+        val store = MemoryFilterStore()
+        val snapshot = HomeworkSnapshot(
+            listOf(
+                homework(1, "程序设计", "2026-08-01 08:00"),
+                homework(2, "高等数学", "2026-08-01 08:00"),
+            ),
+        )
+        val first = HomeworkScreenModel(
+            repository = FakeRepository(snapshot, snapshot),
+            timeZone = TimeZone.UTC,
+            nowProvider = { now },
+            filterStore = store,
+        )
+
+        first.initialize()
+        first.toggleCourse("高等数学")
+        first.setHideExpired(true)
+        first.setHideSubmitted(true)
+        first.setSortOrder(HomeworkSortOrder.ASCENDING)
+
+        assertEquals(
+            HomeworkFilterPreferences(
+                selectedCourses = setOf("高等数学"),
+                hideExpired = true,
+                hideSubmitted = true,
+                sortOrder = HomeworkSortOrder.ASCENDING,
+            ),
+            store.saved,
+        )
+
+        // 新 Model 初始化时恢复上次状态。
+        val second = HomeworkScreenModel(
+            repository = FakeRepository(snapshot, snapshot),
+            timeZone = TimeZone.UTC,
+            nowProvider = { now },
+            filterStore = store,
+        )
+        second.initialize()
+
+        assertEquals(setOf("高等数学"), second.state.value.selectedCourses)
+        assertTrue(second.state.value.hideExpired)
+        assertTrue(second.state.value.hideSubmitted)
+        assertEquals(HomeworkSortOrder.ASCENDING, second.state.value.sortOrder)
+
+        // 缓存里不存在的课程名在恢复时丢掉，不参与筛选。
+        store.save(
+            HomeworkFilterPreferences(selectedCourses = setOf("高等数学", "不存在课程")),
+        )
+        val third = HomeworkScreenModel(
+            repository = FakeRepository(snapshot, snapshot),
+            timeZone = TimeZone.UTC,
+            nowProvider = { now },
+            filterStore = store,
+        )
+        third.initialize()
+
+        assertEquals(setOf("高等数学"), third.state.value.selectedCourses)
+    }
+
+    @Test
+    fun filtersSurviveHomeworkAddedAndRemovedByRefresh() = runBlocking {
+        val store = MemoryFilterStore()
+        val cached = HomeworkSnapshot(
+            listOf(
+                homework(1, "程序设计", "2026-08-01 08:00"),
+                homework(2, "高等数学", "2026-08-01 08:00"),
+            ),
+        )
+        // 刷新后：程序设计被删，新增一门课程；高等数学一直在。
+        val refreshed = HomeworkSnapshot(
+            listOf(
+                homework(2, "高等数学", "2026-08-01 08:00"),
+                homework(3, "新课程", "2026-08-01 08:00"),
+            ),
+        )
+        val model = HomeworkScreenModel(
+            repository = FakeRepository(cached, refreshed),
+            timeZone = TimeZone.UTC,
+            nowProvider = { now },
+            filterStore = store,
+        )
+
+        model.initialize(refreshFromNetwork = false)
+        model.toggleCourse("程序设计")
+        model.setHideExpired(true)
+        model.setSortOrder(HomeworkSortOrder.ASCENDING)
+        assertEquals(listOf(1), model.state.value.visibleHomework.map(Homework::id))
+
+        // 刷新删掉了已选课程：选中被裁到空，列表回到全量，其它开关和排序不动。
+        model.refresh()
+        assertEquals(emptySet(), model.state.value.selectedCourses)
+        assertEquals(listOf(2, 3), model.state.value.visibleHomework.map(Homework::id))
+        assertTrue(model.state.value.hideExpired)
+        assertEquals(HomeworkSortOrder.ASCENDING, model.state.value.sortOrder)
+
+        // 新增课程直接可见、可选、可存。
+        model.toggleCourse("新课程")
+        assertEquals(setOf("新课程"), model.state.value.selectedCourses)
+        assertEquals(listOf(3), model.state.value.visibleHomework.map(Homework::id))
+        assertEquals(setOf("新课程"), store.saved.selectedCourses)
+
+        // 重启恢复：只保留仍然存在的课程。
+        val relaunched = HomeworkScreenModel(
+            repository = FakeRepository(refreshed, refreshed),
+            timeZone = TimeZone.UTC,
+            nowProvider = { now },
+            filterStore = store,
+        )
+        relaunched.initialize()
+        assertEquals(setOf("新课程"), relaunched.state.value.selectedCourses)
+        assertTrue(relaunched.state.value.hideExpired)
+        assertEquals(HomeworkSortOrder.ASCENDING, relaunched.state.value.sortOrder)
     }
 
     @Test
@@ -153,6 +288,15 @@ class HomeworkScreenModelTest {
         assertEquals(HOMEWORK_AUTO_SYNC_MAX_ATTEMPTS, repository.refreshCount)
         assertEquals(HomeworkSyncFailure.NETWORK, model.state.value.failure)
         assertEquals(HomeworkContentSource.CACHE, model.state.value.source)
+    }
+
+    private class MemoryFilterStore(
+        var saved: HomeworkFilterPreferences = HomeworkFilterPreferences(),
+    ) : HomeworkFilterPreferencesStore {
+        override fun load(): HomeworkFilterPreferences = saved
+        override fun save(preferences: HomeworkFilterPreferences) {
+            saved = preferences
+        }
     }
 
     private fun model(repository: HomeworkRepository) = HomeworkScreenModel(

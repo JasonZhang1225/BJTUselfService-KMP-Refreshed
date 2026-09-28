@@ -62,6 +62,7 @@ private data class EventPayload(
     val dayTimestamp: Long,
     val eventUrl: String? = null,
     val kind: String = PhyVlabEventKind.DEADLINE.name,
+    val submitted: Boolean = false,
 )
 
 @Serializable
@@ -113,6 +114,7 @@ internal fun encodePhyVlabCache(snapshot: PhyVlabCacheSnapshot): String = json.e
                 dayTimestamp = event.dayTimestamp,
                 eventUrl = event.eventUrl,
                 kind = event.kind.name,
+                submitted = event.submitted,
             )
         },
         assignmentDetails = snapshot.assignmentDetails.map { cached ->
@@ -183,6 +185,7 @@ internal fun decodePhyVlabCache(value: String): PhyVlabCacheSnapshot? = runCatch
             eventUrl = event.eventUrl,
             kind = runCatching { PhyVlabEventKind.valueOf(event.kind) }
                 .getOrDefault(PhyVlabEventKind.DEADLINE),
+            submitted = event.submitted,
         )
     }
     require(events.map(PhyVlabEvent::id).distinct().size == events.size)

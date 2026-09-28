@@ -20,6 +20,7 @@ import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
+import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
@@ -228,6 +229,50 @@ class PhyVlabScreenModelTest {
         assertEquals(2, model.state.value.events.size)
         assertTrue(model.state.value.events.all { it.title.startsWith("${laboratory.name} · ") })
         assertEquals(4, model.state.value.agendaEvents.size)
+    }
+
+    @Test
+    fun agendaEventsCarrySubmittedSignalFromCompletedActivities() = runBlocking {
+        val course = PhyVlabCourse(
+            id = 76,
+            name = "大学物理II_(2026秋)",
+            category = "",
+            progressPercent = 0,
+            courseUrl = "https://phyvlab.bjtu.edu.cn/course/view.php?id=76",
+        )
+        val doneActivity = activity(course, 3963).copy(completed = true)
+        val todoActivity = activity(course, 3947)
+        // 日历事件用作业链接与活动关联；合并后已做信号不能丢。
+        val calendarEvent = PhyVlabEvent(
+            id = "9999",
+            title = "chap 已到期",
+            dateText = "09月24日",
+            dayTimestamp = 1790179200L,
+            eventUrl = doneActivity.activityUrl,
+        )
+        val local = MemoryLocalDataSource(
+            PhyVlabCacheSnapshot(
+                courses = listOf(course),
+                activities = listOf(doneActivity, todoActivity),
+                events = listOf(calendarEvent),
+                savedAtEpochMillis = 123L,
+            ),
+        )
+        val model = PhyVlabScreenModel(
+            repository = FailingRepository,
+            sessionProtocol = PhyVlabSessionProtocol(UnavailableTransport),
+            localDataSource = local,
+            accountScope = "25531058",
+        )
+
+        model.initialize(refreshFromNetwork = false)
+
+        val byId = model.state.value.agendaEvents.associateBy(PhyVlabEvent::id)
+        assertEquals(4, byId.size)
+        assertTrue(byId["9999"]?.submitted == true)
+        assertTrue(byId["activity-76-3963-start"]?.submitted == true)
+        assertFalse(byId["activity-76-3947-due"]?.submitted == true)
+        assertFalse(byId["activity-76-3947-start"]?.submitted == true)
     }
 
     private fun activity(course: PhyVlabCourse, id: Int) = PhyVlabActivity(
