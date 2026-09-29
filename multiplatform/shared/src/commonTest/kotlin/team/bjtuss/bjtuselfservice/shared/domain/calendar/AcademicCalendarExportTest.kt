@@ -15,6 +15,48 @@ import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
 
 class AcademicCalendarExportTest {
     @Test
+    fun academicCalendarDateRangeCoversTheFullAcademicTermIncludingNaturalWeekGaps() {
+        val range = assertNotNull(
+            academicCalendarDateRange(
+                listOf(
+                    week(1, LocalDate(2026, 9, 7)),
+                    week(3, LocalDate(2026, 9, 21)),
+                    week(4, LocalDate(2026, 10, 5)),
+                ),
+            ),
+        )
+
+        assertEquals("2026-09-07T00:00:00", range.startLocal)
+        assertEquals("2026-10-12T00:00:00", range.endLocal)
+        assertNull(academicCalendarDateRange(emptyList()))
+    }
+
+    @Test
+    fun exportsOnlyTheSelectedTeachingWeeksAcrossAcademicCalendarGaps() {
+        val result = generateAcademicCalendarIcs(
+            courses = listOf(course("第1-4周")),
+            exams = emptyList(),
+            academicWeeks = listOf(
+                week(1, LocalDate(2026, 9, 7)),
+                week(2, LocalDate(2026, 9, 14)),
+                // Autumn break is a missing natural week, not an invented teaching week.
+                week(3, LocalDate(2026, 9, 28)),
+                week(4, LocalDate(2026, 10, 5)),
+            ),
+            weekRange = 2..3,
+            generatedAt = Instant.parse("2026-09-16T00:00:00Z"),
+        )
+
+        assertEquals(1, result.events.size)
+        assertEquals("2026-09-14T08:00:00", result.events.single().startLocal)
+        assertEquals(3, result.events.single().recurrence?.occurrenceCount)
+        assertTrue("RRULE:FREQ=WEEKLY;COUNT=3" in result.ics)
+        assertTrue("EXDATE;TZID=Asia/Shanghai:20260921T080000" in result.ics)
+        assertFalse("20260907T080000" in result.ics)
+        assertFalse("20261005T080000" in result.ics)
+    }
+
+    @Test
     fun parsesNumericAndChineseExamTimesWithoutEatingLocationCharacters() {
         val numeric = assertNotNull(parseExamCalendarTime("2026-01-10 08:00-10:00 思源101"))
         assertEquals(LocalDate(2026, 1, 10), numeric.date)

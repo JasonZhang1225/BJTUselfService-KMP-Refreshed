@@ -31,7 +31,9 @@ import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarBatch
 import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarFailure
 import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
 import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarInstallResult
+import team.bjtuss.bjtuselfservice.shared.domain.calendar.AcademicCalendarDateRange
 import team.bjtuss.bjtuselfservice.shared.domain.calendar.CalendarExportResult
+import team.bjtuss.bjtuselfservice.shared.domain.calendar.academicCalendarDateRange
 import team.bjtuss.bjtuselfservice.shared.domain.calendar.generateAcademicCalendarIcs
 import team.bjtuss.bjtuselfservice.shared.domain.calendar.parseExamCalendarTime
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
@@ -139,6 +141,7 @@ fun CourseCalendarExportSheet(
                                 name = calendarName,
                                 colorHex = "#FF2D55",
                                 generated = generated,
+                                managedCourseRange = academicCalendarDateRange(courseState.academicWeeks),
                                 successSubject = calendarName,
                             )
                             working = false
@@ -309,9 +312,12 @@ private suspend fun installSystemCalendar(
     name: String,
     colorHex: String,
     generated: CalendarExportResult,
+    managedCourseRange: AcademicCalendarDateRange? = null,
     successSubject: String? = null,
 ): String = when (
-    val result = gateway.install(listOf(SystemCalendarBatch(name, colorHex, generated.events)))
+    val result = gateway.install(
+        listOf(SystemCalendarBatch(name, colorHex, generated.events, managedCourseRange)),
+    )
 ) {
     is SystemCalendarInstallResult.Installed ->
         calendarInstallSuccessMessage(

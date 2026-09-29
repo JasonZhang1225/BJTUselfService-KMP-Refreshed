@@ -349,7 +349,7 @@ class SchoolHomeworkRemoteDataSource(
 
     private suspend fun ensureInitialized() {
         if (initialized) return
-        val module = execute(
+        val module = executeWithoutRedirects(
             SchoolHttpRequest(
                 method = SchoolHttpMethod.GET,
                 url = SchoolEndpoints.SMART_MODULE_URL,
@@ -360,13 +360,12 @@ class SchoolHomeworkRemoteDataSource(
             invalidateSmartSession()
             sessionExpired()
         }
-        // 登录态下 module 28 直接以裸 3xx 指向智慧平台明文入口；Ktor 拒绝
-        // HTTPS→HTTP 降级跟随，因此这里逐跳手动跟随 OAuth 链（明文跳限
-        // 精确 apiOrigin，HTTPS 跳限 cas/mis 学校主机），直到落地。
+        // 登录态下 module 28 直接以裸 3xx 指向智慧平台明文入口。必须关掉
+        // Ktor 自动跟随，否则同协议跳转在白名单检查前就已经发出。
         val settled = endpoint.followSmartHandshakeRedirects(
             first = module,
             referer = SchoolEndpoints.SMART_MODULE_URL,
-        ) { request -> execute(request) }
+        ) { request -> executeWithoutRedirects(request) }
         if (settled !== module || settled.statusCode in 300..399) {
             // 走过了至少一跳；最终落地必须是白名单握手地址且 2xx。
             if (settled.statusCode in 300..399) {
@@ -516,7 +515,7 @@ class SchoolHomeworkRemoteDataSource(
         if (!includeSmartHeaders && includeSessionHeader && includeSession) {
             sessionId?.let { session -> headers["sessionid"] = session }
         }
-        val response = execute(
+        val response = executeWithoutRedirects(
             SchoolHttpRequest(
                 method = method,
                 url = endpoint.apiUrl(path, query),
@@ -525,6 +524,12 @@ class SchoolHomeworkRemoteDataSource(
                 multipartFiles = multipartFiles,
             ),
         )
+        if (response.statusCode in 300..399) {
+            // 自定义 sessionid 头不是 Authorization，Ktor 跨域跟随不会剥掉。
+            // 3xx 必须在发出第二跳之前拒绝，不能等 finalUrl 再检查。
+            invalidateSmartSession()
+            sessionExpired()
+        }
         if (
             !endpoint.isLegacyInsecure &&
             path == ARTICLE_PATH &&
@@ -554,6 +559,15 @@ class SchoolHomeworkRemoteDataSource(
     private suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse = try {
         if (requestDelayMillis > 0) delay(requestDelayMillis)
         transport.execute(request)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        network()
+    }
+
+    private suspend fun executeWithoutRedirects(request: SchoolHttpRequest): SchoolHttpResponse = try {
+        if (requestDelayMillis > 0) delay(requestDelayMillis)
+        transport.executeWithoutRedirects(request)
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {

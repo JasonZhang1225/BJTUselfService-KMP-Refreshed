@@ -30,13 +30,6 @@ actual fun SchoolWebView(
                 settings.domStorageEnabled = true
                 val cookieManager = CookieManager.getInstance()
                 cookieManager.setAcceptCookie(true)
-                request.cookies.forEach { cookie ->
-                    val securePart = if (cookie.secure) "; Secure" else ""
-                    cookieManager.setCookie(
-                        "https://${cookie.domain.removePrefix(".")}",
-                        "${cookie.name}=${cookie.value}; Domain=${cookie.domain}; Path=${cookie.path}$securePart",
-                    )
-                }
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(
                         view: WebView,
@@ -53,7 +46,19 @@ actual fun SchoolWebView(
                         }
                     }
                 }
-                loadUrl(request.url)
+                // 进程级 Cookie 罐跨 WebView 与冷启动存活。必须等清空完成后再写入
+                // 本页会话并 loadUrl，否则异步 removeAllCookies 会把刚注入的 Cookie 清掉。
+                cookieManager.removeAllCookies {
+                    request.cookies.forEach { cookie ->
+                        val securePart = if (cookie.secure) "; Secure" else ""
+                        cookieManager.setCookie(
+                            "https://${cookie.domain.removePrefix(".")}",
+                            "${cookie.name}=${cookie.value}; Domain=${cookie.domain}; Path=${cookie.path}$securePart",
+                        )
+                    }
+                    cookieManager.flush()
+                    loadUrl(request.url)
+                }
             }
         },
     )

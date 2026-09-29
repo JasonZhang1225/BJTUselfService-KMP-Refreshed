@@ -53,7 +53,69 @@ class SecurityReleaseConfigTest {
             )
         }
         val legacyRelease = root.resolve(".github/workflows/release.yml").readText()
-        assertTrue("!contains(github.ref_name, 'Liquid')" in legacyRelease)
+        // 冻结根 Android 只打 v1.7.0；其余 v* 标签由 kmp-package.yml 打包。
+        // 不要再要求已删除的 Liquid 字符串守卫，那会让本测试在当前 HEAD 失败。
+        assertTrue("github.ref_name == 'v1.7.0'" in legacyRelease)
+        assertFalse("github.ref_name != 'v1.7.0'" in legacyRelease)
+    }
+
+    @Test
+    fun securityCheckWorkflowWatchesMainNotDeletedLiquidBranch() {
+        val workflow = root.resolve(".github/workflows/kmp-security-check.yml").readText()
+        assertTrue("branches: [main]" in workflow)
+        assertFalse("branches: [Liquid]" in workflow)
+    }
+
+    @Test
+    fun androidWebViewClearsCookieJarBeforeInjectingSessionCookies() {
+        val source = root.resolve(
+            "multiplatform/shared/src/androidMain/kotlin/team/bjtuss/bjtuselfservice/shared/webview/SchoolWebView.android.kt",
+        ).readText()
+        val factory = source.substringAfter("factory = { context ->")
+            .substringBefore("actual fun openExternalUrl")
+        val clearAt = factory.indexOf("cookieManager.removeAllCookies")
+        val setCookieAt = factory.indexOf("cookieManager.setCookie")
+        val loadUrlAt = factory.indexOf("loadUrl(request.url)")
+        assertTrue(clearAt >= 0)
+        assertTrue(setCookieAt > clearAt)
+        assertTrue(loadUrlAt > setCookieAt)
+    }
+
+    @Test
+    fun smartPlatformHandshakeUsesRedirectDisabledTransport() {
+        val sources = listOf(
+            "multiplatform/shared/src/commonMain/kotlin/team/bjtuss/bjtuselfservice/shared/data/homework/HomeworkRemoteDataSource.kt",
+            "multiplatform/shared/src/commonMain/kotlin/team/bjtuss/bjtuselfservice/shared/data/courseware/CoursewareRemoteDataSource.kt",
+            "multiplatform/shared/src/commonMain/kotlin/team/bjtuss/bjtuselfservice/shared/data/course/CourseScheduleRemoteDataSource.kt",
+        ).map { root.resolve(it).readText() }
+        sources.forEach { source ->
+            val handshake = source.substringAfter("followSmartHandshakeRedirects")
+                .substringBefore("if (settled")
+                .ifBlank { source.substringAfter("followSmartHandshakeRedirects") }
+            assertTrue("executeWithoutRedirects" in source)
+            assertFalse("{ request -> execute(request) }" in handshake)
+            assertFalse("executeSoft(request)" in handshake)
+        }
+    }
+
+    @Test
+    fun appleCalendarHelpersReconcileManagedCourseRangeBeforeSavingNewSnapshot() {
+        val ios = root.resolve(
+            "multiplatform/shared/src/iosMain/kotlin/team/bjtuss/bjtuselfservice/shared/calendar/IosSystemCalendarGateway.kt",
+        ).readText()
+        val mac = root.resolve("multiplatform/desktopApp/src/main/swift/SystemCalendarHelper.swift").readText()
+
+        listOf(ios, mac).forEach { source ->
+            assertTrue("managedCourseRange" in source)
+            assertTrue("courseMarkerPrefix" in source || "managedCourseStableIdFromMarker" in source)
+            assertTrue("EKSpanFutureEvents" in source || "span: .futureEvents" in source)
+        }
+        assertTrue(ios.indexOf("oldSeries.forEach") < ios.indexOf("batch.events.forEach"))
+        assertTrue(mac.indexOf("firstOccurrenceBySeries.values") < mac.indexOf("for (draft, start, end) in dated"))
+        assertTrue("store.remove(event, span: .futureEvents" in mac)
+        assertTrue("calendarItemIdentifier" in mac)
+        assertTrue("calendarItemIdentifier" in ios)
+        assertTrue("unmarked" in mac.lowercase() || "user-created" in mac.lowercase())
     }
 
     @Test

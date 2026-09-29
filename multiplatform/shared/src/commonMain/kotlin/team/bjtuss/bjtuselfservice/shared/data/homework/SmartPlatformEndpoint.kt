@@ -102,10 +102,10 @@ class SmartPlatformEndpoint private constructor(
     )
 
     /**
-     * 登录态下 MIS module 28 以裸 HTTP 3xx 指向智慧平台入口。Ktor 的 HttpRedirect
-     * 出于安全默认拒绝跟随 HTTPS→HTTP 降级，因此 transport 返回未跟随的 3xx。
-     * 这里从 Location 头提取跳转目标，并只在目标命中本策略白名单时放行——
-     * 降级绝不扩散到白名单之外的任何主机。
+     * 登录态下 MIS module 28 以裸 HTTP 3xx 指向智慧平台入口。
+     * 调用方必须用 [team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport.executeWithoutRedirects]
+     * 拿到未跟随的 3xx，再交给 [followSmartHandshakeRedirects] 逐跳校验。
+     * 普通 [execute] 会自动跟随同协议跳转（以及 HTTP→HTTPS），中间跳不会经过本白名单。
      *
      * 返回 null 表示不是可放行的白名单跳转（调用方随后回退到 HTML 表单解析或报错）。
      */
@@ -177,7 +177,9 @@ private val SMART_HTTPS_HANDSHAKE_HOSTS = setOf("cas.bjtu.edu.cn", "mis.bjtu.edu
  * 登录态下 module 28 的握手是多跳 OAuth 链：
  * module 28 →(302, HTTPS→HTTP 降级) 明文 thirdLogin →(302) CAS authorize
  * →(302, HTTPS→HTTP 降级) 明文 oauth/token/callBack → 建立会话。
- * Ktor 会在每一跳降级处停住并返回未跟随的 3xx，因此必须逐跳手动跟随。
+ * 调用方必须传入不自动跟随重定向的 execute（Ktor 的 executeWithoutRedirects）。
+ * 普通 execute 会在 helper 看到 3xx 之前跟随同协议 / HTTP→HTTPS 跳转，
+ * 白名单与 maxHops 便只约束最终 URL，约束不了已经发出的中间请求。
  * 明文跳只允许精确 apiOrigin（见 acceptsHandshakeUrl），HTTPS 跳只允许
  * cas/mis 学校主机；任何其他目标立即停住，降级绝不扩散到白名单之外。
  * Location 中的 ticket 等查询参数只用于真实请求，从不写入日志。

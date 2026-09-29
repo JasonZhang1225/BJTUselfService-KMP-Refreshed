@@ -24,6 +24,27 @@ data class CalendarExportResult(
     val events: List<AcademicCalendarEvent>,
 )
 
+/** Beijing-local date window covering every natural week in an academic calendar. */
+data class AcademicCalendarDateRange(
+    val startLocal: String,
+    val endLocal: String,
+) {
+    init {
+        require(startLocal.isNotBlank() && endLocal.isNotBlank() && startLocal < endLocal)
+    }
+}
+
+/** Full date window for replacing previously exported course occurrences in this academic term. */
+fun academicCalendarDateRange(academicWeeks: List<OccupancyWeekDate>): AcademicCalendarDateRange? {
+    val dates = academicWeeks.mapNotNull(OccupancyWeekDate::startDate)
+    val first = dates.minOrNull() ?: return null
+    val endExclusive = dates.maxOrNull()?.plus(7, DateTimeUnit.DAY) ?: return null
+    return AcademicCalendarDateRange(
+        startLocal = first.isoLocalTime(0, 0),
+        endLocal = endExclusive.isoLocalTime(0, 0),
+    )
+}
+
 enum class AcademicCalendarEventKind {
     COURSE,
     EXAM,

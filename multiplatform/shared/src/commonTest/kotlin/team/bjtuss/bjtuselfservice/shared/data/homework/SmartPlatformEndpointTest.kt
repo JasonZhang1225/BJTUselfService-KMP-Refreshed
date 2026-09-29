@@ -1,5 +1,9 @@
 package team.bjtuss.bjtuselfservice.shared.data.homework
 
+import kotlinx.coroutines.runBlocking
+import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
+import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
+import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -91,4 +95,85 @@ class SmartPlatformEndpointTest {
         assertNull(endpoint.allowedRedirectTarget(301, "https://bksycenter.bjtu.edu.cn.evil.test/ve/x.shtml"))
         assertNull(endpoint.allowedRedirectTarget(301, "http://123.121.147.7:88/ve/x.shtml"))
     }
+
+    @Test
+    fun handshakeDoesNotRequestOffOriginLocation() = runBlocking {
+        val endpoint = SmartPlatformEndpoint.LegacyHttp
+        val requested = mutableListOf<String>()
+        val first = redirectResponse(
+            from = "https://mis.bjtu.edu.cn/module/module/28/",
+            to = "https://evil.example/steal",
+        )
+
+        val settled = endpoint.followSmartHandshakeRedirects(
+            first = first,
+            referer = "https://mis.bjtu.edu.cn/module/module/28/",
+        ) { request ->
+            requested += request.url
+            error("off-origin Location must not be requested")
+        }
+
+        assertTrue(requested.isEmpty())
+        assertEquals(first, settled)
+    }
+
+    @Test
+    fun handshakeStopsBeforeTheEleventhHop() = runBlocking {
+        val endpoint = SmartPlatformEndpoint.LegacyHttp
+        val requested = mutableListOf<String>()
+        val first = redirectResponse(
+            from = "https://mis.bjtu.edu.cn/module/module/28/",
+            to = "http://123.121.147.7:88/oauth/hop-0",
+        )
+
+        val settled = endpoint.followSmartHandshakeRedirects(
+            first = first,
+            referer = "https://mis.bjtu.edu.cn/module/module/28/",
+        ) { request ->
+            requested += request.url
+            val hop = requested.size
+            redirectResponse(
+                from = request.url,
+                to = "http://123.121.147.7:88/oauth/hop-$hop",
+            )
+        }
+
+        assertEquals(10, requested.size)
+        assertEquals("http://123.121.147.7:88/oauth/hop-0", requested.first())
+        assertEquals("http://123.121.147.7:88/oauth/hop-9", requested.last())
+        assertEquals(302, settled.statusCode)
+        assertEquals("http://123.121.147.7:88/oauth/hop-10", settled.header("Location"))
+    }
+
+    @Test
+    fun handshakeFollowsSameSchemeHttpsOneHopAtATime() = runBlocking {
+        val endpoint = SmartPlatformEndpoint.LegacyHttp
+        val requested = mutableListOf<String>()
+        val first = redirectResponse(
+            from = "https://mis.bjtu.edu.cn/module/module/28/",
+            to = "https://cas.bjtu.edu.cn/auth/authorize",
+        )
+
+        val settled = endpoint.followSmartHandshakeRedirects(
+            first = first,
+            referer = "https://mis.bjtu.edu.cn/module/module/28/",
+        ) { request ->
+            requested += request.url
+            SchoolHttpResponse(
+                statusCode = 200,
+                finalUrl = request.url,
+                body = "<html></html>".encodeToByteArray(),
+            )
+        }
+
+        assertEquals(listOf("https://cas.bjtu.edu.cn/auth/authorize"), requested)
+        assertEquals(200, settled.statusCode)
+        assertEquals("https://cas.bjtu.edu.cn/auth/authorize", settled.finalUrl)
+    }
+
+    private fun redirectResponse(from: String, to: String): SchoolHttpResponse = SchoolHttpResponse(
+        statusCode = 302,
+        finalUrl = from,
+        headers = mapOf("Location" to listOf(to)),
+    )
 }

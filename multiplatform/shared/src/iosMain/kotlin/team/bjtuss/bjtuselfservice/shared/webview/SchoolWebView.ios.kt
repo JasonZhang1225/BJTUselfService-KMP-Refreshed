@@ -10,6 +10,7 @@ import platform.Foundation.NSHTTPCookie
 import platform.Foundation.NSHTTPCookieDomain
 import platform.Foundation.NSHTTPCookieName
 import platform.Foundation.NSHTTPCookiePath
+import platform.Foundation.NSHTTPCookieSecure
 import platform.Foundation.NSHTTPCookieValue
 import platform.Foundation.NSDate
 import platform.Foundation.NSURL
@@ -88,12 +89,15 @@ actual fun SchoolWebView(
                 if (pendingCookies == 0) loadPage()
             }
             request.cookies.forEach { cookie ->
-                val props = mapOf<Any?, Any>(
+                val props = mutableMapOf<Any?, Any>(
                     NSHTTPCookieName to cookie.name,
                     NSHTTPCookieValue to cookie.value,
                     NSHTTPCookieDomain to cookie.domain,
                     NSHTTPCookiePath to cookie.path,
                 )
+                if (cookie.secure) {
+                    props[NSHTTPCookieSecure] = "TRUE"
+                }
                 val nativeCookie = NSHTTPCookie.cookieWithProperties(props)
                 if (nativeCookie == null) {
                     cookieFinished()

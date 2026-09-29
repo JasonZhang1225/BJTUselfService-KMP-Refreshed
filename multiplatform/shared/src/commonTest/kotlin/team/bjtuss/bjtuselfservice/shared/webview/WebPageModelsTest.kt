@@ -84,6 +84,9 @@ class WebPageModelsTest {
         assertTrue(SchoolWebDomainPolicy.isSchoolHost("https://AA.BJTU.EDU.CN:443/notice/"))
         assertFalse(SchoolWebDomainPolicy.isSchoolHost("https://bjtu.edu.cn.evil.com/"))
         assertFalse(SchoolWebDomainPolicy.isSchoolHost("https://notbjtu.edu.cn/"))
+        assertFalse(SchoolWebDomainPolicy.isSchoolHost("http://mis.bjtu.edu.cn/home/"))
+        assertFalse(SchoolWebDomainPolicy.isSchoolHost("file://mis.bjtu.edu.cn/home/"))
+        assertFalse(SchoolWebDomainPolicy.isSchoolHost("javascript:alert(1)"))
     }
 
     @Test

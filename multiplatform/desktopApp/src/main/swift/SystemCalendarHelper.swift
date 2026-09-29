@@ -10,7 +10,13 @@ private struct Payload: Decodable {
 private struct CalendarPayload: Decodable {
     let name: String
     let colorHex: String
+    let managedCourseRange: ManagedCourseRangePayload?
     let events: [EventPayload]
+}
+
+private struct ManagedCourseRangePayload: Decodable {
+    let startLocal: String
+    let endLocal: String
 }
 
 private struct EventPayload: Decodable {
@@ -38,6 +44,7 @@ private struct Result: Encodable {
 }
 
 private let markerPrefix = "[BJTU-ID:"
+private let courseMarkerPrefix = "[BJTU-ID:course-"
 
 @main
 struct SystemCalendarHelper {
@@ -80,51 +87,71 @@ struct SystemCalendarHelper {
         var inserted = 0
         var updated = 0
 
-        for batch in payload.calendars where !batch.events.isEmpty {
+        for batch in payload.calendars where !batch.events.isEmpty || batch.managedCourseRange != nil {
             let calendar = try findOrCreateCalendar(batch, store: store)
             calendarCount += 1
-            let dated = try batch.events.map { event -> (EventPayload, Date, Date, Date) in
+            let dated = try batch.events.map { event -> (EventPayload, Date, Date) in
                 guard let start = formatter.date(from: event.startLocal),
-                      let end = formatter.date(from: event.endLocal),
-                      let queryEnd = formatter.date(from: event.recurrence?.lastEndLocal ?? event.endLocal) else {
+                      let end = formatter.date(from: event.endLocal) else {
                     throw CalendarError.invalidDate
                 }
-                return (event, start, end, queryEnd)
+                return (event, start, end)
             }
-            let earliest = dated.map(\.1).min()!
-            let latest = dated.map(\.3).max()!.addingTimeInterval(1)
-            let predicate = store.predicateForEvents(withStart: earliest, end: latest, calendars: [calendar])
-            let existingPairs: [(String, EKEvent)] = store.events(matching: predicate).compactMap { event -> (String, EKEvent)? in
-                guard let marker = event.notes?.split(separator: "\n").first.map(String.init),
-                      marker.hasPrefix(markerPrefix) else { return nil }
-                return (marker, event)
-            }
-            let desiredMarkers = Set(batch.events.map { "\(markerPrefix)\($0.stableId)]" })
-            for (marker, event) in existingPairs
-            where marker.hasPrefix("\(markerPrefix)course-") && !desiredMarkers.contains(marker) {
-                try store.remove(event, span: .thisEvent, commit: false)
-            }
-            var existing: [String: EKEvent] = [:]
-            for (marker, event) in existingPairs {
-                if let previous = existing[marker] {
-                    if event.startDate < previous.startDate { existing[marker] = event }
-                } else {
-                    existing[marker] = event
+
+            var existingNonCourse: [String: EKEvent] = [:]
+            if let range = batch.managedCourseRange {
+                guard let rangeStart = formatter.date(from: range.startLocal),
+                      let rangeEnd = formatter.date(from: range.endLocal),
+                      rangeStart < rangeEnd else {
+                    throw CalendarError.invalidDate
+                }
+                // Only marked course series are eligible; unmarked user-created items and exam markers stay untouched.
+                // The academic term fits below EventKit's maximum predicate interval.
+                let existingCourses = store.events(matching: store.predicateForEvents(
+                    withStart: rangeStart,
+                    end: rangeEnd,
+                    calendars: [calendar]
+                )).compactMap { event -> (String, EKEvent)? in
+                    guard let marker = event.notes?.split(separator: "\n").first.map(String.init),
+                          courseStableId(from: marker) != nil else { return nil }
+                    return (marker, event)
+                }
+                let existingStableIds = Set(existingCourses.compactMap { courseStableId(from: $0.0) })
+                let desiredCourseIds = Set(batch.events
+                    .filter { $0.stableId.hasPrefix("course-") }
+                    .map(\.stableId))
+                let firstOccurrenceBySeries = Dictionary(grouping: existingCourses) { $0.1.calendarItemIdentifier }
+                    .compactMapValues { occurrences in
+                        occurrences.min { $0.1.startDate < $1.1.startDate }?.1
+                    }
+                for event in firstOccurrenceBySeries.values {
+                    try store.remove(event, span: .futureEvents, commit: false)
+                }
+                if !firstOccurrenceBySeries.isEmpty { try store.commit() }
+                inserted += desiredCourseIds.subtracting(existingStableIds).count
+                updated += desiredCourseIds.intersection(existingStableIds).count
+            } else if !dated.isEmpty {
+                let earliest = dated.map(\.1).min()!
+                let latest = dated.map(\.2).max()!.addingTimeInterval(1)
+                let predicate = store.predicateForEvents(withStart: earliest, end: latest, calendars: [calendar])
+                for event in store.events(matching: predicate) {
+                    guard let marker = event.notes?.split(separator: "\n").first.map(String.init),
+                          marker.hasPrefix(markerPrefix) else { continue }
+                    if let previous = existingNonCourse[marker] {
+                        if event.startDate < previous.startDate { existingNonCourse[marker] = event }
+                    } else {
+                        existingNonCourse[marker] = event
+                    }
                 }
             }
 
-            for (draft, start, end, _) in dated {
+            for (draft, start, end) in dated {
                 let marker = "\(markerPrefix)\(draft.stableId)]"
-                let event: EKEvent
-                let wasExisting: Bool
-                if let found = existing[marker] {
-                    event = found
-                    wasExisting = true
-                    updated += 1
-                } else {
-                    event = EKEvent(eventStore: store)
-                    wasExisting = false
-                    inserted += 1
+                let isManagedCourse = draft.stableId.hasPrefix("course-") && batch.managedCourseRange != nil
+                let existing = isManagedCourse ? nil : existingNonCourse[marker]
+                let event = existing ?? EKEvent(eventStore: store)
+                if !isManagedCourse {
+                    if existing != nil { updated += 1 } else { inserted += 1 }
                 }
                 event.calendar = calendar
                 event.title = draft.title
@@ -135,20 +162,21 @@ struct SystemCalendarHelper {
                 event.isAllDay = false
                 event.recurrenceRules?.forEach(event.removeRecurrenceRule)
                 if let recurrence = draft.recurrence, recurrence.occurrenceCount > 1 {
-                    let end = EKRecurrenceEnd(occurrenceCount: recurrence.occurrenceCount)
+                    let recurrenceEnd = EKRecurrenceEnd(occurrenceCount: recurrence.occurrenceCount)
                     event.addRecurrenceRule(
-                        EKRecurrenceRule(recurrenceWith: .weekly, interval: 1, end: end)
+                        EKRecurrenceRule(recurrenceWith: .weekly, interval: 1, end: recurrenceEnd)
                     )
                 }
                 try store.save(
                     event,
-                    span: wasExisting && draft.recurrence != nil ? .futureEvents : .thisEvent,
+                    span: existing != nil && draft.recurrence != nil ? .futureEvents : .thisEvent,
                     commit: false
                 )
             }
-            // 先提交重复系列，EventKit 才能检索并删除其中的停课/单双周 occurrence。
             try store.commit()
-            for (draft, start, end, _) in dated {
+
+            // 先让重复规则进入数据库，EventKit 才能检索并删除停课/单双周 occurrence。
+            for (draft, start, end) in dated {
                 guard let recurrence = draft.recurrence else { continue }
                 let marker = "\(markerPrefix)\(draft.stableId)]"
                 let duration = end.timeIntervalSince(start)
@@ -172,6 +200,12 @@ struct SystemCalendarHelper {
         }
         try store.commit()
         return Result(ok: true, calendars: calendarCount, inserted: inserted, updated: updated, reason: nil)
+    }
+
+    private static func courseStableId(from marker: String) -> String? {
+        guard marker.hasPrefix(courseMarkerPrefix), marker.hasSuffix("]") else { return nil }
+        let stableId = String(marker.dropFirst(markerPrefix.count).dropLast())
+        return stableId == "course-" ? nil : stableId
     }
 
     private static func findOrCreateCalendar(_ payload: CalendarPayload, store: EKEventStore) throws -> EKCalendar {

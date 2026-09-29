@@ -15,8 +15,8 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
  * - 同 origin 的 https 不可达（TLS 握手被服务器拒绝），不存在可替代的加密端点。
  *
  * 安全边界（CLAUDE.md 网络与安全红线）：
- * - 只构造并允许该精确 origin 的请求；重定向后的最终 URL 也必须留在该 origin，
- *   出界即判为安全失败，不继续解析。
+ * - 只构造并允许该精确 origin 的请求；不自动跟随重定向。3xx 或最终 URL
+ *   离开该 origin 即失败，避免中间人对明文响应注入 302 后再检查 finalUrl。
  * - iOS 仅对 `yaya.csoci.com` 添加域名级 ATS 例外，绝不使用
  *   `NSAllowsArbitraryLoads`；ATS 无法约束端口和路径，因此仍由本数据源强制锁定
  *   `:2333/api/classnum/`，且使用独立 transport，不携带学校登录 Cookie。
@@ -64,15 +64,17 @@ class SchoolClassroomRemoteDataSource(
         // 教学楼名是中文，必须百分号编码进查询参数。
         val url = "$CLASSROOM_CAPACITY_ORIGIN$CLASSROOM_CAPACITY_PATH?building=" +
             buildingName.encodeURLParameter()
-        val response = execute(
+        val response = executeWithoutRedirects(
             SchoolHttpRequest(
                 method = SchoolHttpMethod.GET,
                 url = url,
                 headers = mapOf("Accept" to "application/json;q=0.9,*/*;q=0.5"),
             ),
         )
+        if (response.statusCode in 300..399) network()
         if (response.statusCode !in 200..299) network()
-        // 重定向出精确 origin 视为安全边界违反。
+        // 不自动跟随。3xx 或最终 URL 离开精确 origin 都视为安全边界违反，
+        // 避免中间人把明文 yaya 请求 302 到任意主机之后再检查 finalUrl。
         if (!response.finalUrl.isAllowedClassroomUrl()) network()
         return when (val parsed = parseClassroomCapacityJson(buildingName, response.bodyText())) {
             is ClassroomJsonParseResult.Failure -> parse()
@@ -80,8 +82,8 @@ class SchoolClassroomRemoteDataSource(
         }
     }
 
-    private suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse = try {
-        transport.execute(request)
+    private suspend fun executeWithoutRedirects(request: SchoolHttpRequest): SchoolHttpResponse = try {
+        transport.executeWithoutRedirects(request)
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
