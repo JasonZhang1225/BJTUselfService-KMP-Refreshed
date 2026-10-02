@@ -146,10 +146,7 @@ fun HomeWorkspace(
     val uriHandler = LocalUriHandler.current
     val campusDestination = campusCardDestination(platform.family)
     val pageListState = rememberLazyListState()
-    // 和其它页用同一套上报：读 firstVisibleItemScrollOffset（有快照契约）。
-    // 之前这里自制了一套读 layoutInfo.visibleItemsInfo 首项位移的版本，数学上和通用版
-    // 完全等价（静止 0、上滑 S-P、下拉过滚 0、首项出视口 MAX），却在当前 Compose 下不再
-    // 可靠触发重算，上报卡在 0 导致首页顶栏玻璃丢失，而作业页一直正常。改回统一实现。
+    // 与其它列表页共用真实滚动位置上报，供 iOS 原生标题栏控制材质浓度。
     ReportTopScrollListState(pageListState)
     var dialog by remember { mutableStateOf<HomeDialog?>(null) }
     var selectedChangeDomain by remember { mutableStateOf<HomeChangeDomain?>(null) }

@@ -802,15 +802,8 @@ fun AuthenticatedAppShell(
             }
             launch {
                 // 课表：登录成功后才网络同步；失败重试在 ScreenModel 内（最多 3 次）。
-                // 先灌入缓存，再加载校历校准当前周，最后才允许网络快照进入 UI；
-                // 否则 getTimeList/room_view 短暂返回第 1 周时会覆盖缓存的第 26 周。
+                // 先灌入缓存，课表与校历随后由模型并行同步；周数仍只由校历确认。
                 courseScheduleModel.initialize(refreshFromNetwork = false)
-                // M12 校历映射独立于“自动同步课表”偏好，但同样必须等登录完成后再取学期。
-                sessionRefresh.run(
-                    operation = { courseScheduleModel.ensureCalendarLoaded() },
-                    // 校历加载失败本身是静默降级；业务刷新随后会给出明确状态。
-                    sessionExpired = { false },
-                )
                 if (loginSyncPreferences.autoSyncSchedule) {
                     sessionRefresh.run(
                         operation = { courseScheduleModel.initialize(refreshFromNetwork = true) },
@@ -819,6 +812,9 @@ fun AuthenticatedAppShell(
                                 CourseScheduleSyncFailure.SESSION_EXPIRED
                         },
                     )
+                } else {
+                    // 校历不受“自动同步课表”偏好控制，但仍要等登录完成。
+                    courseScheduleModel.ensureCalendarLoaded()
                 }
             }
         }

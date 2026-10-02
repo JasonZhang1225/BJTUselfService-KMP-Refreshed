@@ -1,6 +1,9 @@
 package team.bjtuss.bjtuselfservice.shared.feature.course
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -328,16 +331,21 @@ class CourseScheduleScreenModel(
             failure = null,
         )
         try {
-            when (val result = repository.refresh()) {
-                is CourseScheduleRefreshResult.Success -> {
-                    changeRecorder.recordSafely(before.courses, result.snapshot.courses)
-                    applySnapshot(result.snapshot, CourseScheduleContentSource.NETWORK, null)
+            coroutineScope {
+                // 校历与课程列表独立加载；慢接口不能把另一项卡在“等待同步”。
+                // applySnapshot 仍只接受已由校历确认的周数，不展示远端裸周数。
+                launch { ensureCalendarLoaded() }
+                when (val result = repository.refresh()) {
+                    is CourseScheduleRefreshResult.Success -> {
+                        changeRecorder.recordSafely(before.courses, result.snapshot.courses)
+                        applySnapshot(result.snapshot, CourseScheduleContentSource.NETWORK, null)
+                    }
+                    is CourseScheduleRefreshResult.Failure -> applySnapshot(
+                        result.snapshot,
+                        if (result.snapshot.courses.isEmpty()) null else CourseScheduleContentSource.CACHE,
+                        result.reason,
+                    )
                 }
-                is CourseScheduleRefreshResult.Failure -> applySnapshot(
-                    result.snapshot,
-                    if (result.snapshot.courses.isEmpty()) null else CourseScheduleContentSource.CACHE,
-                    result.reason,
-                )
             }
         } finally {
             refreshInFlight = false
@@ -346,11 +354,6 @@ class CourseScheduleScreenModel(
             if (current.isRefreshing || current.isLoading) {
                 mutableState.value = current.copy(isRefreshing = false, isLoading = false)
             }
-        }
-        // 课表快照成功不等于教学周已确认。网络差或校历请求被挂起取消后，
-        // 只刷新课表会让首页一直停在「日程加载中」。
-        if (calendarValidationEnabled && !mutableState.value.weekResolved) {
-            ensureCalendarLoaded()
         }
     }
 
@@ -534,8 +537,12 @@ class CourseScheduleScreenModel(
                 calendarFailed = false,
             )
             try {
-                val semesters = calendarRepository.fetchSemesters()
-                val weekDates = calendarRepository.fetchWeekDates()
+                val (semesters, weekDates) = coroutineScope {
+                    // 学期查询走登录会话队列，公开校历可以立即请求，不必跟着排队。
+                    val semesters = async { calendarRepository.fetchSemesters() }
+                    val weekDates = async { calendarRepository.fetchWeekDates() }
+                    semesters.await() to weekDates.await()
+                }
                 val today = todayProvider()
                 calendarMappings = resolveCourseScheduleCalendarMappings(
                     selectedSemesterLabel = semesters.selected?.label,

@@ -60,9 +60,9 @@ class SecurityReleaseConfigTest {
     }
 
     @Test
-    fun securityCheckWorkflowWatchesMainNotDeletedLiquidBranch() {
+    fun securityCheckWorkflowWatchesMainAndAuditNotDeletedLiquidBranch() {
         val workflow = root.resolve(".github/workflows/kmp-security-check.yml").readText()
-        assertTrue("branches: [main]" in workflow)
+        assertTrue("branches: [main, audit]" in workflow)
         assertFalse("branches: [Liquid]" in workflow)
     }
 

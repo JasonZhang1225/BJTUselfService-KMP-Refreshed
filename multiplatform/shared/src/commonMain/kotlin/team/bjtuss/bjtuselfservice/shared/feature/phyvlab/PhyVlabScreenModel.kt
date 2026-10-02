@@ -81,6 +81,7 @@ class PhyVlabScreenModel(
     /** 可选：刷新成功后把活动列表变化写入首页「数据变动」。 */
     private val changeRecorder: DataChangeRecorder<PhyVlabActivity>? = null,
     accountScope: String? = null,
+    private val nowProvider: () -> Instant = { Clock.System.now() },
 ) {
     private val mutableState = MutableStateFlow(PhyVlabUiState())
     val state: StateFlow<PhyVlabUiState> = mutableState.asStateFlow()
@@ -141,7 +142,7 @@ class PhyVlabScreenModel(
                 }
             }
             // 不使用设备系统时区：在海外设备/模拟器上，学校平台的“本月”不能跨日漂移。
-            val now = Clock.System.now().toLocalDateTime(PHYVLAB_TIME_ZONE)
+            val now = nowProvider().toLocalDateTime(PHYVLAB_TIME_ZONE)
             val monthStart = beijingMonthStartSeconds(year = now.year, month = now.month.ordinal + 1)
             val courses = when (val result = repository.fetchCourses()) {
                 is PhyVlabCoursesResult.Success -> result.courses
@@ -541,7 +542,7 @@ class PhyVlabScreenModel(
     }
 
     private fun currentBeijingMonthStartSeconds(): Long {
-        val now = Clock.System.now().toLocalDateTime(PHYVLAB_TIME_ZONE)
+        val now = nowProvider().toLocalDateTime(PHYVLAB_TIME_ZONE)
         return beijingMonthStartSeconds(now.year, now.month.ordinal + 1)
     }
 

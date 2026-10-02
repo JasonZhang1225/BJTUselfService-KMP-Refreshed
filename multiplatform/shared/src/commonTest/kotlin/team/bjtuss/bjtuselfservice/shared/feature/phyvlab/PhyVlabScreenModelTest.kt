@@ -1,6 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.phyvlab
 
 import kotlinx.coroutines.runBlocking
+import kotlin.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -216,6 +217,7 @@ class PhyVlabScreenModelTest {
             sessionProtocol = PhyVlabSessionProtocol(UnavailableTransport),
             localDataSource = local,
             accountScope = "25531058",
+            nowProvider = { Instant.parse("2026-09-23T04:00:00Z") },
         )
 
         model.initialize(refreshFromNetwork = false)

@@ -2,7 +2,7 @@ name: KMP security checks
 
 on:
   push:
-    branches: [main]
+    branches: [main, audit]
     paths:
       - "multiplatform/**"
       - ".github/workflows/kmp-security-check.yml"
