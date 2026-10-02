@@ -433,7 +433,7 @@ private final class NativeChromeBinding {
         guard let controller, let navigationController = controller.navigationController else { return }
         if abs(progress - lastGlassProgress) > 0.005 {
             lastGlassProgress = progress
-            (navigationController as? TabRootNavigationController)?.setTopGlassAlpha(progress)
+            (navigationController as? TabRootNavigationController)?.setTopGlassProgress(progress)
         }
     }
 }
@@ -538,19 +538,63 @@ private final class NativeSpinnerButton: UIButton {
 /// title bar refracts like the system TabBar instead of frosting like a plain blur.
 /// Visibility is driven by scroll-edge state; at the top the bar stays transparent.
 private final class NativeNavigationBarGlassView: UIVisualEffectView {
+    private let materialMask = UIView()
+    private var scrollProgress: CGFloat = 0
+    private var appliedMaskBounds: CGRect?
+    private var appliedMaskProgress: CGFloat = -1
+    var hasVisibleMaterial: Bool { scrollProgress > 0 }
+
     init() {
         super.init(effect: Self.barGlassEffect())
         backgroundColor = .clear
         isOpaque = false
         isUserInteractionEnabled = false
         autoresizingMask = [.flexibleWidth, .flexibleBottomMargin]
-        // Hidden until content actually scrolls underneath (native scroll-edge semantics).
-        alpha = 0
+        // UIVisualEffectView must remain at alpha 1: partial alpha can flatten its
+        // backdrop into a tint without blur, especially on a short home page.
+        alpha = 1
+        materialMask.backgroundColor = .white
+        updateMaterialMask()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    func setProgress(_ progress: CGFloat) {
+        scrollProgress = min(max(progress, 0), 1)
+        updateMaterialMask()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        updateMaterialMask()
+    }
+
+    private func updateMaterialMask() {
+        guard appliedMaskBounds != bounds || appliedMaskProgress != scrollProgress else { return }
+        appliedMaskBounds = bounds
+        appliedMaskProgress = scrollProgress
+        isHidden = !hasVisibleMaterial
+        if scrollProgress >= 1 {
+            mask = nil
+            return
+        }
+        // Reveal full-strength glass upward from the edge where content enters.
+        // Alpha/effect cross-fades leave sharp text visible at intermediate values.
+        // Apply the mask directly to the effect view; masking its parent breaks blur.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let visibleHeight = bounds.height * scrollProgress
+        materialMask.frame = CGRect(
+            x: 0, y: bounds.height - visibleHeight,
+            width: bounds.width, height: visibleHeight,
+        )
+        CATransaction.commit()
+        // UIKit copies visual-effect masks. Reassign after geometry changes so
+        // resizing and reverse scrolling also update the internal effect views.
+        mask = materialMask
     }
 
     private static func barGlassEffect() -> UIVisualEffect {
@@ -757,7 +801,7 @@ private final class TabRootNavigationController: UINavigationController, UINavig
                 width: view.bounds.width,
                 height: navigationBar.isHidden ? 0 : barFrame.maxY,
             )
-            glassView.isHidden = navigationBar.isHidden
+            glassView.isHidden = navigationBar.isHidden || !glassView.hasVisibleMaterial
             view.bringSubviewToFront(glassView)
             view.bringSubviewToFront(navigationBar)
         }
@@ -771,12 +815,11 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         }
     }
 
-    /// Glass intensity tracks scroll depth directly (no animation): position-driven alpha
-    /// cannot lag the finger or flash, and it introduces no autonomous motion
-    /// (Reduce-Motion-safe by construction).
-    func setTopGlassAlpha(_ progress: CGFloat) {
+    /// Reveal the native material from the page's actual scroll depth.
+    /// No autonomous motion is introduced, including when Reduce Motion is enabled.
+    func setTopGlassProgress(_ progress: CGFloat) {
         guard let glassView = navigationBarGlassView else { return }
-        glassView.alpha = min(max(progress, 0), 1)
+        glassView.setProgress(progress)
     }
 
     /// 只有一页例外不显示系统栏：没有标题的页（写信这类自绘返回的页）。一级 tab 根页现在也有标题，

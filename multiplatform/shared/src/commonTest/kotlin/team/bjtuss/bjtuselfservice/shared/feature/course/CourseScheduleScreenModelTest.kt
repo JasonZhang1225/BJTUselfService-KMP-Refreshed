@@ -1,6 +1,11 @@
 package team.bjtuss.bjtuselfservice.shared.feature.course
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -22,6 +27,113 @@ import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.PlatformInfo
 
 class CourseScheduleScreenModelTest {
+    @Test
+    fun slowCalendarDoesNotDelayScheduleOrExposeRemoteBareWeek() = runBlocking {
+        val calendarGate = CompletableDeferred<Unit>()
+        val publicCalendarStarted = CompletableDeferred<Unit>()
+        val repository = FakeRepository(
+            CourseScheduleSnapshot(listOf(course(1, week = 5)), 5),
+            CourseScheduleSnapshot(listOf(course(2, week = 2)), 1),
+        )
+        val model = CourseScheduleScreenModel(
+            repository = repository,
+            calendarRepository = FakeCalendarRepository(
+                listOf(week(1, LocalDate(2026, 9, 7)), week(2, LocalDate(2026, 9, 14))),
+                beforeSemesters = { calendarGate.await() },
+                beforeWeekDates = { publicCalendarStarted.complete(Unit) },
+            ),
+            todayProvider = { LocalDate(2026, 9, 16) },
+        )
+        val sync = launch { model.initialize() }
+        try {
+            withTimeout(5_000) { publicCalendarStarted.await() }
+            assertEquals(1, repository.refreshCount)
+            assertEquals(2, model.state.value.courses.single().id)
+            assertEquals(CourseScheduleContentSource.NETWORK, model.state.value.source)
+            assertEquals(5, model.state.value.currentWeek)
+            assertFalse(model.state.value.weekResolved)
+            assertTrue(model.state.value.isCalendarLoading)
+            calendarGate.complete(Unit)
+            sync.join()
+            assertEquals(2, model.state.value.currentWeek)
+            assertTrue(model.state.value.weekResolved)
+        } finally {
+            sync.cancelAndJoin()
+        }
+    }
+
+    @Test
+    fun slowScheduleDoesNotDelayCalendarOrOverwriteManualSelection() = runBlocking {
+        val scheduleGate = CompletableDeferred<Unit>()
+        val calendarFinished = CompletableDeferred<Unit>()
+        val model = CourseScheduleScreenModel(
+            repository = object : CourseScheduleRepository {
+                override fun load() = CourseScheduleSnapshot(listOf(course(1, week = 5)), 5)
+                override suspend fun refresh(): CourseScheduleRefreshResult {
+                    scheduleGate.await()
+                    return CourseScheduleRefreshResult.Success(
+                        CourseScheduleSnapshot(listOf(course(2, week = 2)), 1),
+                    )
+                }
+            },
+            calendarRepository = FakeCalendarRepository(
+                listOf(week(1, LocalDate(2026, 9, 7)), week(2, LocalDate(2026, 9, 14))),
+                beforeWeekDates = { calendarFinished.complete(Unit) },
+            ),
+            todayProvider = { LocalDate(2026, 9, 16) },
+        )
+        val sync = launch { model.initialize() }
+        try {
+            withTimeout(5_000) {
+                calendarFinished.await()
+                while (!model.state.value.weekResolved) yield()
+            }
+            assertEquals(2, model.state.value.currentWeek)
+            assertTrue(model.state.value.isRefreshing)
+            model.selectWeek(6)
+            scheduleGate.complete(Unit)
+            sync.join()
+            assertEquals(2, model.state.value.currentWeek)
+            assertEquals(6, model.state.value.selectedWeek)
+            assertFalse(model.state.value.followCurrentWeek)
+        } finally {
+            sync.cancelAndJoin()
+        }
+    }
+
+    @Test
+    fun cancelledParallelRefreshClearsBusyStateAndCanRetryCalendar() = runBlocking {
+        val calendarGate = CompletableDeferred<Unit>()
+        val calendarStarted = CompletableDeferred<Unit>()
+        val model = CourseScheduleScreenModel(
+            repository = FakeRepository(
+                CourseScheduleSnapshot(listOf(course(1, week = 5)), 5),
+                CourseScheduleSnapshot(listOf(course(1, week = 2)), 1),
+            ),
+            calendarRepository = FakeCalendarRepository(
+                listOf(week(2, LocalDate(2026, 9, 14))),
+                beforeWeekDates = {
+                    calendarStarted.complete(Unit)
+                    calendarGate.await()
+                },
+            ),
+            todayProvider = { LocalDate(2026, 9, 16) },
+        )
+        val sync = launch { model.initialize() }
+        try {
+            withTimeout(5_000) { calendarStarted.await() }
+        } finally {
+            sync.cancelAndJoin()
+        }
+        assertFalse(model.state.value.isLoading)
+        assertFalse(model.state.value.isRefreshing)
+        assertFalse(model.state.value.isCalendarLoading)
+        calendarGate.complete(Unit)
+        model.refresh()
+        assertTrue(model.state.value.weekResolved)
+        assertEquals(2, model.state.value.currentWeek)
+    }
+
     @Test
     fun startupShowsCachedWeekThenCalendarWeekWithoutPassingThroughRemoteWeek() = runBlocking {
         // 2026-09-16 用户反馈：首页启动时周数会多次跳变。
@@ -892,6 +1004,8 @@ class CourseScheduleScreenModelTest {
         private val selectedLabel: String = "2026-2027-1",
         private val allWeekDates: Map<String, List<OccupancyWeekDate>> = mapOf(selectedLabel to weeks),
         private val failFirstFetches: Int = 0,
+        private val beforeSemesters: suspend () -> Unit = {},
+        private val beforeWeekDates: suspend () -> Unit = {},
     ) : ClassroomOccupancyRepository {
         private val semester = OccupancySemester("$selectedLabel-1", selectedLabel)
         var fetchCount = 0
@@ -902,12 +1016,13 @@ class CourseScheduleScreenModelTest {
             semesterId: String?,
         ): ClassroomOccupancyResult = error("not used")
 
-        override suspend fun fetchSemesters(): SemesterOptions = SemesterOptions(
-            selected = semester,
-            all = listOf(semester),
-        )
+        override suspend fun fetchSemesters(): SemesterOptions {
+            beforeSemesters()
+            return SemesterOptions(selected = semester, all = listOf(semester))
+        }
 
         override suspend fun fetchWeekDates(): Map<String, List<OccupancyWeekDate>> {
+            beforeWeekDates()
             fetchCount += 1
             return if (fetchCount <= failFirstFetches) emptyMap() else allWeekDates
         }

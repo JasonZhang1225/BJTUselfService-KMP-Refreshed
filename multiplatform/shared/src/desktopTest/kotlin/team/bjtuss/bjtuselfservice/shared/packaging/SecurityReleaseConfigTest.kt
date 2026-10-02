@@ -53,7 +53,10 @@ class SecurityReleaseConfigTest {
             )
         }
         val legacyRelease = root.resolve(".github/workflows/release.yml").readText()
-        assertTrue("!contains(github.ref_name, 'Liquid')" in legacyRelease)
+        // 冻结根 Android 只打 v1.7.0；其余 v* 标签由 kmp-package.yml 打包。
+        // 不要再要求已删除的 Liquid 字符串守卫，那会让本测试在当前 HEAD 失败。
+        assertTrue("github.ref_name == 'v1.7.0'" in legacyRelease)
+        assertFalse("github.ref_name != 'v1.7.0'" in legacyRelease)
     }
 
     @Test

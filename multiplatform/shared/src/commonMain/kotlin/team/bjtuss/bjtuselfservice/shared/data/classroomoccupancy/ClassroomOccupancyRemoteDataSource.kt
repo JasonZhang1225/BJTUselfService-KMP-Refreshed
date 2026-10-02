@@ -5,7 +5,7 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
 import io.ktor.http.encodeURLParameter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.ClassroomOccupancy
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancySemester
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
@@ -109,7 +109,7 @@ class SchoolClassroomOccupancyRemoteDataSource(
         val response = try {
             // 校历是 bksy 公开页：走 executePublic（独立客户端、不占会话锁）+ 短超时。
             // 代理下 bksy 挂起时绝不能堵住 aa 的 room_view（切周转圈的根因）。
-            withTimeout(WEEK_DATES_TIMEOUT_MILLIS) {
+            withTimeoutOrNull(WEEK_DATES_TIMEOUT_MILLIS) {
                 if (requestDelayMillis > 0) delay(requestDelayMillis)
                 transport.executePublic(
                     SchoolHttpRequest(
@@ -117,7 +117,7 @@ class SchoolClassroomOccupancyRemoteDataSource(
                         url = CALENDAR_PAGE_URL,
                     ),
                 )
-            }
+            } ?: return emptyMap()
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
