@@ -431,7 +431,8 @@ private final class NativeChromeBinding {
     /// Reduce-Motion-safe (no autonomous motion). Epsilon cuts redundant writes.
     private func applyGlassProgress(_ progress: CGFloat) {
         guard let controller, let navigationController = controller.navigationController else { return }
-        if abs(progress - lastGlassProgress) > 0.005 {
+        let reachesEndpoint = progress == 0 || progress == 1
+        if progress != lastGlassProgress && (reachesEndpoint || abs(progress - lastGlassProgress) > 0.005) {
             lastGlassProgress = progress
             (navigationController as? TabRootNavigationController)?.setTopGlassProgress(progress)
         }
@@ -538,10 +539,7 @@ private final class NativeSpinnerButton: UIButton {
 /// title bar refracts like the system TabBar instead of frosting like a plain blur.
 /// Visibility is driven by scroll-edge state; at the top the bar stays transparent.
 private final class NativeNavigationBarGlassView: UIVisualEffectView {
-    private let materialMask = UIView()
     private var scrollProgress: CGFloat = 0
-    private var appliedMaskBounds: CGRect?
-    private var appliedMaskProgress: CGFloat = -1
     var hasVisibleMaterial: Bool { scrollProgress > 0 }
 
     init() {
@@ -550,11 +548,10 @@ private final class NativeNavigationBarGlassView: UIVisualEffectView {
         isOpaque = false
         isUserInteractionEnabled = false
         autoresizingMask = [.flexibleWidth, .flexibleBottomMargin]
-        // UIVisualEffectView must remain at alpha 1: partial alpha can flatten its
-        // backdrop into a tint without blur, especially on a short home page.
-        alpha = 1
-        materialMask.backgroundColor = .white
-        updateMaterialMask()
+        // Restore 5ced798's continuous fade. Later effect-view masks changed
+        // the material's reveal semantics and failed the user's device check.
+        alpha = 0
+        isHidden = true
     }
 
     @available(*, unavailable)
@@ -564,37 +561,10 @@ private final class NativeNavigationBarGlassView: UIVisualEffectView {
 
     func setProgress(_ progress: CGFloat) {
         scrollProgress = min(max(progress, 0), 1)
-        updateMaterialMask()
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        updateMaterialMask()
-    }
-
-    private func updateMaterialMask() {
-        guard appliedMaskBounds != bounds || appliedMaskProgress != scrollProgress else { return }
-        appliedMaskBounds = bounds
-        appliedMaskProgress = scrollProgress
+        // One continuous scroll value drives the whole native glass surface,
+        // exactly as setTopGlassAlpha did before the 1.8.1 mask changes.
+        alpha = scrollProgress
         isHidden = !hasVisibleMaterial
-        if scrollProgress >= 1 {
-            mask = nil
-            return
-        }
-        // Reveal full-strength glass upward from the edge where content enters.
-        // Alpha/effect cross-fades leave sharp text visible at intermediate values.
-        // Apply the mask directly to the effect view; masking its parent breaks blur.
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        let visibleHeight = bounds.height * scrollProgress
-        materialMask.frame = CGRect(
-            x: 0, y: bounds.height - visibleHeight,
-            width: bounds.width, height: visibleHeight,
-        )
-        CATransaction.commit()
-        // UIKit copies visual-effect masks. Reassign after geometry changes so
-        // resizing and reverse scrolling also update the internal effect views.
-        mask = materialMask
     }
 
     private static func barGlassEffect() -> UIVisualEffect {

@@ -53,3 +53,13 @@ fun ReportTopScrollState(scrollState: ScrollState) {
         snapshotFlow { scrollState.value.toFloat() }.collect { report(it) }
     }
 }
+
+/** Include real elastic placement: a short iOS page can move without logical list scrolling. */
+internal fun resolveVisualTopScrollOffset(
+    logicalOffset: Float,
+    viewportTop: Float?,
+    contentTop: Float?,
+): Float {
+    val elasticOffset = if (viewportTop != null && contentTop != null) viewportTop - contentTop else 0f
+    return (logicalOffset + elasticOffset).coerceAtLeast(0f)
+}
