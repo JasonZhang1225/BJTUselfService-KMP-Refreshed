@@ -171,6 +171,22 @@ class SmartPlatformEndpointTest {
         assertEquals("https://cas.bjtu.edu.cn/auth/authorize", settled.finalUrl)
     }
 
+    @Test
+    fun handshakeRelativeRedirectReplacesOAuthQueryRatherThanAppendingIt() = runBlocking {
+        val query = "response_type=code&client_id=example&redirect_uri=http%3A%2F%2F123.121.147.7%3A88%2Foauth%2Fcallback"
+        val base = "https://cas.bjtu.edu.cn/o/authorize?$query"
+        val location = "/o/authorize/?$query"
+        var requested: SchoolHttpRequest? = null
+        SmartPlatformEndpoint.LegacyHttp.followSmartHandshakeRedirects(
+            first = redirectResponse(base, location),
+            referer = "https://mis.bjtu.edu.cn/module/module/28/",
+        ) { request ->
+            requested = request
+            SchoolHttpResponse(statusCode = 200, finalUrl = request.url)
+        }
+        assertEquals("https://cas.bjtu.edu.cn$location", requested?.url)
+    }
+
     private fun redirectResponse(from: String, to: String): SchoolHttpResponse = SchoolHttpResponse(
         statusCode = 302,
         finalUrl = from,

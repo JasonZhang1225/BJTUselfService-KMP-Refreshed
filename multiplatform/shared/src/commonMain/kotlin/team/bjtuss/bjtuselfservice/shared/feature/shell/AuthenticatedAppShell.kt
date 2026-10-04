@@ -732,6 +732,9 @@ fun AuthenticatedAppShell(
         val sessionRefresh = SessionRefreshCoordinator(
             reauthenticate = reauthenticateSession,
             probeSession = session.probeSession,
+            // The entry login has just verified this session. Start module work
+            // immediately; expired-session recovery still runs after a failure.
+            sessionVerifiedAtStart = true,
             onRecoveryStateChanged = { sessionRecoveryInProgress = it },
         )
         if (loginSyncPreferences.autoSyncGrades) {
@@ -763,6 +766,9 @@ fun AuthenticatedAppShell(
         val sessionRefresh = SessionRefreshCoordinator(
             reauthenticate = reauthenticateSession,
             probeSession = session.probeSession,
+            // The entry login has just verified this session. Start module work
+            // immediately; expired-session recovery still runs after a failure.
+            sessionVerifiedAtStart = true,
             onRecoveryStateChanged = { sessionRecoveryInProgress = it },
         )
         coroutineScope {

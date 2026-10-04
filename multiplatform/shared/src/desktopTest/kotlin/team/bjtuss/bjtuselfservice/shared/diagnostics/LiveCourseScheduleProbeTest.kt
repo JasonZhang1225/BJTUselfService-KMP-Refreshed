@@ -162,6 +162,41 @@ class LiveCourseScheduleProbeTest {
         println("CONCURRENT_SUMMARY: ok=${concurrentOk.get()} fail=${concurrentFail.get()}")
     }
 
+    @Test
+    fun probeHomeworkSyncAfterLogin() = runBlocking {
+        if (System.getenv("BJTU_LIVE_HOMEWORK_PROBE") != "1") return@runBlocking
+        val base = File("../desktopApp/build/generated/captcha").absoluteFile
+        System.setProperty("bjtu.captcha.helper", File(base, "BJTUCaptchaHelper").absolutePath)
+        System.setProperty("bjtu.captcha.model", File(base, "model/BJTUCaptcha.mlmodelc").absolutePath)
+        val delegate = createSchoolHttpTransport()
+        val protocol = SchoolLoginProtocol(delegate)
+        val login = AutomaticLoginCoordinator(protocol, DesktopCoreMlCaptchaRecognizer())
+            .login(loadMisSecretCredentials())
+        check(login is AutomaticLoginResult.Authenticated || login is AutomaticLoginResult.SessionActive) {
+            "Live probe needs an authenticated session"
+        }
+        val transport = object : team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport {
+            override fun clearSession() = delegate.clearSession()
+            override suspend fun execute(request: SchoolHttpRequest) = trace(request, false)
+            override suspend fun executeWithoutRedirects(request: SchoolHttpRequest) = trace(request, true)
+            override suspend fun sessionCookiesFor(url: String) = delegate.sessionCookiesFor(url)
+            private suspend fun trace(request: SchoolHttpRequest, raw: Boolean): team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse {
+                val response = if (raw) delegate.executeWithoutRedirects(request) else delegate.execute(request)
+                // No bodies, credentials, cookies or OAuth query values enter the diagnostic log.
+                println("HOMEWORK_STEP: path=${request.url.substringBefore('?')} status=${response.statusCode} " +
+                    "final=${response.finalUrl.substringBefore('?')} " +
+                    "location=${response.header("Location")?.substringBefore('?')} bytes=${response.body.size} " +
+                    "queryKeys=${io.ktor.http.Url(request.url).parameters.entries().associate { it.key to it.value.size }} " +
+                    "locationQueryKeys=${response.header("Location")?.substringAfter('?', "")?.split('&')?.map { it.substringBefore('=') }}")
+                return response
+            }
+        }
+        val homework = team.bjtuss.bjtuselfservice.shared.data.homework.SchoolHomeworkRemoteDataSource(
+            transport, endpoint = team.bjtuss.bjtuselfservice.shared.data.homework.SmartPlatformEndpoint.LegacyHttp,
+        ).fetchHomework()
+        println("HOMEWORK_OK: count=${homework.size}")
+    }
+
     private fun loadMisSecretCredentials(): Credentials {
         val file = sequenceOf(
             File("../MisSecret.md"),

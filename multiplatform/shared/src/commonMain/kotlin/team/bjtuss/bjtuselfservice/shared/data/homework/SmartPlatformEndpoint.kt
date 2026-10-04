@@ -220,6 +220,11 @@ private fun isSmartHttpsHandshakeHost(url: String): Boolean {
 private fun resolveSmartRedirectTarget(base: String, location: String): String? {
     if (location.any(Char::isISOControl)) return null
     return runCatching {
-        URLBuilder(Url(base)).takeFrom(location).buildString()
+        URLBuilder(Url(base)).apply {
+            // takeFrom appends query parameters to an existing builder. A Location
+            // supplies the next query, so retaining the old OAuth query duplicates
+            // client_id/redirect_uri and CAS rejects the handshake with HTTP 400.
+            parameters.clear()
+        }.takeFrom(location).buildString()
     }.getOrNull()
 }

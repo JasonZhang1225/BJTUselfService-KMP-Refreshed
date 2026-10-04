@@ -350,7 +350,16 @@ internal fun TopBarStatusCircle(
             if (text == "已同步") {
                 TopBarSyncedIcon(modifier = Modifier.size(16.dp), tint = iconTint)
             } else {
-                TopBarRefreshIcon(modifier = Modifier.size(16.dp), tint = iconTint)
+                Text(
+                    text = if (text in partialSyncFailureStatusTexts) "!" else "i",
+                    color = if (text in partialSyncFailureStatusTexts) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        iconTint
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }

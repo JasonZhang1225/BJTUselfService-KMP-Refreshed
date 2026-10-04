@@ -57,6 +57,21 @@ class SessionRefreshCoordinatorTest {
     }
 
     @Test
+    fun freshlyVerifiedLoginStartsWorkWithoutProbingButStillRecoversExpiry() = runSuspend {
+        val events = mutableListOf<String>()
+        var expired = false
+        val coordinator = SessionRefreshCoordinator(
+            reauthenticate = { events += "recover"; expired = false; true },
+            probeSession = { events += "probe"; true },
+            sessionVerifiedAtStart = true,
+        )
+        coordinator.run(operation = { events += "course" }, sessionExpired = { expired })
+        expired = true
+        coordinator.run(operation = { events += "homework" }, sessionExpired = { expired })
+        assertEquals(listOf("course", "homework", "recover", "homework"), events)
+    }
+
+    @Test
     fun preflightReauthenticatesBeforeTheFirstRefreshRequest() = runSuspend {
         val events = mutableListOf<String>()
         var probeCount = 0
