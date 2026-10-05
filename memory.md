@@ -1,7 +1,7 @@
 # BJTUselfService KMP 实时工作记忆
 
 > 最后更新：2026-10-05。
-> 当前阶段：功能与 audit 已合入 main 并推送，临时分支与 fc51 工作树已清理。
+> 当前阶段：v1.8.1 四平台 CI 打包与正式发布完成，Latest 已更新。
 > 版本：1.8.1 / Build 22。功能提交 67c2d0f。
 
 ## 已完成
@@ -17,9 +17,11 @@
 ## 当前注意事项
 
 - 实验持续周数仍需按实际安排复核；EventKit、安全存储及 Windows 原生运行证据需相应平台验收。
-- 本轮安装包仍 1.8.1 / 22，iOS unsigned，macOS ad-hoc 未公证；没有创建 Release 或新标签。
+- 正式安装包 1.8.1 / 22；iOS unsigned，macOS ad-hoc 未公证。Release 为 v1.8.1，非预发布，已设 Latest。
 
 - 合并后共享 596 项与 Swift 35 检查通过，Android/macOS/Windows/iOS 两目标编译通过。
+
+- v1.8.1 标签源码 0037a6c；CI run 37262681002 四平台与发布任务全部成功，正文保留旧表格/说明，附件校验通过。
 
 ## 当前流程
 

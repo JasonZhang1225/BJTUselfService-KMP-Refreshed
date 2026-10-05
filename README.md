@@ -133,7 +133,7 @@ iOS 未签名 IPA 的自签与安装请参考 [iOS 自签与安装指南](docs/i
 | [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService) | 原作者安卓版与正式 Release |
 | [JasonZhang1225/BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed) | 本 KMP 多端 fork 与正式 Release |
 
-本 fork 的正式发布包见 [GitHub Release](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases)。本地 1.8.1 测试包由 `audit` 分支构建。
+本 fork 的正式发布包见 [GitHub Release](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases)。1.8.1 四平台正式包已发布，源码标签为 `v1.8.1`。
 
 ## 📱 支持平台
 

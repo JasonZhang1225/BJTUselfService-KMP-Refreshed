@@ -599,3 +599,8 @@
 用户确认最新 iOS 模糊修复实测无问题，授权提交推送、功能 → audit → main 合并和分支工作树清理。功能提交 67c2d0f，合入 audit 为 784d7ff；memory.md 冲突已整合，其他源码自动合并保留 audit 修复。合并后共享 596 项、Swift 35 检查以及各平台 Kotlin 编译通过。
 
 收尾完成：audit → main 合并提交 e759c1c 已推送 mine/main，本地/远端 audit 与 codex/physics-lab-schedule 删除，fc51 工作树删除，主目录保留 main，安装包保留 Downloads。
+
+
+### 2026-10-05 v1.8.1 四平台正式发布
+
+按用户授权保存简版更新内容，保留旧版安装包表格和限制说明；发布说明提交/标签源码 0037a6c。Actions run 37262681002 的 APK、MSI、DMG、unsigned IPA 与发布任务全部成功。v1.8.1 已正式发布并设 Latest，四附件与 CI 产物大小/哈希一致，正文一致，包结构/签名状态检查通过。

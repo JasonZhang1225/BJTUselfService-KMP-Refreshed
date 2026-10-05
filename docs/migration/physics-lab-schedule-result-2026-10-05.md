@@ -113,3 +113,19 @@ BuildingList 接入首页已有的 resolveVisualTopScrollOffset 路径：同一 
 功能提交 `67c2d0f` 已推送个人远端 mine，合入 audit 的提交为 `784d7ff`。仅 memory.md 冲突，已整合两侧状态记录；源码自动合并并检查保留 audit 安全、日历范围替换、作业握手与同步启动修复。合并后共享/JVM 596 项（0 失败、0 跳过）、Swift 导航 35 检查全部通过，Android Release、macOS、Windows 和 iOS 两目标 Kotlin 编译通过。按用户授权，后续将 audit 合入 main 后清理临时分支及 fc51 工作树；保留主目录和 Downloads 安装包。
 
 收尾完成：main 合并提交 `e759c1c` 已推送 mine/main。功能与 audit 本地/远端分支删除，fc51 工作树删除；主目录 `/Users/zjg/BJTUselfService` 保留 main，Downloads 安装包保留。
+
+
+## 2026-10-05 正式发布 v1.8.1
+
+用户授权推送全平台打包并发布，说明保留上一版安装包表格及使用限制，替换更新内容并调整版本/构建号。发布源码标签 v1.8.1 指向 0037a6c，GitHub Actions run 37262681002 的 Android APK、Windows x64 MSI、macOS DMG、iOS unsigned IPA 与发布任务均成功；Release 非草稿、非预发布，并已成为 Latest。
+
+发布页：https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases/tag/v1.8.1
+
+下载 CI 产物核对：APK v2 签名与 1.8.1/22 版本，DMG 完整性、包内严格签名和辅助文件，MSI x64 文件格式，IPA arm64/1.8.1/22/ZIP CRC/未签名结构均通过。四个发布附件的大小与 SHA-256 与下载的 CI 产物一致；发布正文与 docs/releases/v1.8.1.md 完全匹配。Windows 安装操作仍须 Windows 真机测试。
+
+| 文件 | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| `BJTUSelfService-KMP-1.8.1-arm64-v8a.apk` | 99397300 | `accfc4c2766edd02173c817361541a582cd1bc417914ba45f4702c9f4657eadf` |
+| `BJTUSelfService-KMP-1.8.1-iOS-unsigned.ipa` | 41953739 | `c7cd844c874fe7b06e011f126ff43dc44a26377943cd46c7a0c674332a4d23dd` |
+| `BJTUselfServiceKMP-1.8.1.dmg` | 120832093 | `31b2d2e3a63eb79f22eb30b02a03858f80e55a2c95b1f5a17e3dbac4b01afe28` |
+| `BJTUselfServiceKMP-1.8.1.msi` | 114490604 | `057f816d0d7bae531cbab7bd907498e4a431c8b78dddb5027ea3169e861ad61d` |
