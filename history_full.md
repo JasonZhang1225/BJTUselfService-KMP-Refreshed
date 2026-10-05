@@ -597,3 +597,5 @@
 ### 2026-10-05 功能合入 audit 并准备 main 收尾
 
 用户确认最新 iOS 模糊修复实测无问题，授权提交推送、功能 → audit → main 合并和分支工作树清理。功能提交 67c2d0f，合入 audit 为 784d7ff；memory.md 冲突已整合，其他源码自动合并保留 audit 修复。合并后共享 596 项、Swift 35 检查以及各平台 Kotlin 编译通过。
+
+收尾完成：audit → main 合并提交 e759c1c 已推送 mine/main，本地/远端 audit 与 codex/physics-lab-schedule 删除，fc51 工作树删除，主目录保留 main，安装包保留 Downloads。

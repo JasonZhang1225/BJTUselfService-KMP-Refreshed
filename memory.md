@@ -1,7 +1,7 @@
 # BJTUselfService KMP 实时工作记忆
 
 > 最后更新：2026-10-05。
-> 当前阶段：功能已合入 audit，合并回归完成；用户授权推送并合入 main、清理分支与工作树。
+> 当前阶段：功能与 audit 已合入 main 并推送，临时分支与 fc51 工作树已清理。
 > 版本：1.8.1 / Build 22。功能提交 67c2d0f。
 
 ## 已完成
@@ -23,6 +23,6 @@
 
 ## 当前流程
 
-合并后运行共享回归与各平台编译，推送 audit，再合入并推送 main。随后删除已合并的功能分支、audit 分支和 fc51 工作树，主目录保留 main。
+主目录 `/Users/zjg/BJTUselfService` 位于 main，合并提交 e759c1c 已推送 mine/main。功能分支、audit 的本地/远端引用及 fc51 工作树已删除；安装包保留 Downloads。
 
 功能报告：`docs/migration/physics-lab-schedule-result-2026-10-05.md`。

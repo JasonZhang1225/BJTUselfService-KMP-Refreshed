@@ -111,3 +111,5 @@ BuildingList 接入首页已有的 resolveVisualTopScrollOffset 路径：同一 
 ## 2026-10-05 合并回归
 
 功能提交 `67c2d0f` 已推送个人远端 mine，合入 audit 的提交为 `784d7ff`。仅 memory.md 冲突，已整合两侧状态记录；源码自动合并并检查保留 audit 安全、日历范围替换、作业握手与同步启动修复。合并后共享/JVM 596 项（0 失败、0 跳过）、Swift 导航 35 检查全部通过，Android Release、macOS、Windows 和 iOS 两目标 Kotlin 编译通过。按用户授权，后续将 audit 合入 main 后清理临时分支及 fc51 工作树；保留主目录和 Downloads 安装包。
+
+收尾完成：main 合并提交 `e759c1c` 已推送 mine/main。功能与 audit 本地/远端分支删除，fc51 工作树删除；主目录 `/Users/zjg/BJTUselfService` 保留 main，Downloads 安装包保留。
