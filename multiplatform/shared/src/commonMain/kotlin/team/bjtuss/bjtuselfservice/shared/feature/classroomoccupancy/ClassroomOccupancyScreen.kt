@@ -392,8 +392,14 @@ private fun OccupancyDetail(
         )
 
         if (state.people.isNotEmpty()) {
-            Text("人数估计由第三方提供 · ${state.peopleSnapshotRange}", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                "人数估计由第三方提供 · ${classroomPeopleRangeOnOneLine(state.peopleSnapshotRange)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         if (state.isNonTeachingWeek) {
             NonTeachingOccupancyState(
@@ -1077,4 +1083,19 @@ private fun OccupancyCell(
             )
         }
     }
+}
+
+/** 去掉年份，只留月日和时间，避免「人数估计由第三方提供」折成两行。 */
+internal fun classroomPeopleRangeOnOneLine(range: String): String {
+    if (range.isEmpty()) return range
+    val parts = range.split('—')
+    if (parts.size == 2) {
+        return stripClassroomPeopleYear(parts[0]) + "—" + stripClassroomPeopleYear(parts[1])
+    }
+    return stripClassroomPeopleYear(range)
+}
+
+private fun stripClassroomPeopleYear(value: String): String {
+    val trimmed = value.trim()
+    return Regex("""^\d{4}-(.+)$""").matchEntire(trimmed)?.groupValues?.get(1) ?: trimmed
 }

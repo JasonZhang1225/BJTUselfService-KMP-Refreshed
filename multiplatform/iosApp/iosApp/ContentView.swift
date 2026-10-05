@@ -629,8 +629,8 @@ private final class TabRootNavigationController: UINavigationController, UINavig
     private var pushedTopInset: CGFloat = -1
     private var navigationBarGlassView: NativeNavigationBarGlassView?
     private let glassState = NativeNavigationGlassState<ObjectIdentifier>()
-    /// 根页 ↔ 被压入的二级页切换时通知宿主：底栏被 push 藏起来时同步隐藏。
-    var onBarVisibilityChanged: ((Bool) -> Void)?
+    /// 二级页盖住底栏玻璃。玻璃留在原位，这里不负责把它收起或延后显示。
+    var onNavigationWillShow: ((UINavigationController, UIViewController, Bool) -> Void)?
 
     init(
         session: AuthenticatedSession,
@@ -731,7 +731,6 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         configureComposeHost(destination)
         binding.controller = destination
         setNativeTitle(destinationTitle)
-        destination.hidesBottomBarWhenPushed = true
         pushViewController(destination, animated: true)
     }
 
@@ -829,11 +828,8 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         let shouldHide = navigationBarShouldBeHidden(for: viewController)
         navigationBarHiddenState = shouldHide
         setNavigationBarHidden(shouldHide, animated: animated)
-        // 边缘返回一开始就会 willShow 根页。这时二级页还盖着屏幕，玻璃不能先冒到它上面。
-        // 离开一级页时立刻收起；回到一级页要等 didShow，二级页走掉之后再出现。
-        if viewController !== viewControllers.first {
-            onBarVisibilityChanged?(false)
-        }
+        // 玻璃不跟着进二级页消失，也不等返回动画结束再出现。宿主让二级页盖在它上面。
+        onNavigationWillShow?(navigationController, viewController, animated)
     }
 
     func navigationController(
@@ -850,8 +846,6 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         // 部分系统版本在 didShow 后会把 delegate 重置；每次确认仍由本类接管。
         installInteractivePopGesture(on: navigationController)
         updateInteractivePopEnabled()
-        // 返回完成、二级页离开后，玻璃才回到一级页底栏。取消的边缘手势仍停在二级页，保持收起。
-        onBarVisibilityChanged?(viewController === viewControllers.first)
     }
 
     // MARK: - UIGestureRecognizerDelegate
@@ -902,7 +896,11 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
     private var pushedSystemBottomInset: CGFloat = -1
     /// routeId → 该 tab 的导航栈。重配 tab 时按 routeId 复用，避免整条玻璃栏被拆掉、各 tab 返回栈丢失。
     private var controllersByRoute: [String: TabRootNavigationController] = [:]
-    private var tabBarVisible = true
+    /// 二级页整页盖住玻璃时为 true。玻璃仍在原位，只是层级在页面下面。
+    private var contentCoversTabBar = false
+    /// 转场中玻璃被放进导航容器，夹在根页和二级页之间。这段时间不要重排它的 frame。
+    private var tabBarBorrowed = false
+    private var navigationTransitionGeneration = 0
 
     init(session: AuthenticatedSession) {
         pendingItems = NativeShellKt.nativeTabItems(session: session)
@@ -957,10 +955,11 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
 
     /// 一级入口整份交给 UIKit 的 UITabBar；不再裁成五项，也不创建系统 More 溢出页。
     private func apply(items: [NativeTabItem], session: AuthenticatedSession) {
+        restoreTabBarToHost()
         let previousRouteId = selectedRouteId
         let nextRouteIds = items.map(\.routeId)
         for (routeId, controller) in controllersByRoute where !nextRouteIds.contains(routeId) {
-            controller.onBarVisibilityChanged = nil
+            controller.onNavigationWillShow = nil
             controller.willMove(toParent: nil)
             if controller.isViewLoaded { controller.view.removeFromSuperview() }
             controller.removeFromParent()
@@ -978,8 +977,8 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
                 image: UIImage(systemName: Self.symbolNames[item.routeId] ?? "circle"),
                 selectedImage: nil
             )
-            controller.onBarVisibilityChanged = { [weak self] visible in
-                self?.setTabBarVisible(visible)
+            controller.onNavigationWillShow = { [weak self] navigationController, viewController, animated in
+                self?.handleNavigationWillShow(navigationController, viewController, animated)
             }
             controllersByRoute[item.routeId] = controller
             addChild(controller)
@@ -1022,17 +1021,27 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
         let intrinsicHeight = nativeTabBar.sizeThatFits(
             CGSize(width: view.bounds.width, height: CGFloat.greatestFiniteMagnitude)
         ).height
-        let barHeight = tabBarVisible
-            ? max(80, intrinsicHeight + view.safeAreaInsets.bottom)
-            : 0
-        nativeTabBar.frame = CGRect(
-            x: 0,
-            y: view.bounds.height - barHeight,
-            width: view.bounds.width,
-            height: barHeight
-        )
-        nativeTabBar.isHidden = !tabBarVisible
-        activeController?.view.frame = view.bounds
+        // 玻璃一直占着原来的高度。二级页盖上来，不把高度收成 0，否则返回时要再长出来。
+        let barHeight = max(80, intrinsicHeight + view.safeAreaInsets.bottom)
+        if !tabBarBorrowed {
+            nativeTabBar.isHidden = false
+            nativeTabBar.frame = CGRect(
+                x: 0,
+                y: view.bounds.height - barHeight,
+                width: view.bounds.width,
+                height: barHeight
+            )
+            if let content = activeController?.view {
+                content.frame = view.bounds
+                if contentCoversTabBar {
+                    view.insertSubview(content, aboveSubview: nativeTabBar)
+                } else {
+                    view.insertSubview(content, belowSubview: nativeTabBar)
+                }
+            }
+        } else {
+            activeController?.view.frame = view.bounds
+        }
 
         if let session {
             let inset = barHeight
@@ -1050,15 +1059,105 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
         }
     }
 
-    private func setTabBarVisible(_ visible: Bool) {
-        guard tabBarVisible != visible else { return }
-        tabBarVisible = visible
-        view.setNeedsLayout()
+    /// 玻璃留在原位。涉及根页的转场里，把它夹在根页和二级页之间：二级页滑过时盖住它，
+    /// 返回时它本来就露在下面。二级页之间的推进不把玻璃抬到中间。安卓是新 Activity 盖住底栏，
+    /// 这里同一套，不做另一套消失动画。
+    private func handleNavigationWillShow(
+        _ navigationController: UINavigationController,
+        _ viewController: UIViewController,
+        _ animated: Bool
+    ) {
+        guard navigationController === activeController else { return }
+        navigationTransitionGeneration += 1
+        let generation = navigationTransitionGeneration
+        let showingRoot = viewController === navigationController.viewControllers.first
+        guard animated, let coordinator = navigationController.transitionCoordinator else {
+            restoreTabBarToHost()
+            contentCoversTabBar = !showingRoot
+            view.setNeedsLayout()
+            return
+        }
+        let fromIsRoot = coordinator.viewController(forKey: .from) === navigationController.viewControllers.first
+        let toIsRoot = coordinator.viewController(forKey: .to) === navigationController.viewControllers.first
+        if !fromIsRoot && !toIsRoot {
+            restoreTabBarToHost()
+            contentCoversTabBar = true
+            view.setNeedsLayout()
+            return
+        }
+        tabBarBorrowed = true
+        placeTabBarBetweenPages(navigationController, coordinator)
+        coordinator.animate(alongsideTransition: { [weak self] context in
+            self?.placeTabBarBetweenPages(navigationController, context)
+        }, completion: { [weak self] _ in
+            guard let self, self.navigationTransitionGeneration == generation else { return }
+            self.restoreTabBarToHost()
+            let visibleIsRoot = navigationController.topViewController === navigationController.viewControllers.first
+            self.contentCoversTabBar = !visibleIsRoot
+            self.view.setNeedsLayout()
+            self.view.layoutIfNeeded()
+        })
+    }
+
+    private func placeTabBarBetweenPages(
+        _ navigationController: UINavigationController,
+        _ context: UIViewControllerTransitionCoordinatorContext
+    ) {
+        guard let fromView = context.viewController(forKey: .from)?.view,
+              let toView = context.viewController(forKey: .to)?.view,
+              let container = deepestCommonAncestor(fromView, toView) else { return }
+        let toIsRoot = context.viewController(forKey: .to) === navigationController.viewControllers.first
+        let rootView = toIsRoot ? toView : fromView
+        let coverView = toIsRoot ? fromView : toView
+        guard let rootBranch = directSubview(of: container, containing: rootView),
+              let coverBranch = directSubview(of: container, containing: coverView),
+              rootBranch !== coverBranch else { return }
+        let frameInHost = nativeTabBar.convert(nativeTabBar.bounds, to: view)
+        container.insertSubview(nativeTabBar, aboveSubview: rootBranch)
+        nativeTabBar.frame = container.convert(frameInHost, from: view)
+        nativeTabBar.isHidden = false
+        container.insertSubview(coverBranch, aboveSubview: nativeTabBar)
+        if navigationController.navigationBar.isDescendant(of: container) {
+            container.bringSubviewToFront(navigationController.navigationBar)
+        }
+        tabBarBorrowed = true
+    }
+
+    private func restoreTabBarToHost() {
+        tabBarBorrowed = false
+        if nativeTabBar.superview !== view {
+            view.addSubview(nativeTabBar)
+        }
+    }
+
+    private func deepestCommonAncestor(_ first: UIView, _ second: UIView) -> UIView? {
+        var seen = Set<ObjectIdentifier>()
+        var current: UIView? = first
+        while let node = current {
+            seen.insert(ObjectIdentifier(node))
+            current = node.superview
+        }
+        current = second.superview
+        while let node = current {
+            if seen.contains(ObjectIdentifier(node)) { return node }
+            current = node.superview
+        }
+        return nil
+    }
+
+    private func directSubview(of container: UIView, containing target: UIView) -> UIView? {
+        var current: UIView? = target
+        while let node = current {
+            if node.superview === container { return node }
+            current = node.superview
+        }
+        return nil
     }
 
     private func removeAllControllers() {
+        restoreTabBarToHost()
         for controller in controllersByRoute.values {
-            controller.onBarVisibilityChanged = nil
+            controller.onNavigationWillShow = nil
             controller.willMove(toParent: nil)
             if controller.isViewLoaded { controller.view.removeFromSuperview() }
             controller.removeFromParent()
@@ -1074,15 +1173,21 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
         if let index = tabRouteIds.firstIndex(of: routeId) {
             selectedRouteId = routeId
             let next = controllersByRoute[routeId]!
+            navigationTransitionGeneration += 1
+            restoreTabBarToHost()
+            contentCoversTabBar = next.viewControllers.count > 1
             if activeController !== next {
                 activeController?.view.removeFromSuperview()
                 next.loadViewIfNeeded()
                 next.view.frame = view.bounds
-                view.insertSubview(next.view, belowSubview: nativeTabBar)
+                if contentCoversTabBar {
+                    view.insertSubview(next.view, aboveSubview: nativeTabBar)
+                } else {
+                    view.insertSubview(next.view, belowSubview: nativeTabBar)
+                }
                 activeController = next
             }
             nativeTabBar.selectedItem = nativeTabBar.items?[index]
-            setTabBarVisible(next.viewControllers.count <= 1)
             view.setNeedsLayout()
             return
         }

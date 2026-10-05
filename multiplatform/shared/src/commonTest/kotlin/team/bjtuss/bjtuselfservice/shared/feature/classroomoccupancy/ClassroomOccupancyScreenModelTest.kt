@@ -342,6 +342,19 @@ class ClassroomOccupancyScreenModelTest {
     }
 
     @Test
+    fun peopleRangeDropsTheYearSoTheLineCanStaySingle() {
+        assertEquals(
+            "10-06 01:15:38—10-06 01:15:58",
+            classroomPeopleRangeOnOneLine("2026-10-06 01:15:38—2026-10-06 01:15:58"),
+        )
+        assertEquals(
+            "10-06 01:15:38—10-06 01:15:58",
+            classroomPeopleRangeOnOneLine("10-06 01:15:38—10-06 01:15:58"),
+        )
+        assertEquals("", classroomPeopleRangeOnOneLine(""))
+    }
+
+    @Test
     fun slotTimeRangesMatchSchoolDefinition() {
         assertEquals(7, SLOT_TIME_RANGES.size)
         assertEquals(
