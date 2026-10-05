@@ -134,6 +134,7 @@ import team.bjtuss.bjtuselfservice.shared.data.classroomoccupancy.ClassroomOccup
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseCompactViewMode
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleContentSource
 import kotlinx.coroutines.flow.MutableStateFlow
+import team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabSettings
 import team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabState
 import team.bjtuss.bjtuselfservice.shared.feature.course.scheduleEventCourses
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleScreenModel
@@ -396,6 +397,7 @@ fun AuthenticatedAppShell(
         PhyVlabDetailRoute -> AppSection.PHYVLAB
         MailboxDetailRoute -> AppSection.MAILBOX
         MailboxComposeRoute -> AppSection.MAILBOX
+        PhysicsLabSettingsRoute -> AppSection.MORE
         is AppSection -> currentRoute
     }
     val popBackStack: () -> Unit = if (forcedRouteId != null) {
@@ -971,6 +973,8 @@ fun AuthenticatedAppShell(
          * 另加 8.dp 呼吸（与底栏镜像）。
          */
         keepsTopBarInset: Boolean = false,
+        /** 只压矮本页自绘标题栏，不改其它页。 */
+        denseTopBar: Boolean = false,
         /**
          * 原生栏不随滚动变化（无透明 ↔ 玻璃过渡），栏保持顶部时的纯色样子。
          *
@@ -1145,6 +1149,7 @@ fun AuthenticatedAppShell(
                         isRefreshing = isRefreshing || sessionRecoveryInProgress,
                         isLoggingIn = entryLoggingIn,
                         idleStatusText = idleStatusText,
+                        dense = denseTopBar,
                         action = composeAction,
                         // 可刷新页：右上角状态胶囊旁放刷新按钮；不再下拉刷新（保平台原生过滚）。
                         onRefresh = if (refreshable) effectiveRefreshAction else null,
@@ -1551,6 +1556,7 @@ fun AuthenticatedAppShell(
                 // 顶栏 underlap 暂不启用：周/图例/星期三段筛选头固定在列表上方，视口到不了栏后。
                 // 且关闭滚动过渡：栏后永远是纯色，过渡只会凭空闪一下。
                 staticTopBar = true,
+                denseTopBar = true,
             ) {
                 ClassroomOccupancyBuildingWorkspace(
                     model = classroomOccupancyModel,
@@ -1728,6 +1734,23 @@ fun AuthenticatedAppShell(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+            PhysicsLabSettingsRoute -> DestinationPage(
+                title = "物理实验同步",
+                expanded = expanded,
+                refreshable = false,
+                isRefreshing = false,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
+                modifier = modifier,
+                scrollUnderTopBar = true,
+            ) {
+                session.physicsLabModel?.let { labModel ->
+                    PhysicsLabSettings(
+                        model = labModel,
+                        modifier = Modifier.fillMaxSize().padding(top = LocalTopBarClearance.current),
+                        showTitle = false,
+                    )
+                }
+            }
             AppSection.MORE -> DestinationPage(
                 title = AppSection.MORE.title,
                 expanded = expanded,
@@ -1741,6 +1764,15 @@ fun AuthenticatedAppShell(
                     preferences = settingsState.preferences,
                     physicsLabModel = session.physicsLabModel,
                     onOpenSection = { target -> navigateToSection(target) },
+                    onOpenPhysicsLab = {
+                        if (useNativeSecondaryRoutes) {
+                            onOpenNativeRoute(PHYSICS_LAB_SETTINGS_ROUTE_ID)
+                        } else if (backStack.lastOrNull() != PhysicsLabSettingsRoute) {
+                            backStack.clear()
+                            backStack.add(AppSection.MORE)
+                            backStack.add(PhysicsLabSettingsRoute)
+                        }
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -1830,6 +1862,14 @@ fun AuthenticatedAppShell(
                     entry<MailboxComposeRoute> {
                         SectionDestination(
                             route = MailboxComposeRoute,
+                            expanded = true,
+                            modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family),
+                        )
+                    }
+                    entry<PhysicsLabSettingsRoute> {
+                        SectionDestination(
+                            route = PhysicsLabSettingsRoute,
                             expanded = true,
                             modifier = Modifier.fillMaxSize(),
                             usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family),
@@ -2019,6 +2059,14 @@ fun AuthenticatedAppShell(
                     entry<MailboxComposeRoute> {
                         SectionDestination(
                             route = MailboxComposeRoute,
+                            expanded = false,
+                            modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = false,
+                        )
+                    }
+                    entry<PhysicsLabSettingsRoute> {
+                        SectionDestination(
+                            route = PhysicsLabSettingsRoute,
                             expanded = false,
                             modifier = Modifier.fillMaxSize(),
                             usesLegacySmartTransport = false,

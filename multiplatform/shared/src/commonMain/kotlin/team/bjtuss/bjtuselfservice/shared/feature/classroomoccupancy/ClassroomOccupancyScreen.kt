@@ -85,6 +85,17 @@ private val weekdayLabels = listOf("周一", "周二", "周三", "周四", "周�
 /** 数据边界说明：教务教室使用查询为当前学期占用，页内常驻提示。 */
 private const val DISCLAIMER = "数据来自教务系统教室使用查询，为当前学期排课/调课/考试占用情况。"
 
+@Composable
+private fun OccupancySourceLine() {
+    Text(
+        DISCLAIMER,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
 /**
  * 教室占用一级页：教学楼列表（单选）。compact 下点选后先写选中再由 shell
  * 原生 push（或压栈）出详情页；expanded 下列表与详情并排。
@@ -345,33 +356,25 @@ private fun OccupancyDetail(
     LaunchedEffect(selected.id) { model.refreshPeople() }
     // 与其它页一致水平 16.dp；筛选与说明留给列表剩余高度。
     Column(
-        modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.padding(horizontal = 16.dp).padding(top = 2.dp, bottom = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         if (showBuildingHeader) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         selected.name,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
-                        DISCLAIMER,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    OccupancySourceLine()
                 }
                 Button(onClick = onRefresh, enabled = !state.isLoading) { Text("刷新") }
             }
         } else {
-            Text(
-                DISCLAIMER,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            OccupancySourceLine()
         }
 
         ClassroomOccupancyFilters(

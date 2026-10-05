@@ -12,7 +12,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabModel
-import team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabSettings
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 
 @Composable
@@ -21,18 +20,20 @@ internal fun MoreWorkspace(
     onOpenSection: (AppSection) -> Unit,
     modifier: Modifier,
     physicsLabModel: PhysicsLabModel? = null,
+    onOpenPhysicsLab: () -> Unit = {},
 ) {
-    var showPhysicsLab by remember { mutableStateOf(false) }
-    if (showPhysicsLab && physicsLabModel != null) {
-        AppleSheet(onDismissRequest = { showPhysicsLab = false }, title = "物理实验同步", needsFullHeight = true, scrollableBody = true) {
-            PhysicsLabSettings(physicsLabModel, showTitle = false)
-        }
-    }
     val scroll = rememberScrollState()
     ReportTopScrollState(scroll)
-    val entries = applicationSections(preferences).map { section ->
+    val sections = applicationSections(preferences)
+    val entries = sections.map { section ->
         ApplicationTile(section.title, section) { onOpenSection(section) }
-    } + if (physicsLabModel != null) listOf(ApplicationTile("物理实验同步", AppSection.PHYVLAB) { showPhysicsLab = true }) else emptyList()
+    }.toMutableList()
+    if (physicsLabModel != null) {
+        entries.add(
+            physicsLabApplicationIndex(sections),
+            ApplicationTile("物理实验同步", AppSection.PHYVLAB, onOpenPhysicsLab),
+        )
+    }
     BoxWithConstraints(modifier.fillMaxSize()) {
         val columns = when { maxWidth >= 800.dp -> 4; maxWidth >= 480.dp -> 3; else -> 2 }
         val barClearance = LocalBottomBarClearance.current

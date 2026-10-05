@@ -201,7 +201,7 @@ internal enum class AppSection(
     CLASSROOMS("教室人数估计"),
     MAILBOX("邮箱"),
     PHYVLAB("物理在线", "物理在线（仅能在校园网下访问）"),
-    CALENDAR("校历"),
+    CALENDAR("校历下载"),
     REPORT_CARD_DOWNLOAD("成绩单下载"),
     SETTINGS("设置"),
     MORE("应用"),
@@ -233,6 +233,12 @@ internal fun bottomNavSections(preferences: team.bjtuss.bjtuselfservice.shared.c
 
 internal fun applicationSections(preferences: team.bjtuss.bjtuselfservice.shared.cache.AppPreferences): List<AppSection> =
     bottomNavigationCandidates(preferences.isPhyVlabEnabled).filter { it !in bottomNavSections(preferences) }
+
+/** 物理实验同步紧挨物理在线。物理在线已在底栏时，插在它原来的目录位置，不跟在设置后面。 */
+internal fun physicsLabApplicationIndex(sections: List<AppSection>): Int {
+    val slot = sections.indexOfFirst { it.ordinal > AppSection.PHYVLAB.ordinal }
+    return if (slot < 0) sections.size else slot
+}
 
 /** 在底部导航中归属“更多”高亮的入口。 */
 internal val MoreGroupSections = setOf(
@@ -272,6 +278,10 @@ const val MAILBOX_DETAIL_ROUTE_ID = "MAILBOX_DETAIL"
 internal data object MailboxComposeRoute : AppRoute
 const val MAILBOX_COMPOSE_ROUTE_ID = "MAILBOX_COMPOSE"
 
+/** 物理实验同步二级页：从应用目录进入，不使用弹窗。 */
+internal data object PhysicsLabSettingsRoute : AppRoute
+const val PHYSICS_LAB_SETTINGS_ROUTE_ID = "PHYSICS_LAB_SETTINGS"
+
 /** Google predictive-back full-screen surface 的 SystemUI 插值。 */
 internal val androidPredictiveEasing = CubicBezierEasing(0.1f, 0.1f, 0f, 1f)
 
@@ -288,6 +298,8 @@ internal fun String.toAppRoute(): AppRoute? =
         MailboxDetailRoute
     } else if (this == MAILBOX_COMPOSE_ROUTE_ID) {
         MailboxComposeRoute
+    } else if (this == PHYSICS_LAB_SETTINGS_ROUTE_ID) {
+        PhysicsLabSettingsRoute
     } else {
         AppSection.entries.firstOrNull { it.name == this }
     }

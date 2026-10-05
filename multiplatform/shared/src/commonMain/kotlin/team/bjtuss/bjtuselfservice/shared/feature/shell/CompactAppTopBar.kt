@@ -199,13 +199,15 @@ internal fun CompactAppTopBar(
     onStatusClick: (() -> Unit)? = null,
     action: (@Composable () -> Unit)? = null,
     onBack: (() -> Unit)? = null,
+    /** 教室查询详情把标题压矮，把高度留给教室列表。其它页保持原高度。 */
+    dense: Boolean = false,
 ) {
     // 顶栏与页面背景同色：iOS 的 SwiftUI 根视图在状态栏下方铺的就是 background，
     // 顶栏若用 surface 会在状态栏下方露出一条浅色带子，破坏沉浸感。
     // iOS 的 Compose 宿主已改为全屏布局（原生 push 转场需要覆盖状态栏区域），
     // WindowInsets.statusBars 在 iOS 上恢复为真实值，顶栏统一应用状态栏内边距。
     // 内容行固定高度：大标题与右侧「已同步」胶囊垂直居中同一条线，各 tab 一致。
-    val topBarContentHeight = 52.dp
+    val topBarContentHeight = if (dense) 40.dp else 52.dp
     Surface(color = MaterialTheme.colorScheme.background) {
         Row(
             modifier = Modifier
@@ -236,7 +238,7 @@ internal fun CompactAppTopBar(
             }
             Text(
                 title,
-                style = MaterialTheme.typography.headlineSmall,
+                style = if (dense) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

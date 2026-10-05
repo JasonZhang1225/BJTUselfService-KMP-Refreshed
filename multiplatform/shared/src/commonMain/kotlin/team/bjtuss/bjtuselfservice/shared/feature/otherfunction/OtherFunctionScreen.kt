@@ -48,7 +48,7 @@ fun SchoolCalendarArticleWorkspace(
     modifier: Modifier = Modifier,
 ) {
     OtherFunctionPageScaffold(
-        title = "校历",
+        title = "校历下载",
         subtitle = "当前最新校历为 2026-2027 校历，点击跳转学校公众号文章获取详情",
         expanded = expanded,
         modifier = modifier,
@@ -74,7 +74,7 @@ fun SchoolCalendarArticleWorkspace(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Button(onClick = onOpenArticle) {
-                    Text("查看 2026-2027 校历")
+                    Text("查看 2026-2027 校历下载")
                 }
             }
         }

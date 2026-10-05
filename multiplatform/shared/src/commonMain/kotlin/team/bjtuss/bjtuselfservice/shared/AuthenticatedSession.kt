@@ -154,4 +154,5 @@ fun isNativeDetailRoute(routeId: String): Boolean =
         routeId == "REPORT_CARD_DOWNLOAD" ||
         routeId == "PHYVLAB" ||
         routeId == "PHYVLAB_DETAIL" ||
+        routeId == "PHYSICS_LAB_SETTINGS" ||
         routeId == "SETTINGS"
