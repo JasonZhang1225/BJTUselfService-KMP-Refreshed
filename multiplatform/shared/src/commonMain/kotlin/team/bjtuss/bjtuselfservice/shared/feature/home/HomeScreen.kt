@@ -280,7 +280,7 @@ fun HomeWorkspace(
                 end = if (expanded) 8.dp else 16.dp,
                 // 原生栏 underlap 时首项靠这份顶边距让开，视口本身画到屏幕顶（底栏同理）。
                 top = 14.dp + LocalTopBarClearance.current,
-                // 玻璃 TabBar 浮在列表之上：末项靠这份尾部留白让开，视口本身画到物理底边。
+                // 玻璃胶囊浮在列表之上。首页视口已停在胶囊上沿，这里只留末项呼吸。
                 bottom = 14.dp + LocalBottomBarClearance.current,
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1213,7 +1213,7 @@ private fun HomeAgendaCalendarContent(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            val categoryOrder = listOf("课程", "作业开始", "作业截止", "考试", "物理开始", "物理截止")
+            val categoryOrder = listOf("课程", "待提交作业", "已提交作业")
             val categories = weekAgenda.days.flatMap { agendaCategoryCounts(it) }
                 .distinctBy { it.label }.sortedBy { categoryOrder.indexOf(it.label) }
             categories.forEach { (label, _, color) ->
@@ -1325,10 +1325,15 @@ private fun DueSoonHomeworkSummary(
     }
 }
 
-/** 当天截止项全部已做时的格子底色/字色；浅色深绿字、深色浅绿字，保证对比度。 */
+/** 当天截止项全部已做时的格子底色/字色；浅色深绿字、深色浅绿字，保证对比度。绿底比原先调浅。 */
 @Composable
 private fun doneDayContainerColor(): Color =
-    if (isSystemInDarkTheme()) Color(0xFF1E4B2C) else Color(0xFFD9EEDF)
+    if (isSystemInDarkTheme()) Color(0xFF2A603E) else Color(0xFFECF7F0)
+
+/** 已提交作业圆点。浅色比原先绿底更深；深色用更亮的绿，避免落在深底上看不见。 */
+@Composable
+private fun submittedHomeworkMarkColor(): Color =
+    if (isSystemInDarkTheme()) Color(0xFFB7E8C8) else Color(0xFF146C39)
 
 @Composable
 private fun doneDayContentColor(): Color =
@@ -1378,21 +1383,29 @@ private fun AgendaDayCell(
         ) {
             Text(weekdayShortName(day.date), style = MaterialTheme.typography.labelSmall)
             Text(day.date.day.toString(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            val counts = agendaCategoryCounts(day)
-            if (counts.isEmpty()) {
+            val marks = agendaWeekMarks(day)
+            val homeworkMarks = buildList {
+                if (marks.pendingHomework > 0) {
+                    add(AgendaCategoryCount("待提交作业", marks.pendingHomework, MaterialTheme.colorScheme.error))
+                }
+                if (marks.submittedHomework > 0) {
+                    add(AgendaCategoryCount("已提交作业", marks.submittedHomework, submittedHomeworkMarkColor()))
+                }
+            }
+            val courseMarks = if (marks.courses > 0) {
+                listOf(AgendaCategoryCount("课程", marks.courses, MaterialTheme.colorScheme.secondary))
+            } else {
+                emptyList()
+            }
+            if (homeworkMarks.isEmpty() && courseMarks.isEmpty()) {
                 Text("—", style = MaterialTheme.typography.labelSmall)
             } else {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    counts.forEach { (label, count, color) ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                            modifier = Modifier.semantics { contentDescription = "$label $count" },
-                        ) {
-                            Canvas(Modifier.size(5.dp)) { drawCircle(color) }
-                            Text(count.toString(), style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(1.dp),
+                ) {
+                    if (homeworkMarks.isNotEmpty()) AgendaMarkLine(homeworkMarks)
+                    if (courseMarks.isNotEmpty()) AgendaMarkLine(courseMarks)
                 }
             }
         }
@@ -1401,15 +1414,49 @@ private fun AgendaDayCell(
 
 private data class AgendaCategoryCount(val label: String, val count: Int, val color: Color)
 
+private data class AgendaWeekMarks(
+    val pendingHomework: Int,
+    val submittedHomework: Int,
+    val courses: Int,
+)
+
+private fun agendaWeekMarks(day: HomeAgendaDay): AgendaWeekMarks {
+    var pending = 0
+    var submitted = 0
+    day.homeworkDue.forEach { item ->
+        if (isHomeworkSubmitted(item)) submitted += 1 else pending += 1
+    }
+    return AgendaWeekMarks(pending, submitted, day.courses.size)
+}
+
 @Composable
-private fun agendaCategoryCounts(day: HomeAgendaDay): List<AgendaCategoryCount> = listOf(
-    AgendaCategoryCount("课程", day.courses.size, MaterialTheme.colorScheme.secondary),
-    AgendaCategoryCount("作业开始", day.homeworkStarting.size, MaterialTheme.colorScheme.primary),
-    AgendaCategoryCount("作业截止", day.homeworkDue.size, MaterialTheme.colorScheme.error),
-    AgendaCategoryCount("考试", day.exams.size, MaterialTheme.colorScheme.tertiary),
-    AgendaCategoryCount("物理开始", day.phyVlabEvents.count { it.kind == PhyVlabEventKind.START }, MaterialTheme.colorScheme.primary),
-    AgendaCategoryCount("物理截止", day.phyVlabEvents.count { it.kind == PhyVlabEventKind.DEADLINE }, MaterialTheme.colorScheme.error),
-).filter { it.count > 0 }
+private fun AgendaMarkLine(items: List<AgendaCategoryCount>) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        items.forEach { (label, count, color) ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.semantics { contentDescription = "$label $count" },
+            ) {
+                Canvas(Modifier.size(5.dp)) { drawCircle(color) }
+                Text(count.toString(), style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun agendaCategoryCounts(day: HomeAgendaDay): List<AgendaCategoryCount> {
+    val marks = agendaWeekMarks(day)
+    return listOf(
+        AgendaCategoryCount("课程", marks.courses, MaterialTheme.colorScheme.secondary),
+        AgendaCategoryCount("待提交作业", marks.pendingHomework, MaterialTheme.colorScheme.error),
+        AgendaCategoryCount("已提交作业", marks.submittedHomework, submittedHomeworkMarkColor()),
+    ).filter { it.count > 0 }
+}
 
 @Composable
 private fun AgendaCourseIcon() {

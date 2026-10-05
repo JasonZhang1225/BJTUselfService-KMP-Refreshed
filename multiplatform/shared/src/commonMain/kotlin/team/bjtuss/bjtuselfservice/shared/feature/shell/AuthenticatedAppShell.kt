@@ -1245,6 +1245,8 @@ fun AuthenticatedAppShell(
                 onStatusClick = { homeSyncDialogVisible = true },
                 syncFailureItems = homeSyncFailureItems,
                 scrollUnderTopBar = true,
+                // 首页末卡会被悬浮胶囊盖住。内容区停在胶囊上沿，高度用底栏占位再叠系统安全区。
+                keepsBottomBarInset = true,
             ) {
                 CompositionLocalProvider(
                     team.bjtuss.bjtuselfservice.shared.feature.home.LocalHomeSchedule provides

@@ -829,7 +829,11 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         let shouldHide = navigationBarShouldBeHidden(for: viewController)
         navigationBarHiddenState = shouldHide
         setNavigationBarHidden(shouldHide, animated: animated)
-        onBarVisibilityChanged?(viewController === viewControllers.first)
+        // 边缘返回一开始就会 willShow 根页。这时二级页还盖着屏幕，玻璃不能先冒到它上面。
+        // 离开一级页时立刻收起；回到一级页要等 didShow，二级页走掉之后再出现。
+        if viewController !== viewControllers.first {
+            onBarVisibilityChanged?(false)
+        }
     }
 
     func navigationController(
@@ -846,6 +850,8 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         // 部分系统版本在 didShow 后会把 delegate 重置；每次确认仍由本类接管。
         installInteractivePopGesture(on: navigationController)
         updateInteractivePopEnabled()
+        // 返回完成、二级页离开后，玻璃才回到一级页底栏。取消的边缘手势仍停在二级页，保持收起。
+        onBarVisibilityChanged?(viewController === viewControllers.first)
     }
 
     // MARK: - UIGestureRecognizerDelegate
@@ -1093,7 +1099,6 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
            let controller = controllersByRoute[routeId],
            controller.viewControllers.count > 1 {
             controller.popToRootViewController(animated: true)
-            setTabBarVisible(true)
         } else {
             select(routeId: routeId)
         }

@@ -82,20 +82,6 @@ import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 
 private val weekdayLabels = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
-/** 数据边界说明：教务教室使用查询为当前学期占用，页内常驻提示。 */
-private const val DISCLAIMER = "数据来自教务系统教室使用查询，为当前学期排课/调课/考试占用情况。"
-
-@Composable
-private fun OccupancySourceLine() {
-    Text(
-        DISCLAIMER,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
-}
-
 /**
  * 教室占用一级页：教学楼列表（单选）。compact 下点选后先写选中再由 shell
  * 原生 push（或压栈）出详情页；expanded 下列表与详情并排。
@@ -361,20 +347,16 @@ private fun OccupancyDetail(
     ) {
         if (showBuildingHeader) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        selected.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    OccupancySourceLine()
-                }
+                Text(
+                    selected.name,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Button(onClick = onRefresh, enabled = !state.isLoading) { Text("刷新") }
             }
-        } else {
-            OccupancySourceLine()
         }
 
         ClassroomOccupancyFilters(

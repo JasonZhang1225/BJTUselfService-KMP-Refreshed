@@ -202,7 +202,9 @@ fun SettingsWorkspace(
                 OutlinedButton(
                     onClick = { uriHandler.openUri("https://github.com/optsimauth/BJTUselfServiceAIO") },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("AIO 社区版 GitHub") }
+                ) {
+                    Text("AIO 版 GitHub（Flutter 跨平台）")
+                }
                 Text(
                     "预发布阶段更新检测指向本仓库 GitHub Releases（含 pre-release）。",
                     style = MaterialTheme.typography.bodySmall,
