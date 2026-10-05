@@ -17,6 +17,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.lazy.LazyColumn
@@ -70,6 +72,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -700,6 +704,7 @@ private fun HomeAgendaSection(
             nextWeek = null,
             onSelectWeek = selectWeekFromUser,
             onSelectDate = { date -> selectedDates[startupSlot.startDate] = date },
+            isDateCurrent = { date -> selectedDateFor(startupSlot) == date },
             modifier = Modifier.fillMaxWidth(),
         )
     } else if (useFingerWeekPager) {
@@ -849,6 +854,10 @@ private fun HomeAgendaSection(
                             },
                     )
                 }
+                val dayTransition = updateTransition(
+                    targetState = settledSlot to settledDate,
+                    label = "home-agenda-selected-day",
+                )
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -878,8 +887,7 @@ private fun HomeAgendaSection(
                             )
                         },
                 ) {
-                    AnimatedContent(
-                        targetState = settledSlot to settledDate,
+                    dayTransition.AnimatedContent(
                         transitionSpec = {
                             val direction = if (targetState.first.startDate >= initialState.first.startDate) 1 else -1
                             (
@@ -918,7 +926,6 @@ private fun HomeAgendaSection(
                                     },
                                 )
                         },
-                        label = "home-agenda-selected-day-transition",
                     ) { (weekSlot, date) ->
                         val weekStartDate = weekSlot.startDate
                         val weekAgenda = remember(
@@ -948,6 +955,15 @@ private fun HomeAgendaSection(
                             onOpenHomework = onOpenHomework,
                             onOpenExams = onOpenExams,
                             onOpenPhyVlab = onOpenPhyVlab,
+                            canNavigate = {
+                                !dayTransition.isRunning &&
+                                    dayTransition.currentState == dayTransition.targetState &&
+                                    dayTransition.targetState == (weekSlot to date) &&
+                                    selectedDateFor(weekSlot) == date &&
+                                    selectedSlot == weekSlot &&
+                                    !pagerState.isScrollInProgress &&
+                                    scheduleSwipeTargetPage == null
+                            },
                         )
                     }
                 }
@@ -974,6 +990,9 @@ private fun HomeAgendaSection(
             nextWeek = adjacentWeekFor(selectedSlot, 1),
             onSelectWeek = selectWeekFromUser,
             onSelectDate = { date -> selectedDates[selectedSlot.startDate] = date },
+            isDateCurrent = { date ->
+                selectedSlot.startDate == weekStartDate && selectedDateFor(selectedSlot) == date
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .courseWeekScrollNavigation(weekScrollAccumulator) { direction ->
@@ -1012,6 +1031,7 @@ private fun HomeAgendaWeekCard(
     nextWeek: AcademicWeekSlot?,
     onSelectWeek: (AcademicWeekSlot) -> Unit,
     onSelectDate: (LocalDate) -> Unit,
+    isDateCurrent: (LocalDate) -> Boolean,
     modifier: Modifier,
 ) {
     val homeSchedule = LocalHomeSchedule.current
@@ -1053,8 +1073,8 @@ private fun HomeAgendaWeekCard(
                 onSelectDate = onSelectDate,
                 modifier = Modifier.fillMaxWidth(),
             )
-            AnimatedContent(
-                targetState = selectedDay.date,
+            val dayTransition = updateTransition(selectedDay.date, label = "home-agenda-day")
+            dayTransition.AnimatedContent(
                 transitionSpec = {
                     val direction = if (targetState >= initialState) 1 else -1
                     (
@@ -1093,10 +1113,16 @@ private fun HomeAgendaWeekCard(
                             },
                         )
                 },
-                label = "home-agenda-day-transition",
             ) { date ->
                 val day = weekAgenda.days.firstOrNull { it.date == date } ?: selectedDay
-                AgendaSelectedDayContent(day, onOpenHomework, onOpenExams, onOpenPhyVlab)
+                AgendaSelectedDayContent(
+                    day, onOpenHomework, onOpenExams, onOpenPhyVlab,
+                    canNavigate = {
+                        !dayTransition.isRunning &&
+                            dayTransition.currentState == dayTransition.targetState &&
+                            dayTransition.targetState == date && isDateCurrent(date)
+                    },
+                )
             }
         }
     }
@@ -1183,6 +1209,20 @@ private fun HomeAgendaCalendarContent(
                 )
             }
         }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            val categoryOrder = listOf("课程", "作业开始", "作业截止", "考试", "物理开始", "物理截止")
+            val categories = weekAgenda.days.flatMap { agendaCategoryCounts(it) }
+                .distinctBy { it.label }.sortedBy { categoryOrder.indexOf(it.label) }
+            categories.forEach { (label, _, color) ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Canvas(Modifier.size(5.dp)) { drawCircle(color) }
+                    Text(label, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
     }
 }
 
@@ -1192,6 +1232,7 @@ private fun AgendaSelectedDayContent(
     onOpenHomework: () -> Unit,
     onOpenExams: () -> Unit,
     onOpenPhyVlab: () -> Unit,
+    canNavigate: () -> Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
@@ -1199,7 +1240,7 @@ private fun AgendaSelectedDayContent(
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
         )
-        AgendaDayDetails(day, onOpenHomework, onOpenExams, onOpenPhyVlab)
+        AgendaDayDetails(day, onOpenHomework, onOpenExams, onOpenPhyVlab, canNavigate)
     }
 }
 
@@ -1337,16 +1378,58 @@ private fun AgendaDayCell(
         ) {
             Text(weekdayShortName(day.date), style = MaterialTheme.typography.labelSmall)
             Text(day.date.day.toString(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            Text(
-                if (day.eventCount == 0) "—" else "${day.eventCount}项",
-                style = MaterialTheme.typography.labelSmall,
-                textAlign = TextAlign.Center,
-                color = when {
-                    allDone -> doneDayContentColor()
-                    hasDeadline -> MaterialTheme.colorScheme.onErrorContainer
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
+            val counts = agendaCategoryCounts(day)
+            if (counts.isEmpty()) {
+                Text("—", style = MaterialTheme.typography.labelSmall)
+            } else {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    counts.forEach { (label, count, color) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            modifier = Modifier.semantics { contentDescription = "$label $count" },
+                        ) {
+                            Canvas(Modifier.size(5.dp)) { drawCircle(color) }
+                            Text(count.toString(), style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class AgendaCategoryCount(val label: String, val count: Int, val color: Color)
+
+@Composable
+private fun agendaCategoryCounts(day: HomeAgendaDay): List<AgendaCategoryCount> = listOf(
+    AgendaCategoryCount("课程", day.courses.size, MaterialTheme.colorScheme.secondary),
+    AgendaCategoryCount("作业开始", day.homeworkStarting.size, MaterialTheme.colorScheme.primary),
+    AgendaCategoryCount("作业截止", day.homeworkDue.size, MaterialTheme.colorScheme.error),
+    AgendaCategoryCount("考试", day.exams.size, MaterialTheme.colorScheme.tertiary),
+    AgendaCategoryCount("物理开始", day.phyVlabEvents.count { it.kind == PhyVlabEventKind.START }, MaterialTheme.colorScheme.primary),
+    AgendaCategoryCount("物理截止", day.phyVlabEvents.count { it.kind == PhyVlabEventKind.DEADLINE }, MaterialTheme.colorScheme.error),
+).filter { it.count > 0 }
+
+@Composable
+private fun AgendaCourseIcon() {
+    val tint = MaterialTheme.colorScheme.secondary
+    Canvas(Modifier.size(24.dp).semantics { contentDescription = "课程" }) {
+        val scale = size.width / 24f
+        val outline = Path().apply {
+            moveTo(12f * scale, 5f * scale)
+            cubicTo(9f * scale, 3f * scale, 5f * scale, 3f * scale, 2f * scale, 4f * scale)
+            lineTo(2f * scale, 20f * scale)
+            cubicTo(5f * scale, 19f * scale, 9f * scale, 19f * scale, 12f * scale, 21f * scale)
+            cubicTo(15f * scale, 19f * scale, 19f * scale, 19f * scale, 22f * scale, 20f * scale)
+            lineTo(22f * scale, 4f * scale)
+            cubicTo(19f * scale, 3f * scale, 15f * scale, 3f * scale, 12f * scale, 5f * scale)
+            close()
+        }
+        drawPath(outline, tint, style = Stroke(1.8f * scale))
+        drawLine(tint, Offset(12f * scale, 5f * scale), Offset(12f * scale, 21f * scale), 1.8f * scale)
+        for (y in listOf(8f, 11f, 14f)) {
+            drawLine(tint, Offset(15f * scale, y * scale), Offset(20f * scale, (y - 1f) * scale), scale)
         }
     }
 }
@@ -1357,6 +1440,7 @@ private fun AgendaDayDetails(
     onOpenHomework: () -> Unit,
     onOpenExams: () -> Unit,
     onOpenPhyVlab: () -> Unit,
+    canNavigate: () -> Boolean,
 ) {
     val homeSchedule = LocalHomeSchedule.current
     if (day.eventCount == 0) {
@@ -1365,7 +1449,7 @@ private fun AgendaDayDetails(
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         day.homeworkStarting.forEach { item ->
-            AgendaEventRow("开始", item.title, item.courseName, onOpenHomework)
+            AgendaEventRow("开始", item.title, item.courseName, onOpenHomework, canNavigate)
         }
         day.homeworkDue.forEach { item ->
             AgendaEventRow(
@@ -1373,11 +1457,12 @@ private fun AgendaDayDetails(
                 title = item.title,
                 detail = "${item.courseName} · ${item.endTime}",
                 onClick = onOpenHomework,
+                canNavigate = canNavigate,
                 done = isHomeworkSubmitted(item),
             )
         }
         day.exams.forEach { exam ->
-            AgendaEventRow("考试", exam.courseName, exam.examTimeAndPlace, onOpenExams)
+            AgendaEventRow("考试", exam.courseName, exam.examTimeAndPlace, onOpenExams, canNavigate)
         }
         day.phyVlabEvents.forEach { event ->
             AgendaEventRow(
@@ -1385,6 +1470,7 @@ private fun AgendaDayDetails(
                 title = event.title,
                 detail = formatPhyVlabAgendaDate(event),
                 onClick = onOpenPhyVlab,
+                canNavigate = canNavigate,
                 done = event.submitted,
             )
         }
@@ -1398,6 +1484,7 @@ private fun AgendaDayDetails(
                     title = course.courseName,
                     detail = listOf(time, team.bjtuss.bjtuselfservice.shared.domain.course.displayCoursePlace(course.coursePlace), course.courseTeacher).filter(String::isNotBlank).joinToString(" · "),
                     onClick = homeSchedule.onOpenSchedule,
+                    canNavigate = canNavigate,
                 )
             }
         }
@@ -1411,11 +1498,13 @@ private fun AgendaEventRow(
     title: String,
     detail: String,
     onClick: () -> Unit,
+    canNavigate: () -> Boolean,
     done: Boolean = false,
 ) {
     val isDeadline = type.contains("截止")
     Surface(
-        onClick = onClick,
+        onClick = { if (canNavigate()) onClick() },
+        enabled = canNavigate(),
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -1425,15 +1514,19 @@ private fun AgendaEventRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                type,
-                color = when {
-                    done -> doneDeadlineLabelColor()
-                    isDeadline -> MaterialTheme.colorScheme.error
-                    else -> MaterialTheme.colorScheme.primary
-                },
-                fontWeight = FontWeight.SemiBold,
-            )
+            if (type == "课程") {
+                AgendaCourseIcon()
+            } else {
+                Text(
+                    type,
+                    color = when {
+                        done -> doneDeadlineLabelColor()
+                        isDeadline -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.primary
+                    },
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                 Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
