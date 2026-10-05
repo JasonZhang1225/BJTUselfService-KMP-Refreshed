@@ -66,6 +66,17 @@ class SettingsScreenModel(
         }
     }
 
+    fun setBottomNavigationOrder(routeIds: List<String>): Boolean {
+        val current = mutableState.value.preferences
+        val candidates = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavigationCandidates(current.isPhyVlabEnabled)
+        val selected = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavSections(current)
+            .filter { it in candidates }.map { it.name }
+        // Reordering cannot add, remove, duplicate, or move the fixed entries.
+        if (routeIds.size != selected.size || routeIds.toSet() != selected.toSet()) return false
+        updatePreferences { copy(bottomNavigationItems = routeIds.toList()) }
+        return !mutableState.value.saveFailed
+    }
+
     fun moveBottomNavigationItem(routeId: String, direction: Int): Boolean {
         if (direction != -1 && direction != 1) return false
         val current = mutableState.value.preferences

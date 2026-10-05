@@ -333,4 +333,28 @@ class SettingsScreenModelTest {
         assertEquals(stored.bottomNavigationItems, restored.state.value.preferences.bottomNavigationItems)
     }
 
+    @Test
+    fun dragOrderAndMembershipSurviveReopeningSettings() {
+        var stored = AppPreferences()
+        val first = model(persistPreferences = { stored = it; true })
+        first.setBottomNavigationItem("SCHEDULE", false)
+        first.setBottomNavigationItem("MAILBOX", true)
+        assertTrue(first.setBottomNavigationOrder(listOf("MAILBOX", "PHYVLAB", "GRADES", "HOMEWORK")))
+        val reopened = model(initialPreferences = stored)
+        assertEquals(listOf("MAILBOX", "PHYVLAB", "GRADES", "HOMEWORK"), reopened.state.value.preferences.bottomNavigationItems)
+    }
+
+    @Test
+    fun dragOrderRejectsChangedMembershipAndRollsBackFailedSave() {
+        var saves = 0
+        val model = model(persistPreferences = { saves++; false })
+        assertFalse(model.setBottomNavigationOrder(listOf("HOME", "SCHEDULE", "GRADES", "HOMEWORK")))
+        assertFalse(model.setBottomNavigationOrder(listOf("SCHEDULE", "GRADES", "HOMEWORK", "HOMEWORK", "PHYVLAB")))
+        assertEquals(0, saves)
+        assertFalse(model.setBottomNavigationOrder(listOf("PHYVLAB", "HOMEWORK", "GRADES", "SCHEDULE")))
+        assertEquals(1, saves)
+        assertEquals(null, model.state.value.preferences.bottomNavigationItems)
+        assertTrue(model.state.value.saveFailed)
+    }
+
 }

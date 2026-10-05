@@ -124,8 +124,6 @@ fun SettingsWorkspace(
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("底栏显示", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text("首页和应用固定显示，可另外选择最多四项功能。", style = MaterialTheme.typography.bodySmall)
-                Text("已选项置顶，拖动右侧手柄调整顺序。", style = MaterialTheme.typography.bodySmall)
                 BottomNavigationSettings(state.preferences, model)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text("启用物理在线", modifier = Modifier.weight(1f))
