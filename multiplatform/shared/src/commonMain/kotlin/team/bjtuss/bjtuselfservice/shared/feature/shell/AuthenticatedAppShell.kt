@@ -990,17 +990,28 @@ fun AuthenticatedAppShell(
         // 玻璃就没有东西可折射。自绘底栏（Android 与 iOS 26 以下）仍按老语义占位。
         val glassScrollUnderBar =
             nativeTabBarEnabled && reserveBottomBarSpace && !keepsBottomBarInset
+        // 窗口安全区与底栏占位分开。全出血时 Compose navigationBars 可能是 0，宿主另报一份。
+        val systemBottomInset = maxOf(
+            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+            session.systemBottomInsetDp.dp,
+        )
+        // 色块概览不可滚动，尾部留白对它无效。一级页停在悬浮底栏上沿（底栏高度 + 系统安全区），
+        // 从应用推进来的二级页没有底栏，只留系统安全区。不要只写死一个底栏高度。
+        val bottomLayoutInset = when {
+            // 自绘底栏的占位已经是「栏高 + 系统安全区」，不要再叠一次。
+            keepsBottomBarInset && !expanded && reserveBottomBarSpace && nativeTabBarEnabled ->
+                stackedFloatingBottomInset(compactBottomBarOverlayPadding, systemBottomInset) + 8.dp
+            keepsBottomBarInset && !expanded && reserveBottomBarSpace ->
+                compactBottomBarOverlayPadding + 8.dp
+            keepsBottomBarInset && !expanded ->
+                systemBottomInset
+            reserveBottomBarSpace && !glassScrollUnderBar ->
+                compactBottomBarOverlayPadding
+            else -> 0.dp
+        }
         Box(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
             Column(
-                modifier = Modifier.fillMaxSize().padding(
-                    bottom = if (reserveBottomBarSpace && !glassScrollUnderBar) {
-                        // 全览表格要「停在底栏上方」，但宿主回报的净空正好等于玻璃条上沿：
-                        // 表格边框会贴着玻璃被压住，留 8dp 呼吸，视觉上仍是完整一张表。
-                        compactBottomBarOverlayPadding + if (keepsBottomBarInset) 8.dp else 0.dp
-                    } else {
-                        0.dp
-                    },
-                ),
+                modifier = Modifier.fillMaxSize().padding(bottom = bottomLayoutInset),
             ) {
                 // 紧凑/宽屏统一：标题 + 右上同步胶囊。宽屏不再在页内重复「同步××」按钮。
                 val failureStatusClick = if (
@@ -1161,6 +1172,7 @@ fun AuthenticatedAppShell(
                     CompositionLocalProvider(
                         LocalBottomBarClearance provides
                             if (glassScrollUnderBar) compactBottomBarOverlayPadding else 0.dp,
+                        LocalSystemBottomInset provides systemBottomInset,
                         LocalTopBarClearance provides topBarClearance,
                         LocalReportTopScroll provides reportTopScroll,
                     ) {

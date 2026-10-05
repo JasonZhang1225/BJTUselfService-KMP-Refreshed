@@ -35,10 +35,18 @@ internal fun MoreWorkspace(
     } + if (physicsLabModel != null) listOf(ApplicationTile("物理实验同步", AppSection.PHYVLAB) { showPhysicsLab = true }) else emptyList()
     BoxWithConstraints(modifier.fillMaxSize()) {
         val columns = when { maxWidth >= 800.dp -> 4; maxWidth >= 480.dp -> 3; else -> 2 }
+        val barClearance = LocalBottomBarClearance.current
+        // 玻璃底栏的净空只含栏高。滑到最底时再叠系统安全区，方块才停在栏上沿。
+        // 自绘底栏没有这份净空，页面布局已经让出栏位，这里不再加。
+        val bottomStop = if (barClearance > 0.dp) {
+            stackedFloatingBottomInset(barClearance, LocalSystemBottomInset.current)
+        } else {
+            0.dp
+        }
         Column(
             Modifier.fillMaxSize().verticalScroll(scroll).desktopTouchScroll(scroll)
                 .padding(start = 16.dp, end = 16.dp, top = 16.dp + LocalTopBarClearance.current,
-                    bottom = 16.dp + LocalBottomBarClearance.current),
+                    bottom = 16.dp + bottomStop),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             entries.chunked(columns).forEach { row ->

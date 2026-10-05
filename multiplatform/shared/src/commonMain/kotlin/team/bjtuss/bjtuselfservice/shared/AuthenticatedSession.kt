@@ -83,6 +83,14 @@ class AuthenticatedSession(
     var glassTabBarBottomInsetDp: Float by mutableStateOf(0f)
 
     /**
+     * 窗口底部系统安全区（Home Indicator / 导航条），点；iOS 上 1pt == 1dp。
+     *
+     * 全出血宿主里 Compose 的 `WindowInsets.navigationBars` 可能是 0。底栏高度不含这段时，
+     * 内容停靠要把它叠上去，不能只留一个写死的底栏高度。底栏隐藏的二级页也用它，避免表格贴到物理底边。
+     */
+    var systemBottomInsetDp: Float by mutableStateOf(0f)
+
+    /**
      * 宿主原生导航栏实际占掉的顶部高度（点；iOS 上 1pt == 1dp），即导航栏 frame.maxY。
      *
      * 与底栏同一道理：内容要能伸进导航栏下面，原生 blur 才有东西可采样，而 UIKit 不会把

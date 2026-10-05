@@ -893,6 +893,7 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
     /// 弱引用即可：壳控制器已经强引用同一会话，这里只是取用，不该多持一份。
     private weak var session: AuthenticatedSession?
     private var pushedBottomInset: CGFloat = -1
+    private var pushedSystemBottomInset: CGFloat = -1
     /// routeId → 该 tab 的导航栈。重配 tab 时按 routeId 复用，避免整条玻璃栏被拆掉、各 tab 返回栈丢失。
     private var controllersByRoute: [String: TabRootNavigationController] = [:]
     private var tabBarVisible = true
@@ -935,6 +936,7 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
         if session !== self.session {
             self.session = session
             pushedBottomInset = -1
+            pushedSystemBottomInset = -1
         }
         let items = NativeShellKt.nativeTabItems(session: session)
         let routeIds = items.map(\.routeId)
@@ -1031,6 +1033,13 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
             if abs(inset - pushedBottomInset) > 0.5 {
                 pushedBottomInset = inset
                 session.glassTabBarBottomInsetDp = Float(inset)
+            }
+            // 底栏 frame 用的是「至少 80」的占位，系统安全区不一定折在里面。
+            // 窗口安全区单独报给 Compose，由课表和应用页叠到内容底部，不改底栏本身的 frame。
+            let systemBottom = max(view.safeAreaInsets.bottom, view.window?.safeAreaInsets.bottom ?? 0)
+            if abs(systemBottom - pushedSystemBottomInset) > 0.5 {
+                pushedSystemBottomInset = systemBottom
+                session.systemBottomInsetDp = Float(systemBottom)
             }
         }
     }

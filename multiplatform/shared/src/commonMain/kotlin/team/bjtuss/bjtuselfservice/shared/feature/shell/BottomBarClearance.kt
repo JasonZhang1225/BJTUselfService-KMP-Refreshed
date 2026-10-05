@@ -13,3 +13,21 @@ import androidx.compose.ui.unit.dp
  * 卡片才会从玻璃条底下穿过，得到系统 App 那种通透感。
  */
 val LocalBottomBarClearance = staticCompositionLocalOf { 0.dp }
+
+/**
+ * 窗口底部系统安全区。玻璃壳下由宿主从窗口安全区写入；Compose inset 有值时取较大者。
+ * 只给「内容必须停在底栏上沿 / 二级页安全区」的页面消费，不改变其它页的滚动净空。
+ */
+val LocalSystemBottomInset = staticCompositionLocalOf { 0.dp }
+
+/**
+ * 悬浮底栏上沿到屏幕底的距离，再叠上系统安全区。
+ *
+ * [barInset] 是底栏自身占位（可为 0，表示这条页面没有底栏）。[systemInset] 是 Home Indicator
+ * 一类系统安全区。两者都在时相加，避免只留一个写死高度；底栏隐藏时只留系统安全区。
+ */
+internal fun stackedFloatingBottomInset(barInset: Dp, systemInset: Dp): Dp {
+    val bar = if (barInset.value > 0f) barInset else 0.dp
+    val system = if (systemInset.value > 0f) systemInset else 0.dp
+    return bar + system
+}
