@@ -37,14 +37,14 @@ private const val CAPTCHA_VERIFICATION_ARGUMENT = "--verify-captcha-model="
 private const val SYNC_STATUS_SMOKE_ARGUMENT = "--sync-status-smoke"
 
 fun main(args: Array<String>) {
-    if (SYNC_STATUS_SMOKE_ARGUMENT in args) {
+    if (SYNC_STATUS_SMOKE_ARGUMENT in args || "--schedule-events-smoke" in args) {
         application {
             Window(
                 onCloseRequest = { exitApplication() },
                 title = "同步状态 · 本地测试",
                 state = rememberWindowState(width = 1080.dp, height = 720.dp),
             ) {
-                DesktopSyncStatusSmoke()
+                if ("--schedule-events-smoke" in args) team.bjtuss.bjtuselfservice.shared.DesktopScheduleEventsSmoke() else DesktopSyncStatusSmoke()
             }
         }
         return

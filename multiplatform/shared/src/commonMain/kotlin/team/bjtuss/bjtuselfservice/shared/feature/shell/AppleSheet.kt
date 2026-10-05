@@ -44,6 +44,7 @@ fun AppleSheet(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     needsFullHeight: Boolean = false,
+    scrollableBody: Boolean = false,
     title: String? = null,
     confirmLabel: String? = null,
     confirmEnabled: Boolean = true,
@@ -83,16 +84,17 @@ fun AppleSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             .then(if (needsFullHeight) Modifier.fillMaxHeight() else Modifier)
-                            // Native title/action bar occupies the top of a sheet
-                            // navigation controller; keep Compose body below it.
-                            .padding(top = 44.dp)
-                            .navigationBarsPadding(),
+                            // Scrollable bodies use UIKit's title-bar clearance and
+                            // own their bottom inset inside the scrolling content.
+                            .padding(top = if (scrollableBody) 0.dp else 44.dp)
+                            .then(if (scrollableBody) Modifier else Modifier.navigationBarsPadding()),
                         content = content,
                     )
                 }
             }
         }
         SideEffect {
+            presenter.setScrollableBody(scrollableBody)
             presenter.update(
                 content = currentContent,
                 onDismissRequest = onDismissRequest,

@@ -20,6 +20,7 @@ fun createAppleAccountSecurityStore(
         accessibleAfterFirstUnlock = accessibleAfterFirstUnlock,
     ),
     preferences = AppleAccountPreferences(rememberCredentialsKey),
+    physicsLabVault = { AppleKeychainCredentialVault(service = "$credentialService.physicslab", account = it, accessibleAfterFirstUnlock = accessibleAfterFirstUnlock) },
 )
 
 private class AppleAccountPreferences(

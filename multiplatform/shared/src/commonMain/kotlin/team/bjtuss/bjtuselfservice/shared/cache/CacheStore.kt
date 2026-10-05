@@ -295,6 +295,9 @@ class CacheStore(
         }
     }
 
+    fun metadataAccountScopes(key: String): List<String> =
+        queries.selectMetadataAccountScopesForKey(protectedKey(key)).executeAsList().map(protector::unprotect)
+
     fun metadata(accountScope: String, key: String): String? =
         queries.selectMetadata(protectedAccountScope(accountScope), protectedKey(key))
             .executeAsOneOrNull()
@@ -344,10 +347,10 @@ class CacheStore(
     }
 
     fun preferences(): AppPreferences = AppPreferences(
-        autoSyncGrades = booleanSetting(SettingKey.AUTO_SYNC_GRADES, true),
-        autoSyncHomework = booleanSetting(SettingKey.AUTO_SYNC_HOMEWORK, true),
-        autoSyncSchedule = booleanSetting(SettingKey.AUTO_SYNC_SCHEDULE, true),
-        autoSyncExams = booleanSetting(SettingKey.AUTO_SYNC_EXAMS, true),
+        autoSyncGrades = true,
+        autoSyncHomework = true,
+        autoSyncSchedule = true,
+        autoSyncExams = true,
         autoSyncPhyVlab = booleanSetting(SettingKey.AUTO_SYNC_PHYVLAB, true),
         currentWeek = setting(SettingKey.CURRENT_WEEK)?.toIntOrNull()?.coerceIn(0, 56) ?: 0,
         checkUpdate = booleanSetting(SettingKey.CHECK_UPDATE, true),
@@ -383,6 +386,10 @@ class CacheStore(
     }
 
     fun clearAccount(accountScope: String) {
+        // 独立实验账号是同步设置；清离线副本时保留标记，完整清空时再统一清安全存储。
+        val labSettings = listOf("physicslab.enabled", "physicslab.configured").mapNotNull { key ->
+            metadata(accountScope, key)?.let { key to it }
+        }
         val scope = protectedAccountScope(accountScope)
         queries.transaction {
             queries.deleteGradesByAccount(scope)
@@ -392,6 +399,7 @@ class CacheStore(
             queries.deleteGradeSelectionsByAccount(scope)
             queries.deleteProgramCourseTypesByAccount(scope)
             queries.deleteMetadataByAccount(scope)
+            labSettings.forEach { (key, value) -> putMetadata(accountScope, key, value) }
         }
     }
 

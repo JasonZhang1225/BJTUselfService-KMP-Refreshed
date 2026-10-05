@@ -197,7 +197,7 @@ private val sensitiveFormFieldNames = setOf(
 )
 
 private fun Map<String, String>.redactedFormFields(): Map<String, String> = mapValues { (name, value) ->
-    if (name.lowercase() in sensitiveFormFieldNames) "<redacted>" else value
+    if (name.lowercase() in sensitiveFormFieldNames || name.contains("tbPassword", ignoreCase = true) || name.contains("tbUserId", ignoreCase = true) || name.startsWith("__")) "<redacted>" else value
 }
 
 private fun Map<String, String>.redactedHeaders(): Map<String, String> = mapValues { (name, value) ->

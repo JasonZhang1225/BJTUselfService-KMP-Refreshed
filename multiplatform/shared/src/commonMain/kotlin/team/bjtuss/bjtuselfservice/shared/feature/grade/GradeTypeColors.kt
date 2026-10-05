@@ -1,6 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.grade
 
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import team.bjtuss.bjtuselfservice.shared.domain.grade.CourseType
@@ -13,13 +14,12 @@ internal data class GradeTypeColors(
 )
 
 /**
- * 课程性质配色（浅色/深色两套）。整个 App 跟随系统深浅色（见 App.kt），
- * 这里用 isSystemInDarkTheme() 与现有做法保持一致。
+ * 课程性质配色（浅色/深色两套）。按当前页面主题取色，保持原生 sheet 与主题预览一致。
  * 色板保证 onContainer 与 container 对比度、深色模式不刺眼。
  */
 @Composable
 internal fun courseTypeColors(type: CourseType): GradeTypeColors {
-    val dark = isSystemInDarkTheme()
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     return when (type) {
         CourseType.REQUIRED -> if (dark) {
             GradeTypeColors(container = Color(0xFF4A1F1D), onContainer = Color(0xFFF2B9B4))

@@ -45,24 +45,10 @@ class SettingsScreenModel(
     private val wipeAllLocalData: suspend () -> Boolean,
     private val checkLatestRelease: suspend () -> AppUpdateChecker.Result,
 ) {
-    private val mutableState = MutableStateFlow(SettingsUiState(initialPreferences))
+    private val mutableState = MutableStateFlow(SettingsUiState(initialPreferences.copy(
+        autoSyncGrades = true, autoSyncHomework = true, autoSyncSchedule = true, autoSyncExams = true,
+    )))
     val state: StateFlow<SettingsUiState> = mutableState.asStateFlow()
-
-    fun setAutoSyncGrades(enabled: Boolean) = updatePreferences {
-        copy(autoSyncGrades = enabled)
-    }
-
-    fun setAutoSyncHomework(enabled: Boolean) = updatePreferences {
-        copy(autoSyncHomework = enabled)
-    }
-
-    fun setAutoSyncSchedule(enabled: Boolean) = updatePreferences {
-        copy(autoSyncSchedule = enabled)
-    }
-
-    fun setAutoSyncExams(enabled: Boolean) = updatePreferences {
-        copy(autoSyncExams = enabled)
-    }
 
     fun setAutoSyncPhyVlab(enabled: Boolean) = updatePreferences {
         copy(autoSyncPhyVlab = enabled)

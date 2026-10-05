@@ -9,6 +9,11 @@ data class Course(
     val courseTime: String,
     val coursePlace: String,
     val isCurrentSemester: Boolean,
+    val scheduleEventKind: String? = null,
+    val scheduleEventDate: String? = null,
+    val scheduleEventTime: String? = null,
+    val eventSlotOffset: Float = 0f,
+    val eventSlotHeight: Float = 1f,
 )
 
 /**
