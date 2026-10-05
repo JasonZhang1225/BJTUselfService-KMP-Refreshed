@@ -107,3 +107,7 @@ BuildingList 接入首页已有的 resolveVisualTopScrollOffset 路径：同一 
 完整 iOS Release 工程构建成功；新 unsigned IPA 真机 arm64、ZIP CRC、版本 1.8.1 / 22 与未签名状态检查通过。文件 `/Users/zjg/Downloads/BJTUSelfService-KMP-1.8.1-classroom-glass-fix-20261005-iOS-unsigned.ipa`，41982826 字节，SHA-256 `567cfbb08e4af333fc2ef2ccb22df9609d32b32e184fd98224f500cc2b54f246`。旧安装包保留，本轮只新增 iOS 修复包。未提交或推送。
 
 用户确认最新 iOS 教室人数估计模糊修复实测无问题，并授权提交、推送、依次合入 audit/main 与清理分支工作树。
+
+## 2026-10-05 合并回归
+
+功能提交 `67c2d0f` 已推送个人远端 mine，合入 audit 的提交为 `784d7ff`。仅 memory.md 冲突，已整合两侧状态记录；源码自动合并并检查保留 audit 安全、日历范围替换、作业握手与同步启动修复。合并后共享/JVM 596 项（0 失败、0 跳过）、Swift 导航 35 检查全部通过，Android Release、macOS、Windows 和 iOS 两目标 Kotlin 编译通过。按用户授权，后续将 audit 合入 main 后清理临时分支及 fc51 工作树；保留主目录和 Downloads 安装包。

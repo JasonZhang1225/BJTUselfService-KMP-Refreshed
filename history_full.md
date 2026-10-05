@@ -592,3 +592,8 @@
 ### 2026-10-05 教室人数估计短页模糊修复
 
 用户确认前轮导航往返及 Android 测试正常。BuildingList 仅报逻辑列表偏移，未计入 iOS 短列表弹性位移；本轮复用首页实际位移算法，并确保 overscroll 仅渲染一次。共享 578 项、iOS 两目标编译与完整 Release 构建通过；Downloads 新增 classroom-glass-fix-20261005 unsigned IPA，arm64/CRC/版本/未签名校验通过。CUA 原生通道关闭，最终效果待 iPhone 复核；无提交或推送。
+
+
+### 2026-10-05 功能合入 audit 并准备 main 收尾
+
+用户确认最新 iOS 模糊修复实测无问题，授权提交推送、功能 → audit → main 合并和分支工作树清理。功能提交 67c2d0f，合入 audit 为 784d7ff；memory.md 冲突已整合，其他源码自动合并保留 audit 修复。合并后共享 596 项、Swift 35 检查以及各平台 Kotlin 编译通过。
