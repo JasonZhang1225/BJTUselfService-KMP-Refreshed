@@ -29,9 +29,10 @@ data class HomeAgendaDay(
     val homeworkDue: List<Homework>,
     val exams: List<ExamSchedule>,
     val phyVlabEvents: List<PhyVlabEvent> = emptyList(),
+    val courses: List<team.bjtuss.bjtuselfservice.shared.domain.course.Course> = emptyList(),
 ) {
     val eventCount: Int
-        get() = homeworkStarting.size + homeworkDue.size + exams.size + phyVlabEvents.size
+        get() = homeworkStarting.size + homeworkDue.size + exams.size + phyVlabEvents.size + courses.size
 }
 
 data class HomeAgenda(

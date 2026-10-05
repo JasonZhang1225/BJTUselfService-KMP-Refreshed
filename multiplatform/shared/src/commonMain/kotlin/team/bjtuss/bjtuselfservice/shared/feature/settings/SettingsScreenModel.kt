@@ -1,5 +1,6 @@
 package team.bjtuss.bjtuselfservice.shared.feature.settings
 
+import kotlin.time.Clock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,11 +45,39 @@ class SettingsScreenModel(
     private val clearAccountCache: () -> Boolean,
     private val wipeAllLocalData: suspend () -> Boolean,
     private val checkLatestRelease: suspend () -> AppUpdateChecker.Result,
+    private val nowMillis: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
     private val mutableState = MutableStateFlow(SettingsUiState(initialPreferences.copy(
         autoSyncGrades = true, autoSyncHomework = true, autoSyncSchedule = true, autoSyncExams = true,
     )))
     val state: StateFlow<SettingsUiState> = mutableState.asStateFlow()
+    private var automaticUpdateChecked = false
+    private var postponedUntilMillis = initialPreferences.updatePostponedUntilMillis
+
+    fun setBottomNavigationItem(routeId: String, enabled: Boolean) {
+        val current = mutableState.value.preferences
+        val candidates = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavigationCandidates(current.isPhyVlabEnabled)
+        if (candidates.none { it.name == routeId }) return
+        val selected = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavSections(current)
+            .filter { it in candidates }.map { it.name }
+        if (enabled && routeId !in selected && selected.size >= 4) return
+        updatePreferences {
+            copy(bottomNavigationItems = if (enabled) (selected + routeId).distinct() else selected - routeId)
+        }
+    }
+
+    fun moveBottomNavigationItem(routeId: String, direction: Int): Boolean {
+        if (direction != -1 && direction != 1) return false
+        val current = mutableState.value.preferences
+        val selected = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavSections(current)
+            .filter { it.name != "HOME" && it.name != "MORE" }.map { it.name }.toMutableList()
+        val index = selected.indexOf(routeId)
+        val target = index + direction
+        if (index < 0 || target !in selected.indices) return false
+        selected.add(target, selected.removeAt(index))
+        updatePreferences { copy(bottomNavigationItems = selected) }
+        return !mutableState.value.saveFailed
+    }
 
     fun setAutoSyncPhyVlab(enabled: Boolean) = updatePreferences {
         copy(autoSyncPhyVlab = enabled)
@@ -117,12 +146,16 @@ class SettingsScreenModel(
      */
     suspend fun checkForUpdate(silentOnMiss: Boolean = false) {
         if (mutableState.value.updateCheck == UpdateCheckState.Checking) return
+        if (silentOnMiss) {
+            if (automaticUpdateChecked || !mutableState.value.preferences.checkUpdate || nowMillis() < postponedUntilMillis) return
+            automaticUpdateChecked = true
+        }
         mutableState.value = mutableState.value.copy(updateCheck = UpdateCheckState.Checking)
         mutableState.value = mutableState.value.copy(
             updateCheck = when (val result = runCatching { checkLatestRelease() }.getOrNull()) {
                 is AppUpdateChecker.Result.Success -> {
                     val hasUpdate = AppUpdateChecker.isNewer(result.release)
-                    if (hasUpdate || !silentOnMiss) {
+                    if ((!silentOnMiss || nowMillis() >= postponedUntilMillis) && (hasUpdate || !silentOnMiss)) {
                         UpdateCheckState.Done(release = result.release, hasUpdate = hasUpdate)
                     } else {
                         UpdateCheckState.Idle
@@ -131,6 +164,14 @@ class SettingsScreenModel(
                 else -> if (silentOnMiss) UpdateCheckState.Idle else UpdateCheckState.Failed
             },
         )
+    }
+
+    fun postponeUpdate() {
+        if ((mutableState.value.updateCheck as? UpdateCheckState.Done)?.hasUpdate == true) {
+            postponedUntilMillis = nowMillis() + 24L * 60 * 60 * 1000
+            updatePreferences { copy(updatePostponedUntilMillis = postponedUntilMillis) }
+        }
+        dismissUpdateCheck()
     }
 
     /** 关闭更新结果（弹窗/提示），回到 Idle。 */

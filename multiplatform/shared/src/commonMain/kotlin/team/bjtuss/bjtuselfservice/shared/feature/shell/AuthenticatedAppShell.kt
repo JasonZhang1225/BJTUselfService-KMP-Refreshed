@@ -278,8 +278,8 @@ fun AuthenticatedAppShell(
     val homeState by homeModel.state.collectAsState()
     val settingsState by settingsModel.state.collectAsState()
     val phyVlabEnabled = settingsState.preferences.isPhyVlabEnabled
-    val compactBottomNavSections = remember(phyVlabEnabled) {
-        bottomNavSections(phyVlabEnabled)
+    val compactBottomNavSections = remember(settingsState.preferences) {
+        bottomNavSections(settingsState.preferences)
     }
     if (nativeTabBarEnabled) {
         // 底栏由 UIKit 装配，Compose 侧的入口集合变化必须显式回推给宿主，否则切换「物理在线」底栏不动。
@@ -431,7 +431,8 @@ fun AuthenticatedAppShell(
         }
         scope.launch { mailboxModel.startCompose() }
     }
-    fun navigateToSection(target: AppSection) {
+    fun navigateToSection(requested: AppSection) {
+        val target = if (requested == AppSection.CLASSROOMS) AppSection.CLASSROOM_OCCUPANCY else requested
         if (target == AppSection.PHYVLAB && !phyVlabEnabled) return
         if (backStack.lastOrNull() != target) {
             // 先 yield 一帧：让 NavigationBarItem 的 press/ripple 先上屏，
@@ -441,16 +442,16 @@ fun AuthenticatedAppShell(
                 if (backStack.lastOrNull() == target) return@launch
                 if (
                     forcedRouteId != null &&
-                        isNativeTabRoute(forcedRouteId) &&
-                        isNativeTabRoute(target.name)
+                        forcedRouteId.toAppRoute() in compactBottomNavSections &&
+                        target in compactBottomNavSections
                 ) {
                     // 原生 tab 根页面之间互跳：交给宿主切换 tab，本 Compose 栈只保留自己的根，
                     // 否则会出现「内容是成绩、高亮仍是首页」的壳层错位。
                     onSelectNativeTab(target.name)
-                } else if (shouldOpenNativeSectionRoute(target.name, useNativeSecondaryRoutes)) {
+                } else if (shouldOpenNativeSectionRoute(target.name, useNativeSecondaryRoutes, compactBottomNavSections)) {
                     onOpenNativeRoute(target.name)
                 } else if (
-                    target in MoreGroupSections &&
+                    target !in compactBottomNavSections &&
                         target != AppSection.MORE
                 ) {
                     // 「更多」子页：固定为 [更多, 子页]，返回一定回到更多目录。
@@ -874,7 +875,7 @@ fun AuthenticatedAppShell(
 
     // 检查结果弹窗放在整个壳内容之后渲染：发现新版本时无论当前在哪个页面都能看到
     // 「前往下载」，不依赖用户停留在设置页（设置页内按钮触发的结果也走同一弹窗）。
-    AppUpdateResultDialog(settingsState.updateCheck, settingsModel::dismissUpdateCheck)
+    AppUpdateResultDialog(settingsState.updateCheck, settingsModel::dismissUpdateCheck, settingsModel::postponeUpdate)
     partialSyncFailureDialogItems?.let { items ->
         PartialSyncFailureDialog(
             failedItems = items,
@@ -1202,7 +1203,7 @@ fun AuthenticatedAppShell(
                     refresh()
                 },
                 isRefreshing = homeSyncInProgress,
-                showBack = false,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 // 与成绩/课表一致：同步态并入顶栏右上胶囊，勿只留孤图标。
                 // 首页聚合邮件/校园卡自身失败才写「同步失败」；作业等切片失败写「部分同步失败」，
@@ -1228,43 +1229,54 @@ fun AuthenticatedAppShell(
                 syncFailureItems = homeSyncFailureItems,
                 scrollUnderTopBar = true,
             ) {
-                HomeWorkspace(
-                    model = homeModel,
-                    platform = platform,
-                    expanded = expanded,
-                    mailboxUnread = mailboxUnread,
-                    holdNetwork = entryLoggingIn,
-                    homework = homeworkState.homework,
-                    exams = examState.exams,
-                    phyVlabEvents = if (phyVlabEnabled) phyVlabState.agendaEvents else emptyList(),
-                    currentWeek = courseState.currentWeek,
-                    academicWeeks = courseState.academicWeeks,
-                    // 周数只在被校历确认后显示：确认前统一「日程加载中」，
-                    // 拿到确切结果后一次显示最终值，不再出现中间值弹跳。
-                    isWeekResolved = courseState.weekResolved,
-                    now = homeworkState.now,
-                    timeZone = homeworkState.timeZone,
-                    isAgendaLoading = homeworkState.isLoading || examState.isLoading ||
-                        courseState.isLoading || (phyVlabEnabled && phyVlabState.isLoading),
-                    isRefreshing = homeSyncInProgress,
-                    onRefresh = refresh,
-                    onOpenMailbox = { navigateToSection(AppSection.MAILBOX) },
-                    onOpenHomework = { navigateToSection(AppSection.HOMEWORK) },
-                    onOpenExams = { navigateToSection(AppSection.EXAMS) },
-                    onOpenPhyVlab = { navigateToSection(AppSection.PHYVLAB) },
-                    changes = homeChanges,
-                    onClearAllChanges = { scope.launch { homeChangeFeed.clear() } },
-                    onClearChangeDomain = { domain -> scope.launch { homeChangeFeed.clear(domain) } },
-                    onOpenChangeDomain = { domain -> navigateToSection(domain.toAppSection()) },
-                    modifier = Modifier.fillMaxSize(),
-                )
+                CompositionLocalProvider(
+                    team.bjtuss.bjtuselfservice.shared.feature.home.LocalHomeSchedule provides
+                        team.bjtuss.bjtuselfservice.shared.feature.home.HomeSchedulePresentation(
+                            courses = courseState.courses,
+                            academicWeeks = courseState.homeAcademicWeeks,
+                            currentWeek = courseState.currentWeek,
+                            today = homeworkState.now.date,
+                            onOpenSchedule = { navigateToSection(AppSection.SCHEDULE) },
+                        ),
+                ) {
+                    HomeWorkspace(
+                        model = homeModel,
+                        platform = platform,
+                        expanded = expanded,
+                        mailboxUnread = mailboxUnread,
+                        holdNetwork = entryLoggingIn,
+                        homework = homeworkState.homework,
+                        exams = examState.exams,
+                        phyVlabEvents = if (phyVlabEnabled) phyVlabState.agendaEvents else emptyList(),
+                        currentWeek = courseState.currentWeek,
+                        academicWeeks = courseState.homeAcademicWeeks,
+                        // 周数只在被校历确认后显示：确认前统一「日程加载中」，
+                        // 拿到确切结果后一次显示最终值，不再出现中间值弹跳。
+                        isWeekResolved = courseState.weekResolved,
+                        now = homeworkState.now,
+                        timeZone = homeworkState.timeZone,
+                        isAgendaLoading = homeworkState.isLoading || examState.isLoading ||
+                            courseState.isLoading || (phyVlabEnabled && phyVlabState.isLoading),
+                        isRefreshing = homeSyncInProgress,
+                        onRefresh = refresh,
+                        onOpenMailbox = { navigateToSection(AppSection.MAILBOX) },
+                        onOpenHomework = { navigateToSection(AppSection.HOMEWORK) },
+                        onOpenExams = { navigateToSection(AppSection.EXAMS) },
+                        onOpenPhyVlab = { navigateToSection(AppSection.PHYVLAB) },
+                        changes = homeChanges,
+                        onClearAllChanges = { scope.launch { homeChangeFeed.clear() } },
+                        onClearChangeDomain = { domain -> scope.launch { homeChangeFeed.clear(domain) } },
+                        onOpenChangeDomain = { domain -> navigateToSection(domain.toAppSection()) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
             AppSection.GRADES -> DestinationPage(
                 title = AppSection.GRADES.title,
                 expanded = expanded,
                 refreshable = true,
                 isRefreshing = gradeState.isRefreshing,
-                showBack = false,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 scrollUnderTopBar = true,
                 // 与课表一致：同步态在顶栏右上，banner 内只放成绩摘要与筛选入口。
@@ -1288,7 +1300,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = true,
                 isRefreshing = courseState.isRefreshing || examState.isRefreshing || physicsLabState.refreshing,
-                showBack = false,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 // 同步状态放在顶栏右上；有失败横幅时不要仍显示「已同步」。
                 idleStatusText = when {
@@ -1327,7 +1339,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = true,
                 isRefreshing = examState.isRefreshing,
-                showBack = true,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 scrollUnderTopBar = true,
                 // 与成绩/作业一致：同步态顶栏右上，banner 内放类型筛选入口。
@@ -1353,7 +1365,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = true,
                 isRefreshing = homeworkState.isRefreshing,
-                showBack = false,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 scrollUnderTopBar = true,
                 // 与课表/成绩一致：同步态在顶栏右上，banner 内只放摘要与筛选入口。
@@ -1390,7 +1402,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = true,
                 isRefreshing = coursewareState.isRefreshing,
-                showBack = true,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 // 顶栏 underlap 暂不启用：引导行与课程标题行固定在列表上方，视口到不了栏后。
                 // 且关闭滚动过渡：栏后永远是纯色，过渡只会凭空闪一下。
@@ -1421,7 +1433,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = false,
                 isRefreshing = false,
-                showBack = true,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 scrollUnderTopBar = true,
             ) {
@@ -1436,7 +1448,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = false,
                 isRefreshing = false,
-                showBack = true,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 scrollUnderTopBar = true,
             ) {
@@ -1451,7 +1463,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = true,
                 isRefreshing = classroomState.isLoading,
-                showBack = true,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 idleStatusText = classroomIdleStatusText(classroomState),
                 scrollUnderTopBar = true,
@@ -1478,7 +1490,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = false,
                 isRefreshing = false,
-                showBack = true,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 scrollUnderTopBar = true,
             ) {
@@ -1503,7 +1515,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = true,
                 isRefreshing = classroomState.isLoading,
-                showBack = true,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 idleStatusText = classroomIdleStatusText(classroomState),
                 // 顶栏 underlap 暂不启用：搜索框与筛选芯片固定在列表上方，视口到不了栏后。
@@ -1522,7 +1534,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = true,
                 isRefreshing = classroomOccupancyState.isLoading,
-                showBack = true,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 // 顶栏 underlap 暂不启用：周/图例/星期三段筛选头固定在列表上方，视口到不了栏后。
                 // 且关闭滚动过渡：栏后永远是纯色，过渡只会凭空闪一下。
@@ -1540,7 +1552,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = false,
                 isRefreshing = false,
-                showBack = true,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 scrollUnderTopBar = true,
             ) {
@@ -1556,7 +1568,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = false,
                 isRefreshing = false,
-                showBack = true,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 scrollUnderTopBar = true,
             ) {
@@ -1575,7 +1587,7 @@ fun AuthenticatedAppShell(
                 refreshable = true,
                 isRefreshing = mailboxState == MailboxUiState.Preparing ||
                     mailboxReadyState?.isListLoading == true,
-                showBack = true,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 onBack = mailboxBack,
                 // 邮箱右上角只有一个可执行的列表刷新圆钮：不要再传 idleStatusText，
                 // 否则状态圆圈也会画一个刷新 glyph，和刷新圆钮重复成两个。
@@ -1612,7 +1624,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = false,
                 isRefreshing = mailboxMessageLoading,
-                showBack = true,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 scrollUnderTopBar = true,
             ) {
@@ -1631,7 +1643,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = false,
                 isRefreshing = false,
-                showBack = true,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 onBack = {
                     scope.launch {
                         mailboxModel.cancelCompose()
@@ -1654,7 +1666,7 @@ fun AuthenticatedAppShell(
                 isRefreshing = phyVlabState.isLoading,
                 // 物理在线与首页/课表/作业平级，是完整底栏里的一级页；只有真正被
                 // 非底栏路由 push 进来时才显示系统返回按钮。
-                showBack = isPushedHostDestination,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 scrollUnderTopBar = true,
                 idleStatusText = when {
@@ -1692,7 +1704,7 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = true,
                 isRefreshing = phyVlabState.isDetailLoading,
-                showBack = true,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 scrollUnderTopBar = true,
             ) {
@@ -1709,13 +1721,12 @@ fun AuthenticatedAppShell(
                 expanded = expanded,
                 refreshable = false,
                 isRefreshing = false,
-                showBack = false,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 scrollUnderTopBar = true,
             ) {
                 MoreWorkspace(
-                    phyVlabEnabled = phyVlabEnabled,
-                    onPhyVlabEnabledChange = settingsModel::setPhyVlabEnabled,
+                    preferences = settingsState.preferences,
                     physicsLabModel = session.physicsLabModel,
                     onOpenSection = { target -> navigateToSection(target) },
                     modifier = Modifier.fillMaxSize(),
@@ -1740,6 +1751,7 @@ fun AuthenticatedAppShell(
                 profile = profile,
                 section = section,
                 showPhyVlab = phyVlabEnabled,
+                sections = compactBottomNavSections,
                 onSectionSelected = { target -> navigateToSection(target) },
                 // 随窗口比例伸缩，避免小窗时侧栏仍占固定 236dp 挤掉内容区。
                 modifier = Modifier.weight(0.22f).fillMaxHeight(),

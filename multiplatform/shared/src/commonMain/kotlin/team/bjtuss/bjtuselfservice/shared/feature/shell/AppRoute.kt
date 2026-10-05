@@ -197,17 +197,17 @@ internal enum class AppSection(
     EXAMS("考试安排"),
     HOMEWORK("作业"),
     COURSEWARE("课件下载"),
-    CLASSROOM_OCCUPANCY("教室占用查询"),
+    CLASSROOM_OCCUPANCY("教室查询"),
     CLASSROOMS("教室人数估计"),
     MAILBOX("邮箱"),
     PHYVLAB("物理在线", "物理在线（仅能在校园网下访问）"),
     CALENDAR("校历"),
     REPORT_CARD_DOWNLOAD("成绩单下载"),
     SETTINGS("设置"),
-    MORE("更多"),
+    MORE("应用"),
 }
 
-/** 紧凑布局底部导航直接暴露的一级入口；其余入口收进“更多”页。 */
+/** 紧凑布局底部导航直接暴露的一级入口；其余入口收进“应用”页。 */
 internal fun bottomNavSections(showPhyVlab: Boolean): List<AppSection> = buildList {
     add(AppSection.HOME)
     add(AppSection.SCHEDULE)
@@ -216,6 +216,23 @@ internal fun bottomNavSections(showPhyVlab: Boolean): List<AppSection> = buildLi
     if (showPhyVlab) add(AppSection.PHYVLAB)
     add(AppSection.MORE)
 }
+
+internal fun bottomNavigationCandidates(showPhyVlab: Boolean): List<AppSection> =
+    AppSection.entries.filter {
+        it !in setOf(AppSection.HOME, AppSection.MORE, AppSection.CLASSROOMS) &&
+            (showPhyVlab || it != AppSection.PHYVLAB)
+    }
+
+internal fun bottomNavSections(preferences: team.bjtuss.bjtuselfservice.shared.cache.AppPreferences): List<AppSection> {
+    val candidates = bottomNavigationCandidates(preferences.isPhyVlabEnabled)
+    val selected = preferences.bottomNavigationItems?.mapNotNull { id -> candidates.firstOrNull { it.name == id } }
+        ?.distinct()?.take(4)
+        ?: bottomNavSections(preferences.isPhyVlabEnabled).filter { it in candidates }
+    return listOf(AppSection.HOME) + selected + AppSection.MORE
+}
+
+internal fun applicationSections(preferences: team.bjtuss.bjtuselfservice.shared.cache.AppPreferences): List<AppSection> =
+    bottomNavigationCandidates(preferences.isPhyVlabEnabled).filter { it !in bottomNavSections(preferences) }
 
 /** 在底部导航中归属“更多”高亮的入口。 */
 internal val MoreGroupSections = setOf(
@@ -307,11 +324,12 @@ internal fun mailboxBackTarget(
 internal fun shouldOpenNativeSectionRoute(
     targetRouteId: String,
     useNativeSecondaryRoutes: Boolean,
+    tabSections: List<AppSection> = nativeTabSections(),
 ): Boolean {
     if (!useNativeSecondaryRoutes || targetRouteId == AppSection.MORE.name) return false
     val route = targetRouteId.toAppRoute() ?: return false
     // 「更多」目录里的项由宿主压栈；真正位于原生 tab 的一级入口（包括开启后的物理在线）不压栈。
-    return route !in nativeTabSections()
+    return route !in tabSections
 }
 
 internal fun HomeChangeDomain.toAppSection(): AppSection = when (this) {

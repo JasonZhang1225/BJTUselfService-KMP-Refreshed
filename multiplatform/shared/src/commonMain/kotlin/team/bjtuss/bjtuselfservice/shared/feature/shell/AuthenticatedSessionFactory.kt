@@ -199,6 +199,7 @@ internal fun rememberAuthenticatedSession(
     val classroomOccupancyModel = remember(classroomOccupancyRepository) {
         ClassroomOccupancyScreenModel(
             repository = classroomOccupancyRepository,
+            peopleRepository = classroomRepository,
             // 默认周跟随课表切片的学校当前教学周，课表未同步时回退第 1 周。
             currentWeekProvider = {
                 courseScheduleModel.state.value.currentWeek.takeIf { it > 0 } ?: 1

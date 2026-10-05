@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -278,35 +279,47 @@ fun CoursewareWorkspace(
             onDismissRequest = { showCoursePicker = false },
             title = "选择课程",
             needsFullHeight = true,
+            scrollableBody = true,
         ) {
-            val pickerListState = rememberLazyListState()
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.72f)
-                    .padding(bottom = 12.dp),
-            ) {
-                if (state.loadingCourseIds.isNotEmpty()) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-                }
-                LazyColumn(
-                    state = pickerListState,
-                    modifier = Modifier.weight(1f).fillMaxWidth().desktopTouchScroll(pickerListState),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(state.courses, key = CoursewareCourse::stableKey) { course ->
-                        CoursewareCourseRow(
-                            course = course,
-                            selected = course.id == state.selectedCourseId,
-                            loading = course.id in state.loadingCourseIds,
-                            onClick = {
-                                scope.launch { model.selectCourse(course.id) }
-                                showCoursePicker = false
-                            },
-                        )
-                    }
-                }
+            CoursewareCoursePickerList(
+                courses = state.courses,
+                selectedCourseId = state.selectedCourseId,
+                loadingCourseIds = state.loadingCourseIds,
+                onSelect = { course ->
+                    scope.launch { model.selectCourse(course.id) }
+                    showCoursePicker = false
+                },
+                modifier = Modifier.fillMaxWidth().then(
+                    if (team.bjtuss.bjtuselfservice.shared.currentPlatform().family == team.bjtuss.bjtuselfservice.shared.PlatformFamily.IOS)
+                        Modifier.weight(1f) else Modifier.heightIn(max = 560.dp),
+                ),
+            )
+        }
+    }
+}
+
+/** Shared list body also used by the offline native-sheet visual probe. */
+@Composable
+internal fun CoursewareCoursePickerList(
+    courses: List<CoursewareCourse>,
+    selectedCourseId: Int?,
+    loadingCourseIds: Set<Int>,
+    onSelect: (CoursewareCourse) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val listState = rememberLazyListState()
+    Column(modifier = modifier) {
+        if (loadingCourseIds.isNotEmpty()) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+        }
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f).fillMaxWidth().desktopTouchScroll(listState),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(courses, key = CoursewareCourse::stableKey) { course ->
+                CoursewareCourseRow(course, course.id == selectedCourseId, course.id in loadingCourseIds) { onSelect(course) }
             }
         }
     }
@@ -565,6 +578,7 @@ private fun CoursewareCompactWorkspace(
             // underlying Courseware navigation title out of the sheet chrome
             // and gives the final save button a real viewport to scroll in.
             needsFullHeight = true,
+            scrollableBody = true,
         ) {
             val detailScrollState = rememberScrollState()
             CoursewareDetailSheetBody(
@@ -577,7 +591,7 @@ private fun CoursewareCompactWorkspace(
                 onExportDirectory = onExportDirectory,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .fillMaxHeight()
+                    .then(if (team.bjtuss.bjtuselfservice.shared.currentPlatform().family == team.bjtuss.bjtuselfservice.shared.PlatformFamily.IOS) Modifier.weight(1f) else Modifier.heightIn(max = 560.dp))
                     .verticalScroll(detailScrollState)
                     .desktopTouchScroll(detailScrollState)
                     .padding(horizontal = 24.dp)

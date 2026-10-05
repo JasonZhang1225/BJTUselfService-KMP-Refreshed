@@ -604,3 +604,18 @@
 ### 2026-10-05 v1.8.1 四平台正式发布
 
 按用户授权保存简版更新内容，保留旧版安装包表格和限制说明；发布说明提交/标签源码 0037a6c。Actions run 37262681002 的 APK、MSI、DMG、unsigned IPA 与发布任务全部成功。v1.8.1 已正式发布并设 Latest，四附件与 CI 产物大小/哈希一致，正文一致，包结构/签名状态检查通过。
+
+## 2026-10-05：NewMigration 四项改造与本轮验收完成
+
+在 `25bfeb5` 基础上创建用户指定的 `NewMigration` 分支。首页日程追加选中日期课表；官方教室占用入口统一并补匹配房间人数，保留既有占用分类；iOS 更新弹窗标题固定“发现新版本”、日志留边/完整滚动并移除重复渲染；暂不更新持久化抑制自动提示 24 小时；更多更名应用并改为图标网格，底栏支持固定首页/应用与最多四项自选，应用与底栏互斥。冻结原 Android 工程未改。
+
+最终共享测试 610 项全部通过，Swift 导航玻璃回归 35 检查通过；Android、macOS、Windows、iOS arm64/模拟器共享编译通过，Xcode Simulator Debug 构建成功。Computer Use 实际检查 macOS 1080dp/420dp、iOS 窄屏、深浅色/1.5 倍文字；课程顺序和空日程、官方房间补人数和人数失败保留官方结果、底栏 2/6 项与网格互斥均通过。iOS 原生更新 sheet 的 45 段合成日志滚动到完整末尾，暂不更新实际关闭；24 小时边界及落盘恢复用注入时钟/CacheStore 测试验证。UIKit 配置描述项/重配链经源码、桥接规则与构建验证，合成导航视觉使用共享底栏；未声称真机、真实网络服务或 Windows 实际运行验收。
+
+详细报告：`docs/migration/new-migration-result-2026-10-05.md`；本机完整日志在忽略目录 `.artifacts/NewMigration/evidence/`。改动未提交、未推送、未合并、未发布，版本保持 1.8.1 / 22。测试源码桌面和模拟器进程已结束，用户安装版保留。
+
+
+## 2026-10-05：NewMigration 后续排序、AIO 鸣谢与三端本地包
+
+用户提供的选课弹窗截图显示列表在中部截断、底下留白。移除选课列表的 72% 高度限制，以原生 sheet 可用空间为滚动视口，文件详情采用同一高度策略；iPhone 17 Pro / iOS 27 模拟器用 20 门合成课程实际滚动至最后的“验收标记”。底栏设置将已勾选项置顶，使用右侧拖动手柄保存顺序，保留 2–6 项限制；同一模拟器把“成绩”拖到“课程表”前，列表和底栏同步换序。设置与 README 新增 optsimauth 的 AIO 社区版仓库和贡献说明。正常 iPhone iOS 26+ 路径仍为 UIKit Liquid Glass 导航壳。
+
+最终 Android Release APK、Mac DMG 与真机 arm64 iOS unsigned IPA 均成功构建并复制到 Downloads，旧文件保留。共享 611 测试全过，iOS Debug/Release xcodebuild 成功；APK v2 签名及原 KMP 证书指纹、DMG 校验和和包内签名、IPA CRC 与无签名结构均验证。详细文件名、字节数、SHA-256 和边界见 `docs/migration/new-migration-followup-2026-10-05.md`。之后源码已做本地初步提交，未推送或发布，版本保持 1.8.1 / Build 22。测试源码桌面和模拟器 app 已退出，用户原安装版未关闭。

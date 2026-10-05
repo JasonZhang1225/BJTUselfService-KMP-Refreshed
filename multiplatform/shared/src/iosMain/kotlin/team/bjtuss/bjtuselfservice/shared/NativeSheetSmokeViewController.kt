@@ -25,7 +25,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.HomeSyncDetailsDialog
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalNativeSheetPresenter
 
 /** DEBUG-only visual probe for the UIKit sheet shell; it never uses account data. */
-fun NativeSheetSmokeViewController(physicsLab: Boolean = false): UIViewController {
+fun NativeSheetSmokeViewController(physicsLab: Boolean = false, updateNotes: Boolean = false): UIViewController {
     lateinit var controller: UIViewController
     val presenter = IosNativeSheetPresenter { controller }
     controller = ComposeUIViewController {
@@ -64,7 +64,16 @@ fun NativeSheetSmokeViewController(physicsLab: Boolean = false): UIViewControlle
                         Text("同步状态 smoke", style = MaterialTheme.typography.headlineMedium)
                         Text("使用模拟加载状态检查 iOS 原生 sheet。")
                         if (visible) {
-                            if (physicsLab) {
+                            if (updateNotes) {
+                                team.bjtuss.bjtuselfservice.shared.feature.settings.AppUpdateResultDialog(
+                                    team.bjtuss.bjtuselfservice.shared.feature.settings.UpdateCheckState.Done(
+                                        team.bjtuss.bjtuselfservice.shared.update.AppUpdateChecker.Release(
+                                            tagName = "v9.9.9", htmlUrl = "https://example.invalid/release",
+                                            body = "# 更新说明\n\n" + (1..45).joinToString("\n\n") { "第 $it 项更新：这是一段用于核对窄屏换行、日志完整性和原生滚动布局的合成说明。" } + "\n\n日志末尾验收标记",
+                                        ), hasUpdate = true,
+                                    ), onDismiss = { visible = false }, onPostpone = { visible = false },
+                                )
+                            } else if (physicsLab) {
                                 team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet(
                                     onDismissRequest = { visible = false }, title = "物理实验同步",
                                     needsFullHeight = true, scrollableBody = true,

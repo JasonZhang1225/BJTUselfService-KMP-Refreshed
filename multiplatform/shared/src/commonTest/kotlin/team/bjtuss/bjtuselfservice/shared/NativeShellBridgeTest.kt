@@ -33,7 +33,7 @@ class NativeShellBridgeTest {
     @Test
     fun nativeTitlesCoverHostBarWithoutWaitingForCompose() {
         assertEquals("首页", nativeRouteTitle("HOME"))
-        assertEquals("更多", nativeRouteTitle("MORE"))
+        assertEquals("应用", nativeRouteTitle("MORE"))
         assertEquals("作业详情", nativeRouteTitle(HOMEWORK_DETAIL_ROUTE_ID))
         assertEquals("邮件详情", nativeRouteTitle(MAILBOX_DETAIL_ROUTE_ID))
         // 写信页的返回要先取消草稿，标题栏仍归页面自己，宿主不得抢先显示。

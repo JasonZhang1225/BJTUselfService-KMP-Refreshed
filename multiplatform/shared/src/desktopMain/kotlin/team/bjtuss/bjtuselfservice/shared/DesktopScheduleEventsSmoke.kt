@@ -41,6 +41,7 @@ fun DesktopScheduleEventsSmoke(initialDark: Boolean = false, initialExpanded: Bo
     }) }
     val modelState by model.state.collectAsState()
     val settings = remember { SettingsScreenModel(AppPreferences(), { true }, { true }, { true }, { team.bjtuss.bjtuselfservice.shared.update.AppUpdateChecker.Result.Unavailable }) }
+    val settingsState by settings.state.collectAsState()
     val cache = remember {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         CacheDatabaseSql.Schema.create(driver)
@@ -55,13 +56,13 @@ fun DesktopScheduleEventsSmoke(initialDark: Boolean = false, initialExpanded: Bo
         Surface(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(8.dp)) {
-                    listOf("课表", "更多", "设置").forEach { label -> TextButton({ tab = label }) { Text(label) } }
+                    listOf("课表", "应用", "设置").forEach { label -> TextButton({ tab = label }) { Text(label) } }
                     TextButton({ dark = !dark }) { Text(if (dark) "浅色" else "深色") }
                     TextButton({ expanded = !expanded }) { Text(if (expanded) "窄屏" else "宽屏") }
                     TextButton({ export = true }) { Text("导出日历") }
                 }
                 when (tab) {
-                    "更多" -> MoreWorkspace(true, {}, { if (it == AppSection.SETTINGS) tab = "设置" }, Modifier.fillMaxSize(), labModel)
+                    "应用" -> MoreWorkspace(settingsState.preferences, { if (it == AppSection.SETTINGS) tab = "设置" }, Modifier.fillMaxSize(), labModel)
                     "物理实验" -> PhysicsLabSettingsForm(
                         PhysicsLabState(enabled = true, labs = (1..4).map { index ->
                             PhysicsLab(LocalDate(2026, 11, index), 4, "测试实验 $index", "测试实验室", "测试教师", 1)

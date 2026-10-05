@@ -191,6 +191,7 @@ fun AppleSheetOrAlert(
     dismissEnabled: Boolean = true,
     showDismissButton: Boolean = true,
     needsFullHeight: Boolean = false,
+    scrollableBody: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     if (currentPlatform().family == PlatformFamily.IOS) {
@@ -200,6 +201,7 @@ fun AppleSheetOrAlert(
         AppleSheet(
             onDismissRequest = onDismissRequest,
             needsFullHeight = needsFullHeight,
+            scrollableBody = scrollableBody,
             title = title,
             confirmLabel = confirmLabel,
             confirmEnabled = confirmEnabled,

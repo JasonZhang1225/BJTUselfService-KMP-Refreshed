@@ -586,6 +586,7 @@ private fun HomeAgendaSection(
     onOpenExams: () -> Unit,
     onOpenPhyVlab: () -> Unit,
 ) {
+    val homeSchedule = LocalHomeSchedule.current
     val today = now.date
     // 校历确认之前不显示任何周数（含缓存值），统一显示「日程加载中」，
     // 拿到确切结果后一次性显示最终周；这样卡片不会随中间值反复弹跳。
@@ -802,6 +803,7 @@ private fun HomeAgendaSection(
                         now,
                         timeZone,
                         weekStartDate,
+                        homeSchedule,
                     ) {
                         buildHomeAgenda(
                             homework = homework,
@@ -811,7 +813,7 @@ private fun HomeAgendaSection(
                             timeZone = timeZone,
                             phyVlabEvents = phyVlabEvents,
                             weekStartDate = weekStartDate,
-                        )
+                        ).withCourses(homeSchedule)
                     }
                     HomeAgendaCalendarContent(
                         weekSlot = weekSlot,
@@ -927,6 +929,7 @@ private fun HomeAgendaSection(
                             now,
                             timeZone,
                             weekStartDate,
+                            homeSchedule,
                         ) {
                             buildHomeAgenda(
                                 homework = homework,
@@ -936,7 +939,7 @@ private fun HomeAgendaSection(
                                 timeZone = timeZone,
                                 phyVlabEvents = phyVlabEvents,
                                 weekStartDate = weekStartDate,
-                            )
+                            ).withCourses(homeSchedule)
                         }
                         val selectedDay = weekAgenda.days.firstOrNull { it.date == date }
                             ?: weekAgenda.days.first()
@@ -1011,9 +1014,10 @@ private fun HomeAgendaWeekCard(
     onSelectDate: (LocalDate) -> Unit,
     modifier: Modifier,
 ) {
+    val homeSchedule = LocalHomeSchedule.current
     val today = now.date
     val weekStartDate = weekSlot.startDate
-    val weekAgenda = remember(homework, exams, phyVlabEvents, today, now, timeZone, weekStartDate) {
+    val weekAgenda = remember(homework, exams, phyVlabEvents, today, now, timeZone, weekStartDate, homeSchedule) {
         buildHomeAgenda(
             homework = homework,
             exams = exams,
@@ -1022,7 +1026,7 @@ private fun HomeAgendaWeekCard(
             timeZone = timeZone,
             phyVlabEvents = phyVlabEvents,
             weekStartDate = weekStartDate,
-        )
+        ).withCourses(homeSchedule)
     }
     val selectedDay = weekAgenda.days.firstOrNull { it.date == selectedDate } ?: weekAgenda.days.first()
 
@@ -1135,8 +1139,8 @@ private fun HomeAgendaCalendarContent(
                     Text(
                         text = when {
                             weekSlot.isNonTeachingWeek -> "校历未安排教学周，仍显示本周日程"
-                            phyVlabEvents.isEmpty() -> "作业开始、截止与考试安排"
-                            else -> "作业开始、截止与考试安排（含物理在线）"
+                            phyVlabEvents.isEmpty() -> "作业、考试与课表安排"
+                            else -> "作业、考试与课表安排（含物理在线）"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1354,8 +1358,9 @@ private fun AgendaDayDetails(
     onOpenExams: () -> Unit,
     onOpenPhyVlab: () -> Unit,
 ) {
+    val homeSchedule = LocalHomeSchedule.current
     if (day.eventCount == 0) {
-        Text("当天没有作业、考试或物理在线安排。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("当天没有课程、作业、考试或物理在线安排。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1383,6 +1388,20 @@ private fun AgendaDayDetails(
                 done = event.submitted,
             )
         }
+        if (day.courses.isNotEmpty()) {
+            Text("当天课表", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+            day.courses.forEach { course ->
+                val period = course.courseLocationIndex / 8
+                val time = team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.SLOT_TIME_RANGES.getOrNull(period).orEmpty()
+                AgendaEventRow(
+                    type = "课程",
+                    title = course.courseName,
+                    detail = listOf(time, team.bjtuss.bjtuselfservice.shared.domain.course.displayCoursePlace(course.coursePlace), course.courseTeacher).filter(String::isNotBlank).joinToString(" · "),
+                    onClick = homeSchedule.onOpenSchedule,
+                )
+            }
+        }
+
     }
 }
 

@@ -49,10 +49,10 @@ internal fun nativeTabSections(): List<AppSection> = bottomNavSections(true)
 
 /** 紧凑端底部导航的原生镜像；来源与 [bottomNavSections] 同一份，避免两端漂移。 */
 fun nativeTabItems(session: AuthenticatedSession): List<NativeTabItem> =
-    bottomNavSections(session.settingsModel.state.value.preferences.isPhyVlabEnabled)
+    bottomNavSections(session.settingsModel.state.value.preferences)
         .map { NativeTabItem(routeId = it.name, title = it.title) }
 
-/** 该 routeId 是否真的落在原生 tab 上。 */
+/** 兼容旧调用方的默认底栏判断；会话内导航使用当前偏好生成的入口集合。 */
 fun isNativeTabRoute(routeId: String): Boolean =
     routeId.toAppRoute() in nativeTabSections()
 

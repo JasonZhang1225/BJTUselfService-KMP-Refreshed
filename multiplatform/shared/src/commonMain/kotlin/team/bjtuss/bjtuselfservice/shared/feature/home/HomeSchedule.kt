@@ -1,0 +1,43 @@
+package team.bjtuss.bjtuselfservice.shared.feature.home
+
+import androidx.compose.runtime.staticCompositionLocalOf
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.isoDayNumber
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
+import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
+import team.bjtuss.bjtuselfservice.shared.domain.course.Course
+import team.bjtuss.bjtuselfservice.shared.domain.course.parseCourseWeeks
+import team.bjtuss.bjtuselfservice.shared.domain.home.HomeAgenda
+
+internal data class HomeSchedulePresentation(
+    val courses: List<Course> = emptyList(),
+    val academicWeeks: List<OccupancyWeekDate> = emptyList(),
+    val currentWeek: Int = 0,
+    val today: LocalDate = LocalDate(2000, 1, 1),
+    val onOpenSchedule: () -> Unit = {},
+)
+
+internal val LocalHomeSchedule = staticCompositionLocalOf { HomeSchedulePresentation() }
+
+internal fun homeCoursesOnDate(schedule: HomeSchedulePresentation, date: LocalDate): List<Course> {
+    val calendar = schedule.academicWeeks.filter { it.startDate != null }
+    val week = if (calendar.isNotEmpty()) {
+        calendar.firstOrNull { date >= it.startDate!! && date <= it.startDate.plus(6, DateTimeUnit.DAY) }?.week
+    } else if (schedule.currentWeek > 0) {
+        val monday = schedule.today.minus(schedule.today.dayOfWeek.isoDayNumber - 1, DateTimeUnit.DAY)
+        val offset = (date.toEpochDays() - monday.toEpochDays()).toInt()
+        schedule.currentWeek + kotlin.math.floor(offset / 7.0).toInt()
+    } else null
+    if (week == null || week !in 1..30) return emptyList()
+    // Historical isCurrentSemester=true means the selection schedule, not the current schedule.
+    return schedule.courses.filter {
+        !it.isCurrentSemester && it.scheduleEventKind == null &&
+            it.courseLocationIndex % 8 == date.dayOfWeek.isoDayNumber &&
+            it.courseLocationIndex / 8 in 0..6 && week in parseCourseWeeks(it.courseTime)
+    }.sortedWith(compareBy({ it.courseLocationIndex / 8 }, { it.courseName }))
+}
+
+internal fun HomeAgenda.withCourses(schedule: HomeSchedulePresentation): HomeAgenda =
+    copy(days = days.map { it.copy(courses = homeCoursesOnDate(schedule, it.date)) })

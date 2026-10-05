@@ -22,9 +22,11 @@ data class AppPreferences(
     val autoSyncPhyVlab: Boolean = true,
     val currentWeek: Int = 0,
     val checkUpdate: Boolean = true,
+    val updatePostponedUntilMillis: Long = 0L,
     val dynamicColor: Boolean = true,
     val theme: String = "System",
     val showPhyVlabInBottomNav: Boolean = true,
+    val bottomNavigationItems: List<String>? = null,
 ) {
     /** 物理在线只有一个总开关：关闭时不自动同步，也不显示入口。 */
     val isPhyVlabEnabled: Boolean
@@ -354,9 +356,11 @@ class CacheStore(
         autoSyncPhyVlab = booleanSetting(SettingKey.AUTO_SYNC_PHYVLAB, true),
         currentWeek = setting(SettingKey.CURRENT_WEEK)?.toIntOrNull()?.coerceIn(0, 56) ?: 0,
         checkUpdate = booleanSetting(SettingKey.CHECK_UPDATE, true),
+        updatePostponedUntilMillis = setting(SettingKey.UPDATE_POSTPONED_UNTIL)?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
         dynamicColor = booleanSetting(SettingKey.DYNAMIC_COLOR, true),
         theme = setting(SettingKey.THEME)?.takeIf(String::isNotBlank) ?: "System",
         showPhyVlabInBottomNav = booleanSetting(SettingKey.SHOW_PHYVLAB_IN_BOTTOM_NAV, true),
+        bottomNavigationItems = setting(SettingKey.BOTTOM_NAVIGATION_ITEMS)?.takeUnless { it == "*" }?.split(',')?.filter(String::isNotBlank),
     )
 
     fun savePreferences(preferences: AppPreferences) {
@@ -368,9 +372,11 @@ class CacheStore(
             putSetting(SettingKey.AUTO_SYNC_PHYVLAB, preferences.autoSyncPhyVlab.toString())
             putSetting(SettingKey.CURRENT_WEEK, preferences.currentWeek.coerceIn(0, 56).toString())
             putSetting(SettingKey.CHECK_UPDATE, preferences.checkUpdate.toString())
+            putSetting(SettingKey.UPDATE_POSTPONED_UNTIL, preferences.updatePostponedUntilMillis.coerceAtLeast(0L).toString())
             putSetting(SettingKey.DYNAMIC_COLOR, preferences.dynamicColor.toString())
             putSetting(SettingKey.THEME, preferences.theme.ifBlank { "System" })
             putSetting(SettingKey.SHOW_PHYVLAB_IN_BOTTOM_NAV, preferences.showPhyVlabInBottomNav.toString())
+            putSetting(SettingKey.BOTTOM_NAVIGATION_ITEMS, preferences.bottomNavigationItems?.joinToString(",") ?: "*")
         }
     }
 
@@ -548,8 +554,10 @@ private object SettingKey {
     const val AUTO_SYNC_PHYVLAB = "auto_sync_phyvlab"
     const val CURRENT_WEEK = "current_week"
     const val CHECK_UPDATE = "check_update"
+    const val UPDATE_POSTPONED_UNTIL = "update_postponed_until"
     const val DYNAMIC_COLOR = "dynamic_color"
     const val THEME = "theme"
+    const val BOTTOM_NAVIGATION_ITEMS = "bottom_navigation_items"
     const val SHOW_PHYVLAB_IN_BOTTOM_NAV = "show_phyvlab_in_bottom_nav"
 }
 

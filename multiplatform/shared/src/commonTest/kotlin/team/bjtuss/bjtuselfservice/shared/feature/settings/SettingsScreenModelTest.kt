@@ -12,6 +12,7 @@ import kotlin.test.assertTrue
 class SettingsScreenModelTest {
     private fun model(
         initialPreferences: AppPreferences = AppPreferences(),
+        nowMillis: () -> Long = { 1_000L },
         persistPreferences: (AppPreferences) -> Boolean = { true },
         clearAccountCache: () -> Boolean = { true },
         clearAllLocalData: () -> Boolean = { true },
@@ -20,6 +21,7 @@ class SettingsScreenModelTest {
         },
     ) = SettingsScreenModel(
         initialPreferences = initialPreferences,
+        nowMillis = nowMillis,
         persistPreferences = persistPreferences,
         clearAccountCache = clearAccountCache,
         wipeAllLocalData = clearAllLocalData,
@@ -260,4 +262,75 @@ class SettingsScreenModelTest {
             assertTrue(done.hasUpdate)
         }
     }
+    @Test
+    fun postponeSurvivesRecreationAndExpiresAtExactly24Hours(): Unit = runBlocking {
+        var now = 1000L
+        var stored = AppPreferences()
+        var checks = 0
+        val fetch: suspend () -> AppUpdateChecker.Result = {
+            checks++
+            AppUpdateChecker.Result.Success(AppUpdateChecker.Release(tagName = "v9.9.9", htmlUrl = "https://example.com/release"))
+        }
+        val first = model(nowMillis = { now }, persistPreferences = { stored = it; true }, checkLatestRelease = fetch)
+        first.checkForUpdate(silentOnMiss = true)
+        first.postponeUpdate()
+        val until = 1000L + 24L * 60 * 60 * 1000
+        assertEquals(until, stored.updatePostponedUntilMillis)
+        now = until - 1
+        val restored = model(initialPreferences = stored, nowMillis = { now }, checkLatestRelease = fetch)
+        restored.checkForUpdate(silentOnMiss = true)
+        assertEquals(1, checks)
+        assertIs<UpdateCheckState.Idle>(restored.state.value.updateCheck)
+        now = until
+        restored.checkForUpdate(silentOnMiss = true)
+        assertEquals(2, checks)
+        assertIs<UpdateCheckState.Done>(restored.state.value.updateCheck)
+    }
+
+    @Test
+    fun pageRecreationDoesNotRepeatAutomaticCheckAndManualCheckRemainsAvailable(): Unit = runBlocking {
+        var calls = 0
+        val model = model(checkLatestRelease = {
+            calls++
+            AppUpdateChecker.Result.Success(AppUpdateChecker.Release(tagName = "v9.9.9", htmlUrl = "https://example.com/release"))
+        })
+        model.checkForUpdate(silentOnMiss = true)
+        model.postponeUpdate()
+        repeat(6) { model.checkForUpdate(silentOnMiss = true) }
+        assertEquals(1, calls)
+        model.checkForUpdate()
+        assertEquals(2, calls)
+        assertIs<UpdateCheckState.Done>(model.state.value.updateCheck)
+    }
+
+    @Test
+    fun bottomNavigationSelectionIsLimitedAndDoesNotDisableUnpinnedPhysics() {
+        val model = model()
+        model.setBottomNavigationItem("MAILBOX", true)
+        assertEquals(null, model.state.value.preferences.bottomNavigationItems)
+        model.setBottomNavigationItem("SCHEDULE", false)
+        model.setBottomNavigationItem("MAILBOX", true)
+        assertEquals(listOf("GRADES", "HOMEWORK", "PHYVLAB", "MAILBOX"), model.state.value.preferences.bottomNavigationItems)
+        model.setBottomNavigationItem("PHYVLAB", false)
+        assertTrue(model.state.value.preferences.isPhyVlabEnabled)
+        listOf("GRADES", "HOMEWORK", "MAILBOX").forEach { model.setBottomNavigationItem(it, false) }
+        assertEquals(emptyList(), model.state.value.preferences.bottomNavigationItems)
+        model.setBottomNavigationItem("HOME", false)
+        assertEquals(emptyList(), model.state.value.preferences.bottomNavigationItems)
+    }
+    @Test
+    fun reorderingPersistsOnlySelectedItemsAndKeepsBounds() {
+        var stored = AppPreferences()
+        val model = model(persistPreferences = { stored = it; true })
+        assertTrue(model.moveBottomNavigationItem("GRADES", -1))
+        assertEquals(listOf("GRADES", "SCHEDULE", "HOMEWORK", "PHYVLAB"), stored.bottomNavigationItems)
+        assertFalse(model.moveBottomNavigationItem("GRADES", -1))
+        assertFalse(model.moveBottomNavigationItem("HOME", 1))
+        assertFalse(model.moveBottomNavigationItem("MAILBOX", 1))
+        assertTrue(model.moveBottomNavigationItem("HOMEWORK", 1))
+        assertEquals(listOf("GRADES", "SCHEDULE", "PHYVLAB", "HOMEWORK"), stored.bottomNavigationItems)
+        val restored = model(initialPreferences = stored)
+        assertEquals(stored.bottomNavigationItems, restored.state.value.preferences.bottomNavigationItems)
+    }
+
 }

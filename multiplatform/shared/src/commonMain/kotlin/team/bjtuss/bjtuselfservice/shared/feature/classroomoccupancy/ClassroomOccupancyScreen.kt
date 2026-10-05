@@ -342,6 +342,7 @@ private fun OccupancyDetail(
         return
     }
 
+    LaunchedEffect(selected.id) { model.refreshPeople() }
     // 与其它页一致水平 16.dp；筛选与说明留给列表剩余高度。
     Column(
         modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -405,6 +406,10 @@ private fun OccupancyDetail(
             onSelect = { model.selectWeekday(it) },
         )
 
+        if (state.people.isNotEmpty()) {
+            Text("人数估计由第三方提供 · ${state.peopleSnapshotRange}", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (state.isNonTeachingWeek) {
             NonTeachingOccupancyState(
                 startDate = state.selectedNonTeachingWeekStart,
@@ -464,7 +469,7 @@ private fun OccupancyDetail(
                         contentPadding = PaddingValues(bottom = 16.dp),
                     ) {
                         items(query.rooms, key = ClassroomOccupancy::room) { room ->
-                            ClassroomOccupancyCard(room = room, weekday = state.selectedWeekday)
+                            ClassroomOccupancyCard(room = room, weekday = state.selectedWeekday, people = matchingRoomPeople(room.room, state.people))
                         }
                     }
                 }
@@ -1009,6 +1014,7 @@ private fun occupancyCellColors(kind: OccupancyKind): Pair<Color, Color> = when 
 private fun ClassroomOccupancyCard(
     room: ClassroomOccupancy,
     weekday: Int,
+    people: team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomCapacity? = null,
 ) {
     ElevatedCard(
         shape = RoundedCornerShape(16.dp),
@@ -1028,6 +1034,10 @@ private fun ClassroomOccupancyCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            people?.let {
+                Text("当前人数估计：${it.used} / ${it.capacity}", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 (1..7).forEach { period ->
                     OccupancyCell(

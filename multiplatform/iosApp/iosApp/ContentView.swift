@@ -873,6 +873,13 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
         "HOMEWORK": "folder",
         "PHYVLAB": "atom",
         "MORE": "square.grid.2x2",
+        "EXAMS": "clock",
+        "COURSEWARE": "books.vertical",
+        "CLASSROOM_OCCUPANCY": "building.2",
+        "MAILBOX": "envelope",
+        "CALENDAR": "calendar",
+        "REPORT_CARD_DOWNLOAD": "doc.text",
+        "SETTINGS": "gearshape",
     ]
 
     private var tabRouteIds: [String] = []
@@ -1165,14 +1172,23 @@ private final class LiquidGlassShellController: UIViewController {
 struct ComposeView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
 #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--courseware-picker-smoke") {
+            return CoursewarePickerProbeViewControllerKt.CoursewarePickerProbeViewController()
+        }
+        if ProcessInfo.processInfo.arguments.contains("--new-migration-smoke") {
+            return NewMigrationProbeViewControllerKt.NewMigrationProbeViewController()
+        }
         if ProcessInfo.processInfo.arguments.contains("--security-smoke") {
             return SecuritySmokeViewControllerKt.SecuritySmokeViewController()
         }
         if ProcessInfo.processInfo.arguments.contains("--physicslab-sheet-smoke") {
-            return NativeSheetSmokeViewControllerKt.NativeSheetSmokeViewController(physicsLab: true)
+            return NativeSheetSmokeViewControllerKt.NativeSheetSmokeViewController(physicsLab: true, updateNotes: false)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--update-notes-smoke") {
+            return NativeSheetSmokeViewControllerKt.NativeSheetSmokeViewController(physicsLab: false, updateNotes: true)
         }
         if ProcessInfo.processInfo.arguments.contains("--sheet-smoke") {
-            return NativeSheetSmokeViewControllerKt.NativeSheetSmokeViewController(physicsLab: false)
+            return NativeSheetSmokeViewControllerKt.NativeSheetSmokeViewController(physicsLab: false, updateNotes: false)
         }
 #endif
         // iOS 26 起把导航壳交给系统容器，由渲染栈自动应用 Liquid Glass；更低版本原样保留

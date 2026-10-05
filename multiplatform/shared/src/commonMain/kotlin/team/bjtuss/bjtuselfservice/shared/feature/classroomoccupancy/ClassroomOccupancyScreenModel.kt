@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -57,6 +58,9 @@ sealed interface ClassroomOccupancyQueryState {
 
 data class ClassroomOccupancyUiState(
     val buildings: List<OccupancyBuilding> = OCCUPANCY_BUILDINGS,
+    val people: List<team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomCapacity> = emptyList(),
+    val peopleLoading: Boolean = false,
+    val peopleSnapshotRange: String = "",
     val selectedBuilding: OccupancyBuilding? = null,
     val selectedWeek: Int = MIN_WEEK,
     val selectedWeekday: Int = 1,
@@ -87,6 +91,7 @@ data class ClassroomOccupancyUiState(
  */
 class ClassroomOccupancyScreenModel(
     private val repository: ClassroomOccupancyRepository,
+    private val peopleRepository: team.bjtuss.bjtuselfservice.shared.data.classroom.ClassroomRepository? = null,
     private val currentWeekProvider: () -> Int = { 1 },
     private val todayWeekdayProvider: () -> Int = {
         Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).dayOfWeek.isoDayNumber
@@ -175,6 +180,9 @@ class ClassroomOccupancyScreenModel(
         if (building == mutableState.value.selectedBuilding) return
         mutableState.value = mutableState.value.copy(
             selectedBuilding = building,
+            people = emptyList(),
+            peopleLoading = false,
+            peopleSnapshotRange = "",
             queryState = ClassroomOccupancyQueryState.Idle,
         )
     }
@@ -246,6 +254,24 @@ class ClassroomOccupancyScreenModel(
             selectNonTeachingWeek(target.startDate)
         } else {
             target.teachingWeek?.let { selectWeek(it) }
+        }
+    }
+
+    suspend fun refreshPeople() {
+        val building = mutableState.value.selectedBuilding ?: return
+        val remote = peopleRepository ?: return
+        if (building.name !in team.bjtuss.bjtuselfservice.shared.domain.classroom.CLASSROOM_BUILDINGS) return
+        mutableState.value = mutableState.value.copy(peopleLoading = true)
+        try {
+            val result = withTimeoutOrNull(8_000L) { remote.fetchBuildingInfo(building.name) }
+            if (mutableState.value.selectedBuilding != building) return
+            val info = (result as? team.bjtuss.bjtuselfservice.shared.data.classroom.ClassroomFetchResult.Success)?.info
+            mutableState.value = mutableState.value.copy(
+                people = info?.classrooms.orEmpty(),
+                peopleSnapshotRange = info?.let { "${it.effectiveStart}—${it.effectiveEnd}" }.orEmpty(),
+            )
+        } finally {
+            if (mutableState.value.selectedBuilding == building) mutableState.value = mutableState.value.copy(peopleLoading = false)
         }
     }
 

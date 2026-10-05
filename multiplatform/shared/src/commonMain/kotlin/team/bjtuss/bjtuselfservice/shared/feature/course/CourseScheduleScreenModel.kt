@@ -201,6 +201,7 @@ data class CourseScheduleUiState(
     val compactViewMode: CourseCompactViewMode = CourseCompactViewMode.WEEK,
     val calendarSemesterLabel: String? = null,
     val academicWeeks: List<OccupancyWeekDate> = emptyList(),
+    val homeAcademicWeeks: List<OccupancyWeekDate> = emptyList(),
     val isCalendarLoading: Boolean = false,
     /**
      * 本学期校历没有拉到。课表缓存或网络快照仍可能成功；
@@ -621,6 +622,7 @@ class CourseScheduleScreenModel(
         mutableState.value = current.copy(
             calendarSemesterLabel = selectedCalendar?.semesterLabel,
             academicWeeks = weeks,
+            homeAcademicWeeks = calendarMappings[CourseScheduleType.CURRENT]?.weeks.orEmpty(),
             currentWeek = effectiveCurrentWeek,
             selectedWeek = effectiveSelectedWeek,
             // 有当前学期映射并按日期给出结论（含明确的非教学周）才算确认。

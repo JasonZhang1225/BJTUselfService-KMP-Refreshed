@@ -37,14 +37,14 @@ private const val CAPTCHA_VERIFICATION_ARGUMENT = "--verify-captcha-model="
 private const val SYNC_STATUS_SMOKE_ARGUMENT = "--sync-status-smoke"
 
 fun main(args: Array<String>) {
-    if (SYNC_STATUS_SMOKE_ARGUMENT in args || "--schedule-events-smoke" in args) {
+    if (SYNC_STATUS_SMOKE_ARGUMENT in args || "--schedule-events-smoke" in args || "--new-migration-smoke" in args) {
         application {
             Window(
                 onCloseRequest = { exitApplication() },
                 title = "同步状态 · 本地测试",
-                state = rememberWindowState(width = 1080.dp, height = 720.dp),
+                state = rememberWindowState(width = if ("--narrow" in args) 420.dp else 1080.dp, height = 720.dp),
             ) {
-                if ("--schedule-events-smoke" in args) team.bjtuss.bjtuselfservice.shared.DesktopScheduleEventsSmoke() else DesktopSyncStatusSmoke()
+                if ("--new-migration-smoke" in args) team.bjtuss.bjtuselfservice.shared.feature.shell.NewMigrationUiProbe() else if ("--schedule-events-smoke" in args) team.bjtuss.bjtuselfservice.shared.DesktopScheduleEventsSmoke() else DesktopSyncStatusSmoke()
             }
         }
         return
@@ -144,8 +144,7 @@ fun main(args: Array<String>) {
                             Separator()
                             Item("考试安排", onClick = { appCommandBus.send(AppCommand.NAVIGATE_EXAMS) }, enabled = shellReady)
                             Item("课件", onClick = { appCommandBus.send(AppCommand.NAVIGATE_COURSEWARE) }, enabled = shellReady)
-                            Item("教室占用查询", onClick = { appCommandBus.send(AppCommand.NAVIGATE_CLASSROOM_OCCUPANCY) }, enabled = shellReady)
-                            Item("教室人数估计", onClick = { appCommandBus.send(AppCommand.NAVIGATE_CLASSROOMS) }, enabled = shellReady)
+                            Item("教室查询", onClick = { appCommandBus.send(AppCommand.NAVIGATE_CLASSROOM_OCCUPANCY) }, enabled = shellReady)
                             Item("邮箱", onClick = { appCommandBus.send(AppCommand.NAVIGATE_MAILBOX) }, enabled = shellReady)
                             Separator()
                             Item(

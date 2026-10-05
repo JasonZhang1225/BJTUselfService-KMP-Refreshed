@@ -190,6 +190,7 @@ internal fun AppSidebar(
     profile: StudentProfile,
     section: AppSection,
     showPhyVlab: Boolean,
+    sections: List<AppSection> = bottomNavSections(showPhyVlab),
     onSectionSelected: (AppSection) -> Unit,
     modifier: Modifier,
 ) {
@@ -225,7 +226,7 @@ internal fun AppSidebar(
                     )
                 }
             }
-            // 宽屏侧栏与紧凑底栏共享物理在线总开关；关闭后由「更多」里的开关重新启用。
+            // 宽屏侧栏与紧凑底栏共享物理在线总开关；关闭后由设置里的开关重新启用。
             // 退出登录放在设置页，侧栏不再重复。
             Column(
                 modifier = Modifier
@@ -234,9 +235,9 @@ internal fun AppSidebar(
                     .desktopTouchScroll(sidebarScrollState),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                bottomNavSections(showPhyVlab = showPhyVlab).forEach { item ->
+                sections.forEach { item ->
                     val selected = if (item == AppSection.MORE) {
-                        section in MoreGroupSections
+                        section !in sections || section == AppSection.MORE
                     } else {
                         section == item
                     }

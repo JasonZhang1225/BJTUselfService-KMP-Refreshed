@@ -167,6 +167,7 @@ iOS 未签名 IPA 的自签与安装请参考 [iOS 自签与安装指南](docs/i
 - [optsimauth](https://github.com/optsimauth): 
   - 重构了整个项目的架构，优化了代码结构
   - 以及后续若干跟进
+  - 开发 [BJTUselfServiceAIO 社区版](https://github.com/optsimauth/BJTUselfServiceAIO)；KMP 首页课表、教室查询整合和可配置底栏的本轮改造参考了该项目的功能与交互设计
 - [guh0613](https://github.com/guh0613)
   - 提供自动构建与发布
 - [carolyn-sun](https://github.com/carolyn-sun)

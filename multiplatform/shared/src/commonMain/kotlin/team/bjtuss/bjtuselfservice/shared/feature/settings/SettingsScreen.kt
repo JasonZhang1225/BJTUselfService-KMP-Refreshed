@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import team.bjtuss.bjtuselfservice.shared.currentPlatform
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.PlatformInfo
 import team.bjtuss.bjtuselfservice.shared.platformSupportsDynamicColor
@@ -101,7 +102,6 @@ fun SettingsWorkspace(
 
     // 检查结果弹窗提到 SettingsWorkspace 外层渲染：「前往下载」属于应用壳层导航动作，
     // 挂在页面里时用户不在设置页就永远看不到自动检测出的新版本提示。
-    AppUpdateResultDialog(state.updateCheck, model::dismissUpdateCheck)
 
     Column(
         modifier = modifier.fillMaxSize()
@@ -121,7 +121,20 @@ fun SettingsWorkspace(
         }
         SettingCard("账户", accountName.ifBlank { "未登录" })
 
-        // 仅 Android 展示动态取色开关；iOS/桌面无 Material You，不出现「主题设置」整块。
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("底栏显示", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("首页和应用固定显示，可另外选择最多四项功能。", style = MaterialTheme.typography.bodySmall)
+                Text("已选项置顶，拖动右侧手柄调整顺序。", style = MaterialTheme.typography.bodySmall)
+                BottomNavigationSettings(state.preferences, model)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text("启用物理在线", modifier = Modifier.weight(1f))
+                    Switch(checked = state.preferences.isPhyVlabEnabled, onCheckedChange = model::setPhyVlabEnabled)
+                }
+            }
+        }
+
+        // 动态取色设置仅用于支持此能力的平台。
         if (platformSupportsDynamicColor()) {
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -188,6 +201,10 @@ fun SettingsWorkspace(
                 ) {
                     Text("本仓库 GitHub（KMP 三端）")
                 }
+                OutlinedButton(
+                    onClick = { uriHandler.openUri("https://github.com/optsimauth/BJTUselfServiceAIO") },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("AIO 社区版 GitHub") }
                 Text(
                     "预发布阶段更新检测指向本仓库 GitHub Releases（含 pre-release）。",
                     style = MaterialTheme.typography.bodySmall,
@@ -281,15 +298,15 @@ private fun formatPublishedAt(iso: String): String =
  * 新版本 → 「前往下载」跳 GitHub 发布页；已最新/失败 → 轻量提示；Idle/Checking 不渲染。
  */
 @Composable
-fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit) {
+fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit, onPostpone: () -> Unit = onDismiss) {
     val uriHandler = LocalUriHandler.current
     val releaseNotesScrollState = rememberScrollState()
     when (check) {
         is UpdateCheckState.Done -> {
             if (check.hasUpdate) {
                 AppleSheetOrAlert(
-                    onDismissRequest = onDismiss,
-                    title = "发现新版本 ${check.release.tagName}",
+                    onDismissRequest = onPostpone,
+                    title = "发现新版本",
                     confirmLabel = "前往下载",
                     onConfirm = {
                         onDismiss()
@@ -297,14 +314,18 @@ fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit) {
                     },
                     dismissLabel = "暂不更新",
                     needsFullHeight = true,
+                    scrollableBody = true,
                 ) {
                         Column(
                             modifier = Modifier
-                                .heightIn(max = 420.dp)
+                                .fillMaxWidth()
+                                .then(if (currentPlatform().family == PlatformFamily.IOS) Modifier.weight(1f) else Modifier.heightIn(max = 560.dp))
                                 .verticalScroll(releaseNotesScrollState)
-                                .desktopTouchScroll(releaseNotesScrollState),
+                                .desktopTouchScroll(releaseNotesScrollState)
+                                .padding(horizontal = 20.dp, vertical = 16.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
+                            Text(check.release.tagName, style = MaterialTheme.typography.titleMedium)
                             check.release.publishedAt?.let { publishedAt ->
                                 Text(
                                     "发布时间：${formatPublishedAt(publishedAt)}",
@@ -414,7 +435,7 @@ private fun ReleaseNotesTable(table: ReleaseNoteBlock.Table) {
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    if (table.headers.size >= 2 && row.size >= 2) {
+                    if (table.headers.size == 2 && row.size == 2) {
                         InlineMarkdownText(
                             text = row[0],
                             style = MaterialTheme.typography.bodySmall,

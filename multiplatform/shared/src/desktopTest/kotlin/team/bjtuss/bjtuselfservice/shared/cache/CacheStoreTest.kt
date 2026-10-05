@@ -22,6 +22,19 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 
 class CacheStoreTest {
     @Test
+    fun navigationSelectionPreservesExplicitEmptyAndCanReturnToDefaults() {
+        val store = inMemoryStore()
+        try {
+            store.savePreferences(AppPreferences(bottomNavigationItems = listOf("MAILBOX", "EXAMS")))
+            assertEquals(listOf("MAILBOX", "EXAMS"), store.preferences().bottomNavigationItems)
+            store.savePreferences(AppPreferences(bottomNavigationItems = emptyList()))
+            assertEquals(emptyList(), store.preferences().bottomNavigationItems)
+            store.savePreferences(AppPreferences())
+            assertNull(store.preferences().bottomNavigationItems)
+        } finally { store.close() }
+    }
+
+    @Test
     fun roundTripIsAccountScopedAndClearAccountKeepsGlobalPreferences() {
         val store = inMemoryStore()
         try {
@@ -40,6 +53,7 @@ class CacheStoreTest {
                     autoSyncPhyVlab = false,
                     currentWeek = 14,
                     checkUpdate = false,
+                    updatePostponedUntilMillis = 123456789L,
                     dynamicColor = false,
                     theme = "Dark",
                 ),
@@ -59,6 +73,7 @@ class CacheStoreTest {
             assertFalse(preferences.autoSyncPhyVlab)
             assertEquals(14, preferences.currentWeek)
             assertFalse(preferences.checkUpdate)
+            assertEquals(123456789L, preferences.updatePostponedUntilMillis)
             assertFalse(preferences.dynamicColor)
             assertEquals("Dark", preferences.theme)
 

@@ -204,7 +204,7 @@ internal fun CompactBottomNavigation(
     ) {
         sections.forEach { item ->
             val selected =
-                if (item == AppSection.MORE) section in MoreGroupSections else section == item
+                if (item == AppSection.MORE) section !in sections || section == AppSection.MORE else section == item
             NavigationBarItem(
                 selected = selected,
                 onClick = { onSectionSelected(item) },
@@ -238,7 +238,7 @@ internal fun CompactTabIcon(section: AppSection) {
     Canvas(modifier = Modifier.size(24.dp)) {
         val strokeWidth = 1.8.dp.toPx()
         when (section) {
-            AppSection.HOME -> {
+            AppSection.HOME, AppSection.MORE -> {
                 // 2×2 圆角方块
                 val cell = 7.dp.toPx()
                 val gap = 3.dp.toPx()
@@ -255,7 +255,7 @@ internal fun CompactTabIcon(section: AppSection) {
                     }
                 }
             }
-            AppSection.SCHEDULE -> {
+            AppSection.SCHEDULE, AppSection.CALENDAR -> {
                 // 日历：圆角外框 + 顶部分隔线 + 两个挂环
                 val left = 4.dp.toPx()
                 val top = 5.dp.toPx()
@@ -349,6 +349,35 @@ internal fun CompactTabIcon(section: AppSection) {
                     cap = StrokeCap.Round,
                 )
                 drawCircle(color, radius = 1.2.dp.toPx(), center = Offset(12.dp.toPx(), 12.dp.toPx()))
+            }
+            AppSection.MAILBOX -> {
+                drawRoundRect(color, Offset(3.dp.toPx(), 5.dp.toPx()), Size(18.dp.toPx(), 14.dp.toPx()), CornerRadius(2.dp.toPx()), style = Stroke(strokeWidth))
+                drawLine(color, Offset(3.dp.toPx(), 6.dp.toPx()), Offset(12.dp.toPx(), 13.dp.toPx()), strokeWidth)
+                drawLine(color, Offset(12.dp.toPx(), 13.dp.toPx()), Offset(21.dp.toPx(), 6.dp.toPx()), strokeWidth)
+            }
+            AppSection.EXAMS -> {
+                drawCircle(color, 8.dp.toPx(), style = Stroke(strokeWidth))
+                drawLine(color, center, Offset(12.dp.toPx(), 6.dp.toPx()), strokeWidth, cap = StrokeCap.Round)
+                drawLine(color, center, Offset(17.dp.toPx(), 14.dp.toPx()), strokeWidth, cap = StrokeCap.Round)
+            }
+            AppSection.CLASSROOM_OCCUPANCY, AppSection.CLASSROOMS -> {
+                drawRect(color, Offset(4.dp.toPx(), 3.dp.toPx()), Size(16.dp.toPx(), 18.dp.toPx()), style = Stroke(strokeWidth))
+                for (x in listOf(8f,16f)) for (y in listOf(7f,12f)) drawCircle(color, 1.dp.toPx(), Offset(x.dp.toPx(), y.dp.toPx()))
+                drawRect(color, Offset(10.dp.toPx(), 16.dp.toPx()), Size(4.dp.toPx(), 5.dp.toPx()), style = Stroke(strokeWidth))
+            }
+            AppSection.SETTINGS -> {
+                drawCircle(color, 7.dp.toPx(), style = Stroke(strokeWidth))
+                drawCircle(color, 2.5.dp.toPx(), style = Stroke(strokeWidth))
+                for (i in 0..7) {
+                    val angle = i * PI / 4
+                    drawLine(color, center + Offset((7 * kotlin.math.cos(angle)).toFloat().dp.toPx(), (7 * kotlin.math.sin(angle)).toFloat().dp.toPx()),
+                        center + Offset((10 * kotlin.math.cos(angle)).toFloat().dp.toPx(), (10 * kotlin.math.sin(angle)).toFloat().dp.toPx()), strokeWidth)
+                }
+            }
+            AppSection.COURSEWARE, AppSection.REPORT_CARD_DOWNLOAD -> {
+                drawRoundRect(color, Offset(5.dp.toPx(), 3.dp.toPx()), Size(14.dp.toPx(), 18.dp.toPx()), CornerRadius(2.dp.toPx()), style = Stroke(strokeWidth))
+                for (y in listOf(8f,12f,16f)) drawLine(color, Offset(8.dp.toPx(), y.dp.toPx()), Offset(16.dp.toPx(), y.dp.toPx()), strokeWidth)
+                if (section == AppSection.COURSEWARE) drawLine(color, Offset(3.dp.toPx(), 6.dp.toPx()), Offset(3.dp.toPx(), 20.dp.toPx()), strokeWidth)
             }
             else -> {
                 // 更多：三个圆点
