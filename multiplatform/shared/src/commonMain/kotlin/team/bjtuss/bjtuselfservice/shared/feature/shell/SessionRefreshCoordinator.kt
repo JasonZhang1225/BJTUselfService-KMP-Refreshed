@@ -15,6 +15,7 @@ internal class SessionRefreshCoordinator(
     private val probeSession: (suspend () -> Boolean)? = null,
     private val onRecoveryStateChanged: (Boolean) -> Unit = {},
     private val maxRecoveryAttempts: Int = 2,
+    sessionVerifiedAtStart: Boolean = false,
 ) {
     init {
         require(maxRecoveryAttempts >= 1)
@@ -23,7 +24,7 @@ internal class SessionRefreshCoordinator(
     private val mutex = Mutex()
     private var recoveryAttempts = 0
     private var recoverySucceeded = false
-    private var preflightResult: Boolean? = null
+    private var preflightResult: Boolean? = if (sessionVerifiedAtStart) true else null
 
     suspend fun run(
         operation: suspend () -> Unit,

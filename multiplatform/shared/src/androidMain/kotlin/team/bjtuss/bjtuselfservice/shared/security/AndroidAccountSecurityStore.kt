@@ -15,14 +15,16 @@ import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 fun createAndroidAccountSecurityStore(context: Context): AccountSecurityStore = AccountSecurityStore(
     credentialVault = AndroidKeystoreCredentialVault(context.applicationContext),
     preferences = AndroidAccountPreferences(context.applicationContext),
+    physicsLabVault = { AndroidKeystoreCredentialVault(context.applicationContext, "team.bjtuss.bjtuselfservice.kmp.physicslab.$it", "secure_physicslab_$it") },
 )
 
 class AndroidKeystoreCredentialVault(
     context: Context,
     private val keyAlias: String = "team.bjtuss.bjtuselfservice.kmp.credentials.v1",
+    preferenceName: String = "secure_account_credentials",
 ) : CredentialVault {
     private val preferences = context.getSharedPreferences(
-        "secure_account_credentials",
+        preferenceName,
         Context.MODE_PRIVATE,
     )
 

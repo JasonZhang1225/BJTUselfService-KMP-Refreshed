@@ -39,6 +39,11 @@
 				<key>NSExceptionAllowsInsecureHTTPLoads</key>
 				<true/>
 			</dict>
+			<key>wlsy.bjtu.edu.cn</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
 			<key>yaya.csoci.com</key>
 			<dict>
 				<key>NSExceptionAllowsInsecureHTTPLoads</key>

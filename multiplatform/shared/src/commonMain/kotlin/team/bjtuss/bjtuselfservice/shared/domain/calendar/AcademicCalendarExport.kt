@@ -22,11 +22,34 @@ data class CalendarExportResult(
     val examEventCount: Int,
     val skippedExamCount: Int,
     val events: List<AcademicCalendarEvent>,
+    val physicsLabEventCount: Int = 0,
 )
+
+/** Beijing-local date window covering every natural week in an academic calendar. */
+data class AcademicCalendarDateRange(
+    val startLocal: String,
+    val endLocal: String,
+) {
+    init {
+        require(startLocal.isNotBlank() && endLocal.isNotBlank() && startLocal < endLocal)
+    }
+}
+
+/** Full date window for replacing previously exported course occurrences in this academic term. */
+fun academicCalendarDateRange(academicWeeks: List<OccupancyWeekDate>): AcademicCalendarDateRange? {
+    val dates = academicWeeks.mapNotNull(OccupancyWeekDate::startDate)
+    val first = dates.minOrNull() ?: return null
+    val endExclusive = dates.maxOrNull()?.plus(7, DateTimeUnit.DAY) ?: return null
+    return AcademicCalendarDateRange(
+        startLocal = first.isoLocalTime(0, 0),
+        endLocal = endExclusive.isoLocalTime(0, 0),
+    )
+}
 
 enum class AcademicCalendarEventKind {
     COURSE,
     EXAM,
+    PHYSICS_LAB,
 }
 
 data class AcademicCalendarEvent(
@@ -76,6 +99,7 @@ fun generateAcademicCalendarIcs(
     weekRange: IntRange,
     generatedAt: Instant,
     calendarName: String = "北京交通大学日程",
+    physicsLabs: List<team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLab> = emptyList(),
 ): CalendarExportResult {
     val stamp = generatedAt.toLocalDateTime(TimeZone.UTC).let { dateTime ->
         "${dateTime.date.compact()}T${dateTime.hour.twoDigits()}${dateTime.minute.twoDigits()}${dateTime.second.twoDigits()}Z"
@@ -196,6 +220,25 @@ fun generateAcademicCalendarIcs(
         examCount += 1
     }
 
+    var physicsLabCount = 0
+    val datesInRange = academicWeeks.filter { it.week in weekRange }.mapNotNull { it.startDate }
+    physicsLabs.forEach { lab ->
+        val time = lab.timeRange?.parseTimeRange() ?: return@forEach
+        lab.dates.forEach dateLoop@{ date ->
+            if (datesInRange.isEmpty() || date < datesInRange.min() || date > datesInRange.max().plus(6, DateTimeUnit.DAY)) return@dateLoop
+            events += AcademicCalendarEvent(
+                // 归入课表管理范围：再次导入或关闭包含实验时，系统日历仅替换本应用的课表事件。
+                stableId = "course-physicslab-${lab.date}-${lab.period}-${lab.name.safeUidPart()}-$date",
+                kind = AcademicCalendarEventKind.PHYSICS_LAB,
+                title = "${lab.name}（物理实验）",
+                startLocal = date.isoLocalTime(time.startHour, time.startMinute),
+                endLocal = date.isoLocalTime(time.endHour, time.endMinute),
+                location = lab.location,
+                notes = "教师：${lab.teacher}；第${lab.period}时段；共${lab.weekCount}周",
+            )
+            physicsLabCount += 1
+        }
+    }
     val ics = buildString {
         append("BEGIN:VCALENDAR\r\n")
         append("VERSION:2.0\r\n")
@@ -208,7 +251,7 @@ fun generateAcademicCalendarIcs(
         events.forEach { event -> append(calendarEvent(event, stamp)) }
         append("END:VCALENDAR\r\n")
     }
-    return CalendarExportResult(ics, courseCount, examCount, skippedExamCount, events)
+    return CalendarExportResult(ics, courseCount, examCount, skippedExamCount, events, physicsLabCount)
 }
 
 /**

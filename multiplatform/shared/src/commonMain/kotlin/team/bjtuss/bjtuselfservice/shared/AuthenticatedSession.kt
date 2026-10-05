@@ -60,6 +60,7 @@ class AuthenticatedSession(
     val reauthenticateSession: (suspend () -> Boolean)? = null,
     /** 刷新前探测 MIS 会话；返回 false 时由共享刷新协调器触发恢复。 */
     val probeSession: (suspend () -> Boolean)? = null,
+    val physicsLabModel: team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabModel? = null,
 ) {
     private val appResumeGenerationState = MutableStateFlow(0L)
     private val appResumeMutex = Mutex()

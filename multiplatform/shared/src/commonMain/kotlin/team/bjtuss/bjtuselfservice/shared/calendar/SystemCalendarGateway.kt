@@ -1,5 +1,6 @@
 package team.bjtuss.bjtuselfservice.shared.calendar
 
+import team.bjtuss.bjtuselfservice.shared.domain.calendar.AcademicCalendarDateRange
 import team.bjtuss.bjtuselfservice.shared.domain.calendar.AcademicCalendarEvent
 
 data class SystemCalendarBatch(
@@ -7,6 +8,11 @@ data class SystemCalendarBatch(
     /** `#RRGGBB`，平台不支持或颜色非法时可忽略。 */
     val colorHex: String,
     val events: List<AcademicCalendarEvent>,
+    /**
+     * Course export replaces all app-managed course occurrences inside this academic-term window,
+     * then writes [events] as the exact selected-week result. Exam batches leave it null.
+     */
+    val managedCourseRange: AcademicCalendarDateRange? = null,
 )
 
 enum class SystemCalendarFailure {

@@ -5,6 +5,7 @@ import java.util.prefs.Preferences
 fun createDesktopAccountSecurityStore(): AccountSecurityStore = AccountSecurityStore(
     credentialVault = MacOsKeychainCredentialVault(),
     preferences = DesktopAccountPreferences(),
+    physicsLabVault = { MacOsKeychainCredentialVault(service = "team.bjtuss.bjtuselfservice.kmp.physicslab", account = it) },
 )
 
 private class DesktopAccountPreferences : AccountPreferences {

@@ -117,7 +117,7 @@ class SchoolCourseScheduleRemoteDataSource(
     }
 
     private suspend fun landOnSmartPlatform(smart: SmartPlatformEndpoint) {
-        val module = executeSoft(
+        val module = executeHandshakeSoft(
             SchoolHttpRequest(
                 method = SchoolHttpMethod.GET,
                 url = SchoolEndpoints.SMART_MODULE_URL,
@@ -128,7 +128,7 @@ class SchoolCourseScheduleRemoteDataSource(
             first = module,
             referer = SchoolEndpoints.SMART_MODULE_URL,
         ) { request ->
-            executeSoft(request) ?: module
+            executeHandshakeSoft(request) ?: module
         }
     }
 
@@ -167,6 +167,15 @@ class SchoolCourseScheduleRemoteDataSource(
     private suspend fun executeSoft(request: SchoolHttpRequest) = try {
         if (requestDelayMillis > 0) delay(requestDelayMillis)
         transport.execute(request)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        null
+    }
+
+    private suspend fun executeHandshakeSoft(request: SchoolHttpRequest) = try {
+        if (requestDelayMillis > 0) delay(requestDelayMillis)
+        transport.executeWithoutRedirects(request)
     } catch (error: CancellationException) {
         throw error
     } catch (_: Exception) {

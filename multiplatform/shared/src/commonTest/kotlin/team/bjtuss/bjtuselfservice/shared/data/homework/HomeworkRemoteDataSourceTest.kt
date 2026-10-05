@@ -336,6 +336,28 @@ class HomeworkRemoteDataSourceTest {
         assertTrue(transport.requests.none { "getCourseList" in it.url || "getHomeWorkList" in it.url })
     }
 
+    @Test
+    fun refusesApiRedirectBeforeSendingSessionHeaderOffOrigin() = runBlocking {
+        val transport = QueueTransport(
+            smartResponse("<html></html>"),
+            smartResponse("""{"sessionId":"session-value"}"""),
+            SchoolHttpResponse(
+                statusCode = 302,
+                finalUrl = "https://bksycenter.bjtu.edu.cn/ve/back/coursePlatform/course.shtml",
+                headers = mapOf("Location" to listOf("https://evil.example/collect")),
+            ),
+        )
+
+        val error = assertFailsWith<HomeworkRemoteException> {
+            SchoolHomeworkRemoteDataSource(transport, requestDelayMillis = 0).fetchHomework()
+        }
+
+        assertEquals(HomeworkRemoteFailure.SESSION_EXPIRED, error.reason)
+        assertEquals(3, transport.requests.size)
+        assertTrue(transport.requests.none { "evil.example" in it.url })
+        assertTrue(transport.requests.last().headers.containsKey("sessionid"))
+    }
+
     private class QueueTransport(vararg responses: SchoolHttpResponse) : SchoolHttpTransport {
         private val queue = responses.toMutableList()
         val requests = mutableListOf<SchoolHttpRequest>()
@@ -344,6 +366,9 @@ class HomeworkRemoteDataSourceTest {
             requests += request
             return queue.removeFirst()
         }
+
+        override suspend fun executeWithoutRedirects(request: SchoolHttpRequest): SchoolHttpResponse =
+            execute(request)
 
         override fun clearSession() = Unit
     }
@@ -362,6 +387,9 @@ class HomeworkRemoteDataSourceTest {
             }
             return queue.removeFirst()
         }
+
+        override suspend fun executeWithoutRedirects(request: SchoolHttpRequest): SchoolHttpResponse =
+            execute(request)
 
         override fun clearSession() = Unit
     }
@@ -404,6 +432,9 @@ class HomeworkRemoteDataSourceTest {
             }
             else -> error("Unexpected request")
         }
+
+        override suspend fun executeWithoutRedirects(request: SchoolHttpRequest): SchoolHttpResponse =
+            execute(request)
 
         override fun clearSession() = Unit
     }

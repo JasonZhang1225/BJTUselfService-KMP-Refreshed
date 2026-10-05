@@ -220,6 +220,10 @@ internal fun buildHomeSyncItems(
     phyVlabBusy: Boolean,
     phyVlabFailed: Boolean,
     phyVlabReady: Boolean,
+    physicsLabEnabled: Boolean = false,
+    physicsLabBusy: Boolean = false,
+    physicsLabFailed: Boolean = false,
+    physicsLabReady: Boolean = false,
 ): List<HomeSyncItem> = buildList {
     add(
         homeSyncItem(
@@ -275,6 +279,10 @@ internal fun buildHomeSyncItems(
             busyDetail = "正在同步考试安排",
         ),
     )
+    if (physicsLabEnabled) {
+        add(homeSyncItem("物理实验", physicsLabBusy, physicsLabFailed, physicsLabReady,
+            busyDetail = "正在读取已选实验（需要校园网）"))
+    }
     if (phyVlabEnabled) {
         add(
             homeSyncItem(

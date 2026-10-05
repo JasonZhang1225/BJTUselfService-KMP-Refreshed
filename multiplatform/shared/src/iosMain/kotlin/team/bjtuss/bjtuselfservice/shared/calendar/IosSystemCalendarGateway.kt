@@ -1,7 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.calendar
 
-import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.BetaInteropApi
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.useContents
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.datetime.LocalDateTime
@@ -21,6 +21,10 @@ import platform.Foundation.NSProcessInfo
 import platform.Foundation.create
 import platform.Foundation.timeIntervalSince1970
 import team.bjtuss.bjtuselfservice.shared.domain.calendar.AcademicCalendarEvent
+import team.bjtuss.bjtuselfservice.shared.domain.calendar.AcademicCalendarEventKind
+import team.bjtuss.bjtuselfservice.shared.domain.calendar.managedCourseEventMarker
+import team.bjtuss.bjtuselfservice.shared.domain.calendar.managedCourseStableIdFromMarker
+import team.bjtuss.bjtuselfservice.shared.domain.calendar.planManagedCourseCalendarReconciliation
 
 private const val EVENT_MARKER_PREFIX = "[BJTU-ID:"
 private val BEIJING_TIME_ZONE = TimeZone.of("Asia/Shanghai")
@@ -31,7 +35,7 @@ class IosSystemCalendarGateway : SystemCalendarGateway {
     override val isAvailable: Boolean = true
 
     override suspend fun install(calendars: List<SystemCalendarBatch>): SystemCalendarInstallResult {
-        if (calendars.isEmpty() || calendars.all { it.events.isEmpty() }) {
+        if (calendars.isEmpty() || calendars.all { it.events.isEmpty() && it.managedCourseRange == null }) {
             return SystemCalendarInstallResult.Failed(SystemCalendarFailure.UNAVAILABLE)
         }
         val store = EKEventStore()
@@ -62,27 +66,67 @@ class IosSystemCalendarGateway : SystemCalendarGateway {
         var calendarCount = 0
         var inserted = 0
         var updated = 0
-        batches.filter { it.events.isNotEmpty() }.forEach { batch ->
+        batches.filter { it.events.isNotEmpty() || it.managedCourseRange != null }.forEach { batch ->
             val calendar = findOrCreateCalendar(store, batch.name) ?: return SystemCalendarInstallResult.Failed(
                 SystemCalendarFailure.IO,
             )
             calendarCount += 1
-            val existing = existingManagedEvents(store, calendar, batch.events)
-            val desiredMarkers = batch.events.mapTo(mutableSetOf()) { it.marker() }
-            existing.all.forEach { (marker, event) ->
-                if (marker.startsWith("$EVENT_MARKER_PREFIX" + "course-") && marker !in desiredMarkers) {
-                    if (!store.removeEvent(event, EKSpan.EKSpanThisEvent, commit = false, error = null)) {
+            val existingOtherEvents = if (batch.managedCourseRange == null) {
+                existingManagedEvents(store, calendar, batch.events)
+            } else {
+                emptyMap()
+            }
+
+            batch.managedCourseRange?.let { range ->
+                val existingCourses = existingManagedCourseEvents(
+                    store = store,
+                    calendar = calendar,
+                    start = range.startLocal.toNSDate(),
+                    end = range.endLocal.toNSDate(),
+                )
+                val desiredCourses = batch.events.filter { it.kind == AcademicCalendarEventKind.COURSE }
+                val reconciliation = planManagedCourseCalendarReconciliation(
+                    existingCourseMarkers = existingCourses.map(ManagedCourseEvent::marker),
+                    desiredCourseStableIds = desiredCourses.map(AcademicCalendarEvent::stableId),
+                )
+                // Replace every app-managed course series found in this academic term. User events
+                // and exam markers are excluded by the marker check in existingManagedCourseEvents.
+                val oldSeries = existingCourses
+                    .filter { it.marker in reconciliation.markersToRemove }
+                    .groupBy(ManagedCourseEvent::seriesKey)
+                    .values
+                    .mapNotNull { occurrences ->
+                        occurrences.minByOrNull {
+                            it.event.startDate?.timeIntervalSince1970 ?: Double.POSITIVE_INFINITY
+                        }
+                    }
+                oldSeries.forEach { managed ->
+                    if (!store.removeEvent(
+                            managed.event,
+                            EKSpan.EKSpanFutureEvents,
+                            commit = false,
+                            error = null,
+                        )
+                    ) {
                         return SystemCalendarInstallResult.Failed(SystemCalendarFailure.IO)
                     }
                 }
+                if (oldSeries.isNotEmpty() && !store.commit(null)) {
+                    return SystemCalendarInstallResult.Failed(SystemCalendarFailure.IO)
+                }
+                inserted += reconciliation.insertedEventCount
+                updated += reconciliation.updatedEventCount
             }
+
             batch.events.forEach { draft ->
                 val marker = draft.marker()
-                val existingEvent = existing.primary[marker]
-                val event = existingEvent ?: EKEvent.eventWithEventStore(store).also {
-                    inserted += 1
+                val replacingCourseSnapshot =
+                    draft.kind == AcademicCalendarEventKind.COURSE && batch.managedCourseRange != null
+                val existingEvent = if (replacingCourseSnapshot) null else existingOtherEvents[marker]
+                val event = existingEvent ?: EKEvent.eventWithEventStore(store)
+                if (!replacingCourseSnapshot) {
+                    if (existingEvent != null) updated += 1 else inserted += 1
                 }
-                if (existingEvent != null) updated += 1
                 event.calendar = calendar
                 event.title = draft.title
                 event.startDate = draft.startLocal.toNSDate()
@@ -100,14 +144,11 @@ class IosSystemCalendarGateway : SystemCalendarGateway {
                     ?.filterIsInstance<EKRecurrenceRule>()
                     ?.forEach(event::removeRecurrenceRule)
                 draft.recurrence?.takeIf { it.occurrenceCount > 1 }?.let { recurrence ->
-                    val end = EKRecurrenceEnd.recurrenceEndWithOccurrenceCount(
-                        recurrence.occurrenceCount.toULong(),
-                    )
                     event.addRecurrenceRule(
                         EKRecurrenceRule(
                             recurrenceWithFrequency = EKRecurrenceFrequency.EKRecurrenceFrequencyWeekly,
                             interval = 1L,
-                            end = end,
+                            end = EKRecurrenceEnd.recurrenceEndWithOccurrenceCount(recurrence.occurrenceCount.toULong()),
                         ),
                     )
                 }
@@ -120,8 +161,8 @@ class IosSystemCalendarGateway : SystemCalendarGateway {
                     return SystemCalendarInstallResult.Failed(SystemCalendarFailure.IO)
                 }
             }
-            // 先让重复规则进入数据库，才能按日期取到并删除停课/单双周 occurrence。
             if (!store.commit(null)) return SystemCalendarInstallResult.Failed(SystemCalendarFailure.IO)
+
             batch.events.forEach { draft ->
                 val recurrence = draft.recurrence ?: return@forEach
                 val marker = draft.marker()
@@ -168,42 +209,54 @@ class IosSystemCalendarGateway : SystemCalendarGateway {
         val calendar = EKCalendar.calendarForEntityType(EKEntityType.EKEntityTypeEvent, store)
         calendar.title = name
         calendar.source = source
-        return calendar.takeIf { store.saveCalendar(it, commit = true, error = null) }
+        return calendar.takeIf { store.saveCalendar(calendar, commit = true, error = null) }
+    }
+
+    private fun existingManagedCourseEvents(
+        store: EKEventStore,
+        calendar: EKCalendar,
+        start: NSDate,
+        end: NSDate,
+    ): List<ManagedCourseEvent> {
+        val predicate = store.predicateForEventsWithStartDate(start, end, listOf(calendar))
+        return store.eventsMatchingPredicate(predicate)
+            .filterIsInstance<EKEvent>()
+            .mapNotNull { event ->
+                val marker = event.notes?.lineSequence()?.firstOrNull()
+                    ?.takeIf { managedCourseStableIdFromMarker(it) != null }
+                    ?: return@mapNotNull null
+                ManagedCourseEvent(marker, event)
+            }
     }
 
     private fun existingManagedEvents(
         store: EKEventStore,
         calendar: EKCalendar,
         drafts: List<AcademicCalendarEvent>,
-    ): ExistingManagedEvents {
-        // ISO 本地时间是固定宽度 yyyy-MM-ddTHH:mm:ss，可安全按字符串求时序端点。
-        val start = drafts.minByOrNull { it.startLocal }?.startLocal?.toNSDate()
-            ?: return ExistingManagedEvents(emptyMap(), emptyList())
-        val latestText = drafts.maxOfOrNull { it.recurrence?.lastEndLocal ?: it.endLocal }
-            ?: return ExistingManagedEvents(emptyMap(), emptyList())
-        val latest = latestText.toNSDate()
-        val end = NSDate.create(timeIntervalSince1970 = latest.timeIntervalSince1970 + 1.0)
+    ): Map<String, EKEvent> {
+        val start = drafts.minByOrNull { it.startLocal }?.startLocal?.toNSDate() ?: return emptyMap()
+        val latestText = drafts.maxOfOrNull { it.recurrence?.lastEndLocal ?: it.endLocal } ?: return emptyMap()
+        val end = NSDate.create(timeIntervalSince1970 = latestText.toNSDate().timeIntervalSince1970 + 1.0)
         val predicate = store.predicateForEventsWithStartDate(start, end, listOf(calendar))
-        val all = store.eventsMatchingPredicate(predicate)
+        return store.eventsMatchingPredicate(predicate)
             .filterIsInstance<EKEvent>()
             .mapNotNull { event ->
                 val marker = event.notes?.lineSequence()?.firstOrNull()
                     ?.takeIf { it.startsWith(EVENT_MARKER_PREFIX) }
-                marker?.let { it to event }
+                    ?: return@mapNotNull null
+                marker to event
             }
-        val primary = mutableMapOf<String, EKEvent>()
-        all.forEach { (marker, event) ->
-            val previous = primary[marker]
-            val eventStart = event.startDate?.timeIntervalSince1970 ?: Double.POSITIVE_INFINITY
-            val previousStart = previous?.startDate?.timeIntervalSince1970 ?: Double.POSITIVE_INFINITY
-            if (previous == null || eventStart < previousStart) {
-                primary[marker] = event
+            .groupBy(Pair<String, EKEvent>::first)
+            .mapValues { (_, events) ->
+                events.minByOrNull { it.second.startDate?.timeIntervalSince1970 ?: Double.POSITIVE_INFINITY }!!.second
             }
-        }
-        return ExistingManagedEvents(primary, all)
     }
 
-    private fun AcademicCalendarEvent.marker(): String = "$EVENT_MARKER_PREFIX$stableId]"
+    private fun AcademicCalendarEvent.marker(): String = if (kind == AcademicCalendarEventKind.COURSE) {
+        managedCourseEventMarker(stableId)
+    } else {
+        "$EVENT_MARKER_PREFIX$stableId]"
+    }
 
     private fun String.toNSDate(): NSDate {
         val instant = LocalDateTime.parse(this).toInstant(BEIJING_TIME_ZONE)
@@ -214,7 +267,10 @@ class IosSystemCalendarGateway : SystemCalendarGateway {
     }
 }
 
-private data class ExistingManagedEvents(
-    val primary: Map<String, EKEvent>,
-    val all: List<Pair<String, EKEvent>>,
-)
+private data class ManagedCourseEvent(
+    val marker: String,
+    val event: EKEvent,
+) {
+    val seriesKey: String
+        get() = event.calendarItemIdentifier
+}

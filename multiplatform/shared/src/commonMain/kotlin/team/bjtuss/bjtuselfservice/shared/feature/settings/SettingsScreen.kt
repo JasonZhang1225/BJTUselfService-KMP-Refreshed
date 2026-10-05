@@ -161,27 +161,6 @@ fun SettingsWorkspace(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text("自动同步", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "打开后，每次登录成功会先显示离线数据，再自动拉取已启用模块的最新数据。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                AutoSyncSettingRow("自动同步成绩", state.preferences.autoSyncGrades, model::setAutoSyncGrades)
-                AutoSyncSettingRow("自动同步作业", state.preferences.autoSyncHomework, model::setAutoSyncHomework)
-                AutoSyncSettingRow("自动同步课表", state.preferences.autoSyncSchedule, model::setAutoSyncSchedule)
-                AutoSyncSettingRow("自动同步考试", state.preferences.autoSyncExams, model::setAutoSyncExams)
-                if (state.saveFailed && !platformSupportsDynamicColor()) {
-                    Feedback("同步设置保存失败，请重试。", true, model::dismissFeedback)
-                }
-            }
-        }
-
-        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
                 Text("版本与项目", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
                     "${platform.displayName} · KMP 迁移构建 v${AppUpdateChecker.CURRENT_VERSION}\n" +
@@ -480,22 +459,6 @@ private fun InlineMarkdownText(
 private fun LogoutButton(onClick: () -> Unit, modifier: Modifier) {
     Button(onClick = onClick, modifier = modifier) {
         Text("退出并清除登录信息")
-    }
-}
-
-@Composable
-private fun AutoSyncSettingRow(
-    title: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-    ) {
-        Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

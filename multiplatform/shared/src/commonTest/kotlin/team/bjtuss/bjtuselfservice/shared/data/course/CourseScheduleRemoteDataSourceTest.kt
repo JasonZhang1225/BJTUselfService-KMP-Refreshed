@@ -142,6 +142,9 @@ class CourseScheduleRemoteDataSourceTest {
             return responses.removeAt(0)
         }
 
+        override suspend fun executeWithoutRedirects(request: SchoolHttpRequest): SchoolHttpResponse =
+            execute(request)
+
         override fun clearSession() = Unit
     }
 

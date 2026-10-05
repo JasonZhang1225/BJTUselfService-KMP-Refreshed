@@ -133,6 +133,9 @@ import team.bjtuss.bjtuselfservice.shared.data.exam.ExamScheduleSyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.classroomoccupancy.ClassroomOccupancySyncFailure
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseCompactViewMode
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleContentSource
+import kotlinx.coroutines.flow.MutableStateFlow
+import team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabState
+import team.bjtuss.bjtuselfservice.shared.feature.course.scheduleEventCourses
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.exam.ExamScheduleContentSource
@@ -243,7 +246,6 @@ fun AuthenticatedAppShell(
     val classroomModel = session.classroomModel
     val classroomOccupancyModel = session.classroomOccupancyModel
     val settingsModel = session.settingsModel
-    val loginSyncPreferences = session.loginSyncPreferences
     val mailboxModel = session.mailboxModel
     val phyVlabModel = session.phyVlabModel
     val homeModel = session.homeModel
@@ -264,6 +266,15 @@ fun AuthenticatedAppShell(
     val mailboxUnread by mailboxModel.unreadSummary.collectAsState()
     val mailboxMessageLoading = (mailboxState as? MailboxUiState.Ready)?.isMessageLoading == true
     val phyVlabState by phyVlabModel.state.collectAsState()
+    val physicsLabFlow = remember(session) { session.physicsLabModel?.state ?: MutableStateFlow(PhysicsLabState()) }
+    val physicsLabState by physicsLabFlow.collectAsState()
+    val scheduleEvents = remember(courseState.academicWeeks, examState.exams, physicsLabState.labs, physicsLabState.enabled) {
+        scheduleEventCourses(examState.exams, if (physicsLabState.enabled) physicsLabState.labs else emptyList(), courseState.academicWeeks)
+    }
+    val scheduleStateWithEvents = courseState.copy(
+        supplementalCourses = scheduleEvents,
+        physicsLabs = if (physicsLabState.enabled) physicsLabState.labs else emptyList(),
+    )
     val homeState by homeModel.state.collectAsState()
     val settingsState by settingsModel.state.collectAsState()
     val phyVlabEnabled = settingsState.preferences.isPhyVlabEnabled
@@ -297,6 +308,10 @@ fun AuthenticatedAppShell(
         courseBusy = courseState.isLoading || courseState.isRefreshing || courseState.isCalendarLoading,
         courseFailed = courseState.failure != null || courseState.calendarFailed,
         courseReady = courseState.source != null && courseState.weekResolved,
+        physicsLabEnabled = physicsLabState.enabled,
+        physicsLabBusy = physicsLabState.refreshing,
+        physicsLabFailed = physicsLabState.failed,
+        physicsLabReady = physicsLabState.synced,
         phyVlabEnabled = phyVlabEnabled,
         phyVlabBusy = phyVlabEnabled && phyVlabState.isLoading,
         phyVlabFailed = phyVlabEnabled && (phyVlabState.failure != null || phyVlabState.casLoginRequired),
@@ -510,6 +525,7 @@ fun AuthenticatedAppShell(
                             sessionExpired = { courseScheduleModel.state.value.failure == CourseScheduleSyncFailure.SESSION_EXPIRED },
                         )
                     }
+                    launch { session.physicsLabModel?.refresh() }
                     // 这是用户明确点下首页刷新/失败胶囊后的主动重试；功能关闭时不访问物理在线。
                     if (phyVlabEnabled) {
                         launch { phyVlabModel.refresh() }
@@ -528,13 +544,22 @@ fun AuthenticatedAppShell(
                     operation = gradeModel::refresh,
                     sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
                 )
-                AppSection.SCHEDULE -> {
-                    refreshModule(
-                        operation = courseScheduleModel::refresh,
-                        sessionExpired = { courseScheduleModel.state.value.failure == CourseScheduleSyncFailure.SESSION_EXPIRED },
-                    )
-                    if (gradeModel.state.value.courseTypesByCode == null) {
-                        gradeModel.ensureProgramCourseTypes()
+                AppSection.SCHEDULE -> coroutineScope {
+                    launch { session.physicsLabModel?.refresh() }
+                    launch {
+                        refreshModule(
+                            operation = examScheduleModel::refresh,
+                            sessionExpired = { examScheduleModel.state.value.failure == ExamScheduleSyncFailure.SESSION_EXPIRED },
+                        )
+                    }
+                    launch {
+                        refreshModule(
+                            operation = courseScheduleModel::refresh,
+                            sessionExpired = { courseScheduleModel.state.value.failure == CourseScheduleSyncFailure.SESSION_EXPIRED },
+                        )
+                    }
+                    launch {
+                        if (gradeModel.state.value.courseTypesByCode == null) gradeModel.ensureProgramCourseTypes()
                     }
                 }
                 AppSection.EXAMS -> refreshModule(
@@ -631,6 +656,7 @@ fun AuthenticatedAppShell(
                             sessionExpired = { courseScheduleModel.state.value.failure == CourseScheduleSyncFailure.SESSION_EXPIRED },
                         )
                     }
+                    launch { session.physicsLabModel?.refresh() }
                     if (phyVlabEnabled) {
                         launch {
                             retryIfExpired(
@@ -732,17 +758,16 @@ fun AuthenticatedAppShell(
         val sessionRefresh = SessionRefreshCoordinator(
             reauthenticate = reauthenticateSession,
             probeSession = session.probeSession,
+            // The entry login has just verified this session. Start module work
+            // immediately; expired-session recovery still runs after a failure.
+            sessionVerifiedAtStart = true,
             onRecoveryStateChanged = { sessionRecoveryInProgress = it },
         )
-        if (loginSyncPreferences.autoSyncGrades) {
-            sessionRefresh.run(
-                operation = { gradeModel.initialize(refreshFromNetwork = true) },
-                sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
-            )
-        } else {
-            gradeModel.initialize(refreshFromNetwork = false)
-        }
-        if (loginSyncPreferences.autoSyncGrades && gradeModel.state.value.failure != null) {
+        sessionRefresh.run(
+            operation = { gradeModel.initialize(refreshFromNetwork = true) },
+            sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
+        )
+        if (gradeModel.state.value.failure != null) {
             delay(LOGIN_SYNC_RETRY_DELAY_MILLIS)
             sessionRefresh.run(
                 operation = { gradeModel.refresh() },
@@ -763,34 +788,29 @@ fun AuthenticatedAppShell(
         val sessionRefresh = SessionRefreshCoordinator(
             reauthenticate = reauthenticateSession,
             probeSession = session.probeSession,
+            // The entry login has just verified this session. Start module work
+            // immediately; expired-session recovery still runs after a failure.
+            sessionVerifiedAtStart = true,
             onRecoveryStateChanged = { sessionRecoveryInProgress = it },
         )
         coroutineScope {
             launch {
                 // 作业自动同步的失败重试在 ScreenModel 内（最多 3 次），与课表一致。
-                if (loginSyncPreferences.autoSyncHomework) {
-                    sessionRefresh.run(
-                        operation = { homeworkModel.initialize(refreshFromNetwork = true) },
-                        sessionExpired = {
-                            homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED
-                        },
-                    )
-                } else {
-                    homeworkModel.initialize(refreshFromNetwork = false)
-                }
+                sessionRefresh.run(
+                    operation = { homeworkModel.initialize(refreshFromNetwork = true) },
+                    sessionExpired = {
+                        homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED
+                    },
+                )
             }
             launch {
-                if (loginSyncPreferences.autoSyncExams) {
-                    sessionRefresh.run(
-                        operation = { examScheduleModel.initialize(refreshFromNetwork = true) },
-                        sessionExpired = {
-                            examScheduleModel.state.value.failure == ExamScheduleSyncFailure.SESSION_EXPIRED
-                        },
-                    )
-                } else {
-                    examScheduleModel.initialize(refreshFromNetwork = false)
-                }
-                if (loginSyncPreferences.autoSyncExams && examScheduleModel.state.value.failure != null) {
+                sessionRefresh.run(
+                    operation = { examScheduleModel.initialize(refreshFromNetwork = true) },
+                    sessionExpired = {
+                        examScheduleModel.state.value.failure == ExamScheduleSyncFailure.SESSION_EXPIRED
+                    },
+                )
+                if (examScheduleModel.state.value.failure != null) {
                     delay(LOGIN_SYNC_RETRY_DELAY_MILLIS)
                     sessionRefresh.run(
                         operation = { examScheduleModel.refresh() },
@@ -804,18 +824,13 @@ fun AuthenticatedAppShell(
                 // 课表：登录成功后才网络同步；失败重试在 ScreenModel 内（最多 3 次）。
                 // 先灌入缓存，课表与校历随后由模型并行同步；周数仍只由校历确认。
                 courseScheduleModel.initialize(refreshFromNetwork = false)
-                if (loginSyncPreferences.autoSyncSchedule) {
-                    sessionRefresh.run(
-                        operation = { courseScheduleModel.initialize(refreshFromNetwork = true) },
-                        sessionExpired = {
-                            courseScheduleModel.state.value.failure ==
-                                CourseScheduleSyncFailure.SESSION_EXPIRED
-                        },
-                    )
-                } else {
-                    // 校历不受“自动同步课表”偏好控制，但仍要等登录完成。
-                    courseScheduleModel.ensureCalendarLoaded()
-                }
+                sessionRefresh.run(
+                    operation = { courseScheduleModel.initialize(refreshFromNetwork = true) },
+                    sessionExpired = {
+                        courseScheduleModel.state.value.failure ==
+                            CourseScheduleSyncFailure.SESSION_EXPIRED
+                    },
+                )
             }
         }
     }
@@ -827,8 +842,13 @@ fun AuthenticatedAppShell(
         mailboxModel.refreshUnreadInboxCount()
     }
 
-    // 物理在线总开关关闭时不读取网络；打开后在当前登录会话中主动同步一次。
-    // 这样开关同时控制“是否同步”和“是否显示底栏入口”，不会留下隐藏的后台请求。
+    // 独立校园网数据源由稳定首页宿主启动，原生二级页面仅共享状态。
+    LaunchedEffect(session.physicsLabModel, entryLoggingIn, forcedRouteId, nativeTabBarEnabled) {
+        session.physicsLabModel?.initialize()
+        if (!entryLoggingIn && shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) session.physicsLabModel?.refresh()
+    }
+
+    // 物理在线总开关同时控制同步与底栏入口。
     LaunchedEffect(phyVlabModel, phyVlabEnabled, entryLoggingIn, forcedRouteId, nativeTabBarEnabled) {
         // 原生作业详情页复用同一个模型，但不能在这里重新刷新整份课程数据；
         // refresh 成功会清空 selectedActivity，导致详情页退化成“未选择物理在线作业”。
@@ -1034,8 +1054,8 @@ fun AuthenticatedAppShell(
                 // 页面上报的真实滚动偏移（像素），见 LocalReportTopScroll。直接读列表状态，
                 // fling/跳转/回顶都不会漂移；上报源只在 composition 里读它，重组开销与之前相当。
                 // lambda 用 remember 稳住实例，避免每次重组都让消费方连带重组。
-                val topScrollOffsetPx = remember { mutableFloatStateOf(0f) }
-                val reportTopScroll: (Float) -> Unit = remember {
+                val topScrollOffsetPx = remember(title) { mutableFloatStateOf(0f) }
+                val reportTopScroll: (Float) -> Unit = remember(title) {
                     { offsetPx -> topScrollOffsetPx.floatValue = offsetPx }
                 }
                 // 真原生 underlap：接管 + opt-in 的页面跳过实心 Spacer，内容从屏幕顶开始画；
@@ -1192,8 +1212,9 @@ fun AuthenticatedAppShell(
                     homeworkFailed = homeworkState.failure != null,
                     examFailed = examState.failure != null,
                     courseFailed = courseState.failure != null,
-                    phyVlabFailed = phyVlabEnabled &&
-                        (phyVlabState.failure != null || phyVlabState.casLoginRequired),
+                    phyVlabFailed = (phyVlabEnabled &&
+                        (phyVlabState.failure != null || phyVlabState.casLoginRequired)) ||
+                        (physicsLabState.enabled && physicsLabState.failed),
                     hasAnySource = homeworkState.source != null ||
                         examState.source != null ||
                         courseState.source != null ||
@@ -1266,7 +1287,7 @@ fun AuthenticatedAppShell(
                 title = AppSection.SCHEDULE.title,
                 expanded = expanded,
                 refreshable = true,
-                isRefreshing = courseState.isRefreshing,
+                isRefreshing = courseState.isRefreshing || examState.isRefreshing || physicsLabState.refreshing,
                 showBack = false,
                 modifier = modifier,
                 // 同步状态放在顶栏右上；有失败横幅时不要仍显示「已同步」。
@@ -1289,7 +1310,7 @@ fun AuthenticatedAppShell(
                 staticTopBar = true,
             ) {
                 CourseScheduleWorkspace(
-                    state = courseState,
+                    state = scheduleStateWithEvents,
                     courseTypesByCode = gradeState.courseTypesByCode,
                     expanded = expanded,
                     model = courseScheduleModel,
@@ -1695,6 +1716,7 @@ fun AuthenticatedAppShell(
                 MoreWorkspace(
                     phyVlabEnabled = phyVlabEnabled,
                     onPhyVlabEnabledChange = settingsModel::setPhyVlabEnabled,
+                    physicsLabModel = session.physicsLabModel,
                     onOpenSection = { target -> navigateToSection(target) },
                     modifier = Modifier.fillMaxSize(),
                 )

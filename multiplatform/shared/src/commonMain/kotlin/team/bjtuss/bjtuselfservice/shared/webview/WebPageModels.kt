@@ -68,10 +68,18 @@ object SchoolWebDomainPolicy {
         "phyvlab.bjtu.edu.cn",
     )
 
-    private fun hostOf(url: String): String = runCatching { Url(url).host.lowercase() }.getOrDefault("")
+    /**
+     * 应用内导航是否允许留在 WebView：必须是 https，且 host 在学校白名单。
+     * 只看 host 会放行 `http://mis.bjtu.edu.cn` 或 `file://mis.bjtu.edu.cn/...`。
+     */
+    fun isSchoolHost(url: String): Boolean {
+        val parsed = runCatching { Url(url) }.getOrNull() ?: return false
+        if (parsed.protocol.name != "https") return false
+        return parsed.host.lowercase() in allowedHosts
+    }
 
-    /** 该 URL 是否属于允许同步 Cookie 的学校域名。 */
-    fun isSchoolHost(url: String): Boolean = hostOf(url) in allowedHosts
+    private fun hostOf(url: String): String =
+        runCatching { Url(url).host.lowercase() }.getOrDefault("")
 
     /**
      * 校验一个网页请求的 Cookie 是否都只发往请求自身所属的学校域名。

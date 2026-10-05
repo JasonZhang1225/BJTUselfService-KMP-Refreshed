@@ -34,7 +34,7 @@ val LocalReportTopScroll = staticCompositionLocalOf<(Float) -> Unit> { {} }
 @Composable
 fun ReportTopScrollListState(listState: LazyListState) {
     val report = LocalReportTopScroll.current
-    LaunchedEffect(listState) {
+    LaunchedEffect(listState, report) {
         snapshotFlow {
             if (listState.firstVisibleItemIndex > 0) {
                 Float.MAX_VALUE
@@ -49,7 +49,17 @@ fun ReportTopScrollListState(listState: LazyListState) {
 @Composable
 fun ReportTopScrollState(scrollState: ScrollState) {
     val report = LocalReportTopScroll.current
-    LaunchedEffect(scrollState) {
+    LaunchedEffect(scrollState, report) {
         snapshotFlow { scrollState.value.toFloat() }.collect { report(it) }
     }
+}
+
+/** Include real elastic placement: a short iOS page can move without logical list scrolling. */
+internal fun resolveVisualTopScrollOffset(
+    logicalOffset: Float,
+    viewportTop: Float?,
+    contentTop: Float?,
+): Float {
+    val elasticOffset = if (viewportTop != null && contentTop != null) viewportTop - contentTop else 0f
+    return (logicalOffset + elasticOffset).coerceAtLeast(0f)
 }

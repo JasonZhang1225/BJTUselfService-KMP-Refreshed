@@ -43,6 +43,29 @@ class ClassroomRemoteDataSourceTest {
             ).fetchBuildingInfo("思源楼")
         }
         assertEquals(ClassroomRemoteFailure.NETWORK, error.reason)
+        assertEquals(1, transport.requests.size)
+        assertEquals(0, transport.redirectlessMisses)
+    }
+
+    @Test
+    fun doesNotFollowCleartextRedirect() = runBlocking {
+        val transport = QueueTransport(
+            SchoolHttpResponse(
+                statusCode = 302,
+                finalUrl = "http://yaya.csoci.com:2333/api/classnum/",
+                headers = mapOf("Location" to listOf("http://evil.example/collect")),
+            ),
+        )
+        val error = assertFailsWith<ClassroomRemoteException> {
+            SchoolClassroomRemoteDataSource(
+                transport = transport,
+                legacyHttpAvailable = true,
+            ).fetchBuildingInfo("思源楼")
+        }
+        assertEquals(ClassroomRemoteFailure.NETWORK, error.reason)
+        assertEquals(1, transport.requests.size)
+        assertTrue(transport.requests.single().url.startsWith("http://yaya.csoci.com:2333/api/classnum/"))
+        assertEquals(0, transport.redirectlessMisses)
     }
 
     @Test
@@ -75,9 +98,16 @@ class ClassroomRemoteDataSourceTest {
 private class QueueTransport(vararg responses: SchoolHttpResponse) : SchoolHttpTransport {
     private val queue = responses.toMutableList()
     val requests = mutableListOf<SchoolHttpRequest>()
+    var redirectlessMisses = 0
     override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse {
+        redirectlessMisses += 1
+        error("classroom capacity must not use auto-follow execute")
+    }
+
+    override suspend fun executeWithoutRedirects(request: SchoolHttpRequest): SchoolHttpResponse {
         requests += request
         return queue.removeAt(0)
     }
+
     override fun clearSession() = Unit
 }

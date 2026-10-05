@@ -4,6 +4,14 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalReportTopScroll
+import team.bjtuss.bjtuselfservice.shared.feature.shell.resolveVisualTopScrollOffset
+import androidx.compose.foundation.rememberOverscrollEffect
+import androidx.compose.foundation.overscroll
+import androidx.compose.foundation.withoutVisualEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -146,8 +154,28 @@ fun HomeWorkspace(
     val uriHandler = LocalUriHandler.current
     val campusDestination = campusCardDestination(platform.family)
     val pageListState = rememberLazyListState()
-    // 与其它列表页共用真实滚动位置上报，供 iOS 原生标题栏控制材质浓度。
-    ReportTopScrollListState(pageListState)
+    val homeOverscrollEffect = rememberOverscrollEffect()
+    // A short iOS home page rubber-bands without changing LazyListState's
+    // logical offset. Observe the native effect's placed content as well, so
+    // material fades in when that content actually enters the title bar.
+    val tracksElasticPosition = !expanded && LocalTopBarClearance.current > 0.dp
+    val viewportTop = remember { mutableStateOf<Float?>(null) }
+    val contentTop = remember { mutableStateOf<Float?>(null) }
+    val reportTopScroll = LocalReportTopScroll.current
+    if (tracksElasticPosition) {
+        LaunchedEffect(pageListState, reportTopScroll) {
+            snapshotFlow {
+                val logicalOffset = if (pageListState.firstVisibleItemIndex > 0) {
+                    Float.MAX_VALUE
+                } else {
+                    pageListState.firstVisibleItemScrollOffset.toFloat()
+                }
+                resolveVisualTopScrollOffset(logicalOffset, viewportTop.value, contentTop.value)
+            }.collect { reportTopScroll(it) }
+        }
+    } else {
+        ReportTopScrollListState(pageListState)
+    }
     var dialog by remember { mutableStateOf<HomeDialog?>(null) }
     var selectedChangeDomain by remember { mutableStateOf<HomeChangeDomain?>(null) }
     var actionMessage by remember { mutableStateOf<String?>(null) }
@@ -224,111 +252,128 @@ fun HomeWorkspace(
     }
 
     val status = state.status
-    LazyColumn(
-        state = pageListState,
-        modifier = modifier.fillMaxSize().desktopTouchScroll(pageListState),
-        contentPadding = PaddingValues(
-            start = if (expanded) 8.dp else 16.dp,
-            end = if (expanded) 8.dp else 16.dp,
-            // 原生栏 underlap 时首项靠这份顶边距让开，视口本身画到屏幕顶（底栏同理）。
-            top = 14.dp + LocalTopBarClearance.current,
-            // 玻璃 TabBar 浮在列表之上：末项靠这份尾部留白让开，视口本身画到物理底边。
-            bottom = 14.dp + LocalBottomBarClearance.current,
-        ),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    Box(
+        modifier = modifier.fillMaxSize().onGloballyPositioned { coordinates ->
+            if (tracksElasticPosition) viewportTop.value = coordinates.positionInRoot().y
+        },
     ) {
-        if (expanded) {
-            item(key = "home-header") {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("首页", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                        Text(
-                            "邮件与校园账户状态来自当前 MIS 会话",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+        LazyColumn(
+            state = pageListState,
+            modifier = Modifier.fillMaxSize().desktopTouchScroll(pageListState)
+                .then(if (tracksElasticPosition) Modifier.overscroll(homeOverscrollEffect) else Modifier)
+                .onGloballyPositioned { coordinates ->
+                    if (tracksElasticPosition) contentTop.value = coordinates.positionInRoot().y
+                },
+            // The same native effect handles events inside the list and renders once
+            // outside it, where we can observe its actual rubber-band displacement.
+            overscrollEffect = if (tracksElasticPosition) {
+                homeOverscrollEffect?.withoutVisualEffect()
+            } else {
+                homeOverscrollEffect
+            },
+            contentPadding = PaddingValues(
+                start = if (expanded) 8.dp else 16.dp,
+                end = if (expanded) 8.dp else 16.dp,
+                // 原生栏 underlap 时首项靠这份顶边距让开，视口本身画到屏幕顶（底栏同理）。
+                top = 14.dp + LocalTopBarClearance.current,
+                // 玻璃 TabBar 浮在列表之上：末项靠这份尾部留白让开，视口本身画到物理底边。
+                bottom = 14.dp + LocalBottomBarClearance.current,
+            ),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (expanded) {
+                item(key = "home-header") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("首页", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                "邮件与校园账户状态来自当前 MIS 会话",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        OutlinedButton(onClick = onRefresh, enabled = !isRefreshing) {
+                            Text(if (isRefreshing) "同步中" else "刷新")
+                        }
                     }
-                    OutlinedButton(onClick = onRefresh, enabled = !isRefreshing) {
-                        Text(if (isRefreshing) "同步中" else "刷新")
+                }
+            }
+            state.failure?.let { failure ->
+                item(key = "home-failure") {
+                    Text(
+                        failure.message(state.status != null),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+            actionMessage?.let { message ->
+                item(key = "home-action-message") {
+                    Text(message, color = MaterialTheme.colorScheme.error)
+                }
+            }
+            if (expanded) {
+                item(key = "home-status-cards") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MailCard(status, mailboxUnread, onOpenMailbox, Modifier.weight(1f))
+                        CampusCard(status, { dialog = HomeDialog.CampusCard }, Modifier.weight(1f))
+                        NetworkCard(status, { dialog = HomeDialog.Network }, Modifier.weight(1f))
+                    }
+                }
+                item(key = "home-agenda") {
+                    HomeAgendaSection(
+                        platform = platform,
+                        homework = homework,
+                        exams = exams,
+                        phyVlabEvents = phyVlabEvents,
+                        currentWeek = currentWeek,
+                        academicWeeks = academicWeeks,
+                        now = now,
+                        timeZone = timeZone,
+                        isLoading = isAgendaLoading,
+                        expanded = expanded,
+                        isWeekResolved = isWeekResolved,
+                        onOpenHomework = onOpenHomework,
+                        onOpenExams = onOpenExams,
+                        onOpenPhyVlab = onOpenPhyVlab,
+                    )
+                }
+            } else {
+                // 紧凑页：本周日程放第一栏，新邮件保持原尺寸，两张余额卡半宽并列，
+                // 尽量不用滚动就能看全（2026-08-04 真机反馈）。
+                item(key = "home-agenda") {
+                    HomeAgendaSection(
+                        platform = platform,
+                        homework = homework,
+                        exams = exams,
+                        phyVlabEvents = phyVlabEvents,
+                        currentWeek = currentWeek,
+                        academicWeeks = academicWeeks,
+                        now = now,
+                        timeZone = timeZone,
+                        isLoading = isAgendaLoading,
+                        expanded = expanded,
+                        isWeekResolved = isWeekResolved,
+                        onOpenHomework = onOpenHomework,
+                        onOpenExams = onOpenExams,
+                        onOpenPhyVlab = onOpenPhyVlab,
+                    )
+                }
+                item(key = "home-mail-card") {
+                    MailCard(status, mailboxUnread, onOpenMailbox, Modifier.fillMaxWidth())
+                }
+                item(key = "home-account-cards") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CampusCard(status, { dialog = HomeDialog.CampusCard }, Modifier.weight(1f))
+                        NetworkCard(status, { dialog = HomeDialog.Network }, Modifier.weight(1f))
                     }
                 }
             }
-        }
-        state.failure?.let { failure ->
-            item(key = "home-failure") {
-                Text(
-                    failure.message(state.status != null),
-                    color = MaterialTheme.colorScheme.error,
+            item(key = "home-change-feed") {
+                HomeChangeFeedSection(
+                    changes = changes,
+                    onSelectDomain = { selectedChangeDomain = it },
+                    onClearAll = onClearAllChanges,
                 )
             }
-        }
-        actionMessage?.let { message ->
-            item(key = "home-action-message") {
-                Text(message, color = MaterialTheme.colorScheme.error)
-            }
-        }
-        if (expanded) {
-            item(key = "home-status-cards") {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    MailCard(status, mailboxUnread, onOpenMailbox, Modifier.weight(1f))
-                    CampusCard(status, { dialog = HomeDialog.CampusCard }, Modifier.weight(1f))
-                    NetworkCard(status, { dialog = HomeDialog.Network }, Modifier.weight(1f))
-                }
-            }
-            item(key = "home-agenda") {
-                HomeAgendaSection(
-                    platform = platform,
-                    homework = homework,
-                    exams = exams,
-                    phyVlabEvents = phyVlabEvents,
-                    currentWeek = currentWeek,
-                    academicWeeks = academicWeeks,
-                    now = now,
-                    timeZone = timeZone,
-                    isLoading = isAgendaLoading,
-                    expanded = expanded,
-                    isWeekResolved = isWeekResolved,
-                    onOpenHomework = onOpenHomework,
-                    onOpenExams = onOpenExams,
-                    onOpenPhyVlab = onOpenPhyVlab,
-                )
-            }
-        } else {
-            // 紧凑页：本周日程放第一栏，新邮件保持原尺寸，两张余额卡半宽并列，
-            // 尽量不用滚动就能看全（2026-08-04 真机反馈）。
-            item(key = "home-agenda") {
-                HomeAgendaSection(
-                    platform = platform,
-                    homework = homework,
-                    exams = exams,
-                    phyVlabEvents = phyVlabEvents,
-                    currentWeek = currentWeek,
-                    academicWeeks = academicWeeks,
-                    now = now,
-                    timeZone = timeZone,
-                    isLoading = isAgendaLoading,
-                    expanded = expanded,
-                    isWeekResolved = isWeekResolved,
-                    onOpenHomework = onOpenHomework,
-                    onOpenExams = onOpenExams,
-                    onOpenPhyVlab = onOpenPhyVlab,
-                )
-            }
-            item(key = "home-mail-card") {
-                MailCard(status, mailboxUnread, onOpenMailbox, Modifier.fillMaxWidth())
-            }
-            item(key = "home-account-cards") {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CampusCard(status, { dialog = HomeDialog.CampusCard }, Modifier.weight(1f))
-                    NetworkCard(status, { dialog = HomeDialog.Network }, Modifier.weight(1f))
-                }
-            }
-        }
-        item(key = "home-change-feed") {
-            HomeChangeFeedSection(
-                changes = changes,
-                onSelectDomain = { selectedChangeDomain = it },
-                onClearAll = onClearAllChanges,
-            )
         }
     }
 }

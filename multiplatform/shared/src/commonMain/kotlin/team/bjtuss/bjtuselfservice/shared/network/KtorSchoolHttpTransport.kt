@@ -49,6 +49,9 @@ class KtorSchoolHttpTransport(
      * 串行化会话请求，换正确性；模块仍可并行编排，只是底层排队。
      */
     private val requestMutex = Mutex()
+    // 物理实验是独立登录系统。独立 Cookie/请求锁，校园网断连不能阻塞教务同步。
+    private val physicsLabMutex = Mutex()
+    private var physicsLabClient = newClient(AcceptAllCookiesStorage(), sessionScoped = true, followRedirects = false)
 
     companion object {
         /**
@@ -65,7 +68,12 @@ class KtorSchoolHttpTransport(
     }
 
     override suspend fun executeWithoutRedirects(request: SchoolHttpRequest): SchoolHttpResponse =
-        requestMutex.withLock {
+        if (Url(request.url).host == "wlsy.bjtu.edu.cn") {
+            require(request.url in setOf(
+                "http://wlsy.bjtu.edu.cn/", "http://wlsy.bjtu.edu.cn/Student/Teach/Course/CourseResult.aspx",
+            ))
+            physicsLabMutex.withLock { executeOn(physicsLabClient, request) }
+        } else requestMutex.withLock {
             executeOn(rawClient, request)
         }
 
@@ -73,9 +81,18 @@ class KtorSchoolHttpTransport(
         // 故意不拿 requestMutex：公开页挂起不得堵住 aa 会话查询。
         executeOn(publicClient, request)
 
+    fun close() {
+        client.close()
+        rawClient.close()
+        physicsLabClient.close()
+        publicClient.close()
+    }
+
     override fun clearSession() {
         client.close()
         rawClient.close()
+        physicsLabClient.close()
+        physicsLabClient = newClient(AcceptAllCookiesStorage(), sessionScoped = true, followRedirects = false)
         cookieStorage = AcceptAllCookiesStorage()
         client = newClient(cookieStorage, sessionScoped = true)
         rawClient = newClient(cookieStorage, sessionScoped = true, followRedirects = false)

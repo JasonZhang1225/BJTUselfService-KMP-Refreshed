@@ -216,6 +216,9 @@ INSERT OR REPLACE INTO program_course_type_cache (
 deleteProgramCourseTypesByAccount:
 DELETE FROM program_course_type_cache WHERE account_scope = ?;
 
+selectMetadataAccountScopesForKey:
+SELECT account_scope FROM cache_metadata WHERE cache_key = ?;
+
 selectMetadata:
 SELECT value FROM cache_metadata WHERE account_scope = ? AND cache_key = ?;
 

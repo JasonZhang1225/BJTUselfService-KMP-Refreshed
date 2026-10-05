@@ -218,20 +218,19 @@ class SchoolCoursewareRemoteDataSource(
     }
 
     private suspend fun ensureInitializedLocked() {
-        val module = execute(
+        val module = executeWithoutRedirects(
             SchoolHttpRequest(
                 method = SchoolHttpMethod.GET,
                 url = SchoolEndpoints.SMART_MODULE_URL,
                 headers = mapOf("Referer" to "https://mis.bjtu.edu.cn/home/"),
             ),
         )
-        // 与作业握手一致：登录态下 module 28 以裸 3xx 进入多跳 OAuth 链，
-        // Ktor 在 HTTPS→HTTP 降级处停住；这里逐跳手动跟随（明文跳限精确
+        // 与作业握手一致：关掉自动跟随后再逐跳校验（明文跳限精确
         // apiOrigin，HTTPS 跳限 cas/mis 学校主机），直到落地。
         val settled = endpoint.followSmartHandshakeRedirects(
             first = module,
             referer = SchoolEndpoints.SMART_MODULE_URL,
-        ) { request -> execute(request) }
+        ) { request -> executeWithoutRedirects(request) }
         if (settled !== module || settled.statusCode in 300..399) {
             if (settled.statusCode in 300..399) {
                 // 握手链停在未放行的跳转（HTTPS 策略下即明文降级目标），
@@ -325,13 +324,17 @@ class SchoolCoursewareRemoteDataSource(
         query: LinkedHashMap<String, String>,
         includeSession: Boolean = true,
     ): SchoolHttpResponse {
-        val response = execute(
+        val response = executeWithoutRedirects(
             SchoolHttpRequest(
                 method = method,
                 url = endpoint.apiUrl(path, query),
                 headers = buildHeaders(includeSession),
             ),
         )
+        if (response.statusCode in 300..399) {
+            invalidateSession()
+            sessionExpired()
+        }
         if (
             !endpoint.isLegacyInsecure &&
             path == ARTICLE_PATH &&
@@ -374,6 +377,15 @@ class SchoolCoursewareRemoteDataSource(
     private suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse = try {
         if (requestDelayMillis > 0) delay(requestDelayMillis)
         transport.execute(request)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        network()
+    }
+
+    private suspend fun executeWithoutRedirects(request: SchoolHttpRequest): SchoolHttpResponse = try {
+        if (requestDelayMillis > 0) delay(requestDelayMillis)
+        transport.executeWithoutRedirects(request)
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {

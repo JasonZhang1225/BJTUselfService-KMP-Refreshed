@@ -227,6 +227,29 @@ class CoursewareRemoteDataSourceTest {
         assertEquals(2, transport.requests.size)
     }
 
+    @Test
+    fun refusesApiRedirectBeforeFollowingOffOrigin() {
+        val transport = QueueTransport(
+            smartResponse("<html></html>"),
+            smartResponse("""{"sessionId":"session-value"}"""),
+            SchoolHttpResponse(
+                statusCode = 302,
+                finalUrl = "https://bksycenter.bjtu.edu.cn/ve/back/coursePlatform/course.shtml",
+                headers = mapOf("Location" to listOf("https://evil.example/collect")),
+            ),
+        )
+
+        val error = assertFailsWith<CoursewareRemoteException> {
+            runBlocking {
+                SchoolCoursewareRemoteDataSource(transport, requestDelayMillis = 0).fetchSnapshot()
+            }
+        }
+
+        assertEquals(CoursewareRemoteFailure.SESSION_EXPIRED, error.reason)
+        assertEquals(3, transport.requests.size)
+        assertTrue(transport.requests.none { "evil.example" in it.url })
+    }
+
     private class QueueTransport(vararg responses: SchoolHttpResponse) : SchoolHttpTransport {
         private val queue = responses.toMutableList()
         val requests = mutableListOf<SchoolHttpRequest>()
@@ -235,6 +258,9 @@ class CoursewareRemoteDataSourceTest {
             requests += request
             return queue.removeFirst()
         }
+
+        override suspend fun executeWithoutRedirects(request: SchoolHttpRequest): SchoolHttpResponse =
+            execute(request)
 
         override fun clearSession() = Unit
     }
@@ -266,6 +292,9 @@ class CoursewareRemoteDataSourceTest {
             }
             else -> error("Unexpected request: ${request.url}")
         }
+
+        override suspend fun executeWithoutRedirects(request: SchoolHttpRequest): SchoolHttpResponse =
+            execute(request)
 
         override fun clearSession() = Unit
 

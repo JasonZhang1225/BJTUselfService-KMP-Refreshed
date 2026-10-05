@@ -192,7 +192,9 @@ private final class NativeChromeBinding {
         if let title = pendingTitle {
             pendingTitle = nil
             controller.navigationItem.title = title
-            (controller.navigationController as? NativeChromeHosting)?.setNativeTitle(title)
+            if controller.navigationController?.topViewController === controller {
+                (controller.navigationController as? NativeChromeHosting)?.setNativeTitle(title)
+            }
         }
         if hasPendingAction {
             let action = pendingAction
@@ -431,9 +433,10 @@ private final class NativeChromeBinding {
     /// Reduce-Motion-safe (no autonomous motion). Epsilon cuts redundant writes.
     private func applyGlassProgress(_ progress: CGFloat) {
         guard let controller, let navigationController = controller.navigationController else { return }
-        if abs(progress - lastGlassProgress) > 0.005 {
+        let reachesEndpoint = progress == 0 || progress == 1
+        if progress != lastGlassProgress && (reachesEndpoint || abs(progress - lastGlassProgress) > 0.005) {
             lastGlassProgress = progress
-            (navigationController as? TabRootNavigationController)?.setTopGlassProgress(progress)
+            (navigationController as? TabRootNavigationController)?.setTopGlassProgress(progress, for: controller)
         }
     }
 }
@@ -538,10 +541,7 @@ private final class NativeSpinnerButton: UIButton {
 /// title bar refracts like the system TabBar instead of frosting like a plain blur.
 /// Visibility is driven by scroll-edge state; at the top the bar stays transparent.
 private final class NativeNavigationBarGlassView: UIVisualEffectView {
-    private let materialMask = UIView()
     private var scrollProgress: CGFloat = 0
-    private var appliedMaskBounds: CGRect?
-    private var appliedMaskProgress: CGFloat = -1
     var hasVisibleMaterial: Bool { scrollProgress > 0 }
 
     init() {
@@ -550,11 +550,10 @@ private final class NativeNavigationBarGlassView: UIVisualEffectView {
         isOpaque = false
         isUserInteractionEnabled = false
         autoresizingMask = [.flexibleWidth, .flexibleBottomMargin]
-        // UIVisualEffectView must remain at alpha 1: partial alpha can flatten its
-        // backdrop into a tint without blur, especially on a short home page.
-        alpha = 1
-        materialMask.backgroundColor = .white
-        updateMaterialMask()
+        // Restore 5ced798's continuous fade. Later effect-view masks changed
+        // the material's reveal semantics and failed the user's device check.
+        alpha = 0
+        isHidden = true
     }
 
     @available(*, unavailable)
@@ -564,37 +563,10 @@ private final class NativeNavigationBarGlassView: UIVisualEffectView {
 
     func setProgress(_ progress: CGFloat) {
         scrollProgress = min(max(progress, 0), 1)
-        updateMaterialMask()
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        updateMaterialMask()
-    }
-
-    private func updateMaterialMask() {
-        guard appliedMaskBounds != bounds || appliedMaskProgress != scrollProgress else { return }
-        appliedMaskBounds = bounds
-        appliedMaskProgress = scrollProgress
+        // One continuous scroll value drives the whole native glass surface,
+        // exactly as setTopGlassAlpha did before the 1.8.1 mask changes.
+        alpha = scrollProgress
         isHidden = !hasVisibleMaterial
-        if scrollProgress >= 1 {
-            mask = nil
-            return
-        }
-        // Reveal full-strength glass upward from the edge where content enters.
-        // Alpha/effect cross-fades leave sharp text visible at intermediate values.
-        // Apply the mask directly to the effect view; masking its parent breaks blur.
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        let visibleHeight = bounds.height * scrollProgress
-        materialMask.frame = CGRect(
-            x: 0, y: bounds.height - visibleHeight,
-            width: bounds.width, height: visibleHeight,
-        )
-        CATransaction.commit()
-        // UIKit copies visual-effect masks. Reassign after geometry changes so
-        // resizing and reverse scrolling also update the internal effect views.
-        mask = materialMask
     }
 
     private static func barGlassEffect() -> UIVisualEffect {
@@ -656,6 +628,7 @@ private final class TabRootNavigationController: UINavigationController, UINavig
     /// 内容要能伸进栏后，玻璃才有东西可折射。栏隐藏时推 0。镜像底栏的容差推送。
     private var pushedTopInset: CGFloat = -1
     private var navigationBarGlassView: NativeNavigationBarGlassView?
+    private let glassState = NativeNavigationGlassState<ObjectIdentifier>()
     /// 根页 ↔ 被压入的二级页切换时通知宿主：底栏被 push 藏起来时同步隐藏。
     var onBarVisibilityChanged: ((Bool) -> Void)?
 
@@ -817,9 +790,14 @@ private final class TabRootNavigationController: UINavigationController, UINavig
 
     /// Reveal the native material from the page's actual scroll depth.
     /// No autonomous motion is introduced, including when Reduce Motion is enabled.
-    func setTopGlassProgress(_ progress: CGFloat) {
-        guard let glassView = navigationBarGlassView else { return }
-        glassView.setProgress(progress)
+    func setTopGlassProgress(_ progress: CGFloat, for owner: UIViewController) {
+        if let visibleProgress = glassState.update(progress, for: ObjectIdentifier(owner)) {
+            navigationBarGlassView?.setProgress(visibleProgress)
+        }
+    }
+
+    private func restoreTopGlass(for controller: UIViewController) {
+        navigationBarGlassView?.setProgress(glassState.show(ObjectIdentifier(controller)))
     }
 
     /// 只有一页例外不显示系统栏：没有标题的页（写信这类自绘返回的页）。一级 tab 根页现在也有标题，
@@ -847,6 +825,7 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         willShow viewController: UIViewController,
         animated: Bool
     ) {
+        restoreTopGlass(for: viewController)
         let shouldHide = navigationBarShouldBeHidden(for: viewController)
         navigationBarHiddenState = shouldHide
         setNavigationBarHidden(shouldHide, animated: animated)
@@ -858,8 +837,10 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         didShow viewController: UIViewController,
         animated: Bool
     ) {
-        // A pop does not recreate the root Compose controller, so restore the
-        // single centered label explicitly when UIKit finishes returning to it.
+        // A pop does not recreate Compose. Restore this page's own title and material,
+        // including a cancelled interactive pop, without requiring a new scroll event.
+        glassState.retain(Set(viewControllers.map { ObjectIdentifier($0) }))
+        restoreTopGlass(for: viewController)
         setNativeTitle(viewController.navigationItem.title ?? "")
         updateInteractivePopEnabled()
         // 部分系统版本在 didShow 后会把 delegate 重置；每次确认仍由本类接管。
@@ -1187,8 +1168,11 @@ struct ComposeView: UIViewControllerRepresentable {
         if ProcessInfo.processInfo.arguments.contains("--security-smoke") {
             return SecuritySmokeViewControllerKt.SecuritySmokeViewController()
         }
+        if ProcessInfo.processInfo.arguments.contains("--physicslab-sheet-smoke") {
+            return NativeSheetSmokeViewControllerKt.NativeSheetSmokeViewController(physicsLab: true)
+        }
         if ProcessInfo.processInfo.arguments.contains("--sheet-smoke") {
-            return NativeSheetSmokeViewControllerKt.NativeSheetSmokeViewController()
+            return NativeSheetSmokeViewControllerKt.NativeSheetSmokeViewController(physicsLab: false)
         }
 #endif
         // iOS 26 起把导航壳交给系统容器，由渲染栈自动应用 Liquid Glass；更低版本原样保留

@@ -70,6 +70,11 @@ private fun List<SystemCalendarBatch>.toJsonPayload(): String = buildString {
         if (calendarIndex > 0) append(',')
         append("{\"name\":\"").append(calendar.name.jsonEscape()).append("\",")
         append("\"colorHex\":\"").append(calendar.colorHex.jsonEscape()).append("\",")
+        calendar.managedCourseRange?.let { range ->
+            append("\"managedCourseRange\":{")
+            append("\"startLocal\":\"").append(range.startLocal.jsonEscape()).append("\",")
+            append("\"endLocal\":\"").append(range.endLocal.jsonEscape()).append("\"},")
+        }
         append("\"events\":[")
         calendar.events.forEachIndexed { eventIndex, event ->
             if (eventIndex > 0) append(',')

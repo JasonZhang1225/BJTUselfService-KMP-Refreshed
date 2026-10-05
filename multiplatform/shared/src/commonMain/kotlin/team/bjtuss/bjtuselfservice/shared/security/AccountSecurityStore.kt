@@ -5,6 +5,7 @@ import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 data class AccountSecurityStore(
     val credentialVault: CredentialVault?,
     val preferences: AccountPreferences,
+    val physicsLabVault: ((String) -> CredentialVault)? = null,
 )
 
 interface AccountPreferences {
@@ -23,6 +24,8 @@ sealed interface CredentialRestoreResult {
 class AccountSecurityCoordinator(
     private val store: AccountSecurityStore,
 ) {
+    fun physicsLabVault(accountScope: String): CredentialVault? = store.physicsLabVault?.invoke(accountScope)
+
     val canStoreCredentials: Boolean get() = store.credentialVault != null
 
     /**

@@ -198,7 +198,14 @@ internal fun MoreWorkspace(
     onPhyVlabEnabledChange: (Boolean) -> Unit,
     onOpenSection: (AppSection) -> Unit,
     modifier: Modifier,
+    physicsLabModel: team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabModel? = null,
 ) {
+    var showPhysicsLab by remember { mutableStateOf(false) }
+    if (showPhysicsLab && physicsLabModel != null) {
+        AppleSheet(onDismissRequest = { showPhysicsLab = false }, title = "物理实验同步", needsFullHeight = true, scrollableBody = true) {
+            team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabSettings(physicsLabModel, showTitle = false)
+        }
+    }
     val pageScrollState = rememberScrollState()
     // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
     ReportTopScrollState(pageScrollState)
@@ -241,6 +248,14 @@ internal fun MoreWorkspace(
             enabled = phyVlabEnabled,
             onEnabledChange = onPhyVlabEnabledChange,
         )
+        if (physicsLabModel != null) {
+            Surface(onClick = { showPhysicsLab = true }, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("物理实验同步", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    MoreEntryChevron()
+                }
+            }
+        }
         MoreGroupedSection(
             header = null,
             items = listOf(AppSection.EXAMS, AppSection.COURSEWARE),
