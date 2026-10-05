@@ -27,6 +27,7 @@ import team.bjtuss.bjtuselfservice.shared.security.encodeCredentialPayload
 fun createWindowsAccountSecurityStore(): AccountSecurityStore = AccountSecurityStore(
     credentialVault = WindowsDpapiCredentialVault(),
     preferences = WindowsAccountPreferences(),
+    physicsLabVault = { WindowsDpapiCredentialVault(service = "team.bjtuss.bjtuselfservice.kmp.physicslab", account = it) },
 )
 
 class WindowsDpapiCredentialVault(

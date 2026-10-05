@@ -11,6 +11,9 @@ import kotlinx.cinterop.ObjCAction
 import platform.UIKit.UIAdaptivePresentationControllerDelegateProtocol
 import platform.UIKit.UIPresentationController
 import platform.UIKit.UIViewController
+import platform.UIKit.UINavigationController
+import platform.UIKit.UIRectEdgeBottom
+import platform.UIKit.UIRectEdgeNone
 import platform.darwin.NSObject
 import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeSheetPresenter
 
@@ -28,6 +31,21 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeSheetPresenter
 class IosNativeSheetPresenter(
     private val owner: () -> UIViewController,
 ) : NativeSheetPresenter {
+    private var scrollableBody = false
+
+    override fun setScrollableBody(enabled: Boolean) {
+        if (scrollableBody == enabled) return
+        scrollableBody = enabled
+        sheetController?.let(::applyContentLayout)
+    }
+
+    private fun applyContentLayout(sheet: UIViewController) {
+        val content = (sheet as? UINavigationController)?.topViewController ?: return
+        // Keep the native header above the body, while allowing scrollable content
+        // to draw under the home indicator. Compose puts that inset in its content.
+        content.edgesForExtendedLayout = if (scrollableBody) UIRectEdgeBottom else UIRectEdgeNone
+    }
+
     private var currentContent by mutableStateOf<(@Composable () -> Unit)?>(null)
     private var dismissRequest: () -> Unit = {}
     private var title: String? = null
@@ -100,6 +118,7 @@ class IosNativeSheetPresenter(
             dismissEnabled = dismissEnabled,
             dismissTarget = dismissTarget,
         ) ?: error("Unable to create native sheet controller")
+        applyContentLayout(sheet)
         BJTUInstallNativeSheetMaterial(sheet)
         BJTUConfigureSheetPresentation(sheet, needsFullHeight)
 
@@ -126,6 +145,7 @@ class IosNativeSheetPresenter(
             dismissEnabled = dismissEnabled,
             dismissTarget = dismissTarget,
         )
+        applyContentLayout(sheet)
     }
 
     override fun dismiss() {

@@ -1,29 +1,30 @@
 # BJTUselfService KMP 实时工作记忆
 
-> 最后更新：2026-10-03。
-> 当前目标：按用户要求整理为 `main` / `audit` 两个分支，并将应用升级到 1.8.1（Build 22）。
-> 主线目标为 `main` 1.8.1 / Build 22；个人远端为 `mine`。待将这份主线合入审计分支后再输出三端安装包。
+> 最后更新：2026-10-05。
+> 当前阶段：iOS 教室人数估计短列表模糊修复。
+> 基线：`c82617c` detached；修改尚未提交。版本 1.8.1 / Build 22。
 
 ## 本阶段已做到
 
-- 首页课表与校历、校历内部学期与公开日期改为并行请求；保持校历校验和手动选周。
-- 公开校历 6 秒超时改为失败结果，不再当成用户取消而中断同步；用户取消仍向上传递。
-- iOS 标题栏原生玻璃保持 alpha=1，以直接遮罩控制显示范围；回顶完全隐藏。
-- 1.8.0 首页修复已通过 159 项相关测试与各端编译；模拟器 fixture/原生探针验证浅深色、中间滚动和回顶，真机完整导航壳仍待复测。
-- 1.8.0 首页修复未签名 IPA：`/Users/zjg/Downloads/BJTUSelfService-KMP-1.8.0-home-fixes-iOS-unsigned.ipa`，SHA-256 `5a5543ea5e0c470cdab2e7f7530bd04b5e18e7903e29e47e4694863a4ae40c0f`；此前不包含待合入安全修改。
-- 本轮统一 Android/iOS/macOS/Windows 与应用内版本为 1.8.1，Android/iOS/macOS Build 为 22；CI 将检查 `main` 和 `audit`，发布守卫测试对齐冻结根 Android 的 v1.7.0 条件。
+- 物理实验同步、考试/实验课表投影、缓存与日历开关已完成，真实只读 Kotlin 查询读到 4 个实验。
+- 周数沿用参考项目名称规则：专题、软磁、GPS模拟、设计为连续两自然周，其余一周；服务器没有找到独立周数字段。
+- 实验弹层补充 wlsy.bjtu.edu.cn 账号密码说明，移除重复标题，正文与安全区改为可滚动布局。
+- 图例“物理实验”改“实验”；实验和考试加同规格描边，排在普通课程类型后。
+- 查明当前基线遗漏 audit/mine/audit 的 6f1ec08 玻璃渐显修复，仅移植相关玻璃/首页/滚动代码及测试。
+- 原生导航按页面保存和恢复模糊进度，隐藏页回调不修改可见栏；取消侧滑、返回短页与更多页恢复都有 Swift 状态回归。
+- 共享/JVM 578 项及 Swift 35 个检查通过，Android/macOS/Windows/iOS 两目标编译通过；14 张合成 Compose 图复查深浅色和放大字体。
+- 新 DMG/APK/unsigned IPA 已放 Downloads，文件名标记 physicslab-ui-fix-20261005；完整 iOS Release 构建、各包结构与签名状态校验通过。
 
-- 全量共享/JVM 回归 561 项通过；旧物理在线月份测试已固定为 2026-09-23，避免系统跨月后失效。Windows Kotlin 编译通过；Windows DPAPI/Crypt32 与 Windows 模型原生测试需在 Windows 环境执行，Mac 上尝试运行的结果不能作为产品回归结论。
+- 用户实测确认前轮导航正常，Android 已测试；本轮 BuildingList 补充实际弹性位移报告，复用首页算法，578 项与 iOS 两目标编译通过。
 
 ## 当前痛点
 
-- 主分支共享回归已通过；与安全分支合并后的回归检查、三端 1.8.1 打包正在进行。
-- 仍待真机：iPhone Keychain 卸载重装、CAS/WebView 登出、Android 验证码和 WebView 换账号、Apple 日历范围精确替换及首页标题栏。
-- 日历实测须使用独立测试日历，保留用户手工事件和考试安排。
-- `AuthenticatedAppShell` 仍较大；本轮只整理、集成和检查，不另行重写无关模块。
+- 用户已确认最新 iPhone 顶栏修复实测正常，前轮导航与 Android 测试正常。
+- 实验持续周数仍需结合实际安排复核；EventKit 和安全存储仍需签名应用实机验收。
 
 ## 接下来
 
-1. 提交并将首页修复/版本更新同步到本地与远端 main。
-2. 将 main 合入 audit，保留安全与课程日历修复，完成全量回归。
-3. 从 audit 输出 APK、未签名 IPA、Mac DMG，完成分支和产物一致性校验。
+1. 本轮 classroom-glass-fix-20261005 unsigned IPA 已放 Downloads，构建及封装校验通过；复测教室人数估计短列表上滑及回弹的顶栏模糊。
+2. 用户已授权提交推送，并按功能分支 → audit → main 合并及清理工作树。
+
+完整实现与验证：`docs/migration/physics-lab-schedule-result-2026-10-05.md`。

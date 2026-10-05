@@ -11,6 +11,9 @@ import androidx.compose.runtime.compositionLocalOf
  * sheet chrome, detents, grabber, blur and dismissal gesture.
  */
 interface NativeSheetPresenter {
+    /** Scrollable sheets own their bottom inset inside the scroll content. */
+    fun setScrollableBody(enabled: Boolean) {}
+
     fun update(
         content: @Composable () -> Unit,
         onDismissRequest: () -> Unit,

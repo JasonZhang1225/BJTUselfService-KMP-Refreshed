@@ -24,6 +24,7 @@ import team.bjtuss.bjtuselfservice.shared.data.course.CourseScheduleSyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.classroomoccupancy.ClassroomOccupancyRepository
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.academicWeekSlots
+import team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLab
 import team.bjtuss.bjtuselfservice.shared.domain.course.Course
 import team.bjtuss.bjtuselfservice.shared.domain.course.coursesForWeek
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeRecorder
@@ -166,6 +167,8 @@ enum class CourseCompactViewMode {
 
 data class CourseScheduleUiState(
     val courses: List<Course> = emptyList(),
+    val supplementalCourses: List<Course> = emptyList(),
+    val physicsLabs: List<PhysicsLab> = emptyList(),
     val currentWeek: Int = 0,
     /**
      * 当前 [currentWeek] 是否已经由本学期校历确认过。
@@ -213,20 +216,17 @@ data class CourseScheduleUiState(
     val scheduleCourses: List<Course>
         get() = courses.filter { course ->
             course.isCurrentSemester == (scheduleType == CourseScheduleType.SELECTION)
-        }
+        } + supplementalCourses
 
     val visibleCourses: List<Course>
-        get() = if (dateOutsideTeachingWeeks || selectedNonTeachingWeekStart != null) {
-            emptyList()
-        } else {
-            coursesForWeek(scheduleCourses, selectedWeek)
-        }
+        get() = coursesForPage(if (isNonTeachingWeek) null else selectedWeek,
+            selectedNonTeachingWeekStart ?: weekDate()?.startDate)
 
     val isNonTeachingWeek: Boolean
         get() = dateOutsideTeachingWeeks || selectedNonTeachingWeekStart != null
 
     val selectedCourse: Course?
-        get() = courses.firstOrNull { it.id == selectedCourseId }
+        get() = (courses + supplementalCourses).firstOrNull { it.id == selectedCourseId }
 
     fun weekDate(week: Int = selectedWeek): OccupancyWeekDate? =
         academicWeeks.firstOrNull { it.week == week }

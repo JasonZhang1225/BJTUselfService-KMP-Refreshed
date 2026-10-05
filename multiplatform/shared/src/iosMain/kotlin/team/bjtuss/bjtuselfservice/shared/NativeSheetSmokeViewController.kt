@@ -25,7 +25,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.HomeSyncDetailsDialog
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalNativeSheetPresenter
 
 /** DEBUG-only visual probe for the UIKit sheet shell; it never uses account data. */
-fun NativeSheetSmokeViewController(): UIViewController {
+fun NativeSheetSmokeViewController(physicsLab: Boolean = false): UIViewController {
     lateinit var controller: UIViewController
     val presenter = IosNativeSheetPresenter { controller }
     controller = ComposeUIViewController {
@@ -64,7 +64,23 @@ fun NativeSheetSmokeViewController(): UIViewController {
                         Text("同步状态 smoke", style = MaterialTheme.typography.headlineMedium)
                         Text("使用模拟加载状态检查 iOS 原生 sheet。")
                         if (visible) {
-                            HomeSyncDetailsDialog(
+                            if (physicsLab) {
+                                team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet(
+                                    onDismissRequest = { visible = false }, title = "物理实验同步",
+                                    needsFullHeight = true, scrollableBody = true,
+                                ) {
+                                    team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabSettingsForm(
+                                        state = team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabState(
+                                            enabled = true, message = "已同步 4 个实验。",
+                                            labs = (1..4).map { index -> team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLab(
+                                                kotlinx.datetime.LocalDate(2026, 11, index), 4, "测试实验 $index",
+                                                "测试教室", "测试教师", 1,
+                                            ) },
+                                        ), username = "fixture-account", password = "fixture-password", ready = true,
+                                        onUsername = {}, onPassword = {}, onEnabled = {}, onSave = {}, showTitle = false,
+                                    )
+                                }
+                            } else HomeSyncDetailsDialog(
                                 title = "同步中",
                                 items = items,
                                 canRetry = false,

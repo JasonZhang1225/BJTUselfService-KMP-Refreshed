@@ -213,9 +213,13 @@ internal fun rememberAuthenticatedSession(
                 runCatching { cacheStore.clearAccount(profile.studentId) }.isSuccess
             },
             wipeAllLocalData = {
-                val cacheCleared = runCatching { cacheStore.clearAll() }.isSuccess
+                val labAccounts = (cacheStore.metadataAccountScopes("physicslab.configured") + profile.studentId).distinct()
+                val labCredentialsPurged = runCatching {
+                    labAccounts.forEach { securityCoordinator.physicsLabVault(it)?.clear() }
+                }.isSuccess
+                val cacheCleared = labCredentialsPurged && runCatching { cacheStore.clearAll() }.isSuccess
                 val credentialsPurged = securityCoordinator.purge()
-                val wiped = cacheCleared && credentialsPurged
+                val wiped = cacheCleared && credentialsPurged && labCredentialsPurged
                 // Stay signed out after a full wipe, or background sync could
                 // immediately recreate personal cache rows from this live session.
                 if (wiped) onPurgeLogout(profile.studentId)
@@ -271,6 +275,12 @@ internal fun rememberAuthenticatedSession(
             accountScope = profile.studentId,
         )
     }
+    val physicsLabModel = remember(profile.studentId, cacheStore, securityCoordinator) {
+        team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabModel(
+            profile.studentId, cacheStore, securityCoordinator.physicsLabVault(profile.studentId),
+            team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabRemote(transport),
+        )
+    }
     val homeStatusRepository = remember(profile.studentId, cacheStore) {
         DefaultHomeStatusRepository(
             accountScope = profile.studentId,
@@ -315,6 +325,7 @@ internal fun rememberAuthenticatedSession(
             loginSyncPreferences = appPreferences,
             mailboxModel = mailboxModel,
             phyVlabModel = phyVlabModel,
+            physicsLabModel = physicsLabModel,
             homeModel = homeModel,
             homeChangeFeed = homeChangeFeed,
             homeworkFileGateway = homeworkFileGateway,

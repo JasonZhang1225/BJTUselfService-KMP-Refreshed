@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 明文流量只放行两个既有第三方旧端点（用户 2026-08-04 授权，与 Apple 端一致）：
+<!-- 明文流量限定到既有旧端点和用户要求接入的校园物理实验系统（用户 2026-08-04 授权，与 Apple 端一致）：
      智慧教学平台旧端点的固定 IP，以及教室人数估计的 yaya.csoci.com:2333；
+     物理实验 wlsy.bjtu.edu.cn 为 2026-10-05 用户授权接入的校园网旧系统。
      其余域名保持默认 HTTPS 基线。 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">123.121.147.7</domain>
         <domain includeSubdomains="false">yaya.csoci.com</domain>
+        <domain includeSubdomains="false">wlsy.bjtu.edu.cn</domain>
     </domain-config>
 </network-security-config>

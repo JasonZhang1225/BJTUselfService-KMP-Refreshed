@@ -40,23 +40,14 @@ class SettingsScreenModelTest {
     }
 
     @Test
-    fun autoSyncOptionsPersistAndUpdateVisiblePreferences() {
-        val saved = mutableListOf<AppPreferences>()
-        val model = model(persistPreferences = { saved += it; true })
-
-        model.setAutoSyncGrades(true)
-        model.setAutoSyncHomework(true)
-        model.setAutoSyncSchedule(true)
-        model.setAutoSyncExams(true)
-        model.setAutoSyncPhyVlab(true)
-
-        assertEquals(5, saved.size)
+    fun previousCoreSyncOptOutIsAlwaysEnabledOnRestore() {
+        val model = model(initialPreferences = AppPreferences(
+            autoSyncGrades = false, autoSyncHomework = false, autoSyncSchedule = false, autoSyncExams = false,
+        ))
         assertTrue(model.state.value.preferences.autoSyncGrades)
         assertTrue(model.state.value.preferences.autoSyncHomework)
         assertTrue(model.state.value.preferences.autoSyncSchedule)
         assertTrue(model.state.value.preferences.autoSyncExams)
-        assertTrue(model.state.value.preferences.autoSyncPhyVlab)
-        assertFalse(model.state.value.saveFailed)
     }
 
     @Test
@@ -92,12 +83,12 @@ class SettingsScreenModelTest {
     }
 
     @Test
-    fun failedAutoSyncSaveKeepsPreviousValueAndReportsFailure() {
+    fun failedOptionalPhysicsSyncSaveKeepsPreviousValueAndReportsFailure() {
         val model = model(persistPreferences = { false })
 
-        model.setAutoSyncSchedule(false)
+        model.setAutoSyncPhyVlab(false)
 
-        assertTrue(model.state.value.preferences.autoSyncSchedule)
+        assertTrue(model.state.value.preferences.autoSyncPhyVlab)
         assertTrue(model.state.value.saveFailed)
     }
 
@@ -164,7 +155,7 @@ class SettingsScreenModelTest {
             model.clearAllLocalData()
 
             assertIs<OfflineCacheActionState.Failed>(model.state.value.dataWipeAction)
-            assertEquals(false, model.state.value.preferences.autoSyncGrades)
+            assertTrue(model.state.value.preferences.autoSyncGrades)
         }
     }
 

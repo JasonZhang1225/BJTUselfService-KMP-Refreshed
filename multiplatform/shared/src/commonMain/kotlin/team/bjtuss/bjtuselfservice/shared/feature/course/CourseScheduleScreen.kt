@@ -16,6 +16,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,6 +66,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -260,13 +262,17 @@ fun CourseScheduleWorkspace(
                                             label = "desktop-course-week",
                                         ) { (week, nonTeachingStart) ->
                                             if (nonTeachingStart != null) {
-                                                NonTeachingWeekGrid(
-                                                    startDate = nonTeachingStart,
+                                                WeekGrid(
+                                                    courses = state.coursesForPage(null, nonTeachingStart),
+                                                    courseTypesByCode = courseTypesByCode,
+                                                    weekStartDate = nonTeachingStart,
+                                                    selectedCourseId = state.selectedCourseId,
+                                                    onOpen = model::showCourseDetails,
                                                     modifier = Modifier.fillMaxSize(),
                                                 )
                                             } else {
                                                 WeekGrid(
-                                                courses = coursesForWeek(state.scheduleCourses, week),
+                                                courses = state.coursesForPage(week, state.weekDate(week)?.startDate),
                                                 courseTypesByCode = courseTypesByCode,
                                                 weekStartDate = state.weekDate(week)?.startDate,
                                                 selectedCourseId = state.selectedCourseId,
@@ -888,43 +894,47 @@ private fun CourseGridCell(
         if (courses.isEmpty()) {
             Text("—", color = MaterialTheme.colorScheme.outlineVariant)
         } else {
-            Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 courses.forEach { course ->
                     val courseType = courseTypesByCode?.let { mapping ->
                         courseTypeForCourseName(course.courseId, mapping)
                     } ?: CourseType.UNKNOWN
-                    val colors = courseTypeColors(courseType)
+                    val colors = scheduleCourseColors(course, courseType)
                     val isSelected = course.id == selectedCourseId
-                    Surface(
-                        onClick = { onOpen(course.id) },
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                        color = colors.container,
-                        shape = RoundedCornerShape(7.dp),
-                        border = androidx.compose.foundation.BorderStroke(
-                            width = if (isSelected) 2.dp else 0.5.dp,
-                            color = if (isSelected) MaterialTheme.colorScheme.primary else colors.border,
-                        ),
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxSize().padding(3.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center,
+                    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+                        val showLocation = maxWidth >= 56.dp && maxHeight * course.eventSlotHeight >= 52.dp
+                        Surface(
+                            onClick = { onOpen(course.id) },
+                            modifier = Modifier.fillMaxWidth().offset(y = maxHeight * course.eventSlotOffset)
+                                .height(maxHeight * course.eventSlotHeight),
+                            color = colors.container,
+                            shape = RoundedCornerShape(7.dp),
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = if (isSelected) 2.dp else 0.5.dp,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else colors.border,
+                            ),
                         ) {
-                            Text(
-                                course.courseName,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                color = colors.onContainer,
-                            )
-                            Text(
-                                displayCoursePlace(course.coursePlace),
-                                style = MaterialTheme.typography.labelSmall,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = colors.onContainer.accessibleAlpha(0.78f),
-                            )
+                            Column(
+                                modifier = Modifier.fillMaxSize().padding(3.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                            ) {
+                                Text(
+                                    course.courseName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = colors.onContainer,
+                                )
+                                if (showLocation) Text(
+                                    displayCoursePlace(course.coursePlace),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = colors.onContainer.accessibleAlpha(0.78f),
+                                )
+                            }
                         }
                     }
                 }
@@ -1274,10 +1284,14 @@ private fun ExpandedWeekPager(
     ) { page ->
         val weekPage = pages[page]
         if (weekPage.isNonTeachingWeek) {
-            NonTeachingWeekGrid(weekPage.startDate, Modifier.fillMaxSize())
+            WeekGrid(
+                courses = state.coursesForPage(null, weekPage.startDate), courseTypesByCode = courseTypesByCode,
+                weekStartDate = weekPage.startDate, selectedCourseId = state.selectedCourseId,
+                onOpen = model::showCourseDetails, modifier = Modifier.fillMaxSize(),
+            )
         } else {
             WeekGrid(
-                courses = coursesForWeek(state.scheduleCourses, weekPage.teachingWeek ?: 0),
+                courses = state.coursesForPage(weekPage.teachingWeek ?: 0, weekPage.startDate),
                 courseTypesByCode = courseTypesByCode,
                 weekStartDate = weekPage.startDate
                     ?: weekPage.teachingWeek?.let { state.weekDate(it)?.startDate },
@@ -1357,8 +1371,7 @@ private fun CompactWeekPager(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CourseTypeLegend(mappingLoaded = courseTypesByCode != null)
-            Spacer(Modifier.weight(1f))
+            CourseTypeLegend(mappingLoaded = courseTypesByCode != null, modifier = Modifier.weight(1f))
             Text(
                 "滑动切换周数",
                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
@@ -1374,10 +1387,14 @@ private fun CompactWeekPager(
         ) { page ->
             val weekPage = pages[page]
             if (weekPage.isNonTeachingWeek) {
-                NonTeachingWeekGrid(weekPage.startDate, Modifier.fillMaxSize())
+                WeekGrid(
+                courses = state.coursesForPage(null, weekPage.startDate), courseTypesByCode = courseTypesByCode,
+                weekStartDate = weekPage.startDate, selectedCourseId = state.selectedCourseId,
+                onOpen = model::showCourseDetails, modifier = Modifier.fillMaxSize(),
+            )
             } else {
                 CompactWeekGrid(
-                    courses = coursesForWeek(state.scheduleCourses, weekPage.teachingWeek ?: 0),
+                    courses = state.coursesForPage(weekPage.teachingWeek ?: 0, weekPage.startDate),
                     courseTypesByCode = courseTypesByCode,
                     aggregateAllWeeks = weekPage.isOverview,
                     weekStartDate = weekPage.startDate
@@ -1390,6 +1407,7 @@ private fun CompactWeekPager(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CourseTypeLegend(
     mappingLoaded: Boolean,
@@ -1403,12 +1421,12 @@ private fun CourseTypeLegend(
         CourseType.UNKNOWN,
     )
     val unknownLabel = if (mappingLoaded) "未知" else "未同步"
-    Row(
+    androidx.compose.foundation.layout.FlowRow(
         modifier = modifier.semantics {
-            contentDescription = "课程性质图例：必修、限选、任选、体育、$unknownLabel"
+            contentDescription = "课程性质图例：必修、限选、任选、体育、$unknownLabel、实验、考试"
         },
         horizontalArrangement = Arrangement.spacedBy(3.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         types.forEach { type ->
             val colors = courseTypeColors(type)
@@ -1425,6 +1443,15 @@ private fun CourseTypeLegend(
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                 )
+            }
+        }
+        listOf("实验" to "physicslab", "考试" to "exam").forEach { (label, kind) ->
+            val colors = scheduleEventColors(kind)
+            Surface(color = colors.container, shape = RoundedCornerShape(7.dp),
+                border = androidx.compose.foundation.BorderStroke(0.5.dp, colors.border)) {
+                Text(label, Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = colors.onContainer,
+                    fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
         }
     }
@@ -1507,7 +1534,7 @@ private fun CompactCourseGridCell(
     val cellModifier = modifier
         .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
         .padding(2.dp)
-    if (aggregateAllWeeks && courses.size > 1) {
+    if (courses.size > 1) {
         // “全部教学周”把同一时间位置的单双周/交替课程并排分格；具体周页仍只显示当周课程。
         Row(
             modifier = cellModifier,
@@ -1556,16 +1583,19 @@ private fun CompactCourseColorBlock(
     val courseType = courseTypesByCode?.let { mapping ->
         courseTypeForCourseName(course.courseId, mapping)
     } ?: CourseType.UNKNOWN
-    val colors = courseTypeColors(courseType)
-    Surface(
-        onClick = { onOpen(course.id) },
-        modifier = modifier.semantics {
-            contentDescription = "${course.courseName}，${course.courseTime}，${displayCoursePlace(course.coursePlace)}，点按查看详情"
-        },
-        color = colors.container,
-        shape = RoundedCornerShape(5.dp),
-        border = androidx.compose.foundation.BorderStroke(0.5.dp, colors.border),
-    ) {}
+    val colors = scheduleCourseColors(course, courseType)
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
+        Surface(
+            onClick = { onOpen(course.id) },
+            modifier = Modifier.fillMaxWidth().offset(y = maxHeight * course.eventSlotOffset)
+                .height(maxHeight * course.eventSlotHeight).semantics {
+                contentDescription = "${course.courseName}，${course.scheduleEventDate.orEmpty()} ${course.scheduleEventTime ?: course.courseTime}，${displayCoursePlace(course.coursePlace)}，点按查看详情"
+            },
+            color = colors.container,
+            shape = RoundedCornerShape(5.dp),
+            border = androidx.compose.foundation.BorderStroke(0.5.dp, colors.border),
+        ) {}
+    }
 }
 
 @Composable
@@ -1612,7 +1642,7 @@ private fun CourseListCard(
     val courseType = courseTypesByCode?.let { mapping ->
         courseTypeForCourseName(course.courseId, mapping)
     } ?: CourseType.UNKNOWN
-    val colors = courseTypeColors(courseType)
+    val colors = scheduleCourseColors(course, courseType)
     // 扁平 Surface：无 elevation 阴影描边，避免外圈偏深、正文区又叠浅色矩形的双层感。
     Surface(
         onClick = { onOpen(course.id) },
@@ -1634,7 +1664,7 @@ private fun CourseListCard(
                 color = colors.onContainer.accessibleAlpha(0.78f),
             )
             Text(
-                course.courseTime,
+                course.scheduleEventTime?.let { "${course.scheduleEventDate} · $it" } ?: course.courseTime,
                 style = MaterialTheme.typography.labelMedium,
                 color = colors.onContainer.accessibleAlpha(0.72f),
             )
@@ -1671,16 +1701,20 @@ private fun CourseDetailPanel(course: Course?, modifier: Modifier) {
 private fun CourseDetailContent(course: Course, modifier: Modifier) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text(course.courseName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        CourseDetailLine("编号", course.courseId)
-        CourseDetailLine("教师", course.courseTeacher.ifBlank { "未提供" })
-        CourseDetailLine("周次", course.courseTime)
+        if (course.scheduleEventKind == null) CourseDetailLine("编号", course.courseId)
+        if (course.scheduleEventKind != "exam") CourseDetailLine("教师", course.courseTeacher.ifBlank { "未提供" })
+        if (course.scheduleEventKind == null) CourseDetailLine("周次", course.courseTime)
         CourseDetailLine("地点", displayCoursePlace(course.coursePlace))
         val slot = course.courseLocationIndex / 8
         val day = course.courseLocationIndex % 8 - 1
-        CourseDetailLine("时间", "${dayLabels.getOrElse(day) { "未知" }} · ${slotLabels.getOrElse(slot) { "未知" }.replace('\n', ' ')}")
+        CourseDetailLine("时间", course.scheduleEventTime?.let { "${course.scheduleEventDate} · $it" } ?: "${dayLabels.getOrElse(day) { "未知" }} · ${slotLabels.getOrElse(slot) { "未知" }.replace('\n', ' ')}")
         CourseDetailLine(
             "类型",
-            if (course.isCurrentSemester) "选课课表" else "本学期课表",
+            when (course.scheduleEventKind) {
+                "physicslab" -> "物理实验"
+                "exam" -> "考试"
+                else -> if (course.isCurrentSemester) "选课课表" else "本学期课表"
+            },
         )
     }
 }
@@ -1734,3 +1768,19 @@ private fun CourseEmptyState(type: CourseScheduleType, onRefresh: () -> Unit) = 
     },
     onRefresh = onRefresh,
 )
+
+@Composable
+private fun scheduleEventColors(kind: String): team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors {
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    return if (kind == "physicslab") {
+        if (dark) team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors(Color(0xFF153E43), Color(0xFFA0E1E7))
+        else team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors(Color(0xFFCEF0F2), Color(0xFF155E66))
+    } else {
+        if (dark) team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors(Color(0xFF3B2858), Color(0xFFDEC6F6))
+        else team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors(Color(0xFFEADBFA), Color(0xFF64368E))
+    }
+}
+
+@Composable
+private fun scheduleCourseColors(course: Course, type: CourseType) =
+    course.scheduleEventKind?.let { scheduleEventColors(it) } ?: courseTypeColors(type)

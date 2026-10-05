@@ -561,3 +561,34 @@
   M3 macOS 无卸载清理（Application Support/Keychain/prefs 残留）；M4 桌面与 Windows 明文 SQLite 缓存（成绩/作业/档案）。
   低危 L1-L10（VACUUM、服务端登出、桌面日志开关、phyvlab replace 前缀化、Gradle wrapper 哈希、OkHttp 版本锁定等）。
   报告：`docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-21.md`。修复由用户后续进行。
+
+
+## 课程表考试、物理实验与同步调整（2026-10-05）
+
+- 基线 `c82617c`；当前 worktree 新增物理实验账号安全存储、校园网只读同步/缓存、课表按日期与实际时段投影、实验/考试独立色块、日历包含实验选项；原四项自动同步永久开启。
+- 参考项目周数规则与六个系统时段依据、改动范围及回退说明见 `docs/migration/physics-lab-schedule-result-2026-10-05.md`。只有一/两周规则仍需实际安排复核，没有将其宣称为服务端持续周数字段。
+- 576 项共享/JVM 回归通过；实际 Kotlin 查询已选实验 4 个；Android debug、iOS 两目标、Windows、macOS Kotlin 编译和 iOS Simulator 完整工程构建通过。
+- 实际 Compose 组件的 10 张合成图片已检查浅深色、宽窄和字体放大；临时源码 UI 进程清理。CUA 未能绑定临时应用，原生交互、安全存储新命名空间和系统日历实机验证保留为未验收边界。
+- 所有改动未提交、未推送、未发布，应用版本保持 1.8.1 / Build 22，冻结根 Android 工程未修改。
+
+
+### 2026-10-05：深浅色复查及安装包交付
+
+- 按用户要求复查 14 张真实 Compose 组件渲染图；普通课程与实验/考试颜色统一取当前页面主题。576 项回归通过。
+- Android Release APK、macOS DMG 及 iOS 真机 arm64 unsigned IPA 均成功打包至 Downloads；命名 `BJTUSelfService-KMP-1.8.1-physicslab-20261005-*`。
+- DMG CRC 和包内签名、APK 签名、IPA ZIP 完整性与无签名状态验证通过；具体路径、字节数和 SHA-256 见 `docs/migration/physics-lab-schedule-result-2026-10-05.md` 的追加小节。没有提交、推送或发布。
+
+
+### 2026-10-05 实验弹层、图例与导航模糊复修
+
+- 确认 c82617c 工作树遗漏 audit 的 6f1ec08 玻璃渐显改动，仅移植相关实现，保留其他未提交工作。
+- 实验表单补充网站凭据说明，调整原生弹层滚动与底部安全区；图例改“实验”，实验/考试增加描边并后置。
+- iOS 导航按页面保存模糊进度，隐藏回调不再覆盖可见栏，返回/取消侧滑恢复目标状态。
+- 共享 578 项、Swift 状态 35 检查通过，14 张合成 Compose 页面检查深浅色；Mac 锁屏导致原生触摸验收待完成。
+- Downloads 已生成 physicslab-ui-fix-20261005 的 macOS DMG、Android APK、iOS unsigned IPA，1.8.1 / 22；构建及结构/签名状态校验通过。详见 physics-lab-schedule-result-2026-10-05.md。
+- 无提交、推送、分支合并。
+
+
+### 2026-10-05 教室人数估计短页模糊修复
+
+用户确认前轮导航往返及 Android 测试正常。BuildingList 仅报逻辑列表偏移，未计入 iOS 短列表弹性位移；本轮复用首页实际位移算法，并确保 overscroll 仅渲染一次。共享 578 项、iOS 两目标编译与完整 Release 构建通过；Downloads 新增 classroom-glass-fix-20261005 unsigned IPA，arm64/CRC/版本/未签名校验通过。CUA 原生通道关闭，最终效果待 iPhone 复核；无提交或推送。
