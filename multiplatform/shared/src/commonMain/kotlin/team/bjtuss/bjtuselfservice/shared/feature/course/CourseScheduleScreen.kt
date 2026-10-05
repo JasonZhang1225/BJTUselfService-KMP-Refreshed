@@ -235,17 +235,21 @@ fun CourseScheduleWorkspace(
                                         )
                                     } else {
                                         AnimatedContent(
-                                                targetState = state.selectedWeek to state.selectedNonTeachingWeekStart,
+                                            targetState = CourseScheduleWeekPage(
+                                                teachingWeek = state.selectedWeek.takeIf {
+                                                    state.selectedNonTeachingWeekStart == null
+                                                },
+                                                startDate = state.selectedNonTeachingWeekStart
+                                                    ?: state.weekDate()?.startDate,
+                                                isOverview = state.selectedWeek == 0 &&
+                                                    state.selectedNonTeachingWeekStart == null,
+                                            ),
                                             modifier = Modifier.weight(1f).fillMaxWidth(),
                                             transitionSpec = {
-                                                val targetDate = targetState.second
-                                                val initialDate = initialState.second
-                                                val movingForward = when {
-                                                    targetState.first != initialState.first ->
-                                                        targetState.first > initialState.first
-                                                    else -> targetDate != null &&
-                                                        (initialDate == null || targetDate >= initialDate)
-                                                }
+                                                val movingForward = courseWeekTransitionMovesForward(
+                                                    initial = initialState,
+                                                    target = targetState,
+                                                )
                                                 val pagingSpring = spring<IntOffset>(
                                                     dampingRatio = Spring.DampingRatioNoBouncy,
                                                     stiffness = Spring.StiffnessMediumLow,
@@ -260,26 +264,15 @@ fun CourseScheduleWorkspace(
                                                     ) + fadeOut(tween(140)))
                                             },
                                             label = "desktop-course-week",
-                                        ) { (week, nonTeachingStart) ->
-                                            if (nonTeachingStart != null) {
-                                                WeekGrid(
-                                                    courses = state.coursesForPage(null, nonTeachingStart),
-                                                    courseTypesByCode = courseTypesByCode,
-                                                    weekStartDate = nonTeachingStart,
-                                                    selectedCourseId = state.selectedCourseId,
-                                                    onOpen = model::showCourseDetails,
-                                                    modifier = Modifier.fillMaxSize(),
-                                                )
-                                            } else {
-                                                WeekGrid(
-                                                courses = state.coursesForPage(week, state.weekDate(week)?.startDate),
+                                        ) { page ->
+                                            WeekGrid(
+                                                courses = state.coursesForPage(page.teachingWeek, page.startDate),
                                                 courseTypesByCode = courseTypesByCode,
-                                                weekStartDate = state.weekDate(week)?.startDate,
+                                                weekStartDate = page.startDate,
                                                 selectedCourseId = state.selectedCourseId,
                                                 onOpen = model::showCourseDetails,
                                                 modifier = Modifier.fillMaxSize(),
-                                                )
-                                            }
+                                            )
                                         }
                                     }
                                 }

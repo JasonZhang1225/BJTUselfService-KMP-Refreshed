@@ -10,6 +10,17 @@ internal enum class CourseWeekScrollDirection {
     NEXT,
 }
 
+/** 非教学周没有教学周编号；桌面动画按自然周日期排序，概览始终在最前。 */
+internal fun courseWeekTransitionMovesForward(
+    initial: CourseScheduleWeekPage,
+    target: CourseScheduleWeekPage,
+): Boolean = when {
+    initial.isOverview -> !target.isOverview
+    target.isOverview -> false
+    initial.startDate != null && target.startDate != null -> target.startDate > initial.startDate
+    else -> (target.teachingWeek ?: 0) > (initial.teachingWeek ?: 0)
+}
+
 /** 触摸板滚轮只给 Mac/Windows 宽屏课表。Android/iOS 宽屏改走 HorizontalPager，跟手连滑。 */
 internal fun shouldUseFingerWeekPager(platform: PlatformInfo): Boolean =
     platform.family == PlatformFamily.Android || platform.family == PlatformFamily.IOS
