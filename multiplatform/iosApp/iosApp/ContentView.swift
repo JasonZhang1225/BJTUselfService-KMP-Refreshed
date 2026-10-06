@@ -1,6 +1,5 @@
 import BJTUShared
 import Foundation
-import ObjectiveC
 import QuartzCore
 import SwiftUI
 import UIKit
@@ -23,15 +22,10 @@ private let appBackgroundColor = Color(uiColor: appBackgroundUIColor)
 ///
 /// Compose 首帧之前 UIKit 会先显示宿主底色；与页面背景保持一致可避免深色模式闪白。
 ///
-/// 每个应用从「应用」网格 push 时都会新建一个 ComposeUIViewController。CMP 在
-/// `opaque = false` 时把容器画成透明，Metal 层在第一帧前是未初始化的黑/白；
-/// iOS 26 的玻璃转场再透过这层去采后面的页面，整屏就会闪亮再闪暗。
-/// 宿主必须自己铺上与 Compose `background` 相同的底色，并在 Metal 真正画出
-/// 内容前用同色遮罩挡住未初始化帧。遮罩在 Compose 视图内部，系统导航栏仍叠在上面。
+/// 宿主只设置底色，不用计时遮罩覆盖 Compose：计数撤罩会使已滑入的新页先空白再突然显示内容。
 private func configureComposeHost(_ controller: UIViewController) {
     controller.view.accessibilityElementsHidden = true
     pinComposeSurfaceColor(controller.view)
-    ComposeFirstFrameCover.install(on: controller.view)
 }
 
 private func pinComposeSurfaceColor(_ view: UIView) {
@@ -56,103 +50,6 @@ private func pinMetalLayers(in layer: CALayer, color: CGColor) {
     }
     for sublayer in layer.sublayers ?? [] {
         pinMetalLayers(in: sublayer, color: color)
-    }
-}
-
-/// 盖在 Skia/Metal 之上，直到图层有可展示内容或超时。新子视图（MetalView）出现后
-/// 会被抬到最前，所以每帧都把遮罩重新置顶，避免刚插入的黑层闪一下。
-private final class ComposeFirstFrameCover: NSObject {
-    private static let hostAssociation = ObjectAssociation<ComposeFirstFrameCover>()
-    private let cover = UIView()
-    private weak var host: UIView?
-    private var displayLink: CADisplayLink?
-    private var frames = 0
-    private var presentedFrames = 0
-
-    static func install(on view: UIView) {
-        hostAssociation[view]?.remove()
-        let session = ComposeFirstFrameCover()
-        hostAssociation[view] = session
-        session.attach(to: view)
-    }
-
-    private func attach(to view: UIView) {
-        host = view
-        cover.backgroundColor = appBackgroundUIColor
-        cover.frame = view.bounds
-        cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        cover.isUserInteractionEnabled = false
-        cover.accessibilityElementsHidden = true
-        view.addSubview(cover)
-        let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
-        link.add(to: .main, forMode: .common)
-        displayLink = link
-    }
-
-    @objc private func tick(_ link: CADisplayLink) {
-        frames += 1
-        guard let host, cover.superview != nil else {
-            remove()
-            return
-        }
-        pinComposeSurfaceColor(host)
-        // Skiko 的 Metal 视图是后来插进来的子视图；contents 在部分系统上一直是 nil，
-        // 所以用「除遮罩外已经有渲染表面」再等几帧，给 Compose 时间画出第一帧。
-        let hasComposeSurface = metalHasPresentedContents(host)
-            || host.subviews.contains { $0 !== cover }
-        if hasComposeSurface {
-            presentedFrames += 1
-        }
-        if presentedFrames >= 4 || frames >= 18 {
-            remove()
-            return
-        }
-        host.bringSubviewToFront(cover)
-    }
-
-    private func remove() {
-        displayLink?.invalidate()
-        displayLink = nil
-        cover.removeFromSuperview()
-        if let host {
-            ComposeFirstFrameCover.hostAssociation[host] = nil
-        }
-    }
-}
-
-private func metalHasPresentedContents(_ view: UIView) -> Bool {
-    if layerHasPresentedMetalContents(view.layer) {
-        return true
-    }
-    return view.subviews.contains { metalHasPresentedContents($0) }
-}
-
-private func layerHasPresentedMetalContents(_ layer: CALayer) -> Bool {
-    if let metal = layer as? CAMetalLayer, metal.contents != nil {
-        return true
-    }
-    return (layer.sublayers ?? []).contains { layerHasPresentedMetalContents($0) }
-}
-
-/// `objc_setAssociatedObject` 的轻量包装，用来把首帧遮罩挂在宿主 UIView 上，
-/// 避免 DisplayLink 的 target 在 VC 还在转场时被提前释放。
-private final class ObjectAssociation<T: AnyObject> {
-    private let key = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
-
-    deinit {
-        key.deallocate()
-    }
-
-    subscript(object: AnyObject) -> T? {
-        get { objc_getAssociatedObject(object, key) as? T }
-        set {
-            objc_setAssociatedObject(
-                object,
-                key,
-                newValue,
-                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
-            )
-        }
     }
 }
 
@@ -1259,10 +1156,12 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
               let coverBranch = directSubview(of: container, containing: coverView),
               rootBranch !== coverBranch else { return }
         let frameInHost = nativeTabBar.convert(nativeTabBar.bounds, to: view)
-        container.insertSubview(nativeTabBar, aboveSubview: rootBranch)
+        // UIKit owns the order of the transition cards and its dimming layer.
+        // Move only our tab bar: moving the destination card immediately above it
+        // can put that card below UIKit's dimming layer and darken the incoming page.
+        container.insertSubview(nativeTabBar, belowSubview: coverBranch)
         nativeTabBar.frame = container.convert(frameInHost, from: view)
         nativeTabBar.isHidden = false
-        container.insertSubview(coverBranch, aboveSubview: nativeTabBar)
         if navigationController.navigationBar.isDescendant(of: container) {
             container.bringSubviewToFront(navigationController.navigationBar)
         }

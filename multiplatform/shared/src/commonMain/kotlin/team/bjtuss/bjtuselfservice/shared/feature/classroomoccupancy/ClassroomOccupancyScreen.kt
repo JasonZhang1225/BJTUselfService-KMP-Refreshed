@@ -43,8 +43,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import team.bjtuss.bjtuselfservice.shared.domain.classroom.CLASSROOM_BUILDINGS
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -254,7 +257,8 @@ private fun OccupancyBuildingList(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    .height(52.dp)
+                                    .padding(horizontal = 16.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(
@@ -262,6 +266,10 @@ private fun OccupancyBuildingList(
                                     style = MaterialTheme.typography.bodyLarge,
                                     modifier = Modifier.weight(1f),
                                 )
+                                if (building.name in CLASSROOM_BUILDINGS) {
+                                    PeopleTag(onClick = { onSelect(building) })
+                                    Spacer(Modifier.width(12.dp))
+                                }
                                 OccupancyEntryChevron()
                             }
                         }
@@ -277,6 +285,22 @@ private fun OccupancyBuildingList(
                     }
                 }
             }
+        }
+    }
+}
+
+/** 与人数估计相邻的轻量查询入口。 */
+@Composable
+private fun PeopleTag(onClick: () -> Unit, loading: Boolean = false) {
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+        Surface(onClick = onClick, enabled = !loading,
+            shape = RoundedCornerShape(5.dp),
+            color = MaterialTheme.colorScheme.primaryContainer.accessibleAlpha(0.6f),
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.semantics { contentDescription = "查询当前人数估计" },
+        ) {
+            Text(if (loading) "查询中" else "人数", style = MaterialTheme.typography.labelSmall,
+                maxLines = 1, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
         }
     }
 }
@@ -343,130 +367,123 @@ private fun OccupancyDetail(
 
     LaunchedEffect(selected.id) { model.refreshPeople() }
     // 与其它页一致水平 16.dp；筛选与说明留给列表剩余高度。
-    Column(
-        modifier = modifier.padding(horizontal = 16.dp).padding(top = 2.dp, bottom = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        if (showBuildingHeader) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    selected.name,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Button(onClick = onRefresh, enabled = !state.isLoading) { Text("刷新") }
-            }
-        }
-
-        ClassroomOccupancyFilters(
-            state = state,
-            model = model,
-            onOpenWeekPicker = { showWeekPicker = true },
-        )
-        var showSlotTimes by remember { mutableStateOf(false) }
-        // 只用外层 animateContentSize 一个动画驱动高度，星期条和教室卡片严格跟随，
-        // 不再嵌套第二个垂直动画（两个动画速率不一致会显得不同步）。
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
         Column(
-            modifier = Modifier.animateContentSize(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = modifier.padding(horizontal = 16.dp).padding(top = 2.dp, bottom = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            OccupancyLegendRow(
-                showSlotTimes = showSlotTimes,
-                onToggleSlotTimes = { showSlotTimes = !showSlotTimes },
-            )
-            // 时段区只做淡出/淡入（不影响高度），高度变化全交给外层 animateContentSize，
-            // 位移只有一个速率来源。fadeIn 初始 0f 让展开时也从透明渐显，避免突兀。
-            AnimatedVisibility(
-                visible = showSlotTimes,
-                enter = fadeIn(),
-                exit = fadeOut(),
-            ) {
-                SlotTimeRangesLegend()
-            }
-        }
-        // 星期条挪到图例下、紧贴教室卡片，是切换占用格的直接操作。
-        OccupancyCompactDaySelector(
-            selectedDay = state.selectedWeekday,
-            onSelect = { model.selectWeekday(it) },
-        )
-
-        if (state.people.isNotEmpty()) {
-            Text(
-                "人数估计由第三方提供 · ${classroomPeopleRangeOnOneLine(state.peopleSnapshotRange)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (state.isNonTeachingWeek) {
-            NonTeachingOccupancyState(
-                startDate = state.selectedNonTeachingWeekStart,
-                modifier = Modifier.fillMaxWidth().weight(1f),
-            )
-        } else when (val query = state.queryState) {
-            ClassroomOccupancyQueryState.Idle, ClassroomOccupancyQueryState.Loading -> {
-                Column(
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    CircularProgressIndicator()
-                    Text("正在查询教室占用…", modifier = Modifier.padding(top = 10.dp))
+            if (showBuildingHeader) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        selected.name,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Button(onClick = onRefresh, enabled = !state.isLoading) { Text("刷新") }
                 }
             }
-            is ClassroomOccupancyQueryState.Failed -> {
-                AppErrorBanner(
-                    message = when (query.reason) {
-                        ClassroomOccupancySyncFailure.NETWORK -> "无法连接教务系统，请检查网络后重试。"
-                        ClassroomOccupancySyncFailure.SESSION_EXPIRED -> "教务会话已过期，请点击右上角刷新重试登录。"
-                        ClassroomOccupancySyncFailure.MALFORMED_RESPONSE -> "教务教室页面结构已变化，暂时无法解析。"
-                    },
-                    onRetry = onRefresh,
+
+            if (selected.name in CLASSROOM_BUILDINGS) {
+                Text(
+                    "人数估计由第三方提供" + state.peopleSnapshotRange.takeIf { it.isNotEmpty() }
+                        ?.let { " · ${classroomPeopleRangeOnOneLine(it)}" }.orEmpty(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
                 )
             }
-            is ClassroomOccupancyQueryState.Loaded -> {
-                // 刷新进度只靠 shell 顶栏「同步中」；页内不再叠一条 LinearProgress，避免双进度条。
-                // 有旧列表时刷新中继续展示；无列表时整页转圈（首查/空结果再刷）。
-                if (query.rooms.isEmpty()) {
-                    if (query.refreshing) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().weight(1f),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            CircularProgressIndicator()
-                            Text("正在查询教室占用…", modifier = Modifier.padding(top = 10.dp))
+
+            // 一行日期工具区；星期与周次保持可用，不占据教室列表主体。
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.weight(1f)) {
+                    OccupancyCompactDaySelector(state.selectedWeekday, onSelect = { model.selectWeekday(it) })
+                }
+                ClassroomOccupancyFilters(state, model, onOpenWeekPicker = { showWeekPicker = true })
+            }
+            var showSlotTimes by remember { mutableStateOf(false) }
+            Column(modifier = Modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                OccupancyLegendRow(showSlotTimes, onToggleSlotTimes = { showSlotTimes = !showSlotTimes })
+                AnimatedVisibility(visible = showSlotTimes, enter = fadeIn(), exit = fadeOut()) {
+                    SlotTimeRangesLegend()
+                }
+            }
+            if (state.isNonTeachingWeek) {
+                NonTeachingOccupancyState(
+                    startDate = state.selectedNonTeachingWeekStart,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                )
+            } else when (val query = state.queryState) {
+                ClassroomOccupancyQueryState.Idle, ClassroomOccupancyQueryState.Loading -> {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        CircularProgressIndicator()
+                        Text("正在查询教室占用…", modifier = Modifier.padding(top = 10.dp))
+                    }
+                }
+                is ClassroomOccupancyQueryState.Failed -> {
+                    AppErrorBanner(
+                        message = when (query.reason) {
+                            ClassroomOccupancySyncFailure.NETWORK -> "无法连接教务系统，请检查网络后重试。"
+                            ClassroomOccupancySyncFailure.SESSION_EXPIRED -> "教务会话已过期，请点击右上角刷新重试登录。"
+                            ClassroomOccupancySyncFailure.MALFORMED_RESPONSE -> "教务教室页面结构已变化，暂时无法解析。"
+                        },
+                        onRetry = onRefresh,
+                    )
+                }
+                is ClassroomOccupancyQueryState.Loaded -> {
+                    // 刷新进度只靠 shell 顶栏「同步中」；页内不再叠一条 LinearProgress，避免双进度条。
+                    // 有旧列表时刷新中继续展示；无列表时整页转圈（首查/空结果再刷）。
+                    if (query.rooms.isEmpty()) {
+                        if (query.refreshing) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().weight(1f),
+                                verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                CircularProgressIndicator()
+                                Text("正在查询教室占用…", modifier = Modifier.padding(top = 10.dp))
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().weight(1f),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    "当前条件下没有教室占用数据",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     } else {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().weight(1f),
-                            contentAlignment = Alignment.Center,
+                        val listState = rememberLazyListState()
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.weight(1f, fill = true).desktopTouchScroll(listState),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            contentPadding = PaddingValues(bottom = 8.dp + LocalBottomBarClearance.current),
                         ) {
-                            Text(
-                                "当前条件下没有教室占用数据",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                } else {
-                    val listState = rememberLazyListState()
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.weight(1f, fill = true).desktopTouchScroll(listState),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(bottom = 16.dp + LocalBottomBarClearance.current),
-                    ) {
-                        items(query.rooms, key = ClassroomOccupancy::room) { room ->
-                            ClassroomOccupancyCard(room = room, weekday = state.selectedWeekday, people = matchingRoomPeople(room.room, state.people))
+                            items(query.rooms, key = ClassroomOccupancy::room) { room ->
+                                ClassroomOccupancyCard(
+                                    room = room, weekday = state.selectedWeekday,
+                                    people = matchingRoomPeople(room.room, state.people),
+                                    supportsPeople = selected.name in CLASSROOM_BUILDINGS,
+                                    peopleLoading = state.peopleLoading,
+                                    onRefreshPeople = { hostScope.launch { model.refreshPeople() } },
+                                )
+                            }
                         }
                     }
                 }
             }
+
         }
     }
 
@@ -711,9 +728,9 @@ private fun ClassroomOccupancyFilters(
 ) {
     val scope = rememberCoroutineScope()
     Row(
-        modifier = Modifier.fillMaxWidth(),
+
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         WeekArrow(
             label = "‹",
@@ -721,41 +738,31 @@ private fun ClassroomOccupancyFilters(
             enabled = model.canMoveWeekBy(-1),
             onClick = { scope.launch { model.moveWeekBy(-1) } },
         )
-        // 中间整块可点击打开弹层：带下箭头暗示可展开，与两侧箭头同款药丸样式。
+        // 次要周次入口；学期和完整日期范围保留在弹层中。
         Surface(
             onClick = onOpenWeekPicker,
-            color = MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            color = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             shape = RoundedCornerShape(999.dp),
-            modifier = Modifier.weight(1f),
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         if (state.isNonTeachingWeek) "非教学周" else "第 ${state.selectedWeek} 周",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                     )
-                    val selectedStart = state.selectedNonTeachingWeekStart
-                        ?: model.weekDateOf(state.selectedWeek)?.startDate
-                    selectedStart?.let {
-                        Text(
-                            displayWeekRange(it),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer.accessibleAlpha(0.78f),
-                            textAlign = TextAlign.Center,
-                        )
-                    }
+
                 }
                 Text(
                     "▾",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 4.dp),
                 )
             }
@@ -823,7 +830,7 @@ private fun OccupancyCompactDaySelector(
                 val selected = selectedDay == index + 1
                 Surface(
                     onClick = { onSelect(index + 1) },
-                    modifier = Modifier.weight(1f).heightIn(min = 40.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 32.dp),
                     color = if (selected) {
                         MaterialTheme.colorScheme.primaryContainer
                     } else {
@@ -837,7 +844,7 @@ private fun OccupancyCompactDaySelector(
                     shape = RoundedCornerShape(11.dp),
                 ) {
                     Box(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
@@ -865,13 +872,13 @@ private fun WeekArrow(
     Surface(
         onClick = onClick,
         enabled = enabled,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        color = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         shape = RoundedCornerShape(999.dp),
         modifier = Modifier.semantics { this.contentDescription = contentDescription },
     ) {
         Box(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(label, style = MaterialTheme.typography.titleMedium)
@@ -898,70 +905,22 @@ private fun SlotTimeRangesLegend() {
 }
 
 /**
- * 图例七等分：空闲/排课/调课/考试/实验/其他（合并未知）+ 「时段▾」展开钮，
- * 与星期条同为七格视觉对齐。点「时段▾」在下方展开节次时间。
+ * 点状图例与时段说明入口；不使用大块彩色按钮占据列表视口。
  */
 @Composable
-private fun OccupancyLegendRow(
-    showSlotTimes: Boolean,
-    onToggleSlotTimes: () -> Unit,
-) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.accessibleAlpha(0.48f),
-        shape = RoundedCornerShape(14.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            legendEntries().forEach { (kind, label) ->
-                val (bg, fg) = occupancyCellColors(kind)
-                // 色块作背景、文字放进色块里，与教室卡片占用格同款表达。
-                // 固定 40dp 高度：在 animateContentSize 的 Column 里 heightIn(min=) 无上限，
-                // 若再用 fillMaxSize 会把格子撑到剩余全屏；固定高度即可让文字居中。
-                Surface(
-                    color = bg,
-                    contentColor = fg,
-                    shape = RoundedCornerShape(11.dp),
-                    modifier = Modifier.weight(1f).height(40.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            label,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                        )
-                    }
-                }
+private fun OccupancyLegendRow(showSlotTimes: Boolean, onToggleSlotTimes: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween) {
+        legendEntries().forEach { (kind, label) ->
+            val (bg, _) = occupancyCellColors(kind)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Box(Modifier.size(7.dp).background(bg, RoundedCornerShape(2.dp)))
+                Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            // 第七格：时段展开钮。
-            Surface(
-                onClick = onToggleSlotTimes,
-                color = if (showSlotTimes) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    Color.Transparent
-                },
-                contentColor = if (showSlotTimes) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                shape = RoundedCornerShape(11.dp),
-                modifier = Modifier.weight(1f).height(40.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        if (showSlotTimes) "时段▴" else "时段▾",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                    )
-                }
-            }
+        }
+        Surface(onClick = onToggleSlotTimes, color = Color.Transparent, shape = RoundedCornerShape(6.dp)) {
+            Text(if (showSlotTimes) "时段▴" else "时段▾", modifier = Modifier.padding(vertical = 6.dp),
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -1008,28 +967,36 @@ private fun ClassroomOccupancyCard(
     room: ClassroomOccupancy,
     weekday: Int,
     people: team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomCapacity? = null,
+    supportsPeople: Boolean = false,
+    peopleLoading: Boolean = false,
+    onRefreshPeople: () -> Unit = {},
 ) {
     ElevatedCard(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surface,
         ),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                text = if (room.capacity > 0) "${room.room} · ${room.capacity} 座" else room.room,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            people?.let {
-                Text("当前人数估计：${it.used} / ${it.capacity}", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(room.room, style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false))
+                    if (room.capacity > 0) Text("${room.capacity}座", style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (supportsPeople) {
+                    Text(people?.let { "估计 ${it.used}/${it.capacity}" } ?: "估计 —",
+                        style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    PeopleTag(onClick = onRefreshPeople, loading = peopleLoading)
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 (1..7).forEach { period ->

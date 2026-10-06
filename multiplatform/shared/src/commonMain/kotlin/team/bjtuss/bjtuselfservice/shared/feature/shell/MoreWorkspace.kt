@@ -239,7 +239,9 @@ private fun NetworkTileIcon() {
     Canvas(Modifier.fillMaxSize()) {
         val center = Offset(size.width / 2f, size.height * 0.72f)
         val stroke = 1.8.dp.toPx()
-        listOf(17.dp, 12.dp, 7.dp).forEach { diameter ->
+        // A 90° arc exposes only ~71% of its diameter; match the visible width
+        // of adjacent tile icons rather than the arc's bounding-circle size.
+        listOf(26.dp, 18.dp, 10.dp).forEach { diameter ->
             val px = diameter.toPx()
             drawArc(
                 color = color,
