@@ -4,7 +4,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNode
@@ -83,6 +85,17 @@ interface CoursewareRepository {
         folderKey: String,
     ): CoursewareOperationResult<CoursewareSnapshot> =
         CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
+
+    /**
+     * 后台把尚未展开的文件夹补齐。调用方不持有操作锁；仓库内部 2 路并发、一次落库。
+     * 没有未加载文件夹时原样返回，不写缓存。
+     */
+    suspend fun loadUnloadedFolders(
+        snapshot: CoursewareSnapshot,
+        concurrency: Int = 2,
+    ): CoursewareOperationResult<CoursewareSnapshot> =
+        CoursewareOperationResult.Success(snapshot)
+
     suspend fun downloadResource(node: CoursewareNode): CoursewareOperationResult<HomeworkFileContent>
     suspend fun downloadTeachingCalendar(course: CoursewareCourse): CoursewareOperationResult<HomeworkFileContent>
 }
@@ -95,6 +108,7 @@ class DefaultCoursewareRepository(
     private val accountScope = accountScope.trim().also {
         require(it.isNotEmpty()) { "accountScope cannot be blank" }
     }
+    private val persistMutex = Mutex()
 
     override fun load(): CoursewareSnapshot = local.load(accountScope)
 
@@ -109,15 +123,13 @@ class DefaultCoursewareRepository(
         } catch (_: Exception) {
             return CoursewareRefreshResult.Failure(fallback, CoursewareSyncFailure.NETWORK)
         }
-        val mergedSnapshot = remoteSnapshot.mergeCachedChildren(fallback)
-        return try {
-            local.replace(accountScope, mergedSnapshot)
-            CoursewareRefreshResult.Success(local.load(accountScope))
-        } catch (_: Exception) {
-            CoursewareRefreshResult.Failure(
-                snapshot = runCatching(::load).getOrElse { fallback },
-                reason = CoursewareSyncFailure.CACHE,
-            )
+        return persistMutex.withLock {
+            val latest = runCatching(::load).getOrElse { fallback }
+            if (remoteSnapshot.courses.isEmpty() && latest.courses.isNotEmpty()) {
+                CoursewareRefreshResult.Failure(latest, CoursewareSyncFailure.NETWORK)
+            } else {
+                persistCatalog(remoteSnapshot.mergeCachedChildren(latest), fallback = latest)
+            }
         }
     }
 
@@ -139,20 +151,18 @@ class DefaultCoursewareRepository(
         if (children.hasDuplicateKeys()) {
             return CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
         }
-        val updated = snapshot.copy(
-            courses = snapshot.courses.map { candidate ->
-                if (candidate.id == courseId) {
-                    candidate.copy(children = children, childrenLoaded = true)
-                } else {
-                    candidate
-                }
-            },
-        )
-        return try {
-            local.replace(accountScope, updated)
-            CoursewareOperationResult.Success(local.load(accountScope))
-        } catch (_: Exception) {
-            CoursewareOperationResult.Failure(CoursewareSyncFailure.CACHE)
+        return persistMerging { latest ->
+            val current = latest.courses.firstOrNull { it.id == courseId } ?: return@persistMerging latest
+            val merged = children.mergePreservingLoadedFolders(current.children)
+            latest.copy(
+                courses = latest.courses.map { candidate ->
+                    if (candidate.id == courseId) {
+                        candidate.copy(children = merged, childrenLoaded = true)
+                    } else {
+                        candidate
+                    }
+                },
+            )
         }
     }
 
@@ -163,19 +173,18 @@ class DefaultCoursewareRepository(
     ): CoursewareOperationResult<CoursewareSnapshot> {
         val targets = courseIds
             .distinct()
-            .mapNotNull { id -> snapshot.courses.firstOrNull { it.id == id && !it.childrenLoaded } }
+            .mapNotNull { id -> snapshot.courses.firstOrNull { it.id == id } }
         if (targets.isEmpty()) return CoursewareOperationResult.Success(snapshot)
         val limit = concurrency.coerceIn(1, 6)
         val semaphore = Semaphore(limit)
-        // 单课失败跳过，不拖垮整批；至少成功一门就合并落库。
+        // 单课失败跳过，不拖垮整批。合法空列表会写入，把老师删光的课收成 0。
         val fetched: List<Pair<Int, List<CoursewareNode>>> = coroutineScope {
             targets.map { course ->
                 async {
                     semaphore.withPermit {
                         try {
                             val children = remote.fetchChildren(course, parentId = 0)
-                            if (children.hasDuplicateKeys()) null
-                            else course.id to children
+                            if (children.hasDuplicateKeys()) null else course.id to children
                         } catch (error: CancellationException) {
                             throw error
                         } catch (_: Exception) {
@@ -189,17 +198,16 @@ class DefaultCoursewareRepository(
             return CoursewareOperationResult.Failure(CoursewareSyncFailure.NETWORK)
         }
         val byId = fetched.toMap()
-        val updated = snapshot.copy(
-            courses = snapshot.courses.map { course ->
-                val children = byId[course.id] ?: return@map course
-                course.copy(children = children, childrenLoaded = true)
-            },
-        )
-        return try {
-            local.replace(accountScope, updated)
-            CoursewareOperationResult.Success(local.load(accountScope))
-        } catch (_: Exception) {
-            CoursewareOperationResult.Failure(CoursewareSyncFailure.CACHE)
+        return persistMerging { latest ->
+            latest.copy(
+                courses = latest.courses.map { course ->
+                    val children = byId[course.id] ?: return@map course
+                    course.copy(
+                        children = children.mergePreservingLoadedFolders(course.children),
+                        childrenLoaded = true,
+                    )
+                },
+            )
         }
     }
 
@@ -227,24 +235,108 @@ class DefaultCoursewareRepository(
         } catch (_: Exception) {
             return CoursewareOperationResult.Failure(CoursewareSyncFailure.NETWORK)
         }
-        val existingKeys = course.children.allNodeKeys() - folder.stableKey
-        if (children.any { it.stableKey in existingKeys } || children.hasDuplicateKeys()) {
+        if (children.hasDuplicateKeys()) {
             return CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
         }
-        val updatedChildren = course.children.replaceNode(folderKey) {
-            it.copy(children = children, childrenLoaded = true)
-        } ?: return CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
-        val updated = snapshot.copy(
-            courses = snapshot.courses.map { candidate ->
-                if (candidate.id == courseId) candidate.copy(children = updatedChildren) else candidate
-            },
-        )
-        return try {
-            local.replace(accountScope, updated)
-            CoursewareOperationResult.Success(local.load(accountScope))
-        } catch (_: Exception) {
-            CoursewareOperationResult.Failure(CoursewareSyncFailure.CACHE)
+        return persistMerging { latest ->
+            val currentCourse = latest.courses.firstOrNull { it.id == courseId } ?: return@persistMerging latest
+            val currentFolder = findCoursewareNode(currentCourse.children, folderKey)
+                ?.takeIf { it.kind == CoursewareNodeKind.FOLDER }
+                ?: return@persistMerging latest
+            val existingKeys = currentCourse.children.keysOutside(currentFolder.stableKey)
+            if (children.any { it.stableKey in existingKeys }) return@persistMerging latest
+            val updatedChildren = currentCourse.children.replaceNode(folderKey) {
+                it.copy(
+                    children = children.mergePreservingLoadedFolders(it.children),
+                    childrenLoaded = true,
+                )
+            } ?: return@persistMerging latest
+            latest.copy(
+                courses = latest.courses.map { candidate ->
+                    if (candidate.id == courseId) candidate.copy(children = updatedChildren) else candidate
+                },
+            )
         }
+    }
+
+    override suspend fun loadUnloadedFolders(
+        snapshot: CoursewareSnapshot,
+        concurrency: Int,
+    ): CoursewareOperationResult<CoursewareSnapshot> {
+        var last = snapshot
+        var changed = false
+        val limit = concurrency.coerceIn(1, 6)
+        repeat(COURSEWARE_FOLDER_PREFETCH_DEPTH) {
+            val latest = runCatching(::load).getOrElse { last }
+            val targets = latest.unloadedFolders()
+            if (targets.isEmpty()) {
+                return CoursewareOperationResult.Success(if (changed) latest else snapshot)
+            }
+            val fetched = coroutineScope {
+                val semaphore = Semaphore(limit)
+                targets.map { target ->
+                    async {
+                        semaphore.withPermit {
+                            val course = latest.courses.firstOrNull { it.id == target.courseId }
+                                ?: return@withPermit null
+                            try {
+                                val children = remote.fetchChildren(course, target.folderId)
+                                if (children.hasDuplicateKeys()) null else target to children
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
+                    }
+                }.awaitAll().filterNotNull()
+            }
+            if (fetched.isEmpty()) {
+                return CoursewareOperationResult.Success(if (changed) latest else snapshot)
+            }
+            when (val persisted = persistMerging { current -> current.applyFolderFetches(fetched) }) {
+                is CoursewareOperationResult.Failure -> return persisted
+                is CoursewareOperationResult.Success -> {
+                    changed = true
+                    last = persisted.value
+                }
+            }
+        }
+        return CoursewareOperationResult.Success(last)
+    }
+
+    private suspend fun persistMerging(
+        transform: (CoursewareSnapshot) -> CoursewareSnapshot,
+    ): CoursewareOperationResult<CoursewareSnapshot> = persistMutex.withLock {
+        val latest = runCatching(::load).getOrElse { CoursewareSnapshot(emptyList()) }
+        val updated = transform(latest)
+        if (updated == latest) {
+            CoursewareOperationResult.Success(latest)
+        } else {
+            persistSnapshot(updated)
+        }
+    }
+
+    private fun persistCatalog(
+        snapshot: CoursewareSnapshot,
+        fallback: CoursewareSnapshot,
+    ): CoursewareRefreshResult = try {
+        local.replace(accountScope, snapshot)
+        CoursewareRefreshResult.Success(local.load(accountScope))
+    } catch (_: Exception) {
+        CoursewareRefreshResult.Failure(
+            snapshot = runCatching(::load).getOrElse { fallback },
+            reason = CoursewareSyncFailure.CACHE,
+        )
+    }
+
+    private fun persistSnapshot(
+        snapshot: CoursewareSnapshot,
+    ): CoursewareOperationResult<CoursewareSnapshot> = try {
+        local.replace(accountScope, snapshot)
+        CoursewareOperationResult.Success(local.load(accountScope))
+    } catch (_: Exception) {
+        CoursewareOperationResult.Failure(CoursewareSyncFailure.CACHE)
     }
 
     override suspend fun downloadResource(
@@ -323,6 +415,11 @@ private fun List<CoursewareNode>.allNodeKeys(): Set<String> = buildSet {
     addLevel(this@allNodeKeys)
 }
 
+private fun List<CoursewareNode>.keysOutside(folderKey: String): Set<String> {
+    val folder = findCoursewareNode(this, folderKey) ?: return allNodeKeys()
+    return allNodeKeys() - folder.stableKey - folder.children.allNodeKeys()
+}
+
 private fun List<CoursewareNode>.hasDuplicateKeys(): Boolean {
     val seen = mutableSetOf<String>()
     fun visit(nodes: List<CoursewareNode>): Boolean = nodes.any { node ->
@@ -331,9 +428,85 @@ private fun List<CoursewareNode>.hasDuplicateKeys(): Boolean {
     return visit(this)
 }
 
+private fun List<CoursewareNode>.mergePreservingLoadedFolders(
+    previous: List<CoursewareNode>,
+): List<CoursewareNode> {
+    val previousByKey = previous.associateBy(CoursewareNode::stableKey)
+    return map { incoming ->
+        val old = previousByKey[incoming.stableKey] ?: return@map incoming
+        if (!incoming.isFolder || !old.isFolder) return@map incoming
+        when {
+            incoming.childrenLoaded -> incoming.copy(
+                children = incoming.children.mergePreservingLoadedFolders(old.children),
+            )
+            // 刷新时远端顶层文件夹总是未加载。先把旧子项留在界面上，
+            // 但必须标成未加载，让后台预取去拉老师刚更新的内容。
+            old.children.isNotEmpty() && incoming.children.isEmpty() -> incoming.copy(
+                children = old.children,
+                childrenLoaded = false,
+            )
+            else -> incoming
+        }
+    }
+}
+
+private data class UnloadedCoursewareFolder(
+    val courseId: Int,
+    val folderKey: String,
+    val folderId: Int,
+)
+
+private fun CoursewareSnapshot.applyFolderFetches(
+    fetched: List<Pair<UnloadedCoursewareFolder, List<CoursewareNode>>>,
+): CoursewareSnapshot {
+    var courses = this.courses
+    for ((target, children) in fetched) {
+        val course = courses.firstOrNull { it.id == target.courseId } ?: continue
+        val folder = findCoursewareNode(course.children, target.folderKey)
+            ?.takeIf { it.kind == CoursewareNodeKind.FOLDER }
+            ?: continue
+        val existingKeys = course.children.keysOutside(folder.stableKey)
+        if (children.any { it.stableKey in existingKeys }) continue
+        val updatedChildren = course.children.replaceNode(target.folderKey) {
+            it.copy(
+                children = children.mergePreservingLoadedFolders(it.children),
+                childrenLoaded = true,
+            )
+        } ?: continue
+        courses = courses.map { candidate ->
+            if (candidate.id == course.id) candidate.copy(children = updatedChildren) else candidate
+        }
+    }
+    return copy(courses = courses)
+}
+
+private fun CoursewareSnapshot.unloadedFolders(): List<UnloadedCoursewareFolder> = buildList {
+    courses.filter { it.childrenLoaded }.forEach { course ->
+        fun visit(nodes: List<CoursewareNode>) {
+            nodes.forEach { node ->
+                if (!node.isFolder) return@forEach
+                if (!node.childrenLoaded) {
+                    add(
+                        UnloadedCoursewareFolder(
+                            courseId = course.id,
+                            folderKey = node.stableKey,
+                            folderId = node.id,
+                        ),
+                    )
+                } else {
+                    visit(node.children)
+                }
+            }
+        }
+        visit(course.children)
+    }
+}
+
 private fun CoursewareRemoteFailure.toSyncFailure(): CoursewareSyncFailure = when (this) {
     CoursewareRemoteFailure.NETWORK -> CoursewareSyncFailure.NETWORK
     CoursewareRemoteFailure.SESSION_EXPIRED -> CoursewareSyncFailure.SESSION_EXPIRED
     CoursewareRemoteFailure.MALFORMED_RESPONSE -> CoursewareSyncFailure.MALFORMED_RESPONSE
     CoursewareRemoteFailure.SECURE_CHANNEL_UNAVAILABLE -> CoursewareSyncFailure.SECURE_CHANNEL_UNAVAILABLE
 }
+
+private const val COURSEWARE_FOLDER_PREFETCH_DEPTH = 6

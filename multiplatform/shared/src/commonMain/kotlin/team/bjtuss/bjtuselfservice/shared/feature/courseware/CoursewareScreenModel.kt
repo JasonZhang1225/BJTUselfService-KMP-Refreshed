@@ -81,6 +81,7 @@ class CoursewareScreenModel(
 
     private val refreshMutex = Mutex()
     private val operationMutex = Mutex()
+    private val prefetchMutex = Mutex()
     private val freshCourseIds = mutableSetOf<Int>()
     private var initialized = false
 
@@ -106,8 +107,8 @@ class CoursewareScreenModel(
     }
 
     suspend fun refresh() {
-        if (!refreshMutex.tryLock()) return
-        try {
+        refreshMutex.withLock {
+            var reloadLoaded = false
             operationMutex.withLock {
                 val before = mutableState.value
                 mutableState.value = before.copy(
@@ -119,15 +120,12 @@ class CoursewareScreenModel(
                     when (val result = repository.refresh()) {
                         is CoursewareRefreshResult.Success -> {
                             freshCourseIds.clear()
-                            // 课程目录刷新成功不等于课件树也已刷新。远端 catalog 会与旧缓存
-                            // 合并以便页面先保留内容；这里必须把每门课的顶层树重新标记为未加载，
-                            // 让 refresh 后的 ensureCourseRootsLoaded 真正请求最新课件列表。
                             applySnapshot(
-                                result.snapshot.invalidateCourseRoots(),
+                                result.snapshot,
                                 CoursewareContentSource.NETWORK,
                                 null,
-                                resetNavigation = true,
                             )
+                            reloadLoaded = true
                         }
                         is CoursewareRefreshResult.Failure -> applySnapshot(
                             result.snapshot,
@@ -142,10 +140,8 @@ class CoursewareScreenModel(
                     }
                 }
             }
-            // 在 refresh 锁外预加载顶层，避免与点选课程长时间互斥；有课未加载数量时总会跑。
-            ensureCourseRootsLoaded()
-        } finally {
-            refreshMutex.unlock()
+            // 目录刷新成功后才重拉顶层；失败时留下已有子树，只补还没加载的课。
+            ensureCourseRootsLoaded(reloadLoaded = reloadLoaded)
         }
     }
 
@@ -153,26 +149,34 @@ class CoursewareScreenModel(
      * 并发补拉尚未加载顶层目录的课程（有界并发）。
      * 打开选课列表 / 初始化 / 手动同步后都会调用；已在加载中则跳过。
      */
-    suspend fun ensureCourseRootsLoaded() {
-        val unloaded = mutableState.value.courses.filter { !it.childrenLoaded }.map { it.id }
-        if (unloaded.isEmpty()) return
-        // 已有加载任务在跑时不重复入队
-        if (unloaded.all { it in mutableState.value.loadingCourseIds }) return
-        operationMutex.withLock {
-            preloadUnloadedCourseRootsLocked()
+    suspend fun ensureCourseRootsLoaded(reloadLoaded: Boolean = false) {
+        val ids = mutableState.value.courses
+            .filter { reloadLoaded || !it.childrenLoaded }
+            .map { it.id }
+        if (ids.isEmpty()) {
+            prefetchUnloadedFolders()
+            return
         }
+        if (!reloadLoaded && ids.all { it in mutableState.value.loadingCourseIds }) return
+        operationMutex.withLock {
+            preloadUnloadedCourseRootsLocked(ids)
+        }
+        prefetchUnloadedFolders()
     }
 
-    suspend fun selectCourse(courseId: Int) = operationMutex.withLock {
-        if (mutableState.value.courses.none { it.id == courseId }) return@withLock
-        mutableState.value = mutableState.value.copy(
-            selectedCourseId = courseId,
-            compactFolderPath = emptyList(),
-            expandedFolderKeys = emptySet(),
-            selectedNodeKey = null,
-            fileFailure = null,
-        )
-        loadCourseLocked(courseId)
+    suspend fun selectCourse(courseId: Int) {
+        operationMutex.withLock {
+            if (mutableState.value.courses.none { it.id == courseId }) return@withLock
+            mutableState.value = mutableState.value.copy(
+                selectedCourseId = courseId,
+                compactFolderPath = emptyList(),
+                expandedFolderKeys = emptySet(),
+                selectedNodeKey = null,
+                fileFailure = null,
+            )
+            loadCourseLocked(courseId)
+        }
+        prefetchUnloadedFolders()
     }
 
     suspend fun openCompactNode(stableKey: String) {
@@ -512,25 +516,24 @@ class CoursewareScreenModel(
      * 在已持有 [operationMutex] 时调用：并发加载尚未拉顶层目录的课程。
      * 网络并发、一次合并落库；单课失败不阻断其它课。
      */
-    private suspend fun preloadUnloadedCourseRootsLocked() {
+    private suspend fun preloadUnloadedCourseRootsLocked(courseIds: List<Int>) {
         val before = mutableState.value
-        val unloadedIds = before.courses.filter { !it.childrenLoaded }.map { it.id }
-        if (unloadedIds.isEmpty()) return
+        if (courseIds.isEmpty()) return
         mutableState.value = before.copy(
-            loadingCourseIds = before.loadingCourseIds + unloadedIds,
+            loadingCourseIds = before.loadingCourseIds + courseIds,
         )
         try {
             when (
                 val result = repository.loadCoursesConcurrently(
                     snapshot = CoursewareSnapshot(mutableState.value.courses),
-                    courseIds = unloadedIds,
+                    courseIds = courseIds,
                     // 智慧教学接口对并发敏感；2 路在速度与稳定性之间折中。
                     concurrency = 2,
                 )
             ) {
                 is CoursewareOperationResult.Success -> {
                     val loadedIds = result.value.courses
-                        .filter { it.childrenLoaded && it.id in unloadedIds }
+                        .filter { it.childrenLoaded && it.id in courseIds }
                         .map { it.id }
                     freshCourseIds += loadedIds
                     applySnapshot(
@@ -547,8 +550,32 @@ class CoursewareScreenModel(
             }
         } finally {
             mutableState.value = mutableState.value.copy(
-                loadingCourseIds = mutableState.value.loadingCourseIds - unloadedIds.toSet(),
+                loadingCourseIds = mutableState.value.loadingCourseIds - courseIds.toSet(),
             )
+        }
+    }
+
+    private suspend fun prefetchUnloadedFolders() {
+        prefetchMutex.withLock {
+            val snapshot = CoursewareSnapshot(mutableState.value.courses)
+            when (
+                val result = repository.loadUnloadedFolders(
+                    snapshot = snapshot,
+                    concurrency = 2,
+                )
+            ) {
+                is CoursewareOperationResult.Success -> {
+                    if (result.value == snapshot) return@withLock
+                    operationMutex.withLock {
+                        applySnapshot(
+                            result.value,
+                            source = mutableState.value.source ?: CoursewareContentSource.NETWORK,
+                            failure = mutableState.value.failure,
+                        )
+                    }
+                }
+                is CoursewareOperationResult.Failure -> Unit
+            }
         }
     }
 
@@ -594,12 +621,6 @@ class CoursewareScreenModel(
         )
     }
 }
-
-private fun CoursewareSnapshot.invalidateCourseRoots(): CoursewareSnapshot = copy(
-    courses = courses.map { course ->
-        course.copy(childrenLoaded = false)
-    },
-)
 
 private const val COURSEWARE_DOWNLOAD_RETRY_DELAY_MILLIS = 250L
 

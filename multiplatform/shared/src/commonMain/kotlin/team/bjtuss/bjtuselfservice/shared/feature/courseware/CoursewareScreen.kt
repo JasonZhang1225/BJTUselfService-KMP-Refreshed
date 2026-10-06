@@ -152,14 +152,17 @@ fun CoursewareWorkspace(
 
     LaunchedEffect(model) { model.initialize() }
 
-    Column(
+    Box(
         modifier = if (expanded) {
             modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         } else {
             modifier.padding(horizontal = 16.dp).padding(top = 8.dp)
         },
-        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
         // 同步态在 DestinationPage 顶栏；此处不再放页内「同步课件」。
 
         // 明文通道提示：仅在 shell/session 判定「本登录态尚未关闭」时显示一条可关闭横幅。
@@ -167,10 +170,7 @@ fun CoursewareWorkspace(
             LegacySmartTransportWarning(onDismiss = onDismissLegacyWarning)
         }
 
-        // 列表同步进度条由 DestinationPage 钉在顶栏下；目录导出进度仍在本页展示。
-        if (state.isSelectedCourseLoading && !state.isRefreshing) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
+        // 选中课程的细加载条叠在 Box 顶部，不占 Column 高度。
         if (state.directoryDownloadTotal > 0) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 LinearProgressIndicator(
@@ -266,6 +266,12 @@ fun CoursewareWorkspace(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
             )
         }
+        }
+        if (state.isSelectedCourseLoading && !state.isRefreshing) {
+            LinearProgressIndicator(
+                modifier = Modifier.align(Alignment.TopStart).fillMaxWidth(),
+            )
+        }
     }
 
     // 打开选课列表时补拉「数量未同步」的课程顶层目录。
@@ -310,19 +316,21 @@ internal fun CoursewareCoursePickerList(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
-    Column(modifier = modifier) {
-        if (loadingCourseIds.isNotEmpty()) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-        }
+    Box(modifier = modifier) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.weight(1f).fillMaxWidth().desktopTouchScroll(listState),
+            modifier = Modifier.fillMaxSize().desktopTouchScroll(listState),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp + LocalBottomBarClearance.current),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(courses, key = CoursewareCourse::stableKey) { course ->
                 CoursewareCourseRow(course, course.id == selectedCourseId, course.id in loadingCourseIds) { onSelect(course) }
             }
+        }
+        if (loadingCourseIds.isNotEmpty()) {
+            LinearProgressIndicator(
+                modifier = Modifier.align(Alignment.TopStart).fillMaxWidth().padding(horizontal = 16.dp),
+            )
         }
     }
 }

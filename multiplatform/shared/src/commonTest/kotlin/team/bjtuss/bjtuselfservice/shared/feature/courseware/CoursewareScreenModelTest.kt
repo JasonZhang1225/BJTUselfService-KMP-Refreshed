@@ -60,6 +60,120 @@ class CoursewareScreenModelTest {
     }
 
     @Test
+    fun refreshKeepsCurrentFolderPathWhenTreeStillValid() = runBlocking {
+        val model = CoursewareScreenModel(FakeRepository(snapshot(), snapshot()))
+        model.initialize()
+        model.openCompactNode(folder().stableKey)
+
+        assertEquals(listOf("第一章"), model.state.value.compactPathNames)
+        model.refresh()
+
+        assertEquals(listOf("第一章"), model.state.value.compactPathNames)
+        assertEquals(listOf("第一讲.pdf"), model.state.value.compactNodes.map { it.name })
+    }
+
+    @Test
+    fun overlappingRefreshWaitsAndRunsAgain() = runBlocking {
+        val firstStarted = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        var refreshCount = 0
+        val repository = object : CoursewareRepository {
+            override fun load(): CoursewareSnapshot = snapshot()
+            override suspend fun refresh(): CoursewareRefreshResult {
+                refreshCount++
+                if (refreshCount == 1) {
+                    firstStarted.complete(Unit)
+                    releaseFirst.await()
+                }
+                return CoursewareRefreshResult.Success(snapshot())
+            }
+            override suspend fun loadCoursesConcurrently(
+                snapshot: CoursewareSnapshot,
+                courseIds: List<Int>,
+                concurrency: Int,
+            ): CoursewareOperationResult<CoursewareSnapshot> = CoursewareOperationResult.Success(snapshot)
+            override suspend fun downloadResource(
+                node: CoursewareNode,
+            ): CoursewareOperationResult<HomeworkFileContent> = error("Not used")
+            override suspend fun downloadTeachingCalendar(
+                course: CoursewareCourse,
+            ): CoursewareOperationResult<HomeworkFileContent> = error("Not used")
+        }
+        val model = CoursewareScreenModel(repository)
+        val first = async { model.initialize() }
+        firstStarted.await()
+        val second = async { model.refresh() }
+        yield()
+        releaseFirst.complete(Unit)
+        first.await()
+        second.await()
+        assertEquals(2, refreshCount)
+    }
+
+    @Test
+    fun emptyRootReloadKeepsCachedCourseware() = runBlocking {
+        val cached = snapshot("旧课件")
+        val repository = object : CoursewareRepository {
+            override fun load(): CoursewareSnapshot = cached
+            override suspend fun refresh(): CoursewareRefreshResult =
+                CoursewareRefreshResult.Failure(cached, CoursewareSyncFailure.NETWORK)
+            override suspend fun loadCoursesConcurrently(
+                snapshot: CoursewareSnapshot,
+                courseIds: List<Int>,
+                concurrency: Int,
+            ): CoursewareOperationResult<CoursewareSnapshot> =
+                CoursewareOperationResult.Success(snapshot.copy(courses = snapshot.courses.map { it.copy(children = emptyList()) }))
+            override suspend fun downloadResource(
+                node: CoursewareNode,
+            ): CoursewareOperationResult<HomeworkFileContent> = error("Not used")
+            override suspend fun downloadTeachingCalendar(
+                course: CoursewareCourse,
+            ): CoursewareOperationResult<HomeworkFileContent> = error("Not used")
+        }
+        val model = CoursewareScreenModel(repository)
+        model.initialize()
+
+        assertEquals(listOf("第一章", "说明.pdf"), model.state.value.compactNodes.map { it.name })
+        assertEquals(
+            "旧课件",
+            model.state.value.compactNodes.first { it.isFolder }.children.single().name,
+        )
+    }
+
+    @Test
+    fun folderPrefetchDoesNotClearVisibleList() = runBlocking {
+        val prefetched = snapshot()
+        val repository = object : CoursewareRepository {
+            override fun load(): CoursewareSnapshot = partialSnapshot()
+            override suspend fun refresh(): CoursewareRefreshResult =
+                CoursewareRefreshResult.Success(partialSnapshot())
+            override suspend fun loadCoursesConcurrently(
+                snapshot: CoursewareSnapshot,
+                courseIds: List<Int>,
+                concurrency: Int,
+            ): CoursewareOperationResult<CoursewareSnapshot> = CoursewareOperationResult.Success(snapshot)
+            override suspend fun loadUnloadedFolders(
+                snapshot: CoursewareSnapshot,
+                concurrency: Int,
+            ): CoursewareOperationResult<CoursewareSnapshot> = CoursewareOperationResult.Success(prefetched)
+            override suspend fun downloadResource(
+                node: CoursewareNode,
+            ): CoursewareOperationResult<HomeworkFileContent> = error("Not used")
+            override suspend fun downloadTeachingCalendar(
+                course: CoursewareCourse,
+            ): CoursewareOperationResult<HomeworkFileContent> = error("Not used")
+        }
+        val model = CoursewareScreenModel(repository)
+        model.initialize()
+
+        assertEquals(listOf("第一章", "说明.pdf"), model.state.value.compactNodes.map { it.name })
+        assertEquals(
+            listOf("第一讲.pdf"),
+            model.state.value.compactNodes.first { it.isFolder }.children.map { it.name },
+        )
+    }
+
+    @Test
     fun openingUnloadedFolderFetchesAndPersistsItsDirectChildrenFirst() = runBlocking {
         val repository = FakeRepository(
             loaded = partialSnapshot(),
