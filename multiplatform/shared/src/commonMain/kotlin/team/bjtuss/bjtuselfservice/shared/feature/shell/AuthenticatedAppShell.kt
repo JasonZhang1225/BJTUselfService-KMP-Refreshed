@@ -1771,7 +1771,7 @@ fun AuthenticatedAppShell(
                 session.physicsLabModel?.let { labModel ->
                     PhysicsLabSettings(
                         model = labModel,
-                        modifier = Modifier.fillMaxSize().padding(top = LocalTopBarClearance.current),
+                        modifier = Modifier.fillMaxSize(),
                         showTitle = false,
                     )
                 }

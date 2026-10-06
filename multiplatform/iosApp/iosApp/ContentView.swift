@@ -1,5 +1,7 @@
 import BJTUShared
 import Foundation
+import ObjectiveC
+import QuartzCore
 import SwiftUI
 import UIKit
 
@@ -20,10 +22,138 @@ private let appBackgroundColor = Color(uiColor: appBackgroundUIColor)
 /// 宿主视图隐藏无障碍子树即可完全跳过该路径，视觉界面与原生导航手势不受影响。
 ///
 /// Compose 首帧之前 UIKit 会先显示宿主底色；与页面背景保持一致可避免深色模式闪白。
+///
+/// 每个应用从「应用」网格 push 时都会新建一个 ComposeUIViewController。CMP 在
+/// `opaque = false` 时把容器画成透明，Metal 层在第一帧前是未初始化的黑/白；
+/// iOS 26 的玻璃转场再透过这层去采后面的页面，整屏就会闪亮再闪暗。
+/// 宿主必须自己铺上与 Compose `background` 相同的底色，并在 Metal 真正画出
+/// 内容前用同色遮罩挡住未初始化帧。遮罩在 Compose 视图内部，系统导航栏仍叠在上面。
 private func configureComposeHost(_ controller: UIViewController) {
     controller.view.accessibilityElementsHidden = true
-    controller.view.isOpaque = false
-    controller.view.backgroundColor = UIColor(appBackgroundColor)
+    pinComposeSurfaceColor(controller.view)
+    ComposeFirstFrameCover.install(on: controller.view)
+}
+
+private func pinComposeSurfaceColor(_ view: UIView) {
+    view.backgroundColor = appBackgroundUIColor
+    // 转场合成器按 isOpaque 决定是否透出后面的白窗/黑窗。内容本身已经铺满底色，
+    // 标成不透明可避免 iOS 26 玻璃推入时把后页加亮后再盖上本页。
+    view.isOpaque = true
+    pinMetalLayerBackground(view)
+}
+
+private func pinMetalLayerBackground(_ view: UIView) {
+    let color = appBackgroundUIColor.resolvedColor(with: view.traitCollection).cgColor
+    pinMetalLayers(in: view.layer, color: color)
+    for child in view.subviews {
+        pinMetalLayerBackground(child)
+    }
+}
+
+private func pinMetalLayers(in layer: CALayer, color: CGColor) {
+    if let metal = layer as? CAMetalLayer {
+        metal.backgroundColor = color
+    }
+    for sublayer in layer.sublayers ?? [] {
+        pinMetalLayers(in: sublayer, color: color)
+    }
+}
+
+/// 盖在 Skia/Metal 之上，直到图层有可展示内容或超时。新子视图（MetalView）出现后
+/// 会被抬到最前，所以每帧都把遮罩重新置顶，避免刚插入的黑层闪一下。
+private final class ComposeFirstFrameCover: NSObject {
+    private static let hostAssociation = ObjectAssociation<ComposeFirstFrameCover>()
+    private let cover = UIView()
+    private weak var host: UIView?
+    private var displayLink: CADisplayLink?
+    private var frames = 0
+    private var presentedFrames = 0
+
+    static func install(on view: UIView) {
+        hostAssociation[view]?.remove()
+        let session = ComposeFirstFrameCover()
+        hostAssociation[view] = session
+        session.attach(to: view)
+    }
+
+    private func attach(to view: UIView) {
+        host = view
+        cover.backgroundColor = appBackgroundUIColor
+        cover.frame = view.bounds
+        cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        cover.isUserInteractionEnabled = false
+        cover.accessibilityElementsHidden = true
+        view.addSubview(cover)
+        let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        frames += 1
+        guard let host, cover.superview != nil else {
+            remove()
+            return
+        }
+        pinComposeSurfaceColor(host)
+        // Skiko 的 Metal 视图是后来插进来的子视图；contents 在部分系统上一直是 nil，
+        // 所以用「除遮罩外已经有渲染表面」再等几帧，给 Compose 时间画出第一帧。
+        let hasComposeSurface = metalHasPresentedContents(host)
+            || host.subviews.contains { $0 !== cover }
+        if hasComposeSurface {
+            presentedFrames += 1
+        }
+        if presentedFrames >= 4 || frames >= 18 {
+            remove()
+            return
+        }
+        host.bringSubviewToFront(cover)
+    }
+
+    private func remove() {
+        displayLink?.invalidate()
+        displayLink = nil
+        cover.removeFromSuperview()
+        if let host {
+            ComposeFirstFrameCover.hostAssociation[host] = nil
+        }
+    }
+}
+
+private func metalHasPresentedContents(_ view: UIView) -> Bool {
+    if layerHasPresentedMetalContents(view.layer) {
+        return true
+    }
+    return view.subviews.contains { metalHasPresentedContents($0) }
+}
+
+private func layerHasPresentedMetalContents(_ layer: CALayer) -> Bool {
+    if let metal = layer as? CAMetalLayer, metal.contents != nil {
+        return true
+    }
+    return (layer.sublayers ?? []).contains { layerHasPresentedMetalContents($0) }
+}
+
+/// `objc_setAssociatedObject` 的轻量包装，用来把首帧遮罩挂在宿主 UIView 上，
+/// 避免 DisplayLink 的 target 在 VC 还在转场时被提前释放。
+private final class ObjectAssociation<T: AnyObject> {
+    private let key = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
+
+    deinit {
+        key.deallocate()
+    }
+
+    subscript(object: AnyObject) -> T? {
+        get { objc_getAssociatedObject(object, key) as? T }
+        set {
+            objc_setAssociatedObject(
+                object,
+                key,
+                newValue,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+        }
+    }
 }
 
 /// 边缘返回手势接管：Compose 的 Skia 层会吃掉左缘触摸，pop 手势必须优先于列表滚动/横滑。
@@ -50,6 +180,7 @@ private final class NativeNavigationController: UINavigationController, UINaviga
     init() {
         super.init(nibName: nil, bundle: nil)
         delegate = self
+        view.backgroundColor = appBackgroundUIColor
         setNavigationBarHidden(true, animated: false)
         installInteractivePopGesture(on: self)
         appActiveObserver = NotificationCenter.default.addObserver(
@@ -108,6 +239,11 @@ private final class NativeNavigationController: UINavigationController, UINaviga
         )
         destination.restorationIdentifier = routeId
         configureComposeHost(destination)
+        destination.loadViewIfNeeded()
+        destination.view.frame = view.bounds
+        destination.view.setNeedsLayout()
+        destination.view.layoutIfNeeded()
+        pinComposeSurfaceColor(destination.view)
         pushViewController(destination, animated: true)
     }
 
@@ -427,7 +563,6 @@ private final class NativeChromeBinding {
         UIView.performWithoutAnimation {
             navigationController.navigationBar.standardAppearance = appearance
             navigationController.navigationBar.scrollEdgeAppearance = appearance
-            navigationController.view.layoutIfNeeded()
         }
     }
 
@@ -659,6 +794,7 @@ private final class TabRootNavigationController: UINavigationController, UINavig
     /// Compose 根控制器推迟到这里创建，冷启动不必同时付多份组合与 Metal 层的成本。
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.backgroundColor = appBackgroundUIColor
         guard viewControllers.isEmpty else { return }
         navigationBar.clipsToBounds = false
         // 注意：不要在这里直接设 navigationBar.backgroundColor。栏背景完全由
@@ -734,6 +870,13 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         configureComposeHost(destination)
         binding.controller = destination
         setNativeTitle(destinationTitle)
+        // 先把目的地按最终尺寸 layout 一次，让 Compose 在转场开始前就开始画，
+        // 减少滑动过程中 Metal 还没首帧的空窗。
+        destination.loadViewIfNeeded()
+        destination.view.frame = view.bounds
+        destination.view.setNeedsLayout()
+        destination.view.layoutIfNeeded()
+        pinComposeSurfaceColor(destination.view)
         pushViewController(destination, animated: true)
     }
 
