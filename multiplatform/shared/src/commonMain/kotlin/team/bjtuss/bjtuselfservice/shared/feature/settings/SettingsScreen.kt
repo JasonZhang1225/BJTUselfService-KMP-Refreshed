@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.settings
 
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -112,13 +114,9 @@ fun SettingsWorkspace(
             vertical = 14.dp,
         )
             // 原生栏 underlap 时视口顶边贴屏幕顶，首项靠这份顶边距让开（其余平台恒 0）。
-            .padding(top = LocalTopBarClearance.current),
+            .padding(top = LocalTopBarClearance.current, bottom = LocalBottomBarClearance.current),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // 紧凑布局下 shell 顶栏已显示“设置”，页内不再重复；宽屏侧栏布局没有顶栏，保留页内标题。
-        if (expanded) {
-            Text("设置", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        }
         SettingCard("账户", accountName.ifBlank { "未登录" })
 
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
@@ -206,7 +204,7 @@ fun SettingsWorkspace(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("本仓库 GitHub（KMP 三端）")
+                    Text("本仓库 GitHub（Kotlin MultiPlatform跨平台）")
                 }
                 OutlinedButton(
                     onClick = { uriHandler.openUri("https://github.com/optsimauth/BJTUselfServiceAIO") },

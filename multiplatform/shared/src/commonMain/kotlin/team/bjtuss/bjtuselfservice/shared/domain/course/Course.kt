@@ -14,6 +14,9 @@ data class Course(
     val scheduleEventTime: String? = null,
     val eventSlotOffset: Float = 0f,
     val eventSlotHeight: Float = 1f,
+    /** 同一实验的所有上课日期；网格时段片段共享相同 id 和日期集合。 */
+    val scheduleEventDates: List<String> = emptyList(),
+    val scheduleEventTypeLabel: String? = null,
 )
 
 /**
@@ -66,3 +69,9 @@ fun displayScheduleCourseName(value: String): String {
 fun Course.displayTitleWithTeacher(): String =
     listOf(displayScheduleCourseName(courseName), courseTeacher.trim())
         .filter(String::isNotBlank).joinToString(" - ")
+
+/** 兼容旧的单日事件与考试；多日期实验只有一个身份。 */
+val Course.eventDates: List<String>
+    get() = scheduleEventDates.ifEmpty { listOfNotNull(scheduleEventDate) }
+
+fun Course.eventDatesLabel(): String = eventDates.joinToString("、")

@@ -155,7 +155,6 @@ import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxUiState
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxFailure
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxWorkspace
-import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxTopBarActions
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxComposeScreen
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabDetailWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabWorkspace
@@ -263,6 +262,10 @@ const val CLASSROOM_OCCUPANCY_DETAIL_ROUTE_ID = "CLASSROOM_OCCUPANCY_DETAIL"
 internal data object HomeworkDetailRoute : AppRoute
 const val HOMEWORK_DETAIL_ROUTE_ID = "HOMEWORK_DETAIL"
 
+/** 首页考试安排详情：从首页返回时直接回到首页。 */
+internal data object ExamDetailRoute : AppRoute
+const val EXAM_DETAIL_ROUTE_ID = "EXAM_DETAIL"
+
 /** 物理在线作业详情的二级路由：紧凑端仿作业详情，宽屏仍使用底部弹窗。 */
 internal data object PhyVlabDetailRoute : AppRoute
 const val PHYVLAB_DETAIL_ROUTE_ID = "PHYVLAB_DETAIL"
@@ -289,6 +292,8 @@ internal fun String.toAppRoute(): AppRoute? =
         ClassroomOccupancyDetailRoute
     } else if (this == HOMEWORK_DETAIL_ROUTE_ID) {
         HomeworkDetailRoute
+    } else if (this == EXAM_DETAIL_ROUTE_ID) {
+        ExamDetailRoute
     } else if (this == PHYVLAB_DETAIL_ROUTE_ID) {
         PhyVlabDetailRoute
     } else if (this == MAILBOX_DETAIL_ROUTE_ID) {

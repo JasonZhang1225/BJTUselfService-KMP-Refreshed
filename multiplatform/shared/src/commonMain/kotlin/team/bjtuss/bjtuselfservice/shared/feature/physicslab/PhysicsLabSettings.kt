@@ -1,6 +1,10 @@
 package team.bjtuss.bjtuselfservice.shared.feature.physicslab
 
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -28,6 +32,7 @@ fun PhysicsLabSettings(model: PhysicsLabModel, modifier: Modifier = Modifier, sh
         state, username, password, ready,
         onUsername = { username = it }, onPassword = { password = it },
         onSave = { scope.launch { model.configure(username, password, state.enabled) } },
+        onTwoWeeksChanged = { lab, twoWeeks -> scope.launch { model.setTwoWeeks(lab, twoWeeks) } },
         modifier = modifier, showTitle = showTitle,
     )
 }
@@ -43,11 +48,11 @@ internal fun PhysicsLabSettingsForm(
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
     showTitle: Boolean = true,
+    onTwoWeeksChanged: (PhysicsLab, Boolean) -> Unit = { _, _ -> },
 ) {
-    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     Column(
         modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 20.dp + bottomInset),
+            .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 20.dp + LocalBottomBarClearance.current),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         if (showTitle) Text("物理实验同步", style = MaterialTheme.typography.headlineSmall)
@@ -59,14 +64,27 @@ internal fun PhysicsLabSettingsForm(
             Text(if (state.refreshing) "正在同步…" else "保存账号")
         }
         state.message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-        Text("专题、设计类按连续两周显示，其余实验按一周显示（沿用参考项目规则）。", style = MaterialTheme.typography.bodySmall)
+        Text("专题、设计实验默认做两周，可按本学期实际安排修改；修改后会自动保存。", style = MaterialTheme.typography.bodySmall)
         if (state.fromCache) Text("当前显示缓存", style = MaterialTheme.typography.labelMedium)
         state.labs.forEach { lab ->
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(lab.name, style = MaterialTheme.typography.titleSmall)
+                    Text(lab.type.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     Text("${lab.dates.joinToString("、")} · ${lab.timeRange ?: "第${lab.period}时段"}")
                     Text("${lab.location} · ${lab.teacher}")
+                    Row(
+                        modifier = Modifier.fillMaxWidth().toggleable(
+                            value = lab.weekCount == 2,
+                            enabled = ready && !state.refreshing,
+                            role = Role.Checkbox,
+                            onValueChange = { onTwoWeeksChanged(lab, it) },
+                        ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = lab.weekCount == 2, onCheckedChange = null, enabled = ready && !state.refreshing)
+                        Text("做两周", style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
         }

@@ -141,6 +141,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleScreenMod
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.exam.ExamScheduleContentSource
 import team.bjtuss.bjtuselfservice.shared.feature.exam.ExamScheduleScreenModel
+import team.bjtuss.bjtuselfservice.shared.feature.exam.ExamScheduleDetailWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.exam.ExamScheduleWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkContentSource
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkDetailWorkspace
@@ -168,7 +169,6 @@ import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxUiState
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxFailure
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxWorkspace
-import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxTopBarActions
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxComposeScreen
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabDetailWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabWorkspace
@@ -194,6 +194,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.grade.GradeSortOrder
 import team.bjtuss.bjtuselfservice.shared.domain.grade.displayCourseName
 import team.bjtuss.bjtuselfservice.shared.domain.grade.displayName
 import team.bjtuss.bjtuselfservice.shared.domain.grade.scoreForSorting
+import team.bjtuss.bjtuselfservice.shared.domain.homework.stableKey
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeKind
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeDomain
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeRecord
@@ -395,6 +396,7 @@ fun AuthenticatedAppShell(
         ClassroomDetailRoute -> AppSection.CLASSROOMS
         ClassroomOccupancyDetailRoute -> AppSection.CLASSROOM_OCCUPANCY
         HomeworkDetailRoute -> AppSection.HOMEWORK
+        ExamDetailRoute -> AppSection.EXAMS
         PhyVlabDetailRoute -> AppSection.PHYVLAB
         MailboxDetailRoute -> AppSection.MAILBOX
         MailboxComposeRoute -> AppSection.MAILBOX
@@ -946,7 +948,7 @@ fun AuthenticatedAppShell(
         topBarAction: (@Composable () -> Unit)? = null,
         /**
          * 声明式的页面级动作（文字 + 回调）。与 [topBarAction] 的区别只在于：声明式的那份
-         * 宿主能画进系统导航栏右侧，Compose lambda 那份画不了（邮箱顶栏是一组按钮）。
+         * 宿主能画进系统导航栏右侧，Compose lambda 那份画不了。
          */
         topBarActionLabel: String? = null,
         onTopBarActionClick: (() -> Unit)? = null,
@@ -954,15 +956,6 @@ fun AuthenticatedAppShell(
         onStatusClick: (() -> Unit)? = null,
         /** 未显式提供 [onStatusClick] 时，首页聚合同步失败可由此生成失败详情弹窗。 */
         syncFailureItems: List<String> = emptyList(),
-        /**
-         * 本页不吃「内容延伸进玻璃底栏」那条特例，改回真实布局内边距。
-         *
-         * 玻璃底栏浮在内容之上，列表靠尾部留白让开，这样玻璃才有东西可折射（见
-         * [LocalBottomBarClearance]）。但课程表的「色块概览」是一张**不可纵向滚动**的全览表格，
-         * 高度全靠 `weight()` 分配：尾部留白对它没有任何作用，表格会直接画到物理底边、
-         * 最后一节课被玻璃条盖住。这类页面要的恰恰是「整张表停在底栏上方」。
-         */
-        keepsBottomBarInset: Boolean = false,
         /**
          * 本页内容滚进原生导航栏后面（真原生模糊用）。
          *
@@ -973,7 +966,7 @@ fun AuthenticatedAppShell(
          */
         scrollUnderTopBar: Boolean = false,
         /**
-         * 本页不吃「内容伸进原生栏」那条特例，改回真实布局内边距（顶栏版 keepsBottomBarInset）。
+         * 本页不吃「内容伸进原生栏」那条特例，改回真实布局内边距。
          *
          * 课程表「色块概览」这类**不可纵向滚动**的全览表格用它：整张表停在栏下方，
          * 另加 8.dp 呼吸（与底栏镜像）。
@@ -992,33 +985,21 @@ fun AuthenticatedAppShell(
         content: @Composable () -> Unit,
     ) {
         val effectiveRefreshAction = refreshAction ?: refresh
-        // 一级页为底栏预留高度；底栏本身在 NavDisplay 外层，不随 destination 销毁。
-        val reserveBottomBarSpace = !expanded && !showBack && !isPushedHostDestination &&
-            compactBottomBarOverlayPadding > 0.dp
-        // 玻璃 TabBar 是浮在内容之上的系统控件：净空改由滚动内容的尾部留白承担（见
-        // LocalBottomBarClearance），压在布局上会让列表停在玻璃条上沿、背后只剩纯色，
-        // 玻璃就没有东西可折射。自绘底栏（Android 与 iOS 26 以下）仍按老语义占位。
-        val glassScrollUnderBar =
-            nativeTabBarEnabled && reserveBottomBarSpace && !keepsBottomBarInset
-        // 窗口安全区与底栏占位分开。全出血时 Compose navigationBars 可能是 0，宿主另报一份。
+        // iOS 内容视口延伸到屏幕底，底部净空仅交给滚动内容末尾消费。
+        // 宿主上报的是整个 tab bar frame 的高度，已经包含其底部安全区，不重复叠加。
+        val reserveBottomBarSpace = !expanded && !showBack && !isPushedHostDestination
         val systemBottomInset = maxOf(
             WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
             session.systemBottomInsetDp.dp,
         )
-        // 色块概览不可滚动，尾部留白对它无效。一级页停在悬浮底栏上沿（底栏高度 + 系统安全区），
-        // 从应用推进来的二级页没有底栏，只留系统安全区。不要只写死一个底栏高度。
-        val bottomLayoutInset = when {
-            // 自绘底栏的占位已经是「栏高 + 系统安全区」，不要再叠一次。
-            keepsBottomBarInset && !expanded && reserveBottomBarSpace && nativeTabBarEnabled ->
-                stackedFloatingBottomInset(compactBottomBarOverlayPadding, systemBottomInset) + 8.dp
-            keepsBottomBarInset && !expanded && reserveBottomBarSpace ->
-                compactBottomBarOverlayPadding + 8.dp
-            keepsBottomBarInset && !expanded ->
-                systemBottomInset
-            reserveBottomBarSpace && !glassScrollUnderBar ->
-                compactBottomBarOverlayPadding
-            else -> 0.dp
-        }
+        val bottomContentClearance = destinationBottomClearance(
+            expanded = expanded,
+            hasBottomBar = reserveBottomBarSpace,
+            barInset = compactBottomBarOverlayPadding,
+            systemInset = systemBottomInset,
+        )
+        val usesBottomUnderlap = platform.family == PlatformFamily.IOS
+        val bottomLayoutInset = if (usesBottomUnderlap) 0.dp else bottomContentClearance
         Box(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
             Column(
                 modifier = Modifier.fillMaxSize().padding(bottom = bottomLayoutInset),
@@ -1038,7 +1019,7 @@ fun AuthenticatedAppShell(
                     useNativeTitleBar && !ownsBackAction && (showBack || nativeTabBarEnabled)
                 // 刷新、同步状态、页面级动作现在都能进系统栏右侧：状态文案自己就是入口
                 // （首页「同步失败」点开同步详情）也一并带过去，不再因为顶栏被撤掉而丢入口。
-                // 只有 Compose 画的一堆按钮（邮箱那组）没法声明成原生项，出现时整行仍留在页内。
+                // 只有仍由 Compose 绘制的自定义操作组没法声明成原生项，出现时整行仍留在页内。
                 val statusClickHandler = onStatusClick ?: failureStatusClick
                 val hostBarTakesOver = nativeTitleBarActive && topBarAction == null
                 val refreshHandledByHost = hostBarTakesOver && refreshable
@@ -1181,9 +1162,7 @@ fun AuthenticatedAppShell(
                     ),
                 ) {
                     CompositionLocalProvider(
-                        LocalBottomBarClearance provides
-                            if (glassScrollUnderBar) compactBottomBarOverlayPadding else 0.dp,
-                        LocalSystemBottomInset provides systemBottomInset,
+                        LocalBottomBarClearance provides if (usesBottomUnderlap) bottomContentClearance else 0.dp,
                         LocalTopBarClearance provides topBarClearance,
                         LocalReportTopScroll provides reportTopScroll,
                     ) {
@@ -1281,12 +1260,39 @@ fun AuthenticatedAppShell(
                         timeZone = homeworkState.timeZone,
                         isAgendaLoading = homeworkState.isLoading || examState.isLoading ||
                             courseState.isLoading || (phyVlabEnabled && phyVlabState.isLoading),
-                        isRefreshing = homeSyncInProgress,
-                        onRefresh = refresh,
                         onOpenMailbox = { navigateToSection(AppSection.MAILBOX) },
                         onOpenHomework = { navigateToSection(AppSection.HOMEWORK) },
-                        onOpenExams = { navigateToSection(AppSection.EXAMS) },
-                        onOpenPhyVlab = { navigateToSection(AppSection.PHYVLAB) },
+                        onOpenHomeworkDetail = { homework ->
+                            val key = homework.stableKey()
+                            homeworkModel.selectHomework(key)
+                            scope.launch { homeworkModel.showDetails(key) }
+                            if (useNativeSecondaryRoutes) {
+                                onOpenNativeRoute(HOMEWORK_DETAIL_ROUTE_ID)
+                            } else if (backStack.lastOrNull() != HomeworkDetailRoute) {
+                                backStack.add(HomeworkDetailRoute)
+                            }
+                        },
+                        onOpenExams = { exam ->
+                            examScheduleModel.showExamDetails(exam.id)
+                            if (useNativeSecondaryRoutes) {
+                                onOpenNativeRoute(EXAM_DETAIL_ROUTE_ID)
+                            } else if (backStack.lastOrNull() != ExamDetailRoute) {
+                                backStack.add(ExamDetailRoute)
+                            }
+                        },
+                        onOpenPhyVlab = { event ->
+                            val activity = phyVlabState.activities.firstOrNull { it.activityUrl == event.eventUrl }
+                            if (activity != null) {
+                                phyVlabModel.showActivityDetails(activity)
+                                if (useNativeSecondaryRoutes) {
+                                    onOpenNativeRoute(PHYVLAB_DETAIL_ROUTE_ID)
+                                } else if (backStack.lastOrNull() != PhyVlabDetailRoute) {
+                                    backStack.add(PhyVlabDetailRoute)
+                                }
+                            } else {
+                                event.eventUrl?.let { onOpenExternalUrl(upgradePhyVlabUrlToHttps(it)) }
+                            }
+                        },
                         changes = homeChanges,
                         onClearAllChanges = { scope.launch { homeChangeFeed.clear() } },
                         onClearChangeDomain = { domain -> scope.launch { homeChangeFeed.clear(domain) } },
@@ -1337,9 +1343,7 @@ fun AuthenticatedAppShell(
                 topBarActionLabel =
                     if (systemCalendarGateway.isAvailable) "添加到日历" else "导出",
                 onTopBarActionClick = { showCourseCalendarExport = true },
-                // 色块概览是不可纵向滚动的全览表格，必须整张停在玻璃底栏上方；
-                // 切到按日列表（可滚动）时又回到「延伸进底栏」的常态。
-                keepsBottomBarInset = courseState.compactViewMode == CourseCompactViewMode.WEEK,
+                // 固定周表仅缩小表格内部；按日列表通过滚动内容末尾避让胶囊。
                 // 顶栏 underlap 暂不启用：按日列表视口被固定的摘要/模式/日期三段头挡在栏下，
                 // 内容到不了栏后；硬上只会把三段头顶进状态栏。等表头随滚 redesign 再议。
                 // 且关闭滚动过渡：栏后永远是纯色，过渡只会凭空闪一下。
@@ -1355,7 +1359,11 @@ fun AuthenticatedAppShell(
                     showCalendarExportSheet = showCourseCalendarExport,
                     onDismissCalendarExport = { showCourseCalendarExport = false },
                     onRefresh = refresh,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().then(
+                        if (courseState.compactViewMode == CourseCompactViewMode.WEEK)
+                            Modifier.padding(bottom = LocalBottomBarClearance.current)
+                        else Modifier,
+                    ),
                 )
             }
             AppSection.EXAMS -> DestinationPage(
@@ -1381,6 +1389,21 @@ fun AuthenticatedAppShell(
                     fileGateway = homeworkFileGateway,
                     systemCalendarGateway = systemCalendarGateway,
                     onRefresh = refresh,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            ExamDetailRoute -> DestinationPage(
+                title = "考试详情",
+                expanded = expanded,
+                refreshable = false,
+                isRefreshing = false,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
+                modifier = modifier,
+                scrollUnderTopBar = true,
+            ) {
+                ExamScheduleDetailWorkspace(
+                    state = examState,
+                    model = examScheduleModel,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -1617,13 +1640,8 @@ fun AuthenticatedAppShell(
                 // 邮箱右上角只有一个可执行的列表刷新圆钮：不要再传 idleStatusText，
                 // 否则状态圆圈也会画一个刷新 glyph，和刷新圆钮重复成两个。
                 // 同步中时顶栏显示 KMP 风格「同步中」胶囊。
-                topBarAction = mailboxReadyState?.let {
-                    {
-                        MailboxTopBarActions(
-                            onStartCompose = startMailboxComposeFromTopBar,
-                        )
-                    }
-                },
+                topBarActionLabel = if (mailboxReadyState != null) "写信" else null,
+                onTopBarActionClick = startMailboxComposeFromTopBar,
                 modifier = modifier,
             ) {
                 MailboxWorkspace(
@@ -1772,6 +1790,7 @@ fun AuthenticatedAppShell(
                     physicsLabModel = session.physicsLabModel,
                     onOpenSection = { target -> navigateToSection(target) },
                     modifier = Modifier.fillMaxSize(),
+                    platformFamily = platform.family,
                 )
             }
         }
@@ -1836,6 +1855,14 @@ fun AuthenticatedAppShell(
                     entry<HomeworkDetailRoute> {
                         SectionDestination(
                             route = HomeworkDetailRoute,
+                            expanded = true,
+                            modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family),
+                        )
+                    }
+                    entry<ExamDetailRoute> {
+                        SectionDestination(
+                            route = ExamDetailRoute,
                             expanded = true,
                             modifier = Modifier.fillMaxSize(),
                             usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family),
@@ -2033,6 +2060,14 @@ fun AuthenticatedAppShell(
                     entry<HomeworkDetailRoute> {
                         SectionDestination(
                             route = HomeworkDetailRoute,
+                            expanded = false,
+                            modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = false,
+                        )
+                    }
+                    entry<ExamDetailRoute> {
+                        SectionDestination(
+                            route = ExamDetailRoute,
                             expanded = false,
                             modifier = Modifier.fillMaxSize(),
                             usesLegacySmartTransport = false,

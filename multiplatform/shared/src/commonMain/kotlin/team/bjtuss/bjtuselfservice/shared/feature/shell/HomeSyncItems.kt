@@ -155,7 +155,6 @@ import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxUiState
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxFailure
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxWorkspace
-import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxTopBarActions
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxComposeScreen
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabDetailWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabWorkspace

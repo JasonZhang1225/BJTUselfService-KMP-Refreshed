@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.exam
 
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceEmptyState
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceLoadingState
 
@@ -39,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -222,6 +225,35 @@ fun ExamScheduleWorkspace(
     }
 }
 
+/** 首页日程直接打开的考试详情二级页。离开详情路由时清掉共享选择，避免之后打开考试页弹出旧详情。 */
+@Composable
+internal fun ExamScheduleDetailWorkspace(
+    state: ExamScheduleUiState,
+    model: ExamScheduleScreenModel,
+    modifier: Modifier = Modifier,
+) {
+    DisposableEffect(model) {
+        onDispose { model.dismissExamDetails() }
+    }
+    val exam = state.selectedExam
+    if (exam == null) {
+        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("这项考试安排已不可用。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+    Column(
+        modifier = modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text(exam.courseName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        ExamDetailLine("类型", exam.examType)
+        ExamDetailLine("时间地点", exam.examTimeAndPlace)
+        ExamDetailLine("状态", exam.examStatus)
+        ExamDetailLine("详情", exam.detail.ifBlank { "未提供" })
+    }
+}
+
 @Composable
 private fun ExamSummary(
     state: ExamScheduleUiState,
@@ -378,7 +410,7 @@ private fun ExamScrollableContent(
         contentPadding = PaddingValues(
             // 首项靠内部顶边距让开原生栏（外层已不再占位）：8.dp 还原起笔位置。
             top = 8.dp + topClearance,
-            bottom = 18.dp,
+            bottom = 18.dp + LocalBottomBarClearance.current,
         ),
     ) {
         // underlap 时失败横幅也收进列表（外层已跳过），平时保持外层旧布局。
@@ -435,7 +467,7 @@ private fun ExamList(
         state = listState,
         modifier = modifier.desktopTouchScroll(listState),
         verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(bottom = 18.dp),
+        contentPadding = PaddingValues(bottom = 18.dp + LocalBottomBarClearance.current),
     ) {
         items(exams, key = ExamSchedule::id) { exam ->
             ExamCard(

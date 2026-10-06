@@ -75,18 +75,16 @@ class AuthenticatedSession(
     /**
      * 宿主玻璃 TabBar 实际占掉的底部高度（点；iOS 上 1pt == 1dp）。
      *
-     * Compose 宿主是全出血的（内容要能伸进玻璃条下面，玻璃才有东西可折射），于是 UIKit 不会把
-     * tab bar 算进 `WindowInsets.navigationBars`，那个数只有 home indicator。所以底栏真实高度
-     * 只能由宿主在布局时写进来：可滚动的列表用它做尾部留白，**不可纵向滚动**的全览表格
-     * （课程表色块概览）用它把整张表停在底栏上方。
+     * 宿主报告完整 tab bar frame 的高度（包含 frame 中的底部安全区）。
+     * 应用壳据此为滚动内容末尾提供净空；滚动视口仍延伸到胶囊下方。
      */
     var glassTabBarBottomInsetDp: Float by mutableStateOf(0f)
 
     /**
      * 窗口底部系统安全区（Home Indicator / 导航条），点；iOS 上 1pt == 1dp。
      *
-     * 全出血宿主里 Compose 的 `WindowInsets.navigationBars` 可能是 0。底栏高度不含这段时，
-     * 内容停靠要把它叠上去，不能只留一个写死的底栏高度。底栏隐藏的二级页也用它，避免表格贴到物理底边。
+     * 全出血宿主里 Compose 的 `WindowInsets.navigationBars` 可能是 0。
+     * 没有底栏的二级页使用这份安全区；一级页使用完整底栏 frame，不重复相加。
      */
     var systemBottomInsetDp: Float by mutableStateOf(0f)
 
@@ -147,6 +145,7 @@ fun isNativeDetailRoute(routeId: String): Boolean =
         routeId == "CLASSROOM_DETAIL" ||
         routeId == "CLASSROOM_OCCUPANCY_DETAIL" ||
         routeId == "HOMEWORK_DETAIL" ||
+        routeId == "EXAM_DETAIL" ||
         routeId == "MAILBOX" ||
         routeId == "MAILBOX_DETAIL" ||
         routeId == "MAILBOX_COMPOSE" ||

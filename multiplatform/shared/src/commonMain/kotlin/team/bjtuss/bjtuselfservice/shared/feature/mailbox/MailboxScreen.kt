@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.mailbox
 
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -187,24 +189,6 @@ fun MailboxWorkspace(
     }
 }
 
-/** 邮箱一级页的顶栏操作；文件夹切换放在下方当前文件夹 banner 内。 */
-@Composable
-fun MailboxTopBarActions(
-    onStartCompose: () -> Unit,
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TextButton(
-            onClick = onStartCompose,
-            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-            modifier = Modifier.semantics { contentDescription = "写信" },
-        ) {
-            Text("写信")
-        }
-    }
-}
-
 /** 写信/回复共用的编辑页；真实发送由用户在确认对话框中明确确认后才执行。 */
 @Composable
 internal fun MailboxComposeScreen(
@@ -249,7 +233,8 @@ internal fun MailboxComposeScreen(
             .fillMaxSize()
             .verticalScroll(composeScrollState)
             .desktopTouchScroll(composeScrollState)
-            .padding(horizontal = 22.dp, vertical = 16.dp),
+            .padding(horizontal = 22.dp, vertical = 16.dp)
+            .padding(bottom = LocalBottomBarClearance.current),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
@@ -788,7 +773,7 @@ private fun MailboxListPane(
                     .weight(1f)
                     .fillMaxWidth()
                     .desktopTouchScroll(listState),
-                contentPadding = PaddingValues(top = 7.dp, bottom = 22.dp),
+                contentPadding = PaddingValues(top = 7.dp, bottom = 22.dp + LocalBottomBarClearance.current),
             ) {
                 items(state.messages, key = { it.id }) { message ->
                     MailboxMessageRow(
@@ -1134,7 +1119,8 @@ private fun MailboxDetailPane(
                 horizontal = if (compact) 18.dp else 28.dp,
                 vertical = 12.dp,
             )
-            .padding(top = if (fullScreen) LocalTopBarClearance.current else 0.dp),
+            .padding(top = if (fullScreen) LocalTopBarClearance.current else 0.dp)
+            .padding(bottom = LocalBottomBarClearance.current),
     ) {
         if (waitingForMessage) {
             Box(

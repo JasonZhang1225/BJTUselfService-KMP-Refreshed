@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.courseware
 
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceEmptyState
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceLoadingState
 
@@ -315,7 +317,7 @@ internal fun CoursewareCoursePickerList(
         LazyColumn(
             state = listState,
             modifier = Modifier.weight(1f).fillMaxWidth().desktopTouchScroll(listState),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp + LocalBottomBarClearance.current),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(courses, key = CoursewareCourse::stableKey) { course ->
@@ -406,7 +408,7 @@ private fun CoursewareExpandedWorkspace(
                         state = treeListState,
                         modifier = Modifier.weight(1f).fillMaxWidth().desktopTouchScroll(treeListState),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
-                        contentPadding = PaddingValues(bottom = 12.dp),
+                        contentPadding = PaddingValues(bottom = 12.dp + LocalBottomBarClearance.current),
                     ) {
                         items(state.visibleTree, key = { it.node.stableKey }) { visible ->
                             CoursewareTreeRow(
@@ -557,7 +559,7 @@ private fun CoursewareCompactWorkspace(
                 state = compactListState,
                 modifier = Modifier.weight(1f).fillMaxWidth().desktopTouchScroll(compactListState),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 18.dp),
+                contentPadding = PaddingValues(bottom = 18.dp + LocalBottomBarClearance.current),
             ) {
                 items(state.compactNodes, key = CoursewareNode::stableKey) { node ->
                     CoursewareCompactNodeRow(

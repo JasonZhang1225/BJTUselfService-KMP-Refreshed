@@ -9,6 +9,7 @@ import team.bjtuss.bjtuselfservice.shared.network.*
 import team.bjtuss.bjtuselfservice.shared.domain.calendar.*
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.course.Course
+import team.bjtuss.bjtuselfservice.shared.domain.course.eventDates
 import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
 import team.bjtuss.bjtuselfservice.shared.feature.course.*
 
@@ -64,7 +65,7 @@ class PhysicsLabTest {
         val labs = parsePhysicsLabs(results("超声专题"))
         val exams = listOf(ExamSchedule(examType = "期末", courseName = "测试课程", examTimeAndPlace = "2026-11-26 14:30-16:10 测试楼", examStatus = "", detail = ""))
         val fragments = scheduleEventCourses(exams, labs, weeks)
-        assertEquals(4, fragments.count { it.scheduleEventKind == "physicslab" })
+        assertEquals(2, fragments.count { it.scheduleEventKind == "physicslab" })
         assertEquals(1, fragments.count { it.scheduleEventKind == "exam" })
         val labFirstSlot = fragments.first { it.scheduleEventKind == "physicslab" }
         assertEquals(20, labFirstSlot.courseLocationIndex)
@@ -105,6 +106,34 @@ class PhysicsLabTest {
         assertEquals(2, state.visibleCourses.size)
         assertEquals(1, generateAcademicCalendarIcs(emptyList(), emptyList(), weeks, 1..2,
             Instant.parse("2026-10-05T00:00:00Z"), physicsLabs = listOf(lab)).physicsLabEventCount)
+    }
+    @Test fun twoWeekLabIsOneIdentityInAllWeeksAndEachWeekAndHasBothDates() {
+        val lab = parsePhysicsLabs(results("超声专题")).single()
+        val fragments = scheduleEventCourses(emptyList(), listOf(lab), weeks())
+        assertEquals(1, fragments.map { it.id }.distinct().size)
+        assertTrue(fragments.groupBy { it.courseLocationIndex }.values.all { it.size == 1 })
+        assertTrue(fragments.all { it.eventDates == listOf("2026-11-26", "2026-12-03") })
+        assertTrue(fragments.all { it.scheduleEventTypeLabel == "专题实验" })
+        val state = CourseScheduleUiState(supplementalCourses = fragments, academicWeeks = weeks())
+        assertEquals(fragments, state.coursesForPage(0, null))
+        assertEquals(fragments, state.coursesForPage(1, LocalDate(2026, 11, 23)))
+        assertEquals(fragments, state.coursesForPage(2, LocalDate(2026, 11, 30)))
+        assertEquals(fragments, state.coursesForPage(2, null))
+        assertTrue(state.coursesForPage(3, LocalDate(2026, 12, 7)).isEmpty())
+        assertEquals(2, scheduleEventCourses(emptyList(), listOf(lab, lab.copy(date = LocalDate(2026, 11, 27))), weeks()).map { it.id }.distinct().size)
+    }
+
+    @Test fun schoolSpecialtyAndDesignCatalogDefaultsToTwoWeeks() {
+        listOf("超声专题", "迈克耳孙专题", "电子专题", "软磁特性").forEach {
+            assertEquals(PhysicsLabType.SPECIALTY, physicsLabType(it)); assertEquals(2, physicsLabWeekCount(it))
+        }
+        listOf("万用表设计1", "万用表设计2", "声源定位的GPS模拟", "全息光栅").forEach {
+            assertEquals(PhysicsLabType.DESIGN, physicsLabType(it)); assertEquals(2, physicsLabWeekCount(it))
+        }
+        assertEquals(PhysicsLabType.REGULAR, physicsLabType("光纤特性和光信号传输"))
+        val single = parsePhysicsLabs(results("超声专题")).single().copy(weekCount = 1)
+        assertEquals(1, single.dates.size)
+        assertTrue(scheduleEventCourses(emptyList(), listOf(single), weeks()).all { it.eventDates.size == 1 })
     }
     private fun weeks() = listOf(OccupancyWeekDate(1, "", "", LocalDate(2026, 11, 23)), OccupancyWeekDate(2, "", "", LocalDate(2026, 11, 30)))
 }

@@ -8,6 +8,7 @@ import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.course.Course
+import team.bjtuss.bjtuselfservice.shared.domain.course.eventDates
 import team.bjtuss.bjtuselfservice.shared.domain.course.parseCourseWeeks
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeAgenda
 
@@ -43,7 +44,7 @@ internal fun homeCoursesOnDate(schedule: HomeSchedulePresentation, date: LocalDa
 /** Grid fragments of the same experiment share an id; the home agenda shows one actual event. */
 internal fun homePhysicsLabsOnDate(schedule: HomeSchedulePresentation, date: LocalDate): List<Course> =
     schedule.supplementalCourses.filter {
-        it.scheduleEventKind == "physicslab" && it.scheduleEventDate == date.toString()
+        it.scheduleEventKind == "physicslab" && date.toString() in it.eventDates
     }.distinctBy(Course::id).sortedWith(compareBy({ it.scheduleEventTime }, { it.courseName }))
 
 internal fun HomeAgenda.withCourses(schedule: HomeSchedulePresentation): HomeAgenda =

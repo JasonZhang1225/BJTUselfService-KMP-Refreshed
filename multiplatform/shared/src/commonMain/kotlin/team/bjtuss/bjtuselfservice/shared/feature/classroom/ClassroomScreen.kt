@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.classroom
 
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.foundation.overscroll
@@ -213,7 +215,7 @@ private fun BuildingList(
             contentPadding = PaddingValues(
                 // 首项靠内部顶边距让开原生栏（外层已不再占位）：8.dp 还原起笔位置。
                 top = 8.dp + topClearance,
-                bottom = 16.dp,
+                bottom = 16.dp + LocalBottomBarClearance.current,
             ),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -355,7 +357,7 @@ private fun ClassroomDetail(
                     state = listState,
                     modifier = Modifier.weight(1f, fill = true).desktopTouchScroll(listState),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 12.dp),
+                    contentPadding = PaddingValues(bottom = 12.dp + LocalBottomBarClearance.current),
                 ) {
                     items(state.visibleClassrooms, key = { it.name }) { room ->
                         ClassroomCard(room)

@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.foundation.overscroll
 import androidx.compose.foundation.withoutVisualEffect
+import androidx.compose.foundation.Canvas
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.material3.MaterialTheme
@@ -21,10 +22,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import team.bjtuss.bjtuselfservice.shared.PlatformFamily
+import team.bjtuss.bjtuselfservice.shared.currentPlatform
 import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
+import team.bjtuss.bjtuselfservice.shared.feature.home.CampusAccountEntry
+import team.bjtuss.bjtuselfservice.shared.feature.home.CampusAccountEntryDialog
 import team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabModel
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 
@@ -34,6 +43,8 @@ internal fun MoreWorkspace(
     onOpenSection: (AppSection) -> Unit,
     modifier: Modifier,
     physicsLabModel: PhysicsLabModel? = null,
+    showPhysicsLabTile: Boolean = physicsLabModel != null,
+    platformFamily: PlatformFamily = currentPlatform().family,
 ) {
     val scroll = rememberLazyListState()
     val topClearance = LocalTopBarClearance.current
@@ -42,6 +53,8 @@ internal fun MoreWorkspace(
     val viewportTop = remember { mutableStateOf<Float?>(null) }
     val contentTop = remember { mutableStateOf<Float?>(null) }
     val report = LocalReportTopScroll.current
+    var activeAccountEntry by remember { mutableStateOf<CampusAccountEntry?>(null) }
+    var actionError by remember { mutableStateOf<String?>(null) }
     if (tracksElasticPosition) {
         LaunchedEffect(scroll, report) {
             snapshotFlow {
@@ -54,21 +67,39 @@ internal fun MoreWorkspace(
         ReportTopScrollListState(scroll)
     }
     val sections = applicationSections(preferences).filter {
-        it != AppSection.PHYSICS_LAB || physicsLabModel != null
+        it != AppSection.PHYSICS_LAB || showPhysicsLabTile
     }
-    val entries = sections.map { section ->
-        ApplicationTile(if (section == AppSection.PHYSICS_LAB) "物理实验" else section.title, section) { onOpenSection(section) }
+    val addCampusAccountTiles: MutableList<ApplicationTile>.() -> Unit = {
+        add(ApplicationTile("校园卡", specialIcon = SpecialTileIcon.CAMPUS_CARD) {
+            actionError = null
+            activeAccountEntry = CampusAccountEntry.CAMPUS_CARD
+        })
+        add(ApplicationTile("校园网", specialIcon = SpecialTileIcon.NETWORK) {
+            actionError = null
+            activeAccountEntry = CampusAccountEntry.NETWORK
+        })
+    }
+    val entries = buildList {
+        sections.forEach { section ->
+            add(ApplicationTile(
+                title = if (section == AppSection.PHYSICS_LAB) "物理实验" else section.title,
+                section = section,
+                onClick = { onOpenSection(section) },
+            ))
+            if (section == AppSection.MAILBOX) addCampusAccountTiles()
+        }
+        if (AppSection.MAILBOX !in sections) addCampusAccountTiles()
+    }
+    activeAccountEntry?.let { entry ->
+        CampusAccountEntryDialog(
+            entry = entry,
+            family = platformFamily,
+            onDismiss = { activeAccountEntry = null },
+            onError = { actionError = it },
+        )
     }
     BoxWithConstraints(modifier.fillMaxSize().onGloballyPositioned { viewportTop.value = it.positionInRoot().y }) {
         val columns = when { maxWidth >= 800.dp -> 4; maxWidth >= 480.dp -> 3; else -> 2 }
-        val barClearance = LocalBottomBarClearance.current
-        // 玻璃底栏的净空只含栏高。滑到最底时再叠系统安全区，方块才停在栏上沿。
-        // 自绘底栏没有这份净空，页面布局已经让出栏位，这里不再加。
-        val bottomStop = if (barClearance > 0.dp) {
-            stackedFloatingBottomInset(barClearance, LocalSystemBottomInset.current)
-        } else {
-            0.dp
-        }
         val rows = entries.chunked(columns)
         LazyColumn(
             state = scroll,
@@ -77,9 +108,14 @@ internal fun MoreWorkspace(
                 .onGloballyPositioned { contentTop.value = it.positionInRoot().y },
             overscrollEffect = if (tracksElasticPosition) overscroll?.withoutVisualEffect() else overscroll,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp + topClearance,
-                bottom = 16.dp + bottomStop),
+                bottom = 16.dp + LocalBottomBarClearance.current),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            actionError?.let { message ->
+                item(key = "application-entry-error") {
+                    Text(message, color = MaterialTheme.colorScheme.error)
+                }
+            }
             items(rows.size) { rowIndex ->
                 val row = rows[rowIndex]
                 Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -96,11 +132,22 @@ internal fun MoreWorkspace(
     }
 }
 
-private data class ApplicationTile(val title: String, val section: AppSection, val onClick: () -> Unit)
+private enum class SpecialTileIcon { CAMPUS_CARD, NETWORK }
+
+private data class ApplicationTile(
+    val title: String,
+    val section: AppSection? = null,
+    val specialIcon: SpecialTileIcon? = null,
+    val onClick: () -> Unit,
+)
 
 @Composable
 private fun ApplicationTileCard(entry: ApplicationTile, modifier: Modifier) {
-    val tint = applicationIconColor(entry.section)
+    val tint = when (entry.specialIcon) {
+        SpecialTileIcon.CAMPUS_CARD -> if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF83B9F3) else Color(0xFF286EB8)
+        SpecialTileIcon.NETWORK -> if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF85CBD1) else Color(0xFF267B83)
+        null -> applicationIconColor(requireNotNull(entry.section))
+    }
     Surface(
         onClick = entry.onClick,
         modifier = modifier.heightIn(min = 104.dp),
@@ -121,7 +168,11 @@ private fun ApplicationTileCard(entry: ApplicationTile, modifier: Modifier) {
                 CompositionLocalProvider(LocalContentColor provides tint) {
                     // Keep shared navigation icons unchanged; enlarge only this page's drawing.
                     Box(Modifier.size(24.dp).graphicsLayer { scaleX = 7f / 6f; scaleY = 7f / 6f }) {
-                        CompactTabIcon(entry.section)
+                        when (entry.specialIcon) {
+                            SpecialTileIcon.CAMPUS_CARD -> CampusCardTileIcon()
+                            SpecialTileIcon.NETWORK -> NetworkTileIcon()
+                            null -> CompactTabIcon(requireNotNull(entry.section))
+                        }
                     }
                 }
             }
@@ -154,5 +205,52 @@ private fun applicationIconColor(section: AppSection): Color {
         AppSection.PHYVLAB ->
             if (dark) Color(0xFFB5ACE5) else Color(0xFF7565AD)
         else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+}
+
+@Composable
+private fun CampusCardTileIcon() {
+    val color = androidx.compose.material3.LocalContentColor.current
+    Canvas(Modifier.fillMaxSize()) {
+        val left = 3.dp.toPx()
+        val top = 5.dp.toPx()
+        val cardWidth = size.width - left * 2
+        val cardHeight = size.height - top * 2
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(left, top),
+            size = Size(cardWidth, cardHeight),
+            cornerRadius = CornerRadius(3.dp.toPx()),
+            style = Stroke(1.8.dp.toPx()),
+        )
+        drawLine(color, Offset(left + 1.dp.toPx(), top + cardHeight * 0.38f), Offset(left + cardWidth - 1.dp.toPx(), top + cardHeight * 0.38f), 1.8.dp.toPx())
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(left + cardWidth * 0.16f, top + cardHeight * 0.60f),
+            size = Size(cardWidth * 0.25f, 2.dp.toPx()),
+            cornerRadius = CornerRadius(1.dp.toPx()),
+        )
+    }
+}
+
+@Composable
+private fun NetworkTileIcon() {
+    val color = androidx.compose.material3.LocalContentColor.current
+    Canvas(Modifier.fillMaxSize()) {
+        val center = Offset(size.width / 2f, size.height * 0.72f)
+        val stroke = 1.8.dp.toPx()
+        listOf(17.dp, 12.dp, 7.dp).forEach { diameter ->
+            val px = diameter.toPx()
+            drawArc(
+                color = color,
+                startAngle = 225f,
+                sweepAngle = 90f,
+                useCenter = false,
+                topLeft = Offset(center.x - px / 2f, center.y - px / 2f),
+                size = Size(px, px),
+                style = Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+            )
+        }
+        drawCircle(color, radius = 1.2.dp.toPx(), center = Offset(center.x, center.y + 0.3.dp.toPx()))
     }
 }

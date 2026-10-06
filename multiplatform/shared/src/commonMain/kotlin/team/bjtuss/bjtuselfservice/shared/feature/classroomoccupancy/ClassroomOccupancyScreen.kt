@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.classroomoccupancy
 
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
@@ -223,7 +225,7 @@ private fun OccupancyBuildingList(
         contentPadding = PaddingValues(
             // 首项靠内部顶边距让开原生栏（外层已不再占位）：8.dp 还原起笔位置。
             top = 8.dp + topClearance,
-            bottom = 16.dp,
+            bottom = 16.dp + LocalBottomBarClearance.current,
         ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -457,7 +459,7 @@ private fun OccupancyDetail(
                         state = listState,
                         modifier = Modifier.weight(1f, fill = true).desktopTouchScroll(listState),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(bottom = 16.dp),
+                        contentPadding = PaddingValues(bottom = 16.dp + LocalBottomBarClearance.current),
                     ) {
                         items(query.rooms, key = ClassroomOccupancy::room) { room ->
                             ClassroomOccupancyCard(room = room, weekday = state.selectedWeekday, people = matchingRoomPeople(room.room, state.people))

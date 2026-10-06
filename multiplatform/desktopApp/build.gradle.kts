@@ -19,7 +19,7 @@ import javax.inject.Inject
 
 /** jpackage 的 --name / .app 文件名必须是 ASCII；用户看见的名字用这个中文。 */
 val desktopPackageName = "BJTUselfServiceKMP"
-val desktopPackageVersion = "1.8.1"
+val desktopPackageVersion = "1.8.2"
 val macDisplayName = "交大自由行 KMP"
 
 fun resolveDesktopPackageJavaHome(): String {

@@ -69,6 +69,7 @@ fun nativeRouteTitle(routeId: String): String {
         ClassroomDetailRoute -> AppSection.CLASSROOMS.title
         ClassroomOccupancyDetailRoute -> AppSection.CLASSROOM_OCCUPANCY.title
         HomeworkDetailRoute -> "作业详情"
+        ExamDetailRoute -> "考试详情"
         PhyVlabDetailRoute -> "物理作业详情"
         MailboxDetailRoute -> "邮件详情"
         is AppSection -> route.title

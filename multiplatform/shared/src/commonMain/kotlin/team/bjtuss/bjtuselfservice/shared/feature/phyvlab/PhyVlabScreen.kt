@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.phyvlab
 
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -209,7 +211,7 @@ fun PhyVlabWorkspace(
                     start = horizontalInset,
                     top = 12.dp + topClearance,
                     end = horizontalInset,
-                    bottom = 12.dp,
+                    bottom = 12.dp + LocalBottomBarClearance.current,
                 ),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -699,7 +701,8 @@ private fun PhyVlabAssignmentDetailContent(
             .padding(horizontal = 24.dp, vertical = 12.dp)
             // 原生栏 underlap 时视口顶边贴屏幕顶，首项靠这份顶边距让开。
             // 只在全屏路由页生效：sheet 里的复用不受影响（且 sheet 路径本就没有 clearance）。
-            .padding(top = if (fullScreen) LocalTopBarClearance.current else 0.dp),
+            .padding(top = if (fullScreen) LocalTopBarClearance.current else 0.dp)
+            .padding(bottom = if (fullScreen) LocalBottomBarClearance.current else 0.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(activity.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)

@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
  * 列表视口止于导航栏底边，栏后只剩一片纯色，原生玻璃就没有东西可折射；只有让列表从屏幕顶
  * 开始画、首项靠顶边距让开，内容才会穿进栏后，得到系统设置 App 那种玻璃。
  *
- * 镜像底部的 [LocalBottomBarClearance]；不可纵向滚动的全览表格不要消费它，整块停在栏下。
+ * 不可纵向滚动的全览表格不要消费它，整块停在栏下。底部边界统一由壳层处理。
  */
 val LocalTopBarClearance = staticCompositionLocalOf { 0.dp }
 

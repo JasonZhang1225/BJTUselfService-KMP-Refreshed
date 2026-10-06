@@ -1,5 +1,10 @@
 package team.bjtuss.bjtuselfservice.shared.feature.course
 
+import team.bjtuss.bjtuselfservice.shared.domain.course.eventDates
+import team.bjtuss.bjtuselfservice.shared.domain.course.eventDatesLabel
+
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceEmptyState
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceLoadingState
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
@@ -101,7 +106,6 @@ import team.bjtuss.bjtuselfservice.shared.feature.calendar.CourseCalendarExportS
 import team.bjtuss.bjtuselfservice.shared.feature.grade.courseTypeColors
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
-import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 
@@ -1424,7 +1428,7 @@ private fun CourseTypeLegend(
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         types.forEach { type ->
-            val colors = courseTypeColors(type)
+            val colors = courseScheduleTypeColors(type)
             Surface(
                 color = colors.container,
                 shape = RoundedCornerShape(7.dp),
@@ -1584,7 +1588,7 @@ private fun CompactCourseColorBlock(
             onClick = { onOpen(course.id) },
             modifier = Modifier.fillMaxWidth().offset(y = maxHeight * course.eventSlotOffset)
                 .height(maxHeight * course.eventSlotHeight).semantics {
-                contentDescription = "${displayScheduleCourseName(course.courseName)}，${course.scheduleEventDate.orEmpty()} ${course.scheduleEventTime ?: course.courseTime}，${displayCoursePlace(course.coursePlace)}，点按查看详情"
+                contentDescription = "${displayScheduleCourseName(course.courseName)}，${course.eventDatesLabel()} ${course.scheduleEventTime ?: course.courseTime}，${displayCoursePlace(course.coursePlace)}，点按查看详情"
             },
             color = colors.container,
             shape = RoundedCornerShape(5.dp),
@@ -1659,7 +1663,7 @@ private fun CourseListCard(
                 color = colors.onContainer.accessibleAlpha(0.78f),
             )
             Text(
-                course.scheduleEventTime?.let { "${course.scheduleEventDate} · $it" } ?: course.courseTime,
+                course.scheduleEventTime?.let { "${course.eventDatesLabel()} · $it" } ?: course.courseTime,
                 style = MaterialTheme.typography.labelMedium,
                 color = colors.onContainer.accessibleAlpha(0.72f),
             )
@@ -1702,11 +1706,16 @@ internal fun CourseDetailContent(course: Course, modifier: Modifier) {
         CourseDetailLine("地点", displayCoursePlace(course.coursePlace))
         val slot = course.courseLocationIndex / 8
         val day = course.courseLocationIndex % 8 - 1
-        CourseDetailLine("时间", course.scheduleEventTime?.let { "${course.scheduleEventDate} · $it" } ?: "${dayLabels.getOrElse(day) { "未知" }} · ${slotLabels.getOrElse(slot) { "未知" }.replace('\n', ' ')}")
+        if (course.scheduleEventTime != null) {
+            CourseDetailLine("日期", course.eventDates.joinToString("\n"))
+            CourseDetailLine("时间", course.scheduleEventTime)
+        } else {
+            CourseDetailLine("时间", "${dayLabels.getOrElse(day) { "未知" }} · ${slotLabels.getOrElse(slot) { "未知" }.replace('\n', ' ')}")
+        }
         CourseDetailLine(
             "类型",
             when (course.scheduleEventKind) {
-                "physicslab" -> "物理实验"
+                "physicslab" -> course.scheduleEventTypeLabel ?: "物理实验"
                 "exam" -> "考试"
                 else -> if (course.isCurrentSemester) "选课课表" else "本学期课表"
             },
@@ -1768,14 +1777,32 @@ private fun CourseEmptyState(type: CourseScheduleType, onRefresh: () -> Unit) = 
 private fun scheduleEventColors(kind: String): team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     return if (kind == "physicslab") {
-        if (dark) team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors(Color(0xFF153E43), Color(0xFFA0E1E7))
-        else team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors(Color(0xFFCEF0F2), Color(0xFF155E66))
-    } else {
         if (dark) team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors(Color(0xFF3B2858), Color(0xFFDEC6F6))
         else team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors(Color(0xFFEADBFA), Color(0xFF64368E))
+    } else {
+        if (dark) team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors(Color(0xFF3D2A12), Color(0xFFEAA04B))
+        else team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors(Color(0xFFFFE6C8), Color(0xFFAF641C))
+    }
+}
+
+@Composable
+private fun courseScheduleTypeColors(type: CourseType): team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors {
+    if (type != CourseType.LIMITED) return courseTypeColors(type)
+
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    return if (dark) {
+        team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors(
+            container = Color(0xFF48243A),
+            onContainer = Color(0xFFF0B2D2),
+        )
+    } else {
+        team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors(
+            container = Color(0xFFF4D7E6),
+            onContainer = Color(0xFF9C3F70),
+        )
     }
 }
 
 @Composable
 private fun scheduleCourseColors(course: Course, type: CourseType) =
-    course.scheduleEventKind?.let { scheduleEventColors(it) } ?: courseTypeColors(type)
+    course.scheduleEventKind?.let { scheduleEventColors(it) } ?: courseScheduleTypeColors(type)

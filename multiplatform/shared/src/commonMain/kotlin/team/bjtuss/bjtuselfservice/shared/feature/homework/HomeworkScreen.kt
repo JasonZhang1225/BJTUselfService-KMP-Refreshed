@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.homework
 
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceEmptyState
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceLoadingState
 
@@ -88,7 +90,6 @@ import team.bjtuss.bjtuselfservice.shared.files.safeExportFileName
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
-import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
 import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollState
@@ -482,7 +483,7 @@ fun HomeworkDetailWorkspace(
             .desktopTouchScroll(detailScrollState)
             .padding(horizontal = 24.dp)
             // 原生栏 underlap 时视口顶边贴屏幕顶，首项靠这份顶边距让开（其余平台恒 0）。
-            .padding(top = 12.dp + LocalTopBarClearance.current, bottom = 28.dp),
+            .padding(top = 12.dp + LocalTopBarClearance.current, bottom = 28.dp + LocalBottomBarClearance.current),
     ) {
         state.selectedHomework?.let { selected ->
             HomeworkDetailSheetBody(

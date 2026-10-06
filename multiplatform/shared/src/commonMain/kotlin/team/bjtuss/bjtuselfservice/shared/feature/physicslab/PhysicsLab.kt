@@ -23,10 +23,23 @@ data class PhysicsLab(
 ) {
     init { require(period in 1..6); require(weekCount in 1..2) }
 
+    val durationSettingKey: String get() = "$date|$period|$name"
     val dates: List<LocalDate> get() = (0 until weekCount).map { date.plus(it * 7, DateTimeUnit.DAY) }
+    val type: PhysicsLabType get() = physicsLabType(name)
     val timeRange: String? get() = physicsLabTimeRanges.getOrNull(period - 1)
 }
 
-/** 与参考项目一致：专题/设计连续两周，其余一周；在设置页明确此规则。 */
-fun physicsLabWeekCount(name: String): Int =
-    if (listOf("专题", "软磁", "GPS模拟", "设计").any(name::contains)) 2 else 1
+/** 专题、设计是一项实验分两周完成；名称来自实验系统与校方实验目录。 */
+enum class PhysicsLabType(val label: String, val weekCount: Int) {
+    REGULAR("物理实验", 1),
+    SPECIALTY("专题实验", 2),
+    DESIGN("设计实验", 2),
+}
+
+fun physicsLabType(name: String): PhysicsLabType = when {
+    listOf("专题", "软磁").any(name::contains) -> PhysicsLabType.SPECIALTY
+    listOf("设计", "GPS模拟", "全息光栅").any(name::contains) -> PhysicsLabType.DESIGN
+    else -> PhysicsLabType.REGULAR
+}
+
+fun physicsLabWeekCount(name: String): Int = physicsLabType(name).weekCount

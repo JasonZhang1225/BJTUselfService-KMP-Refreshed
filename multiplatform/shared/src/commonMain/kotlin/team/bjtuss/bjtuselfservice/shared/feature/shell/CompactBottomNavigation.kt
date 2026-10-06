@@ -155,7 +155,6 @@ import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxUiState
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxFailure
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxWorkspace
-import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxTopBarActions
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxComposeScreen
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabDetailWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabWorkspace
@@ -238,7 +237,29 @@ internal fun CompactTabIcon(section: AppSection) {
     Canvas(modifier = Modifier.size(24.dp)) {
         val strokeWidth = 1.8.dp.toPx()
         when (section) {
-            AppSection.HOME, AppSection.MORE -> {
+            AppSection.HOME -> {
+                // Home uses a house silhouette so it remains distinct from the app-directory grid.
+                val left = 5.dp.toPx()
+                val right = size.width - left
+                val roofPeak = Offset(size.width / 2f, 3.dp.toPx())
+                val roofLeft = Offset(3.dp.toPx(), 11.dp.toPx())
+                val roofRight = Offset(size.width - 3.dp.toPx(), 11.dp.toPx())
+                val wallTop = 9.dp.toPx()
+                val bottom = size.height - 3.dp.toPx()
+                drawLine(color, roofLeft, roofPeak, strokeWidth, cap = StrokeCap.Round)
+                drawLine(color, roofPeak, roofRight, strokeWidth, cap = StrokeCap.Round)
+                drawLine(color, Offset(left, wallTop), Offset(left, bottom), strokeWidth, cap = StrokeCap.Round)
+                drawLine(color, Offset(right, wallTop), Offset(right, bottom), strokeWidth, cap = StrokeCap.Round)
+                drawLine(color, Offset(left, bottom), Offset(right, bottom), strokeWidth, cap = StrokeCap.Round)
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(10.dp.toPx(), 14.dp.toPx()),
+                    size = Size(4.dp.toPx(), 7.dp.toPx()),
+                    cornerRadius = CornerRadius(0.8.dp.toPx()),
+                    style = Stroke(width = strokeWidth),
+                )
+            }
+            AppSection.MORE -> {
                 // 2×2 圆角方块
                 val cell = 7.dp.toPx()
                 val gap = 3.dp.toPx()

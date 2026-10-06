@@ -33,6 +33,7 @@ class PhysicsLabModel(
     val state = mutableState.asStateFlow()
     private val mutex = Mutex()
     private var initialized = false
+    private var twoWeekOverrides: Map<String, Boolean> = emptyMap()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     suspend fun initialize() = mutex.withLock {
         if (initialized) return@withLock
@@ -41,7 +42,10 @@ class PhysicsLabModel(
             if (cache.metadata(scope, "physicslab.configured") == "true") vault?.load()
             else { vault?.clear(); null }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
-        val labs = runCatching { json.decodeFromString<List<PhysicsLab>>(cache.metadata(scope, "physicslab.results").orEmpty()) }.getOrDefault(emptyList())
+        twoWeekOverrides = runCatching {
+            json.decodeFromString<Map<String, Boolean>>(cache.metadata(scope, "physicslab.twoWeekOverrides").orEmpty())
+        }.getOrDefault(emptyMap())
+        val labs = applyWeekOverrides(runCatching { json.decodeFromString<List<PhysicsLab>>(cache.metadata(scope, "physicslab.results").orEmpty()) }.getOrDefault(emptyList()))
         mutableState.value = PhysicsLabState(enabled, credentials?.username.orEmpty(), labs, fromCache = labs.isNotEmpty())
         initialized = true
     }
@@ -64,7 +68,11 @@ class PhysicsLabModel(
                     storage.save(Credentials(username.trim(), password))
                 }
                 val changedAccount = username.trim() != mutableState.value.username && username.isNotBlank()
-                if (changedAccount) cache.putMetadata(scope, "physicslab.results", "[]")
+                if (changedAccount) {
+                    cache.putMetadata(scope, "physicslab.results", "[]")
+                    cache.putMetadata(scope, "physicslab.twoWeekOverrides", "{}")
+                    twoWeekOverrides = emptyMap()
+                }
                 cache.putMetadata(scope, "physicslab.enabled", enabled.toString())
                 cache.putMetadata(scope, "physicslab.configured", "true")
                 mutableState.value = mutableState.value.copy(enabled = enabled, username = username.trim(),
@@ -85,7 +93,7 @@ class PhysicsLabModel(
             mutableState.value = mutableState.value.copy(refreshing = true, message = null, failed = false)
             try {
                 val credentials = vault?.load() ?: throw PhysicsLabFailure("请先设置实验系统账号和密码。")
-                val labs = withTimeout(25_000) { remote.fetch(credentials) }
+                val labs = applyWeekOverrides(withTimeout(25_000) { remote.fetch(credentials) })
                 cache.putMetadata(scope, "physicslab.results", json.encodeToString(labs))
                 mutableState.value = mutableState.value.copy(labs = labs, username = credentials.username, fromCache = false, failed = false, synced = true, message = "已同步 ${labs.size} 个实验。")
             } catch (e: TimeoutCancellationException) {
@@ -96,6 +104,25 @@ class PhysicsLabModel(
             } finally { mutableState.value = mutableState.value.copy(refreshing = false) }
         }
     }
+    private fun applyWeekOverrides(labs: List<PhysicsLab>): List<PhysicsLab> = labs.map { lab ->
+        val twoWeeks = twoWeekOverrides[lab.durationSettingKey] ?: (physicsLabWeekCount(lab.name) == 2)
+        lab.copy(weekCount = if (twoWeeks) 2 else 1)
+    }
+
+    /** 本地时长设置：更新 Flow 后首页、课表与日历立即使用新的日期集合。 */
+    suspend fun setTwoWeeks(lab: PhysicsLab, twoWeeks: Boolean) {
+        initialize()
+        mutex.withLock {
+            if (mutableState.value.labs.none { it.durationSettingKey == lab.durationSettingKey }) return@withLock
+            val overrides = twoWeekOverrides + (lab.durationSettingKey to twoWeeks)
+            cache.putMetadata(scope, "physicslab.twoWeekOverrides", json.encodeToString(overrides))
+            twoWeekOverrides = overrides
+            val labs = applyWeekOverrides(mutableState.value.labs)
+            cache.putMetadata(scope, "physicslab.results", json.encodeToString(labs))
+            mutableState.value = mutableState.value.copy(labs = labs)
+        }
+    }
+
     suspend fun savedPassword(): String = try {
         if (cache.metadata(scope, "physicslab.configured") == "true") vault?.load()?.password.orEmpty() else ""
     } catch (e: CancellationException) { throw e } catch (_: Exception) { "" }

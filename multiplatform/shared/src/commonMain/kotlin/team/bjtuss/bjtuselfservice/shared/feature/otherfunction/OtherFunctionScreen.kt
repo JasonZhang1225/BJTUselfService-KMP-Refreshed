@@ -1,5 +1,9 @@
 package team.bjtuss.bjtuselfservice.shared.feature.otherfunction
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -48,8 +52,6 @@ fun SchoolCalendarArticleWorkspace(
     modifier: Modifier = Modifier,
 ) {
     OtherFunctionPageScaffold(
-        title = "校历下载",
-        subtitle = "当前最新校历为 2026-2027 校历，点击跳转学校公众号文章获取详情",
         expanded = expanded,
         modifier = modifier,
     ) {
@@ -94,13 +96,11 @@ fun ReportCardDownloadWorkspace(
     val scope = rememberCoroutineScope()
 
     OtherFunctionPageScaffold(
-        title = "成绩单下载",
-        subtitle = "下载个人学习成绩单，支持中英文版本",
         expanded = expanded,
         modifier = modifier,
     ) {
         OtherFunctionCard(
-            title = "成绩单下载",
+            title = "下载选项",
             description = "下载个人学习成绩单，支持中英文版本",
             actionLabel = "下载",
             taskState = state.reportCardState,
@@ -124,33 +124,19 @@ fun ReportCardDownloadWorkspace(
 
 @Composable
 private fun OtherFunctionPageScaffold(
-    title: String,
-    subtitle: String,
     expanded: Boolean,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     Column(
-        modifier = if (expanded) {
+        modifier = (if (expanded) {
             modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         } else {
-            // 短静态页不滚动：留在原生栏下（老起笔 14.dp + 栏高，其余平台恒 0 不变）。
+            // 短页也支持滚动，首项留在原生栏下（老起笔 14.dp + 栏高，其余平台恒 0 不变）。
             modifier.padding(horizontal = 16.dp).padding(top = 14.dp + LocalTopBarClearance.current)
-        },
+        }).verticalScroll(rememberScrollState()).padding(bottom = LocalBottomBarClearance.current),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (expanded) {
-            Text(
-                title,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
         content()
     }
 }

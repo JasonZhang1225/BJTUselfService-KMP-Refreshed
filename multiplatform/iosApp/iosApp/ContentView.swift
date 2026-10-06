@@ -294,6 +294,9 @@ private final class NativeChromeBinding {
         case .refresh:
             return "arrow.clockwise"
         case .extra:
+            if label.contains("写信") {
+                return "square.and.pencil"
+            }
             if label.localizedCaseInsensitiveContains("日历") {
                 return "calendar.badge.plus"
             }
@@ -1050,8 +1053,7 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
                 pushedBottomInset = inset
                 session.glassTabBarBottomInsetDp = Float(inset)
             }
-            // 底栏 frame 用的是「至少 80」的占位，系统安全区不一定折在里面。
-            // 窗口安全区单独报给 Compose，由课表和应用页叠到内容底部，不改底栏本身的 frame。
+            // 根页使用完整 barHeight；二级页没有底栏，独立使用窗口安全区。
             let systemBottom = max(view.safeAreaInsets.bottom, view.window?.safeAreaInsets.bottom ?? 0)
             if abs(systemBottom - pushedSystemBottomInset) > 0.5 {
                 pushedSystemBottomInset = systemBottom

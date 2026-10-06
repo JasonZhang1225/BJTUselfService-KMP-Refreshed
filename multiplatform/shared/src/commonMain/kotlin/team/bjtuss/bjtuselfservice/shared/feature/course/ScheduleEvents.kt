@@ -5,6 +5,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.plus
 import team.bjtuss.bjtuselfservice.shared.domain.course.Course
+import team.bjtuss.bjtuselfservice.shared.domain.course.eventDates
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.SLOT_TIME_RANGES
 import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
@@ -16,30 +17,39 @@ fun scheduleEventCourses(exams: List<ExamSchedule>, labs: List<PhysicsLab>, week
     val first = weeks.mapNotNull { it.startDate }.minOrNull() ?: return emptyList()
     val last = weeks.mapNotNull { it.startDate }.maxOrNull()?.plus(6, DateTimeUnit.DAY) ?: return emptyList()
     val result = mutableListOf<Course>()
-    fun add(date: LocalDate, range: String, name: String, teacher: String, location: String, kind: String) {
-        if (date < first || date > last) return
+    fun add(dates: List<LocalDate>, range: String, name: String, teacher: String, location: String, kind: String, typeLabel: String? = null) {
+        val activeDates = dates.filter { it >= first && it <= last }
+        val date = activeDates.firstOrNull() ?: return
         val start = minuteOfDay(range.substringBefore('-')) ?: return
         val end = minuteOfDay(range.substringAfter('-')) ?: return
         if (end <= start) return
-        val week = weeks.firstOrNull { it.startDate?.let { first -> date >= first && date <= first.plus(6, DateTimeUnit.DAY) } == true }?.week ?: 0
-        val id = -("$kind|$date|$range|$name".hashCode() and Int.MAX_VALUE).coerceAtLeast(1)
+        val eventWeeks = activeDates.map { eventDate ->
+            weeks.firstOrNull { it.startDate?.let { first -> eventDate >= first && eventDate <= first.plus(6, DateTimeUnit.DAY) } == true }?.week ?: 0
+        }.distinct().sorted()
+        val id = -("$kind|${dates.first()}|$range|$name".hashCode() and Int.MAX_VALUE).coerceAtLeast(1)
         SLOT_TIME_RANGES.forEachIndexed { slot, time ->
             val slotStart = minuteOfDay(time.substringBefore('-')) ?: return@forEachIndexed
             val slotEnd = minuteOfDay(time.substringAfter('-')) ?: return@forEachIndexed
             if (start < slotEnd && end > slotStart) {
                 result += Course(id, "$kind-$id", name, teacher, slot * 8 + date.dayOfWeek.isoDayNumber,
-                    "第${week}周", location, false, kind, date.toString(), range,
+                    eventWeeks.joinToString(",") { "第${it}周" }, location, false, kind, dates.first().toString(), range,
                     ((maxOf(start, slotStart) - slotStart).toFloat() / (slotEnd - slotStart)),
-                    ((minOf(end, slotEnd) - maxOf(start, slotStart)).toFloat() / (slotEnd - slotStart)))
+                    ((minOf(end, slotEnd) - maxOf(start, slotStart)).toFloat() / (slotEnd - slotStart)),
+                    scheduleEventDates = dates.map(LocalDate::toString), scheduleEventTypeLabel = typeLabel)
             }
         }
     }
     exams.forEach { exam ->
         val parsed = parseExamCalendarTime(exam.examTimeAndPlace) ?: return@forEach
         fun time(h: Int, m: Int) = "${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}"
-        add(parsed.date, "${time(parsed.startHour, parsed.startMinute)}-${time(parsed.endHour, parsed.endMinute)}", "${team.bjtuss.bjtuselfservice.shared.domain.course.displayScheduleCourseName(exam.courseName)}（考试）", "", parsed.location, "exam")
+        add(listOf(parsed.date), "${time(parsed.startHour, parsed.startMinute)}-${time(parsed.endHour, parsed.endMinute)}", "${team.bjtuss.bjtuselfservice.shared.domain.course.displayScheduleCourseName(exam.courseName)}（考试）", "", parsed.location, "exam")
     }
-    labs.forEach { lab -> lab.dates.forEach { date -> lab.timeRange?.let { add(date, it, "${lab.name}（实验）", lab.teacher, lab.location, "physicslab") } } }
+    labs.distinct().forEach { lab ->
+        lab.timeRange?.let { range ->
+            val suffix = if (lab.type.weekCount == 2) lab.type.label else "实验"
+            add(lab.dates, range, "${lab.name}（$suffix）", lab.teacher, lab.location, "physicslab", lab.type.label)
+        }
+    }
     return result
 }
 
@@ -53,7 +63,7 @@ internal fun minuteOfDay(time: String): Int? {
 fun CourseScheduleUiState.coursesForPage(week: Int?, start: LocalDate?): List<Course> {
     if (week == 0 && start == null) return scheduleCourses
     val ordinary = if (week != null) team.bjtuss.bjtuselfservice.shared.domain.course.coursesForWeek(scheduleCourses.filter { it.scheduleEventKind == null }, week) else emptyList()
-    val events = if (start != null) supplementalCourses.filter { it.scheduleEventDate?.let(LocalDate::parse)?.let { date -> date >= start && date <= start.plus(6, DateTimeUnit.DAY) } == true }
+    val events = if (start != null) supplementalCourses.filter { it.eventDates.any { value -> LocalDate.parse(value).let { date -> date >= start && date <= start.plus(6, DateTimeUnit.DAY) } } }
         else team.bjtuss.bjtuselfservice.shared.domain.course.coursesForWeek(supplementalCourses, week ?: 0)
     return ordinary + events
 }

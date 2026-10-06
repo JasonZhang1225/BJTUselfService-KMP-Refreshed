@@ -1,8 +1,9 @@
 package team.bjtuss.bjtuselfservice.shared.feature.home
 
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
-import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalReportTopScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.resolveVisualTopScrollOffset
@@ -25,7 +26,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
@@ -81,12 +81,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -145,12 +141,11 @@ fun HomeWorkspace(
     now: LocalDateTime,
     timeZone: TimeZone,
     isAgendaLoading: Boolean,
-    isRefreshing: Boolean,
-    onRefresh: () -> Unit,
     onOpenMailbox: () -> Unit,
     onOpenHomework: () -> Unit,
-    onOpenExams: () -> Unit,
-    onOpenPhyVlab: () -> Unit = {},
+    onOpenHomeworkDetail: (Homework) -> Unit = {},
+    onOpenExams: (ExamSchedule) -> Unit,
+    onOpenPhyVlab: (PhyVlabEvent) -> Unit = {},
     changes: List<HomeChangeRecord>,
     onClearAllChanges: () -> Unit,
     onClearChangeDomain: (HomeChangeDomain) -> Unit,
@@ -160,8 +155,6 @@ fun HomeWorkspace(
     modifier: Modifier = Modifier,
 ) {
     val state by model.state.collectAsState()
-    val uriHandler = LocalUriHandler.current
-    val campusDestination = campusCardDestination(platform.family)
     val pageListState = rememberLazyListState()
     val homeOverscrollEffect = rememberOverscrollEffect()
     // A short iOS home page rubber-bands without changing LazyListState's
@@ -185,64 +178,8 @@ fun HomeWorkspace(
     } else {
         ReportTopScrollListState(pageListState)
     }
-    var dialog by remember { mutableStateOf<HomeDialog?>(null) }
     var selectedChangeDomain by remember { mutableStateOf<HomeChangeDomain?>(null) }
-    var actionMessage by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(model, holdNetwork) { if (!holdNetwork) model.initialize() }
-
-    when (dialog) {
-        // iOS 上换成从下往上的卡片（半屏透、可上拉），其余平台仍是 Material 对话框。
-        HomeDialog.CampusCard -> AppleSheetOrAlert(
-            onDismissRequest = { dialog = null },
-            title = null,
-            confirmLabel = campusDestination.confirmLabel,
-            showDismissButton = true,
-            onConfirm = {
-                dialog = null
-                if (campusDestination.action == CampusCardAction.OpenUrl) {
-                    val target = campusDestination.url
-                    if (target == null || runCatching { uriHandler.openUri(target) }.isFailure) {
-                        actionMessage = "当前无法打开完美校园链接。"
-                    }
-                }
-            },
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
-            ) {
-                Text(
-                    campusDestination.message,
-                    modifier = Modifier.fillMaxWidth(),
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Start,
-                )
-                if (campusDestination.action == CampusCardAction.ShowQrCode) {
-                    MiniProgramQrCode()
-                    Text(
-                        "用手机微信扫描",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-            }
-        }
-        HomeDialog.Network -> AppleSheet(
-            onDismissRequest = { dialog = null },
-            title = "校园网充值",
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-            ) {
-                NetworkPaymentQrCode()
-                NetworkPaymentInstruction(platform.family)
-            }
-        }
-        null -> Unit
-    }
     selectedChangeDomain?.let { domain ->
         HomeChangeDialog(
             domain = domain,
@@ -283,29 +220,13 @@ fun HomeWorkspace(
             contentPadding = PaddingValues(
                 start = if (expanded) 8.dp else 16.dp,
                 end = if (expanded) 8.dp else 16.dp,
-                // 原生栏 underlap 时首项靠这份顶边距让开，视口本身画到屏幕顶（底栏同理）。
+                // 原生栏 underlap 时首项靠这份顶边距让开，视口本身画到屏幕顶。
                 top = 14.dp + LocalTopBarClearance.current,
-                // 列表画到屏幕底，卡片可以穿到胶囊下面。滑到底时末项靠这份留白停在胶囊上沿。
+                // 视口延伸到胶囊下方，滚到末尾时内容通过内部尾部净空让开胶囊。
                 bottom = 14.dp + LocalBottomBarClearance.current,
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (expanded) {
-                item(key = "home-header") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("首页", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                            Text(
-                                "邮件与校园账户状态来自当前 MIS 会话",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        OutlinedButton(onClick = onRefresh, enabled = !isRefreshing) {
-                            Text(if (isRefreshing) "同步中" else "刷新")
-                        }
-                    }
-                }
-            }
             state.failure?.let { failure ->
                 item(key = "home-failure") {
                     Text(
@@ -314,19 +235,7 @@ fun HomeWorkspace(
                     )
                 }
             }
-            actionMessage?.let { message ->
-                item(key = "home-action-message") {
-                    Text(message, color = MaterialTheme.colorScheme.error)
-                }
-            }
             if (expanded) {
-                item(key = "home-status-cards") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        MailCard(status, mailboxUnread, onOpenMailbox, Modifier.weight(1f))
-                        CampusCard(status, { dialog = HomeDialog.CampusCard }, Modifier.weight(1f))
-                        NetworkCard(status, { dialog = HomeDialog.Network }, Modifier.weight(1f))
-                    }
-                }
                 item(key = "home-agenda") {
                     HomeAgendaSection(
                         platform = platform,
@@ -341,13 +250,18 @@ fun HomeWorkspace(
                         expanded = expanded,
                         isWeekResolved = isWeekResolved,
                         onOpenHomework = onOpenHomework,
+                        onOpenHomeworkDetail = onOpenHomeworkDetail,
                         onOpenExams = onOpenExams,
                         onOpenPhyVlab = onOpenPhyVlab,
                     )
                 }
+                item(key = "home-status-cards") {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MailCard(status, mailboxUnread, onOpenMailbox, Modifier.weight(1f))
+                    }
+                }
             } else {
-                // 紧凑页：本周日程放第一栏，新邮件保持原尺寸，两张余额卡半宽并列，
-                // 尽量不用滚动就能看全（2026-08-04 真机反馈）。
+                // 紧凑页：本周日程放第一栏，新邮件保持原尺寸。
                 item(key = "home-agenda") {
                     HomeAgendaSection(
                         platform = platform,
@@ -362,18 +276,13 @@ fun HomeWorkspace(
                         expanded = expanded,
                         isWeekResolved = isWeekResolved,
                         onOpenHomework = onOpenHomework,
+                        onOpenHomeworkDetail = onOpenHomeworkDetail,
                         onOpenExams = onOpenExams,
                         onOpenPhyVlab = onOpenPhyVlab,
                     )
                 }
                 item(key = "home-mail-card") {
                     MailCard(status, mailboxUnread, onOpenMailbox, Modifier.fillMaxWidth())
-                }
-                item(key = "home-account-cards") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        CampusCard(status, { dialog = HomeDialog.CampusCard }, Modifier.weight(1f))
-                        NetworkCard(status, { dialog = HomeDialog.Network }, Modifier.weight(1f))
-                    }
                 }
             }
             item(key = "home-change-feed") {
@@ -386,8 +295,6 @@ fun HomeWorkspace(
         }
     }
 }
-
-private enum class HomeDialog { CampusCard, Network }
 
 private fun mondayOf(date: LocalDate): LocalDate =
     date.minus(date.dayOfWeek.isoDayNumber - 1, DateTimeUnit.DAY)
@@ -435,76 +342,6 @@ private fun homeAgendaWeekSlots(
 }
 
 @Composable
-private fun MiniProgramQrCode() = QrCode(
-    matrix = WECHAT_MINI_PROGRAM_QR_MATRIX,
-    quietZone = 3,
-    description = "完美校园微信小程序二维码",
-)
-
-@Composable
-private fun NetworkPaymentQrCode() = QrCode(
-    matrix = NETWORK_PAYMENT_QR_MATRIX,
-    quietZone = 4,
-    description = "北京交通大学卡网缴费微信二维码",
-)
-
-@Composable
-private fun QrCode(
-    matrix: List<String>,
-    quietZone: Int,
-    description: String,
-) {
-    Surface(
-        modifier = Modifier
-            .size(240.dp)
-            .semantics { contentDescription = description },
-        color = Color.White,
-        shape = MaterialTheme.shapes.medium,
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-            val moduleCount = matrix.size + quietZone * 2
-            val moduleSize = minOf(size.width, size.height) / moduleCount
-            val startX = (size.width - moduleSize * moduleCount) / 2f
-            val startY = (size.height - moduleSize * moduleCount) / 2f
-            matrix.forEachIndexed { row, values ->
-                values.forEachIndexed { column, value ->
-                    if (value == '1') {
-                        drawRect(
-                            color = Color.Black,
-                            topLeft = Offset(
-                                startX + (column + quietZone) * moduleSize,
-                                startY + (row + quietZone) * moduleSize,
-                            ),
-                            size = Size(moduleSize + 0.15f, moduleSize + 0.15f),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NetworkPaymentInstruction(family: PlatformFamily) {
-    val prefix = if (family == PlatformFamily.MacOS) {
-        "请使用"
-    } else {
-        "请将二维码截图或保存到相册，并打开"
-    }
-    Text(
-        buildAnnotatedString {
-            append(prefix)
-            withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                append("微信扫一扫")
-            }
-            append("进入卡网缴费页面。")
-        },
-        textAlign = TextAlign.Center,
-        style = MaterialTheme.typography.bodyLarge,
-    )
-}
-
-@Composable
 private fun MailCard(
     status: HomeStatus?,
     mailboxUnread: MailboxUnreadSummary?,
@@ -525,30 +362,6 @@ private fun MailCard(
         modifier = modifier,
     )
 }
-
-@Composable
-private fun CampusCard(status: HomeStatus?, onClick: () -> Unit, modifier: Modifier) = StatusCard(
-    title = "校园卡余额",
-    value = status?.campusCardBalance ?: "—",
-    detail = if (status?.campusCardLow == true) "余额低于 20，请留意" else "充值由完美校园完成",
-    action = "前往完美校园",
-    onClick = onClick,
-    modifier = modifier,
-)
-
-@Composable
-private fun NetworkCard(
-    status: HomeStatus?,
-    onClick: () -> Unit,
-    modifier: Modifier,
-) = StatusCard(
-    title = "校园网余额",
-    value = status?.networkBalance ?: "—",
-    detail = if (status?.networkEmpty == true) "余额为 0，请及时处理" else "使用微信完成卡网缴费",
-    action = "显示缴费二维码",
-    onClick = onClick,
-    modifier = modifier,
-)
 
 @Composable
 private fun StatusCard(
@@ -592,8 +405,9 @@ private fun HomeAgendaSection(
     /** 周数是否已由本学期校历确认；未确认时首页显示「日程加载中」。 */
     isWeekResolved: Boolean = true,
     onOpenHomework: () -> Unit,
-    onOpenExams: () -> Unit,
-    onOpenPhyVlab: () -> Unit,
+    onOpenHomeworkDetail: (Homework) -> Unit,
+    onOpenExams: (ExamSchedule) -> Unit,
+    onOpenPhyVlab: (PhyVlabEvent) -> Unit,
 ) {
     val homeSchedule = LocalHomeSchedule.current
     val today = now.date
@@ -702,7 +516,7 @@ private fun HomeAgendaSection(
             isWeekResolved = isWeekResolved,
             isWeekPending = weekValueIsPending,
             showWeekButtons = false,
-            onOpenHomework = onOpenHomework,
+            onOpenHomework = onOpenHomeworkDetail,
             onOpenExams = onOpenExams,
             onOpenPhyVlab = onOpenPhyVlab,
             previousWeek = null,
@@ -957,7 +771,7 @@ private fun HomeAgendaSection(
                             ?: weekAgenda.days.first()
                         AgendaSelectedDayContent(
                             day = selectedDay,
-                            onOpenHomework = onOpenHomework,
+                            onOpenHomework = onOpenHomeworkDetail,
                             onOpenExams = onOpenExams,
                             onOpenPhyVlab = onOpenPhyVlab,
                             canNavigate = {
@@ -988,7 +802,7 @@ private fun HomeAgendaSection(
             isWeekResolved = isWeekResolved,
             isWeekPending = weekValueIsPending,
             showWeekButtons = !useFingerWeekPager,
-            onOpenHomework = onOpenHomework,
+            onOpenHomework = onOpenHomeworkDetail,
             onOpenExams = onOpenExams,
             onOpenPhyVlab = onOpenPhyVlab,
             previousWeek = adjacentWeekFor(selectedSlot, -1),
@@ -1029,9 +843,9 @@ private fun HomeAgendaWeekCard(
      * 移动端只保留手指横滑（与课表一致），按钮只留给宽屏/桌面。
      */
     showWeekButtons: Boolean = true,
-    onOpenHomework: () -> Unit,
-    onOpenExams: () -> Unit,
-    onOpenPhyVlab: () -> Unit,
+    onOpenHomework: (Homework) -> Unit,
+    onOpenExams: (ExamSchedule) -> Unit,
+    onOpenPhyVlab: (PhyVlabEvent) -> Unit,
     previousWeek: AcademicWeekSlot?,
     nextWeek: AcademicWeekSlot?,
     onSelectWeek: (AcademicWeekSlot) -> Unit,
@@ -1220,15 +1034,14 @@ private fun HomeAgendaCalendarContent(
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val selectedDay = weekAgenda.days.firstOrNull { it.date == selectedDate }
             buildList {
                 add("课程" to courseAgendaMarkColor())
                 add("待提交作业" to pendingHomeworkMarkColor())
                 add("已提交作业" to submittedHomeworkMarkColor())
-                if (selectedDay?.let { it.phyVlabEvents.isNotEmpty() || it.physicsLabCourses.isNotEmpty() } == true) {
+                if (weekAgenda.days.any { it.phyVlabEvents.isNotEmpty() || it.physicsLabCourses.isNotEmpty() }) {
                     add("实验" to labAgendaMarkColor())
                 }
-                if (selectedDay?.exams?.isNotEmpty() == true) {
+                if (weekAgenda.days.any { it.exams.isNotEmpty() }) {
                     add("考试" to examAgendaMarkColor())
                 }
             }.forEach { (label, color) ->
@@ -1244,9 +1057,9 @@ private fun HomeAgendaCalendarContent(
 @Composable
 private fun AgendaSelectedDayContent(
     day: HomeAgendaDay,
-    onOpenHomework: () -> Unit,
-    onOpenExams: () -> Unit,
-    onOpenPhyVlab: () -> Unit,
+    onOpenHomework: (Homework) -> Unit,
+    onOpenExams: (ExamSchedule) -> Unit,
+    onOpenPhyVlab: (PhyVlabEvent) -> Unit,
     canNavigate: () -> Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1347,10 +1160,10 @@ private val homeworkDayContainerColor = Color(0xFFDFF1DE)
 private fun courseAgendaMarkColor(): Color =
     if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF589DE0) else Color(0xFF286EB8)
 
-/** 与课程表 physicslab 的前景色保持一致，不更改课程表。 */
+/** 紫色实验标记与课程蓝、作业红绿和考试橙保持清楚区分。 */
 @Composable
 private fun labAgendaMarkColor(): Color =
-    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFFA0E1E7) else Color(0xFF155E66)
+    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFFDEC6F6) else Color(0xFF64368E)
 
 @Composable
 private fun examAgendaMarkColor(): Color =
@@ -1363,11 +1176,6 @@ private fun pendingHomeworkMarkColor(): Color =
 
 @Composable
 private fun submittedHomeworkMarkColor(): Color = Color(0xFF16723B)
-
-/** 单条已做事项的“截止”二字颜色。 */
-@Composable
-private fun doneDeadlineLabelColor(): Color =
-    if (isSystemInDarkTheme()) Color(0xFF7EDB96) else Color(0xFF146C39)
 
 @Composable
 private fun AgendaDayCell(
@@ -1440,6 +1248,8 @@ private fun AgendaDayCell(
             ) {
                 if (isLoading && eventMarks.isEmpty() && homeworkMarks.isEmpty()) {
                     Text("—", style = MaterialTheme.typography.labelSmall)
+                } else if (day.eventCount == 0) {
+                    Text("—", style = MaterialTheme.typography.labelSmall)
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         if (eventMarks.isNotEmpty()) AgendaMarkRow(eventMarks)
@@ -1509,8 +1319,7 @@ private fun AgendaMarkRow(items: List<AgendaCategoryCount>) {
 }
 
 @Composable
-private fun AgendaCourseIcon() {
-    val tint = MaterialTheme.colorScheme.secondary
+private fun AgendaCourseIcon(tint: Color) {
     Canvas(Modifier.size(24.dp).semantics { contentDescription = "课程" }) {
         val scale = size.width / 24f
         val outline = Path().apply {
@@ -1534,9 +1343,9 @@ private fun AgendaCourseIcon() {
 @Composable
 private fun AgendaDayDetails(
     day: HomeAgendaDay,
-    onOpenHomework: () -> Unit,
-    onOpenExams: () -> Unit,
-    onOpenPhyVlab: () -> Unit,
+    onOpenHomework: (Homework) -> Unit,
+    onOpenExams: (ExamSchedule) -> Unit,
+    onOpenPhyVlab: (PhyVlabEvent) -> Unit,
     canNavigate: () -> Boolean,
 ) {
     var selectedCourse by remember(day.date) { mutableStateOf<Course?>(null) }
@@ -1546,27 +1355,27 @@ private fun AgendaDayDetails(
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         day.homeworkStarting.forEach { item ->
-            AgendaEventRow("开始", item.title, displayScheduleCourseName(item.courseName), onOpenHomework, canNavigate)
+            AgendaEventRow("开始", item.title, displayScheduleCourseName(item.courseName), { onOpenHomework(item) }, canNavigate)
         }
         day.homeworkDue.forEach { item ->
             AgendaEventRow(
                 type = "截止",
                 title = item.title,
                 detail = "${displayScheduleCourseName(item.courseName)} · ${item.endTime}",
-                onClick = onOpenHomework,
+                onClick = { onOpenHomework(item) },
                 canNavigate = canNavigate,
                 done = isHomeworkSubmitted(item),
             )
         }
         day.exams.forEach { exam ->
-            AgendaEventRow("考试", displayScheduleCourseName(exam.courseName), exam.examTimeAndPlace, onOpenExams, canNavigate)
+            AgendaEventRow("考试", displayScheduleCourseName(exam.courseName), exam.examTimeAndPlace, { onOpenExams(exam) }, canNavigate)
         }
         day.phyVlabEvents.forEach { event ->
             AgendaEventRow(
                 type = if (event.kind == PhyVlabEventKind.START) "物理开始" else "物理截止",
                 title = event.title,
                 detail = formatPhyVlabAgendaDate(event),
-                onClick = onOpenPhyVlab,
+                onClick = { onOpenPhyVlab(event) },
                 canNavigate = canNavigate,
                 done = event.submitted,
             )
@@ -1621,7 +1430,14 @@ private fun AgendaEventRow(
     canNavigate: () -> Boolean,
     done: Boolean = false,
 ) {
-    val isDeadline = type.contains("截止")
+    val typeColor = when {
+        type == "课程" -> courseAgendaMarkColor()
+        type == "考试" -> examAgendaMarkColor()
+        type == "实验" || type.startsWith("物理") -> labAgendaMarkColor()
+        type.contains("截止") || type == "开始" ->
+            if (done) submittedHomeworkMarkColor() else pendingHomeworkMarkColor()
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Surface(
         onClick = { if (canNavigate()) onClick() },
         enabled = canNavigate(),
@@ -1635,16 +1451,11 @@ private fun AgendaEventRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (type == "课程") {
-                AgendaCourseIcon()
+                AgendaCourseIcon(typeColor)
             } else {
                 Text(
                     type,
-                    color = when {
-                        type == "实验" -> labAgendaMarkColor()
-                        done -> doneDeadlineLabelColor()
-                        isDeadline -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.primary
-                    },
+                    color = typeColor,
                     fontWeight = FontWeight.SemiBold,
                 )
             }

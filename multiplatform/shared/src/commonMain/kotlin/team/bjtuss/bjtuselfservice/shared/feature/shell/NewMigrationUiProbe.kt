@@ -29,7 +29,7 @@ import team.bjtuss.bjtuselfservice.shared.update.AppUpdateChecker
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NewMigrationUiProbe() {
-    var section by remember { mutableStateOf(AppSection.HOME) }
+    var section by remember { mutableStateOf(AppSection.MORE) }
     var dark by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
     var largeText by remember { mutableStateOf(false) }
@@ -37,7 +37,7 @@ fun NewMigrationUiProbe() {
     val scope = rememberCoroutineScope()
     val weeks = remember { listOf(OccupancyWeekDate(1, "11/23", "11/29", LocalDate(2026, 11, 23))) }
     val courses = remember { listOf(Course(1, "fixture", "数据科学测试课程", "测试教师", 28, "第1周", "思源楼，SY101", false)) }
-    val settings = remember { SettingsScreenModel(AppPreferences(), { true }, { true }, { true }, { AppUpdateChecker.Result.Unavailable }) }
+    val settings = remember { SettingsScreenModel(AppPreferences(physicsLabEnabled = true), { true }, { true }, { true }, { AppUpdateChecker.Result.Unavailable }) }
     val preferences = settings.state.collectAsState().value.preferences
     val tabs = bottomNavSections(preferences)
     val home = remember { HomeScreenModel(object : HomeStatusRepository {
@@ -76,10 +76,15 @@ fun NewMigrationUiProbe() {
                         HomeWorkspace(home, currentPlatform(), expanded, homework = emptyList(),
                             exams = listOf(ExamSchedule(examType = "期末", courseName = "测试考试", examTimeAndPlace = "2026-11-26 10:10 测试教室", examStatus = "", detail = "")),
                             currentWeek = 1, academicWeeks = weeks, now = LocalDateTime(2026, 11, 26, 9, 0), timeZone = TimeZone.of("Asia/Shanghai"),
-                            isAgendaLoading = false, isRefreshing = false, onRefresh = {}, onOpenMailbox = {}, onOpenHomework = {}, onOpenExams = {},
+                            isAgendaLoading = false, onOpenMailbox = {}, onOpenHomework = {}, onOpenExams = {},
                             changes = emptyList(), onClearAllChanges = {}, onClearChangeDomain = {}, onOpenChangeDomain = {}, modifier = Modifier.fillMaxSize())
                     }
-                    AppSection.MORE -> MoreWorkspace(preferences, { section = it }, Modifier.fillMaxSize())
+                    AppSection.MORE -> MoreWorkspace(
+                        preferences = preferences,
+                        onOpenSection = { section = it },
+                        modifier = Modifier.fillMaxSize(),
+                        showPhysicsLabTile = preferences.isPhysicsLabEnabled,
+                    )
                     AppSection.SETTINGS -> SettingsWorkspace(settings, "测试账号", currentPlatform(), expanded, {}, Modifier.fillMaxSize())
                     AppSection.CLASSROOM_OCCUPANCY -> ClassroomOccupancyBuildingWorkspace(occupancy, modifier = Modifier.fillMaxSize())
                     else -> Text("已打开${section.title}", modifier = Modifier.padding(24.dp))

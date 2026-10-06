@@ -107,6 +107,53 @@ class PhysicsLabModelTest {
             assertTrue(cache.metadataAccountScopes("physicslab.configured").isEmpty())
         } finally { cache.close() }
     }
+    @Test fun durationChoiceUpdatesImmediatelySurvivesRefreshRestartAndCacheClearAndIsAccountScoped() = runBlocking {
+        val cache = store()
+        try {
+            val vault = MemoryVault()
+            val transport = TestTransport()
+            val model = PhysicsLabModel("duration", cache, vault, PhysicsLabRemote(transport))
+            model.configure("lab-a", "fixture", true)
+            val lab = model.state.value.labs.single()
+            assertEquals(2, lab.weekCount)
+            val calls = transport.calls
+            model.setTwoWeeks(lab, false)
+            assertEquals(1, model.state.value.labs.single().dates.size)
+            assertEquals(calls, transport.calls)
+            model.refresh()
+            assertEquals(1, model.state.value.labs.single().weekCount)
+            val restored = PhysicsLabModel("duration", cache, vault, PhysicsLabRemote(transport))
+            restored.initialize()
+            assertEquals(1, restored.state.value.labs.single().weekCount)
+            cache.clearAccount("duration")
+            restored.refresh()
+            assertEquals(1, restored.state.value.labs.single().weekCount)
+            val afterClear = PhysicsLabModel("duration", cache, vault, PhysicsLabRemote(transport))
+            afterClear.initialize(); afterClear.refresh()
+            assertEquals(1, afterClear.state.value.labs.single().weekCount)
+            afterClear.setTwoWeeks(afterClear.state.value.labs.single(), true)
+            assertEquals(2, afterClear.state.value.labs.single().dates.size)
+            afterClear.configure("lab-b", "fixture", true)
+            assertEquals(2, afterClear.state.value.labs.single().weekCount)
+            assertEquals("{}", cache.metadata("duration", "physicslab.twoWeekOverrides"))
+        } finally { cache.close() }
+    }
+
+    @Test fun ordinaryLabCanBeExtendedToTwoWeeksAndOverrideSurvivesSync() = runBlocking {
+        val cache = store()
+        try {
+            val transport = TestTransport().also { it.experimentName = "综合实验" }
+            val model = PhysicsLabModel("ordinary-duration", cache, MemoryVault(), PhysicsLabRemote(transport))
+            model.configure("lab", "fixture", true)
+            val lab = model.state.value.labs.single()
+            assertEquals(1, lab.weekCount)
+            model.setTwoWeeks(lab, true)
+            assertEquals(2, model.state.value.labs.single().dates.size)
+            model.refresh()
+            assertEquals(2, model.state.value.labs.single().weekCount)
+        } finally { cache.close() }
+    }
+
     private fun store(): CacheStore {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         CacheDatabaseSql.Schema.create(driver)
@@ -123,11 +170,12 @@ private class TestTransport : SchoolHttpTransport {
     var calls = 0
     var fail = false
     var empty = false
+    var experimentName = "超声专题"
     override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse {
         calls++
         if (fail) throw SchoolNetworkException("fixture unavailable")
         val body = when {
-            request.url == PHYSICS_LAB_RESULTS -> if (empty) "<table id='a_ASPxGridViewCourseList_DXMainTable'></table>" else results("超声专题")
+            request.url == PHYSICS_LAB_RESULTS -> if (empty) "<table id='a_ASPxGridViewCourseList_DXMainTable'></table>" else results(experimentName)
             else -> loginForm
         }
         return SchoolHttpResponse(200, request.url, body = body.encodeToByteArray())

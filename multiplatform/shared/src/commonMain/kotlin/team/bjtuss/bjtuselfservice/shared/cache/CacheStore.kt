@@ -399,7 +399,7 @@ class CacheStore(
 
     fun clearAccount(accountScope: String) {
         // 独立实验账号是同步设置；清离线副本时保留标记，完整清空时再统一清安全存储。
-        val labSettings = listOf("physicslab.enabled", "physicslab.configured").mapNotNull { key ->
+        val labSettings = listOf("physicslab.enabled", "physicslab.configured", "physicslab.twoWeekOverrides").mapNotNull { key ->
             metadata(accountScope, key)?.let { key to it }
         }
         val scope = protectedAccountScope(accountScope)
