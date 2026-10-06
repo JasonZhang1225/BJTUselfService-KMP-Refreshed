@@ -171,6 +171,7 @@ fun PhyVlabWorkspace(
                     hasCachedContent = state.contentSource == PhyVlabContentSource.CACHE,
                     cachedAtEpochMillis = state.cachedAtEpochMillis,
                     onRetry = refresh,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
         }
@@ -1052,9 +1053,10 @@ private fun PhyVlabFailureBanner(
     hasCachedContent: Boolean,
     cachedAtEpochMillis: Long?,
     onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.errorContainer,
         shape = RoundedCornerShape(14.dp),
     ) {

@@ -197,6 +197,7 @@ internal fun CompactAppTopBar(
     /** 状态胶囊的附加动作；通常用于查看聚合同步失败详情。 */
     onStatusClick: (() -> Unit)? = null,
     action: (@Composable () -> Unit)? = null,
+    leadingAction: (@Composable () -> Unit)? = null,
     onBack: (() -> Unit)? = null,
     /** 教室查询详情把标题压矮，把高度留给教室列表。其它页保持原高度。 */
     dense: Boolean = false,
@@ -234,6 +235,10 @@ internal fun CompactAppTopBar(
                     }
                 }
                 Spacer(modifier = Modifier.width(2.dp))
+            }
+            if (leadingAction != null) {
+                leadingAction()
+                Spacer(Modifier.width(8.dp))
             }
             Text(
                 title,

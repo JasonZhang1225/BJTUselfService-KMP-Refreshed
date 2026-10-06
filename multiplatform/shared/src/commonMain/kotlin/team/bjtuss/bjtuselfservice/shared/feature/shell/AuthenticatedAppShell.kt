@@ -327,6 +327,8 @@ fun AuthenticatedAppShell(
     val homeSyncInProgress = entryLoggingIn || sessionRecoveryInProgress || homeSyncItems.any {
         it.state == HomeSyncItemState.SYNCING
     }
+    var homeTodayRequest by remember { mutableStateOf(0) }
+    var homeTodaySelected by remember { mutableStateOf(true) }
     var homeSyncDialogVisible by remember { mutableStateOf(false) }
     var partialSyncFailureDialogItems by remember { mutableStateOf<List<String>?>(null) }
     // 挂 session：原生二级页重建 Compose 时仍记住本登录态是否关过提示。
@@ -1137,7 +1139,8 @@ fun AuthenticatedAppShell(
                         isLoggingIn = entryLoggingIn,
                         idleStatusText = idleStatusText,
                         dense = denseTopBar,
-                        action = composeAction,
+                        action = composeAction.takeUnless { declarativeActionLabel == "今" },
+                        leadingAction = composeAction.takeIf { declarativeActionLabel == "今" },
                         // 可刷新页：右上角状态胶囊旁放刷新按钮；不再下拉刷新（保平台原生过滚）。
                         onRefresh = if (refreshable) effectiveRefreshAction else null,
                         onStatusClick = onStatusClick ?: failureStatusClick,
@@ -1198,6 +1201,8 @@ fun AuthenticatedAppShell(
         when (route) {
             AppSection.HOME -> DestinationPage(
                 title = AppSection.HOME.title,
+                topBarActionLabel = "今".takeUnless { homeTodaySelected },
+                onTopBarActionClick = { homeTodayRequest += 1 },
                 expanded = expanded,
                 refreshable = true,
                 refreshAction = {
@@ -1243,6 +1248,8 @@ fun AuthenticatedAppShell(
                         ),
                 ) {
                     HomeWorkspace(
+                        todayRequest = homeTodayRequest,
+                        onTodaySelectedChanged = { homeTodaySelected = it },
                         model = homeModel,
                         platform = platform,
                         expanded = expanded,

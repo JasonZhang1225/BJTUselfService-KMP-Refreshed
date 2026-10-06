@@ -266,6 +266,17 @@ private final class NativeChromeBinding {
         return item
     }
 
+    private func todayBarItem(onClick: @escaping () -> Void) -> UIBarButtonItem {
+        // Use the same square carrier and system bar background as the right-side
+        // icons. A configured glass text button gets compressed into a capsule.
+        let button = NativeBarIconButton(title: "今")
+        button.accessibilityLabel = "回到今天"
+        let target = makeActionTarget(role: .extra, onInvoke: onClick)
+        button.addTarget(target, action: #selector(NativeBarActionTarget.invoke(_:)), for: .touchUpInside)
+        actionButtons[.extra] = button
+        return UIBarButtonItem(customView: button)
+    }
+
     private func fixedActionSpacing() -> UIBarButtonItem {
         let item = UIBarButtonItem(barButtonSystemItem: .fixedSpace, target: nil, action: nil)
         item.width = 8
@@ -319,7 +330,7 @@ private final class NativeChromeBinding {
             accessibilityLabel: action.status,
         )
         actionButtons[.refresh]?.accessibilityLabel = action.label
-        actionButtons[.extra]?.accessibilityLabel = action.extraLabel
+        actionButtons[.extra]?.accessibilityLabel = action.extraLabel == "今" ? "回到今天" : action.extraLabel
     }
 
     private func symbolName(for label: String, kind: NativeBarActionItemKind) -> String {
@@ -412,14 +423,18 @@ private final class NativeChromeBinding {
             items.append(refreshItem)
         }
         if let extraLabel = action.extraLabel, let onExtraClick = action.onExtraClick {
-            leftItems.append(
-                iconBarItem(
-                    title: extraLabel,
-                    symbolName: symbolName(for: extraLabel, kind: .extra),
-                    role: .extra,
-                    onClick: onExtraClick,
+            if extraLabel == "今" {
+                leftItems.append(todayBarItem(onClick: onExtraClick))
+            } else {
+                leftItems.append(
+                    iconBarItem(
+                        title: extraLabel,
+                        symbolName: symbolName(for: extraLabel, kind: .extra),
+                        role: .extra,
+                        onClick: onExtraClick,
+                    )
                 )
-            )
+            }
         }
         UIView.performWithoutAnimation {
             controller.navigationItem.leftItemsSupplementBackButton = !leftItems.isEmpty
@@ -524,6 +539,14 @@ private enum NativeBarActionItemKind {
 }
 
 private final class NativeBarIconButton: UIButton {
+    init(title: String) {
+        super.init(frame: .zero)
+        setTitle(title, for: .normal)
+        setTitleColor(.label, for: .normal)
+        titleLabel?.font = .systemFont(ofSize: 18, weight: .semibold)
+        setVisualEnabled(true)
+    }
+
     init(symbolName: String) {
         super.init(frame: .zero)
         update(symbolName: symbolName, accessibilityLabel: nil)

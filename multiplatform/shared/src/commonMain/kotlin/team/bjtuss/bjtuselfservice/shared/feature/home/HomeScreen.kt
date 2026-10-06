@@ -57,6 +57,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -152,10 +153,15 @@ fun HomeWorkspace(
     onOpenChangeDomain: (HomeChangeDomain) -> Unit,
     // 静默自动登录期间为 true：会话未就绪，初始化（含网络刷新）延后到登录完成。
     holdNetwork: Boolean = false,
+    todayRequest: Int = 0,
+    onTodaySelectedChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val state by model.state.collectAsState()
     val pageListState = rememberLazyListState()
+    LaunchedEffect(todayRequest) {
+        if (todayRequest > 0) pageListState.scrollToItem(0)
+    }
     val homeOverscrollEffect = rememberOverscrollEffect()
     // A short iOS home page rubber-bands without changing LazyListState's
     // logical offset. Observe the native effect's placed content as well, so
@@ -238,6 +244,8 @@ fun HomeWorkspace(
             if (expanded) {
                 item(key = "home-agenda") {
                     HomeAgendaSection(
+                        todayRequest = todayRequest,
+                        onTodaySelectedChanged = onTodaySelectedChanged,
                         platform = platform,
                         homework = homework,
                         exams = exams,
@@ -264,6 +272,8 @@ fun HomeWorkspace(
                 // 紧凑页：本周日程放第一栏，新邮件保持原尺寸。
                 item(key = "home-agenda") {
                     HomeAgendaSection(
+                        todayRequest = todayRequest,
+                        onTodaySelectedChanged = onTodaySelectedChanged,
                         platform = platform,
                         homework = homework,
                         exams = exams,
@@ -392,6 +402,8 @@ private fun StatusCard(
 
 @Composable
 private fun HomeAgendaSection(
+    todayRequest: Int,
+    onTodaySelectedChanged: (Boolean) -> Unit,
     platform: PlatformInfo,
     homework: List<Homework>,
     exams: List<ExamSchedule>,
@@ -455,6 +467,15 @@ private fun HomeAgendaSection(
         weekWasManuallySelected = true
         selectedSlot = slot
     }
+    LaunchedEffect(todayRequest) {
+        if (todayRequest > 0) {
+            val slot = weekSlots.firstOrNull { it.startDate == todayMonday }
+                ?: AcademicWeekSlot(null, todayMonday)
+            selectedDates[slot.startDate] = today
+            selectedSlot = slot
+            weekWasManuallySelected = true
+        }
+    }
     val adjacentWeekFor: (AcademicWeekSlot, Int) -> AcademicWeekSlot? = { slot, offset ->
         val index = weekSlots.indexOfFirst { it.startDate == slot.startDate }
         weekSlots.getOrNull(index + offset)
@@ -504,12 +525,14 @@ private fun HomeAgendaSection(
         // 校历还在变时不用按页码记住位置的周页：页码会留在旧下标，
         // 后面的周列表一换，启动时就会看起来像被滑到第 1 周。
         // 点选日期仍使用下面的内容过渡；周数确认后再换成手指横滑页。
+        val pendingSlot = if (todayRequest > 0) selectedSlot else startupSlot
+        SideEffect { onTodaySelectedChanged(selectedDateFor(pendingSlot) == today) }
         HomeAgendaWeekCard(
             homework = homework,
             exams = exams,
             phyVlabEvents = phyVlabEvents,
-            weekSlot = startupSlot,
-            selectedDate = selectedDateFor(startupSlot),
+            weekSlot = pendingSlot,
+            selectedDate = selectedDateFor(pendingSlot),
             now = now,
             timeZone = timeZone,
             isLoading = isLoading,
@@ -522,8 +545,8 @@ private fun HomeAgendaSection(
             previousWeek = null,
             nextWeek = null,
             onSelectWeek = selectWeekFromUser,
-            onSelectDate = { date -> selectedDates[startupSlot.startDate] = date },
-            isDateCurrent = { date -> selectedDateFor(startupSlot) == date },
+            onSelectDate = { date -> selectedDates[pendingSlot.startDate] = date },
+            isDateCurrent = { date -> selectedDateFor(pendingSlot) == date },
             modifier = Modifier.fillMaxWidth(),
         )
     } else if (useFingerWeekPager) {
@@ -591,6 +614,7 @@ private fun HomeAgendaSection(
         val settledPage = pagerState.settledPage.coerceIn(pagerWeeks.indices)
         val settledSlot = weekForPage(settledPage)
         val settledDate = selectedDateFor(settledSlot)
+        SideEffect { onTodaySelectedChanged(settledDate == today) }
         val scheduleSwipeThresholdPx = with(density) { 56.dp.toPx() }
         var scheduleSwipeTargetPage by remember { mutableStateOf<Int?>(null) }
         LaunchedEffect(scheduleSwipeTargetPage) {
@@ -790,6 +814,7 @@ private fun HomeAgendaSection(
         }
     } else {
         val weekStartDate = selectedSlot.startDate
+        SideEffect { onTodaySelectedChanged(selectedDateFor(selectedSlot) == today) }
         HomeAgendaWeekCard(
             homework = homework,
             exams = exams,
@@ -1038,7 +1063,7 @@ private fun HomeAgendaCalendarContent(
                 add("课程" to courseAgendaMarkColor())
                 add("待提交作业" to pendingHomeworkMarkColor())
                 add("已提交作业" to submittedHomeworkMarkColor())
-                if (weekAgenda.days.any { it.phyVlabEvents.isNotEmpty() || it.physicsLabCourses.isNotEmpty() }) {
+                if (weekAgenda.days.any { it.physicsLabCourses.isNotEmpty() }) {
                     add("实验" to labAgendaMarkColor())
                 }
                 if (weekAgenda.days.any { it.exams.isNotEmpty() }) {
@@ -1277,9 +1302,12 @@ private fun agendaWeekMarks(day: HomeAgendaDay): AgendaWeekMarks {
     day.homeworkDue.forEach { item ->
         if (isHomeworkSubmitted(item)) submitted += 1 else pending += 1
     }
+    day.phyVlabEvents.filter { it.kind == PhyVlabEventKind.DEADLINE }.forEach { event ->
+        if (event.submitted) submitted += 1 else pending += 1
+    }
     return AgendaWeekMarks(
         courses = day.courses.size,
-        labs = day.phyVlabEvents.size + day.physicsLabCourses.size,
+        labs = day.physicsLabCourses.size,
         exams = day.exams.size,
         pendingHomework = pending,
         submittedHomework = submitted,
@@ -1433,8 +1461,8 @@ private fun AgendaEventRow(
     val typeColor = when {
         type == "课程" -> courseAgendaMarkColor()
         type == "考试" -> examAgendaMarkColor()
-        type == "实验" || type.startsWith("物理") -> labAgendaMarkColor()
-        type.contains("截止") || type == "开始" ->
+        type == "实验" -> labAgendaMarkColor()
+        type.contains("截止") || type.endsWith("开始") ->
             if (done) submittedHomeworkMarkColor() else pendingHomeworkMarkColor()
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
