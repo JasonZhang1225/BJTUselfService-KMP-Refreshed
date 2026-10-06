@@ -45,6 +45,15 @@ class PhysicsLabModel(
         mutableState.value = PhysicsLabState(enabled, credentials?.username.orEmpty(), labs, fromCache = labs.isNotEmpty())
         initialized = true
     }
+    /** Settings owns activation; enabling may precede entering separate lab credentials. */
+    suspend fun setEnabled(enabled: Boolean) {
+        initialize()
+        mutex.withLock {
+            if (mutableState.value.enabled == enabled) return@withLock
+            cache.putMetadata(scope, "physicslab.enabled", enabled.toString())
+            mutableState.value = mutableState.value.copy(enabled = enabled, failed = false, message = null)
+        }
+    }
     suspend fun configure(username: String, password: String, enabled: Boolean) {
         initialize()
         mutex.withLock {

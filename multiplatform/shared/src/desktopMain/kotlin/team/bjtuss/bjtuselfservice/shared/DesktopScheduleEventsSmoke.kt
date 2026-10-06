@@ -68,7 +68,7 @@ fun DesktopScheduleEventsSmoke(initialDark: Boolean = false, initialExpanded: Bo
                             PhysicsLab(LocalDate(2026, 11, index), 4, "测试实验 $index", "测试实验室", "测试教师", 1)
                         }, message = "已同步 4 个实验。"),
                         username = "fixture-account", password = "fixture-password", ready = true,
-                        onUsername = {}, onPassword = {}, onEnabled = {}, onSave = {},
+                        onUsername = {}, onPassword = {}, onSave = {},
                     )
                     "日历" -> team.bjtuss.bjtuselfservice.shared.feature.calendar.CourseCalendarExportSheet(
                         modelState.copy(courses = ordinary, academicWeeks = weeks, physicsLabs = labs),

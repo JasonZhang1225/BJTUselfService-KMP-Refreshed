@@ -71,6 +71,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import team.bjtuss.bjtuselfservice.shared.domain.course.Course
+import team.bjtuss.bjtuselfservice.shared.domain.course.displayScheduleCourseName
+import team.bjtuss.bjtuselfservice.shared.domain.course.displayTitleWithTeacher
+import team.bjtuss.bjtuselfservice.shared.feature.course.CourseDetailContent
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -1204,6 +1209,7 @@ private fun HomeAgendaCalendarContent(
                     day = day,
                     selected = day.date == selectedDate,
                     isToday = day.date == today,
+                    isLoading = isLoading || isWeekPending,
                     onClick = { onSelectDate(day.date) },
                     modifier = Modifier.weight(1f),
                 )
@@ -1211,14 +1217,21 @@ private fun HomeAgendaCalendarContent(
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            listOf(
-                "课程" to MaterialTheme.colorScheme.secondary,
-                "待提交作业" to pendingHomeworkMarkColor(),
-                "已提交作业" to submittedHomeworkMarkColor(),
-            ).forEach { (label, color) ->
+            val selectedDay = weekAgenda.days.firstOrNull { it.date == selectedDate }
+            buildList {
+                add("课程" to courseAgendaMarkColor())
+                add("待提交作业" to pendingHomeworkMarkColor())
+                add("已提交作业" to submittedHomeworkMarkColor())
+                if (selectedDay?.let { it.phyVlabEvents.isNotEmpty() || it.physicsLabCourses.isNotEmpty() } == true) {
+                    add("实验" to labAgendaMarkColor())
+                }
+                if (selectedDay?.exams?.isNotEmpty() == true) {
+                    add("考试" to examAgendaMarkColor())
+                }
+            }.forEach { (label, color) ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Canvas(Modifier.size(5.dp)) { drawCircle(color) }
                     Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
@@ -1312,7 +1325,7 @@ private fun DueSoonHomeworkSummary(
         )
         homework.take(3).forEach { item ->
             Text(
-                "${item.courseName} · ${item.title} · ${item.endTime}",
+                "${displayScheduleCourseName(item.courseName)} · ${item.title} · ${item.endTime}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1327,24 +1340,29 @@ private fun DueSoonHomeworkSummary(
     }
 }
 
-/** 当天截止项全部已做时的格子底色。比上一档再浅一点；字色仍分深浅两套。 */
-@Composable
-private fun doneDayContainerColor(): Color =
-    if (isSystemInDarkTheme()) Color(0xFF3A7D52) else Color(0xFFF5FCF8)
+/** 当天截止项全部已提交时使用固定浅绿底。 */
+private val homeworkDayContainerColor = Color(0xFFDFF1DE)
 
-/** 待提交作业圆点，比已提交更浅的绿。 */
+@Composable
+private fun courseAgendaMarkColor(): Color =
+    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF589DE0) else Color(0xFF286EB8)
+
+/** 与课程表 physicslab 的前景色保持一致，不更改课程表。 */
+@Composable
+private fun labAgendaMarkColor(): Color =
+    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFFA0E1E7) else Color(0xFF155E66)
+
+@Composable
+private fun examAgendaMarkColor(): Color =
+    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFFEAA04B) else Color(0xFFAF641C)
+
+/** 待提交作业用红色，与已提交的深绿区分。 */
 @Composable
 private fun pendingHomeworkMarkColor(): Color =
-    if (isSystemInDarkTheme()) Color(0xFFC8F2D8) else Color(0xFF8FCBAA)
-
-/** 已提交作业圆点，比待提交更深的绿。 */
-@Composable
-private fun submittedHomeworkMarkColor(): Color =
-    if (isSystemInDarkTheme()) Color(0xFF1B7A40) else Color(0xFF0E5C30)
+    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFFE56B72) else Color(0xFFC53946)
 
 @Composable
-private fun doneDayContentColor(): Color =
-    if (isSystemInDarkTheme()) Color(0xFFA9E2B8) else Color(0xFF0C4A26)
+private fun submittedHomeworkMarkColor(): Color = Color(0xFF16723B)
 
 /** 单条已做事项的“截止”二字颜色。 */
 @Composable
@@ -1356,23 +1374,23 @@ private fun AgendaDayCell(
     day: HomeAgendaDay,
     selected: Boolean,
     isToday: Boolean,
+    isLoading: Boolean,
     onClick: () -> Unit,
     modifier: Modifier,
 ) {
     val hasDeadline = day.homeworkDue.isNotEmpty() || day.phyVlabEvents.any {
         it.kind == PhyVlabEventKind.DEADLINE
     }
-    // 当天截止项全部已做 → 整天标绿；有一项没做仍标红。
-    val allDone = isHomeAgendaDayFullySubmitted(day)
+    val allSubmitted = isHomeAgendaDayFullySubmitted(day)
     val cellColor = when {
-        allDone -> doneDayContainerColor()
+        allSubmitted -> homeworkDayContainerColor
         hasDeadline -> MaterialTheme.colorScheme.errorContainer
         selected -> MaterialTheme.colorScheme.primaryContainer
         isToday -> MaterialTheme.colorScheme.secondaryContainer
         else -> MaterialTheme.colorScheme.surfaceVariant
     }
     val cellContentColor = when {
-        allDone -> doneDayContentColor()
+        allSubmitted -> Color(0xFF244B30)
         hasDeadline -> MaterialTheme.colorScheme.onErrorContainer
         else -> MaterialTheme.colorScheme.onSurface
     }
@@ -1390,31 +1408,45 @@ private fun AgendaDayCell(
         ) {
             Text(weekdayShortName(day.date), style = MaterialTheme.typography.labelSmall, maxLines = 1)
             Text(day.date.day.toString(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1)
+            HorizontalDivider(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 2.dp),
+                color = cellContentColor.copy(alpha = 0.18f),
+                thickness = 0.5.dp,
+            )
             val marks = agendaWeekMarks(day)
-            // 两行高度固定。第一行课程、实验、考试；第二行待提交和已提交。没有的不画点。
-            AgendaMarkRow(
-                listOfNotNull(
-                    marks.courses.takeIf { it > 0 }?.let {
-                        AgendaCategoryCount("课程", it, MaterialTheme.colorScheme.secondary)
-                    },
-                    marks.labs.takeIf { it > 0 }?.let {
-                        AgendaCategoryCount("实验", it, MaterialTheme.colorScheme.primary)
-                    },
-                    marks.exams.takeIf { it > 0 }?.let {
-                        AgendaCategoryCount("考试", it, MaterialTheme.colorScheme.tertiary)
-                    },
-                ),
+            val eventMarks = listOfNotNull(
+                marks.courses.takeIf { it > 0 }?.let {
+                    AgendaCategoryCount("课程", it, courseAgendaMarkColor())
+                },
+                marks.labs.takeIf { it > 0 }?.let {
+                    AgendaCategoryCount("实验", it, labAgendaMarkColor())
+                },
+                marks.exams.takeIf { it > 0 }?.let {
+                    AgendaCategoryCount("考试", it, examAgendaMarkColor())
+                },
             )
-            AgendaMarkRow(
-                listOfNotNull(
-                    marks.pendingHomework.takeIf { it > 0 }?.let {
-                        AgendaCategoryCount("待提交作业", it, pendingHomeworkMarkColor())
-                    },
-                    marks.submittedHomework.takeIf { it > 0 }?.let {
-                        AgendaCategoryCount("已提交作业", it, submittedHomeworkMarkColor())
-                    },
-                ),
+            val homeworkMarks = listOfNotNull(
+                marks.pendingHomework.takeIf { it > 0 }?.let {
+                    AgendaCategoryCount("待提交作业", it, pendingHomeworkMarkColor())
+                },
+                marks.submittedHomework.takeIf { it > 0 }?.let {
+                    AgendaCategoryCount("已提交作业", it, submittedHomeworkMarkColor())
+                },
             )
+            // 固定预留两行；只有一行时整行居中，加载占位也在同一中心。
+            Box(
+                modifier = Modifier.fillMaxWidth().height(agendaMarkRowHeight * 2),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (isLoading && eventMarks.isEmpty() && homeworkMarks.isEmpty()) {
+                    Text("—", style = MaterialTheme.typography.labelSmall)
+                } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (eventMarks.isNotEmpty()) AgendaMarkRow(eventMarks)
+                        if (homeworkMarks.isNotEmpty()) AgendaMarkRow(homeworkMarks)
+                    }
+                }
+            }
         }
     }
 }
@@ -1437,7 +1469,7 @@ private fun agendaWeekMarks(day: HomeAgendaDay): AgendaWeekMarks {
     }
     return AgendaWeekMarks(
         courses = day.courses.size,
-        labs = day.phyVlabEvents.size,
+        labs = day.phyVlabEvents.size + day.physicsLabCourses.size,
         exams = day.exams.size,
         pendingHomework = pending,
         submittedHomework = submitted,
@@ -1454,13 +1486,13 @@ private fun AgendaMarkRow(items: List<AgendaCategoryCount>) {
         contentAlignment = Alignment.Center,
     ) {
         if (items.isNotEmpty()) Row(
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            horizontalArrangement = Arrangement.spacedBy(1.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             items.forEach { (label, count, color) ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(1.dp),
+                    horizontalArrangement = Arrangement.spacedBy(0.dp),
                     modifier = Modifier.semantics { contentDescription = "$label $count" },
                 ) {
                     Canvas(Modifier.size(4.dp)) { drawCircle(color) }
@@ -1507,27 +1539,27 @@ private fun AgendaDayDetails(
     onOpenPhyVlab: () -> Unit,
     canNavigate: () -> Boolean,
 ) {
-    val homeSchedule = LocalHomeSchedule.current
+    var selectedCourse by remember(day.date) { mutableStateOf<Course?>(null) }
     if (day.eventCount == 0) {
         Text("当天没有课程、作业、考试或物理在线安排。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         day.homeworkStarting.forEach { item ->
-            AgendaEventRow("开始", item.title, item.courseName, onOpenHomework, canNavigate)
+            AgendaEventRow("开始", item.title, displayScheduleCourseName(item.courseName), onOpenHomework, canNavigate)
         }
         day.homeworkDue.forEach { item ->
             AgendaEventRow(
                 type = "截止",
                 title = item.title,
-                detail = "${item.courseName} · ${item.endTime}",
+                detail = "${displayScheduleCourseName(item.courseName)} · ${item.endTime}",
                 onClick = onOpenHomework,
                 canNavigate = canNavigate,
                 done = isHomeworkSubmitted(item),
             )
         }
         day.exams.forEach { exam ->
-            AgendaEventRow("考试", exam.courseName, exam.examTimeAndPlace, onOpenExams, canNavigate)
+            AgendaEventRow("考试", displayScheduleCourseName(exam.courseName), exam.examTimeAndPlace, onOpenExams, canNavigate)
         }
         day.phyVlabEvents.forEach { event ->
             AgendaEventRow(
@@ -1539,6 +1571,19 @@ private fun AgendaDayDetails(
                 done = event.submitted,
             )
         }
+        if (day.physicsLabCourses.isNotEmpty()) {
+            Text("当天实验", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+            day.physicsLabCourses.forEach { lab ->
+                AgendaEventRow(
+                    type = "实验",
+                    title = lab.copy(courseName = lab.courseName.removeSuffix("（实验）")).displayTitleWithTeacher(),
+                    detail = listOf(lab.scheduleEventTime.orEmpty(), team.bjtuss.bjtuselfservice.shared.domain.course.displayCoursePlace(lab.coursePlace))
+                        .filter(String::isNotBlank).joinToString(" · "),
+                    onClick = { selectedCourse = lab },
+                    canNavigate = canNavigate,
+                )
+            }
+        }
         if (day.courses.isNotEmpty()) {
             Text("当天课表", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
             day.courses.forEach { course ->
@@ -1546,14 +1591,24 @@ private fun AgendaDayDetails(
                 val time = team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.SLOT_TIME_RANGES.getOrNull(period).orEmpty()
                 AgendaEventRow(
                     type = "课程",
-                    title = course.courseName,
-                    detail = listOf(time, team.bjtuss.bjtuselfservice.shared.domain.course.displayCoursePlace(course.coursePlace), course.courseTeacher).filter(String::isNotBlank).joinToString(" · "),
-                    onClick = homeSchedule.onOpenSchedule,
+                    title = course.displayTitleWithTeacher(),
+                    detail = listOf(time, team.bjtuss.bjtuselfservice.shared.domain.course.displayCoursePlace(course.coursePlace)).filter(String::isNotBlank).joinToString(" · "),
+                    onClick = { selectedCourse = course },
                     canNavigate = canNavigate,
                 )
             }
         }
 
+    }
+    selectedCourse?.let { course ->
+        AppleSheet(onDismissRequest = { selectedCourse = null }, title = "课程详情") {
+            val detailScroll = rememberScrollState()
+            CourseDetailContent(
+                course,
+                Modifier.fillMaxWidth().verticalScroll(detailScroll).desktopTouchScroll(detailScroll)
+                    .padding(horizontal = 24.dp, vertical = 8.dp).padding(bottom = 20.dp),
+            )
+        }
     }
 }
 
@@ -1585,6 +1640,7 @@ private fun AgendaEventRow(
                 Text(
                     type,
                     color = when {
+                        type == "实验" -> labAgendaMarkColor()
                         done -> doneDeadlineLabelColor()
                         isDeadline -> MaterialTheme.colorScheme.error
                         else -> MaterialTheme.colorScheme.primary

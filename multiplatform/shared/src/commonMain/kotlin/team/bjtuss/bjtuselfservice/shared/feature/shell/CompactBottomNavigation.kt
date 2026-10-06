@@ -328,7 +328,7 @@ internal fun CompactTabIcon(section: AppSection) {
                     cap = StrokeCap.Round,
                 )
             }
-            AppSection.PHYVLAB -> {
+            AppSection.PHYVLAB, AppSection.PHYSICS_LAB -> {
                 // 物理在线：简化烧杯/实验瓶图标。
                 val left = 5.dp.toPx()
                 val right = size.width - left

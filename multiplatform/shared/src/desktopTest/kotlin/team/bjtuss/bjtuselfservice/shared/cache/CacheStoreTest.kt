@@ -22,6 +22,23 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 
 class CacheStoreTest {
     @Test
+    fun physicsLabPreferencePreservesLegacySentinelAndExplicitValues() {
+        val store = inMemoryStore()
+        try {
+            assertNull(store.preferences().physicsLabEnabled)
+            store.putMetadata("student-a", "physicslab.enabled", "true")
+            store.savePreferences(AppPreferences())
+            assertNull(store.preferences().physicsLabEnabled)
+            assertEquals("true", store.metadata("student-a", "physicslab.enabled"))
+            store.savePreferences(AppPreferences(physicsLabEnabled = true, bottomNavigationItems = listOf("PHYSICS_LAB")))
+            assertTrue(store.preferences().isPhysicsLabEnabled)
+            assertEquals(listOf("PHYSICS_LAB"), store.preferences().bottomNavigationItems)
+            store.savePreferences(store.preferences().copy(physicsLabEnabled = false))
+            assertFalse(store.preferences().isPhysicsLabEnabled)
+        } finally { store.close() }
+    }
+
+    @Test
     fun navigationSelectionPreservesExplicitEmptyAndCanReturnToDefaults() {
         val store = inMemoryStore()
         try {

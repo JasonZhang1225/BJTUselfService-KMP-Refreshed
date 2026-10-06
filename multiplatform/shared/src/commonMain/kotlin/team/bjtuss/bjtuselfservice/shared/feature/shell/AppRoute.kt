@@ -201,6 +201,7 @@ internal enum class AppSection(
     CLASSROOMS("教室人数估计"),
     MAILBOX("邮箱"),
     PHYVLAB("物理在线", "物理在线（仅能在校园网下访问）"),
+    PHYSICS_LAB("物理实验同步"),
     CALENDAR("校历下载"),
     REPORT_CARD_DOWNLOAD("成绩单下载"),
     SETTINGS("设置"),
@@ -217,14 +218,15 @@ internal fun bottomNavSections(showPhyVlab: Boolean): List<AppSection> = buildLi
     add(AppSection.MORE)
 }
 
-internal fun bottomNavigationCandidates(showPhyVlab: Boolean): List<AppSection> =
+internal fun bottomNavigationCandidates(showPhyVlab: Boolean, showPhysicsLab: Boolean = false): List<AppSection> =
     AppSection.entries.filter {
         it !in setOf(AppSection.HOME, AppSection.MORE, AppSection.CLASSROOMS) &&
-            (showPhyVlab || it != AppSection.PHYVLAB)
+            (showPhyVlab || it != AppSection.PHYVLAB) &&
+            (showPhysicsLab || it != AppSection.PHYSICS_LAB)
     }
 
 internal fun bottomNavSections(preferences: team.bjtuss.bjtuselfservice.shared.cache.AppPreferences): List<AppSection> {
-    val candidates = bottomNavigationCandidates(preferences.isPhyVlabEnabled)
+    val candidates = bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled)
     val selected = preferences.bottomNavigationItems?.mapNotNull { id -> candidates.firstOrNull { it.name == id } }
         ?.distinct()?.take(4)
         ?: bottomNavSections(preferences.isPhyVlabEnabled).filter { it in candidates }
@@ -232,13 +234,7 @@ internal fun bottomNavSections(preferences: team.bjtuss.bjtuselfservice.shared.c
 }
 
 internal fun applicationSections(preferences: team.bjtuss.bjtuselfservice.shared.cache.AppPreferences): List<AppSection> =
-    bottomNavigationCandidates(preferences.isPhyVlabEnabled).filter { it !in bottomNavSections(preferences) }
-
-/** 物理实验同步紧挨物理在线。物理在线已在底栏时，插在它原来的目录位置，不跟在设置后面。 */
-internal fun physicsLabApplicationIndex(sections: List<AppSection>): Int {
-    val slot = sections.indexOfFirst { it.ordinal > AppSection.PHYVLAB.ordinal }
-    return if (slot < 0) sections.size else slot
-}
+    bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled).filter { it !in bottomNavSections(preferences) }
 
 /** 在底部导航中归属“更多”高亮的入口。 */
 internal val MoreGroupSections = setOf(
@@ -247,6 +243,7 @@ internal val MoreGroupSections = setOf(
     AppSection.CLASSROOMS,
     AppSection.CLASSROOM_OCCUPANCY,
     AppSection.MAILBOX,
+    AppSection.PHYSICS_LAB,
     AppSection.CALENDAR,
     AppSection.REPORT_CARD_DOWNLOAD,
     AppSection.SETTINGS,

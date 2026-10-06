@@ -267,17 +267,18 @@ fun AuthenticatedAppShell(
     val mailboxUnread by mailboxModel.unreadSummary.collectAsState()
     val mailboxMessageLoading = (mailboxState as? MailboxUiState.Ready)?.isMessageLoading == true
     val phyVlabState by phyVlabModel.state.collectAsState()
+    val settingsState by settingsModel.state.collectAsState()
+    val physicsLabEnabled = settingsState.preferences.isPhysicsLabEnabled
     val physicsLabFlow = remember(session) { session.physicsLabModel?.state ?: MutableStateFlow(PhysicsLabState()) }
     val physicsLabState by physicsLabFlow.collectAsState()
-    val scheduleEvents = remember(courseState.academicWeeks, examState.exams, physicsLabState.labs, physicsLabState.enabled) {
-        scheduleEventCourses(examState.exams, if (physicsLabState.enabled) physicsLabState.labs else emptyList(), courseState.academicWeeks)
+    val scheduleEvents = remember(courseState.academicWeeks, examState.exams, physicsLabState.labs, physicsLabEnabled) {
+        scheduleEventCourses(examState.exams, if (physicsLabEnabled) physicsLabState.labs else emptyList(), courseState.academicWeeks)
     }
     val scheduleStateWithEvents = courseState.copy(
         supplementalCourses = scheduleEvents,
-        physicsLabs = if (physicsLabState.enabled) physicsLabState.labs else emptyList(),
+        physicsLabs = if (physicsLabEnabled) physicsLabState.labs else emptyList(),
     )
     val homeState by homeModel.state.collectAsState()
-    val settingsState by settingsModel.state.collectAsState()
     val phyVlabEnabled = settingsState.preferences.isPhyVlabEnabled
     val compactBottomNavSections = remember(settingsState.preferences) {
         bottomNavSections(settingsState.preferences)
@@ -309,7 +310,7 @@ fun AuthenticatedAppShell(
         courseBusy = courseState.isLoading || courseState.isRefreshing || courseState.isCalendarLoading,
         courseFailed = courseState.failure != null || courseState.calendarFailed,
         courseReady = courseState.source != null && courseState.weekResolved,
-        physicsLabEnabled = physicsLabState.enabled,
+        physicsLabEnabled = physicsLabEnabled,
         physicsLabBusy = physicsLabState.refreshing,
         physicsLabFailed = physicsLabState.failed,
         physicsLabReady = physicsLabState.synced,
@@ -397,7 +398,7 @@ fun AuthenticatedAppShell(
         PhyVlabDetailRoute -> AppSection.PHYVLAB
         MailboxDetailRoute -> AppSection.MAILBOX
         MailboxComposeRoute -> AppSection.MAILBOX
-        PhysicsLabSettingsRoute -> AppSection.MORE
+        PhysicsLabSettingsRoute -> AppSection.PHYSICS_LAB
         is AppSection -> currentRoute
     }
     val popBackStack: () -> Unit = if (forcedRouteId != null) {
@@ -436,6 +437,7 @@ fun AuthenticatedAppShell(
     fun navigateToSection(requested: AppSection) {
         val target = if (requested == AppSection.CLASSROOMS) AppSection.CLASSROOM_OCCUPANCY else requested
         if (target == AppSection.PHYVLAB && !phyVlabEnabled) return
+        if (target == AppSection.PHYSICS_LAB && !physicsLabEnabled) return
         if (backStack.lastOrNull() != target) {
             // 先 yield 一帧：让 NavigationBarItem 的 press/ripple 先上屏，
             // 再替换 destination，避免首次点 tab 时内容重组抢掉按压反馈。
@@ -596,6 +598,7 @@ fun AuthenticatedAppShell(
                     },
                 )
                 AppSection.PHYVLAB -> if (phyVlabEnabled) phyVlabModel.refresh()
+                AppSection.PHYSICS_LAB -> if (physicsLabEnabled) session.physicsLabModel?.refresh()
                 AppSection.CALENDAR -> Unit
                 AppSection.REPORT_CARD_DOWNLOAD -> Unit
                 AppSection.SETTINGS -> Unit
@@ -846,9 +849,12 @@ fun AuthenticatedAppShell(
     }
 
     // 独立校园网数据源由稳定首页宿主启动，原生二级页面仅共享状态。
-    LaunchedEffect(session.physicsLabModel, entryLoggingIn, forcedRouteId, nativeTabBarEnabled) {
-        session.physicsLabModel?.initialize()
-        if (!entryLoggingIn && shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) session.physicsLabModel?.refresh()
+    LaunchedEffect(session.physicsLabModel, physicsLabEnabled, entryLoggingIn, forcedRouteId, nativeTabBarEnabled) {
+        val labModel = session.physicsLabModel ?: return@LaunchedEffect
+        labModel.setEnabled(physicsLabEnabled)
+        if (physicsLabEnabled && !entryLoggingIn && shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) {
+            labModel.refresh()
+        }
     }
 
     // 物理在线总开关同时控制同步与底栏入口。
@@ -1232,7 +1238,7 @@ fun AuthenticatedAppShell(
                     courseFailed = courseState.failure != null,
                     phyVlabFailed = (phyVlabEnabled &&
                         (phyVlabState.failure != null || phyVlabState.casLoginRequired)) ||
-                        (physicsLabState.enabled && physicsLabState.failed),
+                        (physicsLabEnabled && physicsLabState.failed),
                     hasAnySource = homeworkState.source != null ||
                         examState.source != null ||
                         courseState.source != null ||
@@ -1250,6 +1256,7 @@ fun AuthenticatedAppShell(
                     team.bjtuss.bjtuselfservice.shared.feature.home.LocalHomeSchedule provides
                         team.bjtuss.bjtuselfservice.shared.feature.home.HomeSchedulePresentation(
                             courses = courseState.courses,
+                            supplementalCourses = scheduleEvents,
                             academicWeeks = courseState.homeAcademicWeeks,
                             currentWeek = courseState.currentWeek,
                             today = homeworkState.now.date,
@@ -1734,7 +1741,7 @@ fun AuthenticatedAppShell(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
-            PhysicsLabSettingsRoute -> DestinationPage(
+            AppSection.PHYSICS_LAB, PhysicsLabSettingsRoute -> DestinationPage(
                 title = "物理实验同步",
                 expanded = expanded,
                 refreshable = false,
@@ -1764,15 +1771,6 @@ fun AuthenticatedAppShell(
                     preferences = settingsState.preferences,
                     physicsLabModel = session.physicsLabModel,
                     onOpenSection = { target -> navigateToSection(target) },
-                    onOpenPhysicsLab = {
-                        if (useNativeSecondaryRoutes) {
-                            onOpenNativeRoute(PHYSICS_LAB_SETTINGS_ROUTE_ID)
-                        } else if (backStack.lastOrNull() != PhysicsLabSettingsRoute) {
-                            backStack.clear()
-                            backStack.add(AppSection.MORE)
-                            backStack.add(PhysicsLabSettingsRoute)
-                        }
-                    },
                     modifier = Modifier.fillMaxSize(),
                 )
             }

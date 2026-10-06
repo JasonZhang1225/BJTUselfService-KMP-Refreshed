@@ -55,3 +55,14 @@ fun coursesForWeek(courses: List<Course>, week: Int): List<Course> = if (week ==
 } else {
     courses.filter { week in parseCourseWeeks(it.courseTime) }
 }
+
+/** Only remove a literal undergraduate marker at the very end of the display name. */
+fun displayScheduleCourseName(value: String): String {
+    val suffix = listOf("[本]", "（本）", "(本)", "【本】").firstOrNull(value::endsWith)
+        ?: return value
+    return value.removeSuffix(suffix).trimEnd()
+}
+
+fun Course.displayTitleWithTeacher(): String =
+    listOf(displayScheduleCourseName(courseName), courseTeacher.trim())
+        .filter(String::isNotBlank).joinToString(" - ")

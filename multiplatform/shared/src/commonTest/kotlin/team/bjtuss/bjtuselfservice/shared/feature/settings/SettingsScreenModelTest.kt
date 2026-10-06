@@ -29,6 +29,31 @@ class SettingsScreenModelTest {
     )
 
     @Test
+    fun physicsLabSwitchPersistsAndControlsPinningIndependently() {
+        val saved = mutableListOf<AppPreferences>()
+        val model = model(initialPreferences = AppPreferences(bottomNavigationItems = emptyList()),
+            persistPreferences = { saved += it; true })
+        model.setPhysicsLabEnabled(true)
+        model.setBottomNavigationItem("PHYSICS_LAB", true)
+        assertTrue(saved.last().isPhysicsLabEnabled)
+        assertTrue(model.state.value.preferences.isPhyVlabEnabled)
+        assertEquals(listOf("PHYSICS_LAB"), model.state.value.preferences.bottomNavigationItems)
+        model.setPhysicsLabEnabled(false)
+        assertFalse(model.state.value.preferences.isPhysicsLabEnabled)
+        assertTrue(model.state.value.preferences.isPhyVlabEnabled)
+        model.setPhysicsLabEnabled(true)
+        assertEquals(listOf("PHYSICS_LAB"), model.state.value.preferences.bottomNavigationItems)
+    }
+
+    @Test
+    fun physicsLabSwitchKeepsPreviousStateWhenSavingFails() {
+        val model = model(initialPreferences = AppPreferences(physicsLabEnabled = true), persistPreferences = { false })
+        model.setPhysicsLabEnabled(false)
+        assertTrue(model.state.value.preferences.isPhysicsLabEnabled)
+        assertTrue(model.state.value.saveFailed)
+    }
+
+    @Test
     fun freshPreferencesEnableEveryAutomaticSync() {
         val preferences = AppPreferences()
 

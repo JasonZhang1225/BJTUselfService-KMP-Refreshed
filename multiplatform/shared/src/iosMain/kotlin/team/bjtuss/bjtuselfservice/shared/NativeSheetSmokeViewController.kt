@@ -86,7 +86,7 @@ fun NativeSheetSmokeViewController(physicsLab: Boolean = false, updateNotes: Boo
                                                 "测试教室", "测试教师", 1,
                                             ) },
                                         ), username = "fixture-account", password = "fixture-password", ready = true,
-                                        onUsername = {}, onPassword = {}, onEnabled = {}, onSave = {}, showTitle = false,
+                                        onUsername = {}, onPassword = {}, onSave = {}, showTitle = false,
                                     )
                                 }
                             } else HomeSyncDetailsDialog(

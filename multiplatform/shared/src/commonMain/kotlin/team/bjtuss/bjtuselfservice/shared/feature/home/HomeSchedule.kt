@@ -16,6 +16,7 @@ internal data class HomeSchedulePresentation(
     val academicWeeks: List<OccupancyWeekDate> = emptyList(),
     val currentWeek: Int = 0,
     val today: LocalDate = LocalDate(2000, 1, 1),
+    val supplementalCourses: List<Course> = emptyList(),
     val onOpenSchedule: () -> Unit = {},
 )
 
@@ -39,5 +40,13 @@ internal fun homeCoursesOnDate(schedule: HomeSchedulePresentation, date: LocalDa
     }.sortedWith(compareBy({ it.courseLocationIndex / 8 }, { it.courseName }))
 }
 
+/** Grid fragments of the same experiment share an id; the home agenda shows one actual event. */
+internal fun homePhysicsLabsOnDate(schedule: HomeSchedulePresentation, date: LocalDate): List<Course> =
+    schedule.supplementalCourses.filter {
+        it.scheduleEventKind == "physicslab" && it.scheduleEventDate == date.toString()
+    }.distinctBy(Course::id).sortedWith(compareBy({ it.scheduleEventTime }, { it.courseName }))
+
 internal fun HomeAgenda.withCourses(schedule: HomeSchedulePresentation): HomeAgenda =
-    copy(days = days.map { it.copy(courses = homeCoursesOnDate(schedule, it.date)) })
+    copy(days = days.map {
+        it.copy(courses = homeCoursesOnDate(schedule, it.date), physicsLabCourses = homePhysicsLabsOnDate(schedule, it.date))
+    })

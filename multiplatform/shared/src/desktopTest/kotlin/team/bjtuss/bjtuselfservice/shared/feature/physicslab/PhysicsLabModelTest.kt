@@ -11,6 +11,29 @@ import team.bjtuss.bjtuselfservice.shared.network.*
 import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
 
 class PhysicsLabModelTest {
+    @Test fun masterSwitchCanEnableBeforeCredentialsAndKeepsSavedAccountWhenDisabled() = runBlocking {
+        val cache = store()
+        try {
+            val vault = MemoryVault()
+            val transport = TestTransport()
+            val model = PhysicsLabModel("fixture-toggle", cache, vault, PhysicsLabRemote(transport))
+            model.setEnabled(true)
+            assertTrue(model.state.value.enabled)
+            assertEquals(0, transport.calls)
+            model.configure("fixture-lab", "fixture-password", true)
+            val calls = transport.calls
+            val labs = model.state.value.labs
+            model.setEnabled(false)
+            model.refresh()
+            assertEquals(calls, transport.calls)
+            assertEquals(labs, model.state.value.labs)
+            assertEquals("fixture-password", model.savedPassword())
+            model.setEnabled(true)
+            model.refresh()
+            assertTrue(transport.calls > calls)
+        } finally { cache.close() }
+    }
+
     @Test fun failureKeepsCacheAndEmptySuccessReplacesIt() = runBlocking {
         val cache = store()
         try {

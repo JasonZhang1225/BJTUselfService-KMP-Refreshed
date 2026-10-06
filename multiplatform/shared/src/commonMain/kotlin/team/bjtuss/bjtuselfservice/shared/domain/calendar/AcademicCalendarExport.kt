@@ -114,7 +114,7 @@ fun generateAcademicCalendarIcs(
         CourseSeriesVariantKey(
             courseId = course.courseId,
             locationIndex = course.courseLocationIndex,
-            title = course.courseName,
+            title = team.bjtuss.bjtuselfservice.shared.domain.course.displayScheduleCourseName(course.courseName),
             teacher = course.courseTeacher,
             place = displayCoursePlace(course.coursePlace),
             isSelectionSchedule = course.isCurrentSemester,

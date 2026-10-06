@@ -208,7 +208,10 @@ internal fun rememberAuthenticatedSession(
     }
     val settingsModel = remember(profile.studentId, cacheStore) {
         SettingsScreenModel(
-            initialPreferences = appPreferences,
+            initialPreferences = appPreferences.copy(
+                physicsLabEnabled = appPreferences.physicsLabEnabled
+                    ?: (cacheStore.metadata(profile.studentId, "physicslab.enabled") == "true"),
+            ),
             persistPreferences = onPreferencesChanged,
             clearAccountCache = {
                 runCatching { cacheStore.clearAccount(profile.studentId) }.isSuccess

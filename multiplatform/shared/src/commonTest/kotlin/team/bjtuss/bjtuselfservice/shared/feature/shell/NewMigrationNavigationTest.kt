@@ -18,13 +18,21 @@ class NewMigrationNavigationTest {
         assertTrue(AppSection.GRADES in applicationSections(preferences))
         assertTrue(shouldOpenNativeSectionRoute("GRADES", true, bottomNavSections(preferences)))
     }
-    @Test fun physicsLabEntrySitsWithPhysicalOnlineRatherThanAfterSettings() {
-        val sections = applicationSections(AppPreferences())
-        val index = physicsLabApplicationIndex(sections)
-        assertTrue(index < sections.lastIndex)
-        assertEquals(AppSection.SETTINGS, sections.last())
-        assertTrue(sections[index].ordinal > AppSection.PHYVLAB.ordinal)
-        assertTrue(sections.take(index).all { it.ordinal < AppSection.PHYVLAB.ordinal })
+    @Test fun optionalPhysicsFeaturesFollowIndependentMasterSwitches() {
+        val enabled = AppPreferences(bottomNavigationItems = emptyList(), physicsLabEnabled = true)
+        val sections = applicationSections(enabled)
+        assertEquals(sections.indexOf(AppSection.PHYVLAB) + 1, sections.indexOf(AppSection.PHYSICS_LAB))
+        val offline = enabled.copy(autoSyncPhyVlab = false, showPhyVlabInBottomNav = false)
+        assertFalse(AppSection.PHYVLAB in applicationSections(offline))
+        assertTrue(AppSection.PHYSICS_LAB in applicationSections(offline))
+        val disabled = offline.copy(physicsLabEnabled = false)
+        assertFalse(AppSection.PHYSICS_LAB in applicationSections(disabled))
+        assertFalse(AppSection.PHYSICS_LAB in bottomNavSections(disabled.copy(bottomNavigationItems = listOf("PHYSICS_LAB"))))
+        val pinned = enabled.copy(bottomNavigationItems = listOf("PHYSICS_LAB"))
+        assertTrue(AppSection.PHYSICS_LAB in bottomNavSections(pinned))
+        assertFalse(AppSection.PHYSICS_LAB in applicationSections(pinned))
+        assertFalse(shouldOpenNativeSectionRoute("PHYSICS_LAB", true, bottomNavSections(pinned)))
+        assertTrue(shouldOpenNativeSectionRoute("PHYSICS_LAB", true, bottomNavSections(enabled)))
     }
     @Test fun configuredMailboxBecomesTabWhileUnpinnedScheduleBecomesSecondaryRoute() {
         val tabs = bottomNavSections(AppPreferences(bottomNavigationItems = listOf("MAILBOX")))

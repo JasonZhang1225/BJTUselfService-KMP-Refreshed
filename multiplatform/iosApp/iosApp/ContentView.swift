@@ -872,6 +872,7 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
         "GRADES": "list.bullet.rectangle",
         "HOMEWORK": "folder",
         "PHYVLAB": "atom",
+        "PHYSICS_LAB": "flask",
         "MORE": "square.grid.2x2",
         "EXAMS": "clock",
         "COURSEWARE": "books.vertical",

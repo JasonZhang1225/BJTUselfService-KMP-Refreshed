@@ -37,7 +37,7 @@ fun scheduleEventCourses(exams: List<ExamSchedule>, labs: List<PhysicsLab>, week
     exams.forEach { exam ->
         val parsed = parseExamCalendarTime(exam.examTimeAndPlace) ?: return@forEach
         fun time(h: Int, m: Int) = "${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}"
-        add(parsed.date, "${time(parsed.startHour, parsed.startMinute)}-${time(parsed.endHour, parsed.endMinute)}", "${exam.courseName}（考试）", "", parsed.location, "exam")
+        add(parsed.date, "${time(parsed.startHour, parsed.startMinute)}-${time(parsed.endHour, parsed.endMinute)}", "${team.bjtuss.bjtuselfservice.shared.domain.course.displayScheduleCourseName(exam.courseName)}（考试）", "", parsed.location, "exam")
     }
     labs.forEach { lab -> lab.dates.forEach { date -> lab.timeRange?.let { add(date, it, "${lab.name}（实验）", lab.teacher, lab.location, "physicslab") } } }
     return result

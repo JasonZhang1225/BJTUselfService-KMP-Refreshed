@@ -66,6 +66,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import team.bjtuss.bjtuselfservice.shared.domain.course.displayScheduleCourseName
+import team.bjtuss.bjtuselfservice.shared.domain.course.displayTitleWithTeacher
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.semantics.contentDescription
@@ -913,7 +915,7 @@ private fun CourseGridCell(
                                 verticalArrangement = Arrangement.Center,
                             ) {
                                 Text(
-                                    course.courseName,
+                                    displayScheduleCourseName(course.courseName),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 2,
@@ -1582,7 +1584,7 @@ private fun CompactCourseColorBlock(
             onClick = { onOpen(course.id) },
             modifier = Modifier.fillMaxWidth().offset(y = maxHeight * course.eventSlotOffset)
                 .height(maxHeight * course.eventSlotHeight).semantics {
-                contentDescription = "${course.courseName}，${course.scheduleEventDate.orEmpty()} ${course.scheduleEventTime ?: course.courseTime}，${displayCoursePlace(course.coursePlace)}，点按查看详情"
+                contentDescription = "${displayScheduleCourseName(course.courseName)}，${course.scheduleEventDate.orEmpty()} ${course.scheduleEventTime ?: course.courseTime}，${displayCoursePlace(course.coursePlace)}，点按查看详情"
             },
             color = colors.container,
             shape = RoundedCornerShape(5.dp),
@@ -1650,9 +1652,9 @@ private fun CourseListCard(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            Text(course.courseName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(course.displayTitleWithTeacher(), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Text(
-                "${displayCoursePlace(course.coursePlace)} · ${course.courseTeacher.ifBlank { "教师未知" }}",
+                displayCoursePlace(course.coursePlace),
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.onContainer.accessibleAlpha(0.78f),
             )
@@ -1691,9 +1693,9 @@ private fun CourseDetailPanel(course: Course?, modifier: Modifier) {
 }
 
 @Composable
-private fun CourseDetailContent(course: Course, modifier: Modifier) {
+internal fun CourseDetailContent(course: Course, modifier: Modifier) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text(course.courseName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        Text(displayScheduleCourseName(course.courseName), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         if (course.scheduleEventKind == null) CourseDetailLine("编号", course.courseId)
         if (course.scheduleEventKind != "exam") CourseDetailLine("教师", course.courseTeacher.ifBlank { "未提供" })
         if (course.scheduleEventKind == null) CourseDetailLine("周次", course.courseTime)

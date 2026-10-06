@@ -56,7 +56,7 @@ class SettingsScreenModel(
 
     fun setBottomNavigationItem(routeId: String, enabled: Boolean) {
         val current = mutableState.value.preferences
-        val candidates = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavigationCandidates(current.isPhyVlabEnabled)
+        val candidates = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavigationCandidates(current.isPhyVlabEnabled, current.isPhysicsLabEnabled)
         if (candidates.none { it.name == routeId }) return
         val selected = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavSections(current)
             .filter { it in candidates }.map { it.name }
@@ -68,7 +68,7 @@ class SettingsScreenModel(
 
     fun setBottomNavigationOrder(routeIds: List<String>): Boolean {
         val current = mutableState.value.preferences
-        val candidates = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavigationCandidates(current.isPhyVlabEnabled)
+        val candidates = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavigationCandidates(current.isPhyVlabEnabled, current.isPhysicsLabEnabled)
         val selected = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavSections(current)
             .filter { it in candidates }.map { it.name }
         // Reordering cannot add, remove, duplicate, or move the fixed entries.
@@ -97,6 +97,8 @@ class SettingsScreenModel(
     fun setShowPhyVlabInBottomNav(enabled: Boolean) = updatePreferences {
         copy(showPhyVlabInBottomNav = enabled)
     }
+
+    fun setPhysicsLabEnabled(enabled: Boolean) = updatePreferences { copy(physicsLabEnabled = enabled) }
 
     fun setPhyVlabEnabled(enabled: Boolean) = updatePreferences {
         copy(

@@ -123,12 +123,21 @@ fun SettingsWorkspace(
 
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("底栏显示", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                BottomNavigationSettings(state.preferences, model)
+                Text("功能开关", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text("启用物理在线", modifier = Modifier.weight(1f))
                     Switch(checked = state.preferences.isPhyVlabEnabled, onCheckedChange = model::setPhyVlabEnabled)
                 }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text("启用物理实验", modifier = Modifier.weight(1f))
+                    Switch(checked = state.preferences.isPhysicsLabEnabled, onCheckedChange = model::setPhysicsLabEnabled)
+                }
+            }
+        }
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("底栏显示", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                BottomNavigationSettings(state.preferences, model)
             }
         }
 

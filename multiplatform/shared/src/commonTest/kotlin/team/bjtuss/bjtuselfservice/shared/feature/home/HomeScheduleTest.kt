@@ -19,4 +19,41 @@ class HomeScheduleTest {
     @Test fun unsynchronizedWeekDoesNotShowAllCourses() {
         assertTrue(homeCoursesOnDate(HomeSchedulePresentation(courses = listOf(course("课程", 1))), LocalDate(2026, 10, 12)).isEmpty())
     }
+    @Test fun newlySyncedPhysicsLabsAppearWithoutRebuildingTheHomeAgenda() {
+        val date = LocalDate(2026, 11, 20)
+        val weeks = listOf(
+            OccupancyWeekDate(10, "11/16", "11/22", LocalDate(2026, 11, 16)),
+            OccupancyWeekDate(11, "11/23", "11/29", LocalDate(2026, 11, 23)),
+        )
+        val schedule = HomeSchedulePresentation(academicWeeks = weeks, currentWeek = 10, today = date)
+        val base = team.bjtuss.bjtuselfservice.shared.domain.home.buildHomeAgenda(
+            emptyList(), emptyList(), date, kotlinx.datetime.LocalDateTime(2026, 11, 20, 9, 0), kotlinx.datetime.TimeZone.UTC,
+        )
+        assertEquals(0, base.withCourses(schedule).days.single { it.date == date }.eventCount)
+        val lab = team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLab(date, 4, "专题测试实验", "实验楼", "测试教师", 2)
+        val fragments = team.bjtuss.bjtuselfservice.shared.feature.course.scheduleEventCourses(emptyList(), listOf(lab), weeks)
+        assertTrue(fragments.count { it.scheduleEventDate == date.toString() } > 1)
+        val synced = schedule.copy(supplementalCourses = fragments)
+        val day = base.withCourses(synced).days.single { it.date == date }
+        assertEquals(1, day.physicsLabCourses.size)
+        assertEquals(1, day.eventCount)
+        assertTrue(day.courses.isEmpty())
+        assertEquals("13:00-16:20", day.physicsLabCourses.single().scheduleEventTime)
+        assertEquals("实验楼", day.physicsLabCourses.single().coursePlace)
+        assertEquals("测试教师", day.physicsLabCourses.single().courseTeacher)
+        assertEquals(1, homePhysicsLabsOnDate(synced, LocalDate(2026, 11, 27)).size)
+        assertTrue(homePhysicsLabsOnDate(synced, LocalDate(2026, 11, 19)).isEmpty())
+        assertEquals(0, base.withCourses(schedule).days.single { it.date == date }.eventCount)
+    }
+
+    @Test fun supplementalExamsDoNotBecomeLabsOrInflateOrdinaryCourseCounts() {
+        val date = LocalDate(2026, 10, 12)
+        val ordinary = course("课程", 1)
+        val lab = course("实验", 25).copy(id = -1, scheduleEventKind = "physicslab", scheduleEventDate = date.toString(), scheduleEventTime = "13:20-15:50")
+        val exam = lab.copy(id = -2, scheduleEventKind = "exam")
+        val schedule = HomeSchedulePresentation(courses = listOf(ordinary), currentWeek = 3, today = date,
+            supplementalCourses = listOf(lab, lab.copy(courseLocationIndex = 33), exam))
+        assertEquals(listOf(ordinary), homeCoursesOnDate(schedule, date))
+        assertEquals(listOf(lab), homePhysicsLabsOnDate(schedule, date))
+    }
 }

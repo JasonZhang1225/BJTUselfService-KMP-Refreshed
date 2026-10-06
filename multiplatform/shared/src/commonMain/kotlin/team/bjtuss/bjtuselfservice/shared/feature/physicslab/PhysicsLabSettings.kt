@@ -27,7 +27,6 @@ fun PhysicsLabSettings(model: PhysicsLabModel, modifier: Modifier = Modifier, sh
     PhysicsLabSettingsForm(
         state, username, password, ready,
         onUsername = { username = it }, onPassword = { password = it },
-        onEnabled = { enabled -> scope.launch { model.configure(username, password, enabled) } },
         onSave = { scope.launch { model.configure(username, password, state.enabled) } },
         modifier = modifier, showTitle = showTitle,
     )
@@ -41,7 +40,6 @@ internal fun PhysicsLabSettingsForm(
     ready: Boolean,
     onUsername: (String) -> Unit,
     onPassword: (String) -> Unit,
-    onEnabled: (Boolean) -> Unit,
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
     showTitle: Boolean = true,
@@ -57,12 +55,8 @@ internal fun PhysicsLabSettingsForm(
         Text("连接校园网后，每次同步读取已选实验；校外使用上次成功的缓存。实验系统使用校园网 HTTP 接口。", style = MaterialTheme.typography.bodyMedium)
         OutlinedTextField(username, onUsername, label = { Text("实验系统账号") }, singleLine = true, enabled = ready && !state.refreshing, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(password, onPassword, label = { Text("实验系统密码") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), enabled = ready && !state.refreshing, modifier = Modifier.fillMaxWidth())
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("启用物理实验同步", Modifier.weight(1f))
-            Switch(state.enabled, onEnabled, enabled = ready && !state.refreshing)
-        }
         Button(onClick = onSave, enabled = ready && !state.refreshing) {
-            Text(if (state.refreshing) "正在同步…" else if (state.enabled) "保存并同步" else "保存账号")
+            Text(if (state.refreshing) "正在同步…" else "保存账号")
         }
         state.message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         Text("专题、设计类按连续两周显示，其余实验按一周显示（沿用参考项目规则）。", style = MaterialTheme.typography.bodySmall)
