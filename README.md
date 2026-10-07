@@ -1,4 +1,4 @@
-# 🚄 交大自由行 (BJTU Self Service)
+# 🚄 交大自由行KMP (BJTU Self Service KMP Refreshed)
 
 > 北京交通大学校园服务客户端 —— 让校园生活触手可及  
 > 本仓库为 **Kotlin Multiplatform 多端刷新版**（Android / iOS / macOS / Windows），在原安卓项目功能基线 `v1.7.0` 上迁移与增强。
@@ -20,12 +20,11 @@
 本 fork（[BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed)）在原作者 [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService) 安卓版基础上，用 **KMP + Compose Multiplatform** 做多端共享实现；根目录冻结原 Android 工程，**新实现在 `multiplatform/`**。当前应用版本 **1.8.2-KMP**。
 
 相对原版新增/增强（节选）：
-- **教室占用查询**（教务 `room_view`，原 1.7.0 安卓无）
+- **教室占用查询**（教务系统入口功能）
 - **成绩按课程性质筛选**（必修 / 限选 / 任选 / 体育）
-- **物理在线**（CAS/Moodle 会话、课程与作业安排、提交状态、批改信息和按账号隔离缓存）
-- **邮箱原生前端**（宽屏三栏布局、紧凑端原生详情、文件夹切换、分页和 HTML 表格）
-- **Windows 桌面端**（x64 安装包、触摸滚动兼容和桌面端自适应布局）
-- 多端统一壳层：「更多」收纳、顶栏同步胶囊、平板/桌面侧栏分屏与比例分栏
+- **物理在线作业和物理实验查询**
+- **邮箱原生前端**
+- **Windows 桌面端**
 
 ## ✨ 功能特性
 
@@ -167,7 +166,7 @@ iOS 未签名 IPA 的自签与安装请参考 [iOS 自签与安装指南](docs/i
 - [optsimauth](https://github.com/optsimauth): 
   - 重构了整个项目的架构，优化了代码结构
   - 以及后续若干跟进
-  - 开发 [BJTUselfServiceAIO 社区版](https://github.com/optsimauth/BJTUselfServiceAIO)；KMP 首页课表、教室查询整合和可配置底栏的本轮改造参考了该项目的功能与交互设计
+  - 开发 [BJTUselfServiceAIO 社区版](https://github.com/optsimauth/BJTUselfServiceAIO)；本项目首页课表的展示、教室查询整合和可配置底栏的改造，参考了该项目的功能与交互设计
 - [guh0613](https://github.com/guh0613)
   - 提供自动构建与发布
 - [carolyn-sun](https://github.com/carolyn-sun)
@@ -178,6 +177,5 @@ iOS 未签名 IPA 的自签与安装请参考 [iOS 自签与安装指南](docs/i
   - 提供了成绩自选课程计算
 - [wangxiaobo1747](https://github.com/wangxiaobo1747) 
   - 提供了自定义壁纸和桌面课程表小组件
-
 - [JasonZhang1225](https://github.com/JasonZhang1225)
   - KMP 多端迁移（Android / iOS / macOS / Windows）、物理在线与邮箱前端重写，以及后续壳层、教室占用等增强
