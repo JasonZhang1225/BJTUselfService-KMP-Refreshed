@@ -3,9 +3,21 @@ package team.bjtuss.bjtuselfservice.shared.security
 import java.util.prefs.Preferences
 
 fun createDesktopAccountSecurityStore(): AccountSecurityStore = AccountSecurityStore(
-    credentialVault = MacOsKeychainCredentialVault(),
+    credentialVault = MacOsBagBackedCredentialVault(
+        bag = productionMacOsSecretBag,
+        key = MacOsSecretKeys.CREDENTIALS,
+        legacyService = LEGACY_CREDENTIALS_SERVICE,
+        legacyAccount = LEGACY_PRIMARY_ACCOUNT,
+    ),
     preferences = DesktopAccountPreferences(),
-    physicsLabVault = { MacOsKeychainCredentialVault(service = "team.bjtuss.bjtuselfservice.kmp.physicslab", account = it) },
+    physicsLabVault = { accountScope ->
+        MacOsBagBackedCredentialVault(
+            bag = productionMacOsSecretBag,
+            key = MacOsSecretKeys.physicsLab(accountScope),
+            legacyService = LEGACY_PHYSICS_LAB_SERVICE,
+            legacyAccount = accountScope,
+        )
+    },
 )
 
 private class DesktopAccountPreferences : AccountPreferences {

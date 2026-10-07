@@ -7,8 +7,11 @@ import javax.crypto.Cipher
 import javax.crypto.Mac
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
-import team.bjtuss.bjtuselfservice.shared.security.CredentialVaultOperation
+import team.bjtuss.bjtuselfservice.shared.security.LEGACY_CACHE_KEY_SERVICE
+import team.bjtuss.bjtuselfservice.shared.security.LEGACY_PRIMARY_ACCOUNT
 import team.bjtuss.bjtuselfservice.shared.security.MacOsKeychainItem
+import team.bjtuss.bjtuselfservice.shared.security.MacOsSecretKeys
+import team.bjtuss.bjtuselfservice.shared.security.productionMacOsSecretBag
 
 /** AES-256-GCM field protection used by the JVM desktop cache stores. */
 class JvmAesCacheValueProtector(keyBytes: ByteArray) : CacheValueProtector {
@@ -130,15 +133,12 @@ internal data class DesktopCacheKey(
 )
 
 internal fun loadOrCreateMacOsCacheKey(): DesktopCacheKey {
-    val item = MacOsKeychainItem(
-        service = "team.bjtuss.bjtuselfservice.kmp.cache-key",
-        account = "primary",
-    )
-    item.load(CredentialVaultOperation.LOAD)?.let { existing ->
+    val legacy = MacOsKeychainItem(LEGACY_CACHE_KEY_SERVICE, LEGACY_PRIMARY_ACCOUNT)
+    productionMacOsSecretBag.get(MacOsSecretKeys.CACHE_KEY, legacy)?.let { existing ->
         require(existing.size == 32) { "Invalid cache encryption key" }
         return DesktopCacheKey(existing, created = false)
     }
     val created = ByteArray(32).also(SecureRandom()::nextBytes)
-    item.save(created, CredentialVaultOperation.SAVE)
+    productionMacOsSecretBag.put(MacOsSecretKeys.CACHE_KEY, created, legacy)
     return DesktopCacheKey(created, created = true)
 }
