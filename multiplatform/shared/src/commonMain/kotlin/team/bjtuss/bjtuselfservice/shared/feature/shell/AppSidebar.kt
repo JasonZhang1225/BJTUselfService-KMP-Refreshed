@@ -241,7 +241,7 @@ internal fun AppSidebar(
                         section == item
                     }
                     AppSidebarItem(
-                        title = item.title,
+                        section = item,
                         selected = selected,
                         onClick = { onSectionSelected(item) },
                     )
@@ -258,7 +258,7 @@ internal fun AppSidebar(
 }
 
 @Composable
-internal fun AppSidebarItem(title: String, selected: Boolean, onClick: () -> Unit) {
+internal fun AppSidebarItem(section: AppSection, selected: Boolean, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         color = if (selected) {
@@ -273,11 +273,25 @@ internal fun AppSidebarItem(title: String, selected: Boolean, onClick: () -> Uni
         },
         shape = RoundedCornerShape(14.dp),
     ) {
-        Text(
-            title,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier.size(24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CompactTabIcon(section)
+            }
+            Text(
+                section.title,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
