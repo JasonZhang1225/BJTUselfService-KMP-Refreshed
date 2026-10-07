@@ -66,7 +66,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.calendar.SingleExamCalendarShe
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
-import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 
@@ -242,8 +243,15 @@ internal fun ExamScheduleDetailWorkspace(
         }
         return
     }
-    Column(
-        modifier = modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 12.dp),
+    TopScrollColumn(
+        state = rememberScrollState(),
+        modifier = modifier.fillMaxSize(),
+        contentModifier = Modifier.padding(
+            start = 18.dp,
+            end = 18.dp,
+            top = 12.dp + LocalTopBarClearance.current,
+            bottom = 12.dp + LocalBottomBarClearance.current,
+        ),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(exam.courseName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
@@ -402,8 +410,7 @@ private fun ExamScrollableContent(
     // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
     val topClearance = LocalTopBarClearance.current
     // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
-    ReportTopScrollListState(listState)
-    LazyColumn(
+    TopScrollLazyColumn(
         state = listState,
         modifier = modifier.desktopTouchScroll(listState),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -567,11 +574,10 @@ private fun ExamDetailContent(
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
     val detailScrollState = rememberScrollState()
-    Column(
-        modifier = modifier
-            .verticalScroll(detailScrollState)
-            .desktopTouchScroll(detailScrollState)
-            .padding(contentPadding),
+    TopScrollColumn(
+        state = detailScrollState,
+        modifier = modifier.desktopTouchScroll(detailScrollState),
+        contentModifier = Modifier.padding(contentPadding),
     ) {
         ExamDetailSheetBody(exam, onAddToCalendar = onAddToCalendar)
     }

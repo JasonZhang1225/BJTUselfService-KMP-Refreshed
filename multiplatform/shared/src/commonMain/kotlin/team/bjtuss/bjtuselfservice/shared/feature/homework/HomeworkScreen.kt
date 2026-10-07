@@ -91,8 +91,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
-import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
-import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollState
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LegacySmartTransportWarning
 import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
 
@@ -476,11 +476,10 @@ fun HomeworkDetailWorkspace(
     val transfer = rememberHomeworkTransferState(model, fileGateway, onReauthenticate)
     val detailScrollState = rememberScrollState()
     // 真实偏移上报给壳层算玻璃浓度。
-    ReportTopScrollState(detailScrollState)
-    Column(
-        modifier = modifier
-            .verticalScroll(detailScrollState)
-            .desktopTouchScroll(detailScrollState)
+    TopScrollColumn(
+        state = detailScrollState,
+        modifier = modifier.desktopTouchScroll(detailScrollState),
+        contentModifier = Modifier
             .padding(horizontal = 24.dp)
             // 原生栏 underlap 时视口顶边贴屏幕顶，首项靠这份顶边距让开（其余平台恒 0）。
             .padding(top = 12.dp + LocalTopBarClearance.current, bottom = 28.dp + LocalBottomBarClearance.current),
@@ -811,11 +810,10 @@ private fun HomeworkScrollableContent(
     // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
     val topClearance = LocalTopBarClearance.current
     // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
-    ReportTopScrollListState(listState)
     LaunchedEffect(state.sortOrder, state.hideExpired, state.hideSubmitted, state.selectedCourses) {
         listState.scrollToItem(0)
     }
-    LazyColumn(
+    TopScrollLazyColumn(
         state = listState,
         modifier = modifier.desktopTouchScroll(listState),
         verticalArrangement = Arrangement.spacedBy(10.dp),

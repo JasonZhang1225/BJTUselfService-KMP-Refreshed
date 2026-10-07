@@ -27,6 +27,7 @@ data class AppPreferences(
     val theme: String = "System",
     val showPhyVlabInBottomNav: Boolean = true,
     val bottomNavigationItems: List<String>? = null,
+    val redesignGuideAcknowledged: Boolean = false,
     /** null migrates the previous account-scoped physicslab.enabled setting on session creation. */
     val physicsLabEnabled: Boolean? = null,
 ) {
@@ -352,6 +353,18 @@ class CacheStore(
         queries.deleteSetting(protectedKey(key))
     }
 
+    /** This release transition is independent of version numbers and guide acknowledgement. */
+    fun prepareRedesignPreferences(): AppPreferences {
+        queries.transaction {
+            if (!booleanSetting(SettingKey.REDESIGN_NAVIGATION_MIGRATED, false)) {
+                putSetting(SettingKey.BOTTOM_NAVIGATION_ITEMS, "")
+                putSetting(SettingKey.REDESIGN_GUIDE_ACKNOWLEDGED, "false")
+                putSetting(SettingKey.REDESIGN_NAVIGATION_MIGRATED, "true")
+            }
+        }
+        return preferences()
+    }
+
     fun preferences(): AppPreferences = AppPreferences(
         autoSyncGrades = true,
         autoSyncHomework = true,
@@ -366,6 +379,7 @@ class CacheStore(
         theme = setting(SettingKey.THEME)?.takeIf(String::isNotBlank) ?: "System",
         showPhyVlabInBottomNav = booleanSetting(SettingKey.SHOW_PHYVLAB_IN_BOTTOM_NAV, true),
         bottomNavigationItems = setting(SettingKey.BOTTOM_NAVIGATION_ITEMS)?.takeUnless { it == "*" }?.split(',')?.filter(String::isNotBlank),
+        redesignGuideAcknowledged = booleanSetting(SettingKey.REDESIGN_GUIDE_ACKNOWLEDGED, false),
     )
 
     fun savePreferences(preferences: AppPreferences) {
@@ -383,6 +397,7 @@ class CacheStore(
             putSetting(SettingKey.THEME, preferences.theme.ifBlank { "System" })
             putSetting(SettingKey.SHOW_PHYVLAB_IN_BOTTOM_NAV, preferences.showPhyVlabInBottomNav.toString())
             putSetting(SettingKey.BOTTOM_NAVIGATION_ITEMS, preferences.bottomNavigationItems?.joinToString(",") ?: "*")
+            putSetting(SettingKey.REDESIGN_GUIDE_ACKNOWLEDGED, preferences.redesignGuideAcknowledged.toString())
         }
     }
 
@@ -565,6 +580,8 @@ private object SettingKey {
     const val DYNAMIC_COLOR = "dynamic_color"
     const val THEME = "theme"
     const val BOTTOM_NAVIGATION_ITEMS = "bottom_navigation_items"
+    const val REDESIGN_NAVIGATION_MIGRATED = "redesign_navigation_migrated"
+    const val REDESIGN_GUIDE_ACKNOWLEDGED = "redesign_guide_acknowledged"
     const val SHOW_PHYVLAB_IN_BOTTOM_NAV = "show_phyvlab_in_bottom_nav"
 }
 

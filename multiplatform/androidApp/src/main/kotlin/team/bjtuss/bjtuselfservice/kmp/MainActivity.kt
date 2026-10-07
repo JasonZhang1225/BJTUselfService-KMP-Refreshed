@@ -5,7 +5,6 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import team.bjtuss.bjtuselfservice.shared.App
 import team.bjtuss.bjtuselfservice.shared.cache.createAndroidCacheStore
 import team.bjtuss.bjtuselfservice.shared.security.createAndroidAccountSecurityStore
@@ -17,7 +16,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableImmersiveEdgeToEdge()
         // 调试日志只在 debug 构建开启；release 保持关闭。
         AppLog.enabled = BuildConfig.DEBUG
         // 不要在此处预热 WebView：Chromium 会让 HyperOS 把应用标成「跟随应用内设置」并锁 60Hz。

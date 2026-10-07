@@ -22,7 +22,7 @@ env:
 
 jobs:
   android:
-    name: Android arm64 debug APK
+    name: Android arm64 release APK
     if: ${{ github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0' }}
     runs-on: ubuntu-latest
     defaults:
@@ -67,23 +67,24 @@ jobs:
           PY
           echo "BJTU_ANDROID_KEYSTORE=$HOME/.android/bjtu-kmp-upload.keystore" >> "$GITHUB_ENV"
 
-      - name: Build arm64 debug APK
+      - name: Build arm64 release APK
         env:
           BJTU_ANDROID_STORE_PASSWORD: ${{ secrets.BJTU_ANDROID_STORE_PASSWORD }}
           BJTU_ANDROID_KEY_ALIAS: ${{ secrets.BJTU_ANDROID_KEY_ALIAS }}
           BJTU_ANDROID_KEY_PASSWORD: ${{ secrets.BJTU_ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x ./gradlew
-          ./gradlew :androidApp:assembleDebug --stacktrace
+          ./gradlew :androidApp:assembleRelease --stacktrace
 
       - name: Rename APK
         id: artifact
         run: |
           VERSION="$(sed -n 's/.*CURRENT_VERSION = "\([^"]*\)".*/\1/p' shared/src/commonMain/kotlin/team/bjtuss/bjtuselfservice/shared/update/AppUpdateChecker.kt | head -n 1)"
-          APK="$(find androidApp/build/outputs/apk/debug -type f -name '*-arm64-v8a-debug.apk' | head -n 1)"
+          VERSION="${VERSION%-KMP}"
+          APK="$(find androidApp/build/outputs/apk/release -type f -name '*-arm64-v8a-release.apk' | head -n 1)"
           if [ -z "$APK" ]; then
-            echo "arm64-v8a debug APK not found"
-            find androidApp/build/outputs/apk/debug -type f -name '*.apk' -print
+            echo "arm64-v8a release APK not found"
+            find androidApp/build/outputs/apk/release -type f -name '*.apk' -print
             exit 1
           fi
           test -n "$VERSION"
@@ -155,6 +156,7 @@ jobs:
         id: artifact
         run: |
           $version = (Select-String -Path "shared\src\commonMain\kotlin\team\bjtuss\bjtuselfservice\shared\update\AppUpdateChecker.kt" -Pattern 'CURRENT_VERSION = "([^"]+)"').Matches[0].Groups[1].Value
+          $version = $version -replace '-KMP$', ''
           $msi = Get-ChildItem "windowsApp\build\compose\binaries\main\msi\*.msi" | Select-Object -First 1
           if (-not $msi) { throw "MSI not found" }
           $name = "BJTUselfServiceKMP-$version.msi"
@@ -207,6 +209,7 @@ jobs:
         id: artifact
         run: |
           VERSION="$(sed -n 's/.*CURRENT_VERSION = "\([^"]*\)".*/\1/p' shared/src/commonMain/kotlin/team/bjtuss/bjtuselfservice/shared/update/AppUpdateChecker.kt | head -n 1)"
+          VERSION="${VERSION%-KMP}"
           DMG="$(find desktopApp/build/compose/binaries/main/dmg -name '*.dmg' | head -n 1)"
           test -n "$VERSION"
           test -f "$DMG"
@@ -272,6 +275,7 @@ jobs:
         id: artifact
         run: |
           VERSION="$(sed -n 's/.*CURRENT_VERSION = "\([^"]*\)".*/\1/p' shared/src/commonMain/kotlin/team/bjtuss/bjtuselfservice/shared/update/AppUpdateChecker.kt | head -n 1)"
+          VERSION="${VERSION%-KMP}"
           APP="$(find iosApp/DerivedData/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -n 1)"
           test -n "$VERSION"
           test -d "$APP"

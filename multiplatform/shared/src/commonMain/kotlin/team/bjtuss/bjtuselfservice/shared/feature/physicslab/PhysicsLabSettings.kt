@@ -3,7 +3,7 @@ package team.bjtuss.bjtuselfservice.shared.feature.physicslab
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
-import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollState
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
@@ -54,11 +54,10 @@ internal fun PhysicsLabSettingsForm(
     onTwoWeeksChanged: (PhysicsLab, Boolean) -> Unit = { _, _ -> },
 ) {
     val scrollState = rememberScrollState()
-    ReportTopScrollState(scrollState)
-    Column(
-        modifier.fillMaxSize()
-            .verticalScroll(scrollState)
-            .desktopTouchScroll(scrollState)
+    TopScrollColumn(
+        state = scrollState,
+        modifier = modifier.fillMaxSize().desktopTouchScroll(scrollState),
+        contentModifier = Modifier
             // 顶栏留白必须在滚动内容里：外层 padding 会让视口止于栏底，栏后只剩纯色，
             // 原生玻璃采不到内容。与设置/成绩页同一套：首项让开栏高，滚起来穿进栏后。
             .padding(

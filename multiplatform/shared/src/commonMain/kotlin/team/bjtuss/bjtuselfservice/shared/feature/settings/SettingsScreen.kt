@@ -49,7 +49,7 @@ import team.bjtuss.bjtuselfservice.shared.update.parseReleaseNotes
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
-import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollState
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
 
 @Composable
 fun SettingsWorkspace(
@@ -67,7 +67,6 @@ fun SettingsWorkspace(
     val uriHandler = LocalUriHandler.current
     val pageScrollState = rememberScrollState()
     // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
-    ReportTopScrollState(pageScrollState)
 
     if (confirmClear) {
         AppleSheetOrAlert(
@@ -105,11 +104,10 @@ fun SettingsWorkspace(
     // 检查结果弹窗提到 SettingsWorkspace 外层渲染：「前往下载」属于应用壳层导航动作，
     // 挂在页面里时用户不在设置页就永远看不到自动检测出的新版本提示。
 
-    Column(
-        modifier = modifier.fillMaxSize()
-            .verticalScroll(pageScrollState)
-            .desktopTouchScroll(pageScrollState)
-            .padding(
+    TopScrollColumn(
+        state = pageScrollState,
+        modifier = modifier.fillMaxSize().desktopTouchScroll(pageScrollState),
+        contentModifier = Modifier.padding(
             horizontal = if (expanded) 8.dp else 16.dp,
             vertical = 14.dp,
         )

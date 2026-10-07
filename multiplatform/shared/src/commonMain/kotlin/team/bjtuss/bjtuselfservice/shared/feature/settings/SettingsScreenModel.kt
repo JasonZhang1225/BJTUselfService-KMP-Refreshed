@@ -54,6 +54,8 @@ class SettingsScreenModel(
     private var automaticUpdateChecked = false
     private var postponedUntilMillis = initialPreferences.updatePostponedUntilMillis
 
+    fun acknowledgeRedesignGuide() = updatePreferences { copy(redesignGuideAcknowledged = true) }
+
     fun setBottomNavigationItem(routeId: String, enabled: Boolean) {
         val current = mutableState.value.preferences
         val candidates = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavigationCandidates(current.isPhyVlabEnabled, current.isPhysicsLabEnabled)

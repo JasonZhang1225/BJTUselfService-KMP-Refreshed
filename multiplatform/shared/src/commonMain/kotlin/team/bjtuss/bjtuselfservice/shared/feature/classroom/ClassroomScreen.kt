@@ -3,9 +3,6 @@ package team.bjtuss.bjtuselfservice.shared.feature.classroom
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.rememberOverscrollEffect
-import androidx.compose.foundation.overscroll
-import androidx.compose.foundation.withoutVisualEffect
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.horizontalScroll
@@ -48,9 +45,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -73,10 +67,8 @@ import team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomCapacity
 import team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomSortDirection
 import team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomSortField
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
-import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalReportTopScroll
-import team.bjtuss.bjtuselfservice.shared.feature.shell.resolveVisualTopScrollOffset
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
-import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 
 /** iPhone 两级列表（原生 push 详情）、macOS 列表—详情并排的教室人数估计页面。 */
@@ -184,34 +176,13 @@ private fun BuildingList(
     val listState = rememberLazyListState()
     // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
     val topClearance = LocalTopBarClearance.current
-    // A short building list can rubber-band under the iOS title bar while its
-    // logical offset remains zero. Include the placed content's elastic offset.
-    val tracksElasticPosition = topClearance > 0.dp
-    val overscrollEffect = rememberOverscrollEffect()
-    val viewportTop = remember { mutableStateOf<Float?>(null) }
-    val contentTop = remember { mutableStateOf<Float?>(null) }
-    val report = LocalReportTopScroll.current
-    if (tracksElasticPosition) {
-        LaunchedEffect(listState, report) {
-            snapshotFlow {
-                val logicalOffset = if (listState.firstVisibleItemIndex > 0) Float.MAX_VALUE
-                    else listState.firstVisibleItemScrollOffset.toFloat()
-                resolveVisualTopScrollOffset(logicalOffset, viewportTop.value, contentTop.value)
-            }.collect { report(it) }
-        }
-    } else {
-        ReportTopScrollListState(listState)
-    }
-    Box(modifier.onGloballyPositioned { viewportTop.value = it.positionInRoot().y }) {
-        LazyColumn(
+    Box(modifier) {
+        TopScrollLazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize()
                 .desktopTouchScroll(listState)
-                .then(if (tracksElasticPosition) Modifier.overscroll(overscrollEffect) else Modifier)
-                .onGloballyPositioned { contentTop.value = it.positionInRoot().y }
                 .padding(horizontal = 16.dp)
                 .padding(top = if (topClearance > 0.dp) 0.dp else 8.dp),
-            overscrollEffect = if (tracksElasticPosition) overscrollEffect?.withoutVisualEffect() else overscrollEffect,
             contentPadding = PaddingValues(
                 // 首项靠内部顶边距让开原生栏（外层已不再占位）：8.dp 还原起笔位置。
                 top = 8.dp + topClearance,

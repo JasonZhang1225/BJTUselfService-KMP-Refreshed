@@ -15,7 +15,7 @@ android {
         applicationId = "team.bjtuss.bjtuselfservice.kmp"
         minSdk = 28
         targetSdk = 35
-        versionCode = 23
+        versionCode = 24
         versionName = "1.8.2-KMP"
     }
 

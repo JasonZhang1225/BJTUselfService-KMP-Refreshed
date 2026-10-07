@@ -887,8 +887,14 @@ fun AuthenticatedAppShell(
 
     // 检查结果弹窗放在整个壳内容之后渲染：发现新版本时无论当前在哪个页面都能看到
     // 「前往下载」，不依赖用户停留在设置页（设置页内按钮触发的结果也走同一弹窗）。
-    AppUpdateResultDialog(settingsState.updateCheck, settingsModel::dismissUpdateCheck, settingsModel::postponeUpdate)
-    partialSyncFailureDialogItems?.let { items ->
+    val showRedesignGuide = !settingsState.preferences.redesignGuideAcknowledged &&
+        (forcedRouteId == null || forcedRouteId == AppSection.HOME.name)
+    if (showRedesignGuide) {
+        RedesignGuideDialog(settingsState.saveFailed, settingsModel::acknowledgeRedesignGuide)
+    } else {
+        AppUpdateResultDialog(settingsState.updateCheck, settingsModel::dismissUpdateCheck, settingsModel::postponeUpdate)
+    }
+    partialSyncFailureDialogItems?.takeUnless { showRedesignGuide }?.let { items ->
         PartialSyncFailureDialog(
             failedItems = items,
             onRetry = {
@@ -898,7 +904,7 @@ fun AuthenticatedAppShell(
             onDismiss = { partialSyncFailureDialogItems = null },
         )
     }
-    if (homeSyncDialogVisible) {
+    if (homeSyncDialogVisible && !showRedesignGuide) {
         HomeSyncDetailsDialog(
             title = homeSyncDialogTitle(
                 isLoggingIn = entryLoggingIn,
@@ -914,7 +920,7 @@ fun AuthenticatedAppShell(
             onDismiss = { homeSyncDialogVisible = false },
         )
     }
-    gradeState.pendingChangeNotice?.let { notice ->
+    gradeState.pendingChangeNotice?.takeUnless { showRedesignGuide }?.let { notice ->
         GradeChangeNoticeDialog(
             changes = notice,
             onDismiss = gradeModel::dismissChangeNotice,
@@ -999,8 +1005,12 @@ fun AuthenticatedAppShell(
             hasBottomBar = reserveBottomBarSpace,
             barInset = compactBottomBarOverlayPadding,
             systemInset = systemBottomInset,
+            contentGap = if (platform.family == PlatformFamily.Android) 0.dp else 8.dp,
         )
-        val usesBottomUnderlap = platform.family == PlatformFamily.IOS
+        // Android secondary pages draw behind the transparent gesture area;
+        // their scroll content still consumes the system inset at its tail.
+        val usesBottomUnderlap = platform.family == PlatformFamily.IOS ||
+            (platform.family == PlatformFamily.Android && !reserveBottomBarSpace)
         val bottomLayoutInset = if (usesBottomUnderlap) 0.dp else bottomContentClearance
         Box(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
             Column(

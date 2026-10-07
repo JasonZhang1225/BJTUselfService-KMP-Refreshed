@@ -3,6 +3,7 @@ package team.bjtuss.bjtuselfservice.shared.feature.otherfunction
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -128,13 +129,15 @@ private fun OtherFunctionPageScaffold(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    Column(
-        modifier = (if (expanded) {
-            modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+    TopScrollColumn(
+        state = rememberScrollState(),
+        modifier = modifier,
+        contentModifier = (if (expanded) {
+            Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         } else {
             // 短页也支持滚动，首项留在原生栏下（老起笔 14.dp + 栏高，其余平台恒 0 不变）。
-            modifier.padding(horizontal = 16.dp).padding(top = 14.dp + LocalTopBarClearance.current)
-        }).verticalScroll(rememberScrollState()).padding(bottom = LocalBottomBarClearance.current),
+            Modifier.padding(horizontal = 16.dp).padding(top = 14.dp + LocalTopBarClearance.current)
+        }).padding(bottom = LocalBottomBarClearance.current),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         content()

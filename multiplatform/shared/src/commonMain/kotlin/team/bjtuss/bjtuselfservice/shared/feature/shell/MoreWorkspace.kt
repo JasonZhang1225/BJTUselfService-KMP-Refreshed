@@ -3,14 +3,8 @@ package team.bjtuss.bjtuselfservice.shared.feature.shell
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberOverscrollEffect
-import androidx.compose.foundation.overscroll
-import androidx.compose.foundation.withoutVisualEffect
 import androidx.compose.foundation.Canvas
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Surface
@@ -48,24 +42,8 @@ internal fun MoreWorkspace(
 ) {
     val scroll = rememberLazyListState()
     val topClearance = LocalTopBarClearance.current
-    val tracksElasticPosition = topClearance > 0.dp
-    val overscroll = rememberOverscrollEffect()
-    val viewportTop = remember { mutableStateOf<Float?>(null) }
-    val contentTop = remember { mutableStateOf<Float?>(null) }
-    val report = LocalReportTopScroll.current
     var activeAccountEntry by remember { mutableStateOf<CampusAccountEntry?>(null) }
     var actionError by remember { mutableStateOf<String?>(null) }
-    if (tracksElasticPosition) {
-        LaunchedEffect(scroll, report) {
-            snapshotFlow {
-                val logicalOffset = if (scroll.firstVisibleItemIndex > 0) Float.MAX_VALUE
-                    else scroll.firstVisibleItemScrollOffset.toFloat()
-                resolveVisualTopScrollOffset(logicalOffset, viewportTop.value, contentTop.value)
-            }.collect { report(it) }
-        }
-    } else {
-        ReportTopScrollListState(scroll)
-    }
     val sections = applicationSections(preferences).filter {
         it != AppSection.PHYSICS_LAB || showPhysicsLabTile
     }
@@ -98,15 +76,12 @@ internal fun MoreWorkspace(
             onError = { actionError = it },
         )
     }
-    BoxWithConstraints(modifier.fillMaxSize().onGloballyPositioned { viewportTop.value = it.positionInRoot().y }) {
+    BoxWithConstraints(modifier.fillMaxSize()) {
         val columns = when { maxWidth >= 800.dp -> 4; maxWidth >= 480.dp -> 3; else -> 2 }
         val rows = entries.chunked(columns)
-        LazyColumn(
+        TopScrollLazyColumn(
             state = scroll,
-            modifier = Modifier.fillMaxSize().desktopTouchScroll(scroll)
-                .then(if (tracksElasticPosition) Modifier.overscroll(overscroll) else Modifier)
-                .onGloballyPositioned { contentTop.value = it.positionInRoot().y },
-            overscrollEffect = if (tracksElasticPosition) overscroll?.withoutVisualEffect() else overscroll,
+            modifier = Modifier.fillMaxSize().desktopTouchScroll(scroll),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp + topClearance,
                 bottom = 16.dp + LocalBottomBarClearance.current),
             verticalArrangement = Arrangement.spacedBy(12.dp),

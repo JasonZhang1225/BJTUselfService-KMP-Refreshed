@@ -56,7 +56,7 @@ fun App(
 ) {
     val cacheStore = cacheStoreHandle.store
     var appPreferences by remember(cacheStore) {
-        mutableStateOf(runCatching(cacheStore::preferences).getOrDefault(AppPreferences()))
+        mutableStateOf(runCatching(cacheStore::prepareRedesignPreferences).getOrDefault(AppPreferences(bottomNavigationItems = emptyList())))
     }
     // 浅深色始终跟随系统；Android 可按 preferences.dynamicColor 启用 Material You 动态取色。
     val useDarkTheme = isSystemInDarkTheme()

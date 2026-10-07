@@ -4,15 +4,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
-import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
-import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalReportTopScroll
-import team.bjtuss.bjtuselfservice.shared.feature.shell.resolveVisualTopScrollOffset
-import androidx.compose.foundation.rememberOverscrollEffect
-import androidx.compose.foundation.overscroll
-import androidx.compose.foundation.withoutVisualEffect
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
@@ -162,28 +154,6 @@ fun HomeWorkspace(
     LaunchedEffect(todayRequest) {
         if (todayRequest > 0) pageListState.scrollToItem(0)
     }
-    val homeOverscrollEffect = rememberOverscrollEffect()
-    // A short iOS home page rubber-bands without changing LazyListState's
-    // logical offset. Observe the native effect's placed content as well, so
-    // material fades in when that content actually enters the title bar.
-    val tracksElasticPosition = !expanded && LocalTopBarClearance.current > 0.dp
-    val viewportTop = remember { mutableStateOf<Float?>(null) }
-    val contentTop = remember { mutableStateOf<Float?>(null) }
-    val reportTopScroll = LocalReportTopScroll.current
-    if (tracksElasticPosition) {
-        LaunchedEffect(pageListState, reportTopScroll) {
-            snapshotFlow {
-                val logicalOffset = if (pageListState.firstVisibleItemIndex > 0) {
-                    Float.MAX_VALUE
-                } else {
-                    pageListState.firstVisibleItemScrollOffset.toFloat()
-                }
-                resolveVisualTopScrollOffset(logicalOffset, viewportTop.value, contentTop.value)
-            }.collect { reportTopScroll(it) }
-        }
-    } else {
-        ReportTopScrollListState(pageListState)
-    }
     var selectedChangeDomain by remember { mutableStateOf<HomeChangeDomain?>(null) }
     LaunchedEffect(model, holdNetwork) { if (!holdNetwork) model.initialize() }
     selectedChangeDomain?.let { domain ->
@@ -205,24 +175,11 @@ fun HomeWorkspace(
 
     val status = state.status
     Box(
-        modifier = modifier.fillMaxSize().onGloballyPositioned { coordinates ->
-            if (tracksElasticPosition) viewportTop.value = coordinates.positionInRoot().y
-        },
+        modifier = modifier.fillMaxSize(),
     ) {
-        LazyColumn(
+        TopScrollLazyColumn(
             state = pageListState,
-            modifier = Modifier.fillMaxSize().desktopTouchScroll(pageListState)
-                .then(if (tracksElasticPosition) Modifier.overscroll(homeOverscrollEffect) else Modifier)
-                .onGloballyPositioned { coordinates ->
-                    if (tracksElasticPosition) contentTop.value = coordinates.positionInRoot().y
-                },
-            // The same native effect handles events inside the list and renders once
-            // outside it, where we can observe its actual rubber-band displacement.
-            overscrollEffect = if (tracksElasticPosition) {
-                homeOverscrollEffect?.withoutVisualEffect()
-            } else {
-                homeOverscrollEffect
-            },
+            modifier = Modifier.fillMaxSize().desktopTouchScroll(pageListState),
             contentPadding = PaddingValues(
                 start = if (expanded) 8.dp else 16.dp,
                 end = if (expanded) 8.dp else 16.dp,

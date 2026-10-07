@@ -5,6 +5,12 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class DestinationBottomClearanceTest {
+    @Test fun androidRootMeetsBarWithoutAnExtraBackgroundStrip() {
+        assertEquals(104.dp, destinationBottomClearance(false, true, 104.dp, 24.dp, contentGap = 0.dp))
+        assertEquals(104.dp, destinationBottomClearance(false, true, 0.dp, 24.dp, contentGap = 0.dp))
+        assertEquals(24.dp, destinationBottomClearance(false, false, 104.dp, 24.dp, contentGap = 0.dp))
+    }
+
     @Test fun rootReservesCompleteBarFrameOnce() {
         assertEquals(122.dp, destinationBottomClearance(false, true, 114.dp, 34.dp))
         assertEquals(88.dp, destinationBottomClearance(false, true, 80.dp, 34.dp))

@@ -22,6 +22,53 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 
 class CacheStoreTest {
     @Test
+    fun redesignMigrationRunsOnceAndPreservesLaterCustomizationAcrossReopens() {
+        val directory = Files.createTempDirectory("bjtu-redesign-test-").toFile()
+        try {
+            val first = openDesktopCacheStore(directory, PlaintextCacheValueProtector).store
+            try {
+                val store = first
+                store.savePreferences(AppPreferences(bottomNavigationItems = listOf("GRADES", "SCHEDULE"), dynamicColor = false))
+                val migrated = store.prepareRedesignPreferences()
+                assertEquals(emptyList(), migrated.bottomNavigationItems)
+                assertFalse(migrated.redesignGuideAcknowledged)
+                assertFalse(migrated.dynamicColor)
+                store.savePreferences(migrated.copy(bottomNavigationItems = listOf("MAILBOX", "EXAMS")))
+            } finally { first.close() }
+            val second = openDesktopCacheStore(directory, PlaintextCacheValueProtector).store
+            try {
+                val store = second
+                val pending = store.prepareRedesignPreferences()
+                assertEquals(listOf("MAILBOX", "EXAMS"), pending.bottomNavigationItems)
+                assertFalse(pending.redesignGuideAcknowledged)
+                store.savePreferences(pending.copy(redesignGuideAcknowledged = true))
+            } finally { second.close() }
+            val third = openDesktopCacheStore(directory, PlaintextCacheValueProtector).store
+            try {
+                val store = third
+                val restored = store.prepareRedesignPreferences()
+                assertTrue(restored.redesignGuideAcknowledged)
+                assertEquals(listOf("MAILBOX", "EXAMS"), restored.bottomNavigationItems)
+                store.savePreferences(restored.copy(bottomNavigationItems = emptyList()))
+                assertEquals(emptyList(), store.prepareRedesignPreferences().bottomNavigationItems)
+                assertTrue(store.preferences().redesignGuideAcknowledged)
+            } finally { third.close() }
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test
+    fun freshInstallAndLegacyDefaultBothMigrateToTwoTabs() {
+        for (legacyDefault in listOf(false, true)) {
+            val store = inMemoryStore()
+            try {
+                if (legacyDefault) store.savePreferences(AppPreferences())
+                assertEquals(emptyList(), store.prepareRedesignPreferences().bottomNavigationItems)
+                assertFalse(store.preferences().redesignGuideAcknowledged)
+            } finally { store.close() }
+        }
+    }
+
+    @Test
     fun physicsLabPreferencePreservesLegacySentinelAndExplicitValues() {
         val store = inMemoryStore()
         try {

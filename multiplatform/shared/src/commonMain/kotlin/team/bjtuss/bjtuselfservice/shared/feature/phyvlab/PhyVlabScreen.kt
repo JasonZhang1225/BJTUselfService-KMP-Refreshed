@@ -38,8 +38,8 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ModalBottomSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
-import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollListState
-import team.bjtuss.bjtuselfservice.shared.feature.shell.ReportTopScrollState
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -113,7 +113,6 @@ fun PhyVlabWorkspace(
     var activityOrderDescending by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
     val listState = rememberLazyListState()
     // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
-    ReportTopScrollListState(listState)
     val displayedActivities = orderPhyVlabActivities(state.activities, activityOrderDescending)
     val nowEpochSeconds = rememberPhyVlabNowEpochSeconds()
 
@@ -202,7 +201,7 @@ fun PhyVlabWorkspace(
                 maxWidth < 840.dp -> 12.dp
                 else -> 0.dp
             }
-            LazyColumn(
+            TopScrollLazyColumn(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
@@ -682,7 +681,6 @@ private fun PhyVlabAssignmentDetailContent(
 ) {
     val scrollState = rememberScrollState()
     // 真实偏移上报给壳层算玻璃浓度；只在全屏路由页生效（sheet 里复用不受影响）。
-    if (fullScreen) ReportTopScrollState(scrollState)
     val openedAt = activity.openText?.let(::formatPhyVlabDateTime)
     val dueAt = activity.dueText?.let(::formatPhyVlabDateTime)
     val submittedAt = detail?.submissionDateText?.let(::formatPhyVlabDateTime)
@@ -694,11 +692,13 @@ private fun PhyVlabAssignmentDetailContent(
         submitted = submitted,
         submittedAtEpochSeconds = detail?.submissionDateTimestamp,
     )
-    Column(
+    TopScrollColumn(
+        state = scrollState,
+        enabled = fullScreen,
         modifier = modifier
             .then(if (fullScreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth().heightIn(max = 680.dp))
-            .verticalScroll(scrollState)
-            .desktopTouchScroll(scrollState)
+            .desktopTouchScroll(scrollState),
+        contentModifier = Modifier
             .padding(horizontal = 24.dp, vertical = 12.dp)
             // 原生栏 underlap 时视口顶边贴屏幕顶，首项靠这份顶边距让开。
             // 只在全屏路由页生效：sheet 里的复用不受影响（且 sheet 路径本就没有 clearance）。

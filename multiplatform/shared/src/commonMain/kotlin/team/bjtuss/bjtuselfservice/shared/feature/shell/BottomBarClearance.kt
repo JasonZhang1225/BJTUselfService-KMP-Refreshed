@@ -15,12 +15,13 @@ internal fun destinationBottomClearance(
     hasBottomBar: Boolean,
     barInset: Dp,
     systemInset: Dp,
+    contentGap: Dp = 8.dp,
 ): Dp = when {
     expanded -> 0.dp
     hasBottomBar -> {
         // 首帧宿主尚未测量时，先让开默认栏高，避免短暂重叠。
         val completeBarInset = if (barInset > 0.dp) barInset else 80.dp + maxOf(systemInset, 0.dp)
-        maxOf(completeBarInset, systemInset, 0.dp) + 8.dp
+        maxOf(completeBarInset, systemInset, 0.dp) + maxOf(contentGap, 0.dp)
     }
     else -> maxOf(systemInset, 0.dp)
 }

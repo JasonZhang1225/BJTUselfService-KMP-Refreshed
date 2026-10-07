@@ -10,6 +10,26 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class SettingsScreenModelTest {
+    @Test
+    fun redesignConfirmationRequiresSuccessfulSaveAndKeepsNavigation() {
+        var canSave = false
+        var stored = AppPreferences(bottomNavigationItems = listOf("MAILBOX", "EXAMS"))
+        val model = model(initialPreferences = stored, persistPreferences = {
+            if (canSave) stored = it
+            canSave
+        })
+        model.acknowledgeRedesignGuide()
+        assertFalse(model.state.value.preferences.redesignGuideAcknowledged)
+        assertTrue(model.state.value.saveFailed)
+        canSave = true
+        model.acknowledgeRedesignGuide()
+        assertTrue(stored.redesignGuideAcknowledged)
+        assertFalse(model.state.value.saveFailed)
+        assertEquals(listOf("MAILBOX", "EXAMS"), stored.bottomNavigationItems)
+        model.setDynamicColor(false)
+        assertTrue(stored.redesignGuideAcknowledged)
+    }
+
     private fun model(
         initialPreferences: AppPreferences = AppPreferences(),
         nowMillis: () -> Long = { 1_000L },

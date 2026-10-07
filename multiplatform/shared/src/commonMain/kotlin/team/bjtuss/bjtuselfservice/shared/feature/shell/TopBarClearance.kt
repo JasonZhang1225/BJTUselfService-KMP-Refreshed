@@ -1,10 +1,5 @@
 package team.bjtuss.bjtuselfservice.shared.feature.shell
 
-import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -22,37 +17,13 @@ import androidx.compose.ui.unit.dp
 val LocalTopBarClearance = staticCompositionLocalOf { 0.dp }
 
 /**
- * 页面把自己的真实滚动偏移（像素）报给壳层，壳层据此折算玻璃浓度。
+ * 页面通过统一滚动容器上报逻辑偏移与实际回弹位移，壳层据此折算玻璃浓度。
  *
  * 之前用嵌套滚动手势累加估算偏移：上滚封顶、下滚扣减，与列表真实位置漂移
  * （fling、跳转、回顶都对不上），表现为玻璃早退——内容还在栏后，玻璃已经没了。
- * 直接读列表状态不会漂：首项之后一律视为完全盖住（宿主侧钳制为 1）。
+ * 短列表的逻辑偏移可能为 0，仍需测量回弹后的内容位置；首项之后视为完全盖住。
  */
 val LocalReportTopScroll = staticCompositionLocalOf<(Float) -> Unit> { {} }
-
-/** LazyColumn 页面调用：把首项索引/偏移换算成像素偏移上报。 */
-@Composable
-fun ReportTopScrollListState(listState: LazyListState) {
-    val report = LocalReportTopScroll.current
-    LaunchedEffect(listState, report) {
-        snapshotFlow {
-            if (listState.firstVisibleItemIndex > 0) {
-                Float.MAX_VALUE
-            } else {
-                listState.firstVisibleItemScrollOffset.toFloat()
-            }
-        }.collect { report(it) }
-    }
-}
-
-/** 整页 verticalScroll 页面调用：直接上报 ScrollState 偏移。 */
-@Composable
-fun ReportTopScrollState(scrollState: ScrollState) {
-    val report = LocalReportTopScroll.current
-    LaunchedEffect(scrollState, report) {
-        snapshotFlow { scrollState.value.toFloat() }.collect { report(it) }
-    }
-}
 
 /** Include real elastic placement: a short iOS page can move without logical list scrolling. */
 internal fun resolveVisualTopScrollOffset(
