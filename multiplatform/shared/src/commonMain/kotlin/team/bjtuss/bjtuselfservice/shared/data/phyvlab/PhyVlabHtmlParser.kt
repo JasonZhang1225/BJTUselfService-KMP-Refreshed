@@ -85,7 +85,9 @@ internal data class PhyVlabAssignmentSubmissionContext(
     val contextId: String?,
     val clientId: String?,
     val repositoryId: String?,
-)
+) {
+    override fun toString(): String = "PhyVlabAssignmentSubmissionContext(<redacted>)"
+}
 
 internal val PhyVlabAssignmentSubmissionContext.isUploadReady: Boolean
     get() = !draftItemId.isNullOrBlank() &&
@@ -392,7 +394,9 @@ internal fun parsePhyVlabAssignmentPage(
         submittedFiles = submittedFiles,
         // 没有 context/client 时上传接口无法可靠定位草稿，只显示网页备用入口，
         // 不让 UI 暴露一个注定失败的原生上传按钮。
-        canSubmit = context?.isUploadReady == true,
+        canSubmit = context?.isUploadReady == true || document.selectFirst("input[name=action][value=editsubmission], a[href*='action=editsubmission']") != null,
+        canFinalize = document.selectFirst("input[name=action][value=submit], a[href*='action=submit']") != null,
+        isDraft = submissionStatus.contains("draft", true) || submissionStatus.contains("草稿"),
     )
     // 活动标题由课程页解析结果提供；详情页只要有主体/状态/表单之一即可视为成功。
     if (detail.description.isBlank() && detail.submissionStatus.isBlank() &&

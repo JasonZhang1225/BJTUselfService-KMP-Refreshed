@@ -201,6 +201,7 @@ internal enum class AppSection(
     MAILBOX("邮箱"),
     PHYVLAB("物理在线", "物理在线（仅能在校园网下访问）"),
     PHYSICS_LAB("物理实验同步"),
+    CITEL("CITEL 作业"),
     CALENDAR("校历下载"),
     REPORT_CARD_DOWNLOAD("成绩单下载"),
     SETTINGS("设置"),
@@ -217,15 +218,16 @@ internal fun bottomNavSections(showPhyVlab: Boolean): List<AppSection> = buildLi
     add(AppSection.MORE)
 }
 
-internal fun bottomNavigationCandidates(showPhyVlab: Boolean, showPhysicsLab: Boolean = false): List<AppSection> =
+internal fun bottomNavigationCandidates(showPhyVlab: Boolean, showPhysicsLab: Boolean = false, showCitel: Boolean = false): List<AppSection> =
     AppSection.entries.filter {
         it !in setOf(AppSection.HOME, AppSection.MORE, AppSection.CLASSROOMS) &&
             (showPhyVlab || it != AppSection.PHYVLAB) &&
-            (showPhysicsLab || it != AppSection.PHYSICS_LAB)
+            (showPhysicsLab || it != AppSection.PHYSICS_LAB) &&
+            (showCitel || it != AppSection.CITEL)
     }
 
 internal fun bottomNavSections(preferences: team.bjtuss.bjtuselfservice.shared.cache.AppPreferences): List<AppSection> {
-    val candidates = bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled)
+    val candidates = bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled, preferences.isCitelEnabled)
     val selected = preferences.bottomNavigationItems?.mapNotNull { id -> candidates.firstOrNull { it.name == id } }
         ?.distinct()?.take(4)
         ?: bottomNavSections(preferences.isPhyVlabEnabled).filter { it in candidates }
@@ -233,7 +235,7 @@ internal fun bottomNavSections(preferences: team.bjtuss.bjtuselfservice.shared.c
 }
 
 internal fun applicationSections(preferences: team.bjtuss.bjtuselfservice.shared.cache.AppPreferences): List<AppSection> =
-    bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled).filter { it !in bottomNavSections(preferences) }
+    bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled, preferences.isCitelEnabled).filter { it !in bottomNavSections(preferences) }
 
 /** 在底部导航中归属“更多”高亮的入口。 */
 internal val MoreGroupSections = setOf(
@@ -243,6 +245,7 @@ internal val MoreGroupSections = setOf(
     AppSection.CLASSROOM_OCCUPANCY,
     AppSection.MAILBOX,
     AppSection.PHYSICS_LAB,
+    AppSection.CITEL,
     AppSection.CALENDAR,
     AppSection.REPORT_CARD_DOWNLOAD,
     AppSection.SETTINGS,
@@ -269,6 +272,10 @@ const val EXAM_DETAIL_ROUTE_ID = "EXAM_DETAIL"
 /** 物理在线作业详情的二级路由：紧凑端仿作业详情，宽屏仍使用底部弹窗。 */
 internal data object PhyVlabDetailRoute : AppRoute
 const val PHYVLAB_DETAIL_ROUTE_ID = "PHYVLAB_DETAIL"
+internal data object CitelDetailRoute : AppRoute
+const val CITEL_DETAIL_ROUTE_ID = "CITEL_DETAIL"
+internal data object CitelSettingsRoute : AppRoute
+const val CITEL_SETTINGS_ROUTE_ID = "CITEL_SETTINGS"
 
 /** 邮箱详情的二级路由：紧凑端使用平台原生 push，宽屏留在三栏阅读区。 */
 internal data object MailboxDetailRoute : AppRoute
@@ -296,6 +303,10 @@ internal fun String.toAppRoute(): AppRoute? =
         ExamDetailRoute
     } else if (this == PHYVLAB_DETAIL_ROUTE_ID) {
         PhyVlabDetailRoute
+    } else if (this == CITEL_DETAIL_ROUTE_ID) {
+        CitelDetailRoute
+    } else if (this == CITEL_SETTINGS_ROUTE_ID) {
+        CitelSettingsRoute
     } else if (this == MAILBOX_DETAIL_ROUTE_ID) {
         MailboxDetailRoute
     } else if (this == MAILBOX_COMPOSE_ROUTE_ID) {

@@ -270,8 +270,14 @@ fun AuthenticatedAppShell(
     val phyVlabState by phyVlabModel.state.collectAsState()
     val settingsState by settingsModel.state.collectAsState()
     val physicsLabEnabled = settingsState.preferences.isPhysicsLabEnabled
+    val citelEnabled = settingsState.preferences.isCitelEnabled
     val physicsLabFlow = remember(session) { session.physicsLabModel?.state ?: MutableStateFlow(PhysicsLabState()) }
     val physicsLabState by physicsLabFlow.collectAsState()
+    val citelFlow = remember(session) { session.citelModel?.state ?: MutableStateFlow(team.bjtuss.bjtuselfservice.shared.feature.citel.CitelState()) }
+    val citelState by citelFlow.collectAsState()
+    val citelEvents = remember(citelState.tasks, citelEnabled) {
+        if (citelEnabled) team.bjtuss.bjtuselfservice.shared.feature.citel.citelAgendaEvents(citelState.tasks) else emptyList()
+    }
     val scheduleEvents = remember(courseState.academicWeeks, examState.exams, physicsLabState.labs, physicsLabEnabled) {
         scheduleEventCourses(examState.exams, if (physicsLabEnabled) physicsLabState.labs else emptyList(), courseState.academicWeeks)
     }
@@ -315,6 +321,10 @@ fun AuthenticatedAppShell(
         physicsLabBusy = physicsLabState.refreshing,
         physicsLabFailed = physicsLabState.failed,
         physicsLabReady = physicsLabState.synced,
+        citelEnabled = citelEnabled,
+        citelBusy = citelState.refreshing,
+        citelFailed = citelState.failed,
+        citelReady = citelState.lastSync != null && !citelState.fromCache,
         phyVlabEnabled = phyVlabEnabled,
         phyVlabBusy = phyVlabEnabled && phyVlabState.isLoading,
         phyVlabFailed = phyVlabEnabled && (phyVlabState.failure != null || phyVlabState.casLoginRequired),
@@ -330,6 +340,7 @@ fun AuthenticatedAppShell(
     var homeTodayRequest by remember { mutableStateOf(0) }
     var homeTodaySelected by remember { mutableStateOf(true) }
     var homeSyncDialogVisible by remember { mutableStateOf(false) }
+    var citelSyncDialogVisible by remember { mutableStateOf(false) }
     var partialSyncFailureDialogItems by remember { mutableStateOf<List<String>?>(null) }
     // 挂 session：原生二级页重建 Compose 时仍记住本登录态是否关过提示。
     // 同时必须有本地 mutableState，否则只写 session 字段不会触发重组，Banner 点了不关。
@@ -400,6 +411,8 @@ fun AuthenticatedAppShell(
         HomeworkDetailRoute -> AppSection.HOMEWORK
         ExamDetailRoute -> AppSection.EXAMS
         PhyVlabDetailRoute -> AppSection.PHYVLAB
+        CitelDetailRoute -> AppSection.CITEL
+        CitelSettingsRoute -> AppSection.CITEL
         MailboxDetailRoute -> AppSection.MAILBOX
         MailboxComposeRoute -> AppSection.MAILBOX
         PhysicsLabSettingsRoute -> AppSection.PHYSICS_LAB
@@ -442,6 +455,7 @@ fun AuthenticatedAppShell(
         val target = if (requested == AppSection.CLASSROOMS) AppSection.CLASSROOM_OCCUPANCY else requested
         if (target == AppSection.PHYVLAB && !phyVlabEnabled) return
         if (target == AppSection.PHYSICS_LAB && !physicsLabEnabled) return
+        if (target == AppSection.CITEL && !citelEnabled) return
         if (backStack.lastOrNull() != target) {
             // 先 yield 一帧：让 NavigationBarItem 的 press/ripple 先上屏，
             // 再替换 destination，避免首次点 tab 时内容重组抢掉按压反馈。
@@ -535,6 +549,7 @@ fun AuthenticatedAppShell(
                         )
                     }
                     launch { session.physicsLabModel?.refresh() }
+                    if (citelEnabled) launch { session.citelModel?.refresh() }
                     // 这是用户明确点下首页刷新/失败胶囊后的主动重试；功能关闭时不访问物理在线。
                     if (phyVlabEnabled) {
                         launch { phyVlabModel.refresh() }
@@ -603,6 +618,7 @@ fun AuthenticatedAppShell(
                 )
                 AppSection.PHYVLAB -> if (phyVlabEnabled) phyVlabModel.refresh()
                 AppSection.PHYSICS_LAB -> if (physicsLabEnabled) session.physicsLabModel?.refresh()
+                AppSection.CITEL -> if (currentRoute == CitelDetailRoute) citelState.selectedTask?.let { session.citelModel?.selectTask(it) } else if (currentRoute != CitelSettingsRoute && citelEnabled) session.citelModel?.refresh()
                 AppSection.CALENDAR -> Unit
                 AppSection.REPORT_CARD_DOWNLOAD -> Unit
                 AppSection.SETTINGS -> Unit
@@ -742,6 +758,11 @@ fun AuthenticatedAppShell(
         }
     }
 
+    if (citelSyncDialogVisible) AppleSheetOrAlert(onDismissRequest = { citelSyncDialogVisible = false },
+        title = "CITEL 同步状态", confirmLabel = "刷新", dismissLabel = "关闭",
+        onConfirm = { citelSyncDialogVisible = false; scope.launch { session.citelModel?.refresh() } }) {
+        Text(citelState.message ?: if (citelState.fromCache) "本轮尚未同步，当前显示上次同步的缓存。" else "尚未同步 CITEL 作业。")
+    }
     LaunchedEffect(appCommandBus) {
         appCommandBus?.commands?.collect { command ->
             when (command) {
@@ -853,6 +874,14 @@ fun AuthenticatedAppShell(
     }
 
     // 独立校园网数据源由稳定首页宿主启动，原生二级页面仅共享状态。
+    LaunchedEffect(session.citelModel, citelEnabled, entryLoggingIn, forcedRouteId, nativeTabBarEnabled) {
+        val model = session.citelModel ?: return@LaunchedEffect
+        model.setEnabled(citelEnabled)
+        if (citelEnabled && !entryLoggingIn && shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) {
+            model.refreshForAppEntry(session.appForegroundGeneration.value)
+            session.appForegroundGeneration.collect { generation -> model.refreshForAppEntry(generation) }
+        }
+    }
     LaunchedEffect(session.physicsLabModel, physicsLabEnabled, entryLoggingIn, forcedRouteId, nativeTabBarEnabled) {
         val labModel = session.physicsLabModel ?: return@LaunchedEffect
         labModel.setEnabled(physicsLabEnabled)
@@ -1148,9 +1177,11 @@ fun AuthenticatedAppShell(
                         isRefreshing = isRefreshing || sessionRecoveryInProgress,
                         isLoggingIn = entryLoggingIn,
                         idleStatusText = idleStatusText,
+                        statusAsText = title == AppSection.CITEL.title,
                         dense = denseTopBar,
                         action = composeAction.takeUnless { declarativeActionLabel == "今" },
-                        leadingAction = composeAction.takeIf { declarativeActionLabel == "今" },
+                        leadingAction = composeAction.takeIf { declarativeActionLabel == "今" && platform.family == PlatformFamily.IOS },
+                        titleAction = composeAction.takeIf { declarativeActionLabel == "今" && platform.family != PlatformFamily.IOS },
                         // 可刷新页：右上角状态胶囊旁放刷新按钮；不再下拉刷新（保平台原生过滚）。
                         onRefresh = if (refreshable) effectiveRefreshAction else null,
                         onStatusClick = onStatusClick ?: failureStatusClick,
@@ -1227,12 +1258,13 @@ fun AuthenticatedAppShell(
                 // 避免作业红条把整个首页说成全挂。
                 idleStatusText = homeIdleStatusText(
                     homeFailed = homeState.failure != null,
+                    hasWaitingSource = homeSyncItems.any { it.state == HomeSyncItemState.WAITING },
                     homeworkFailed = homeworkState.failure != null,
                     examFailed = examState.failure != null,
                     courseFailed = courseState.failure != null,
                     phyVlabFailed = (phyVlabEnabled &&
                         (phyVlabState.failure != null || phyVlabState.casLoginRequired)) ||
-                        (physicsLabEnabled && physicsLabState.failed),
+                        (physicsLabEnabled && physicsLabState.failed) || (citelState.enabled && citelState.failed),
                     hasAnySource = homeworkState.source != null ||
                         examState.source != null ||
                         courseState.source != null ||
@@ -1267,7 +1299,7 @@ fun AuthenticatedAppShell(
                         holdNetwork = entryLoggingIn,
                         homework = homeworkState.homework,
                         exams = examState.exams,
-                        phyVlabEvents = if (phyVlabEnabled) phyVlabState.agendaEvents else emptyList(),
+                        phyVlabEvents = (if (phyVlabEnabled) phyVlabState.agendaEvents else emptyList()) + citelEvents,
                         currentWeek = courseState.currentWeek,
                         academicWeeks = courseState.homeAcademicWeeks,
                         // 周数只在被校历确认后显示：确认前统一「日程加载中」，
@@ -1276,7 +1308,7 @@ fun AuthenticatedAppShell(
                         now = homeworkState.now,
                         timeZone = homeworkState.timeZone,
                         isAgendaLoading = homeworkState.isLoading || examState.isLoading ||
-                            courseState.isLoading || (phyVlabEnabled && phyVlabState.isLoading),
+                            courseState.isLoading || (phyVlabEnabled && phyVlabState.isLoading) || citelState.refreshing,
                         onOpenMailbox = { navigateToSection(AppSection.MAILBOX) },
                         onOpenHomework = { navigateToSection(AppSection.HOMEWORK) },
                         onOpenHomeworkDetail = { homework ->
@@ -1298,16 +1330,20 @@ fun AuthenticatedAppShell(
                             }
                         },
                         onOpenPhyVlab = { event ->
-                            val activity = phyVlabState.activities.firstOrNull { it.activityUrl == event.eventUrl }
-                            if (activity != null) {
-                                phyVlabModel.showActivityDetails(activity)
-                                if (useNativeSecondaryRoutes) {
-                                    onOpenNativeRoute(PHYVLAB_DETAIL_ROUTE_ID)
-                                } else if (backStack.lastOrNull() != PhyVlabDetailRoute) {
-                                    backStack.add(PhyVlabDetailRoute)
-                                }
+                            if (event.id.startsWith("citel-")) {
+                                navigateToSection(AppSection.CITEL)
                             } else {
-                                event.eventUrl?.let { onOpenExternalUrl(upgradePhyVlabUrlToHttps(it)) }
+                                val activity = phyVlabState.activities.firstOrNull { it.activityUrl == event.eventUrl }
+                                if (activity != null) {
+                                    phyVlabModel.showActivityDetails(activity)
+                                    if (useNativeSecondaryRoutes) {
+                                        onOpenNativeRoute(PHYVLAB_DETAIL_ROUTE_ID)
+                                    } else if (backStack.lastOrNull() != PhyVlabDetailRoute) {
+                                        backStack.add(PhyVlabDetailRoute)
+                                    }
+                                } else {
+                                    event.eventUrl?.let { onOpenExternalUrl(upgradePhyVlabUrlToHttps(it)) }
+                                }
                             }
                         },
                         changes = homeChanges,
@@ -1644,6 +1680,16 @@ fun AuthenticatedAppShell(
                     expanded = expanded,
                     onLogout = onLogout,
                     modifier = Modifier.fillMaxSize(),
+                    physicsLabConfigured = physicsLabState.configured,
+                    citelConfigured = citelState.configured,
+                    onPhysicsLabSettings = {
+                        if (useNativeSecondaryRoutes) onOpenNativeRoute(PHYSICS_LAB_SETTINGS_ROUTE_ID)
+                        else backStack.add(PhysicsLabSettingsRoute)
+                    },
+                    onCitelSettings = {
+                        if (useNativeSecondaryRoutes) onOpenNativeRoute(CITEL_SETTINGS_ROUTE_ID)
+                        else backStack.add(CitelSettingsRoute)
+                    },
                 )
             }
             AppSection.MAILBOX -> DestinationPage(
@@ -1777,10 +1823,10 @@ fun AuthenticatedAppShell(
                 )
             }
             AppSection.PHYSICS_LAB, PhysicsLabSettingsRoute -> DestinationPage(
-                title = "物理实验同步",
+                title = if (route == PhysicsLabSettingsRoute) "物理实验账号设置" else "物理实验同步",
                 expanded = expanded,
-                refreshable = false,
-                isRefreshing = false,
+                refreshable = route == AppSection.PHYSICS_LAB && physicsLabEnabled,
+                isRefreshing = route == AppSection.PHYSICS_LAB && physicsLabState.refreshing,
                 showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 scrollUnderTopBar = true,
@@ -1790,7 +1836,49 @@ fun AuthenticatedAppShell(
                         model = labModel,
                         modifier = Modifier.fillMaxSize(),
                         showTitle = false,
+                        showAccountFields = route == PhysicsLabSettingsRoute,
+                        showLabPreferences = route == AppSection.PHYSICS_LAB,
+                        onAccountSaved = popBackStack,
                     )
+                }
+            }
+            AppSection.CITEL -> DestinationPage(
+                title = AppSection.CITEL.title,
+                expanded = expanded,
+                refreshable = citelState.enabled,
+                isRefreshing = citelState.refreshing,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
+                modifier = modifier,
+                scrollUnderTopBar = true,
+                onStatusClick = { citelSyncDialogVisible = true },
+                idleStatusText = when {
+                    citelState.failed -> "同步失败" + if (citelState.fromCache) "·正显示缓存" else ""
+                    citelState.fromCache -> "等待同步·正显示缓存"
+                    citelState.lastSync != null -> "已同步"
+                    else -> "未同步"
+                },
+            ) {
+                session.citelModel?.let { model ->
+                    team.bjtuss.bjtuselfservice.shared.feature.citel.CitelWorkspace(
+                        model, entryLoggingIn, onOpenExternalUrl, Modifier.fillMaxSize(), fileGateway = homeworkFileGateway,
+                        showDetailSheet = !useNativeSecondaryRoutes,
+                        onOpenTask = {
+                            if (useNativeSecondaryRoutes) onOpenNativeRoute(CITEL_DETAIL_ROUTE_ID)
+                        })
+                }
+            }
+            CitelDetailRoute -> DestinationPage(title = "作业详情", expanded = expanded, refreshable = true,
+                isRefreshing = citelState.submissionBusy, showBack = true, modifier = modifier, scrollUnderTopBar = true) {
+                session.citelModel?.let { model ->
+                    team.bjtuss.bjtuselfservice.shared.feature.citel.CitelDetailWorkspace(model, homeworkFileGateway,
+                        onOpenExternalUrl, entryLoggingIn, Modifier.fillMaxSize())
+                }
+            }
+            CitelSettingsRoute -> DestinationPage(title = "CITEL 账号设置", expanded = expanded, refreshable = false,
+                isRefreshing = false, showBack = true, modifier = modifier, scrollUnderTopBar = true) {
+                session.citelModel?.let { model ->
+                    team.bjtuss.bjtuselfservice.shared.feature.citel.CitelSettingsWorkspace(model, Modifier.fillMaxSize(), entryLoggingIn,
+                        onSaved = popBackStack)
                 }
             }
             AppSection.MORE -> DestinationPage(
@@ -1880,6 +1968,22 @@ fun AuthenticatedAppShell(
                     entry<ExamDetailRoute> {
                         SectionDestination(
                             route = ExamDetailRoute,
+                            expanded = true,
+                            modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family),
+                        )
+                    }
+                    entry<CitelSettingsRoute> {
+                        SectionDestination(
+                            route = CitelSettingsRoute,
+                            expanded = true,
+                            modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family),
+                        )
+                    }
+                    entry<CitelDetailRoute> {
+                        SectionDestination(
+                            route = CitelDetailRoute,
                             expanded = true,
                             modifier = Modifier.fillMaxSize(),
                             usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family),
@@ -2085,6 +2189,22 @@ fun AuthenticatedAppShell(
                     entry<ExamDetailRoute> {
                         SectionDestination(
                             route = ExamDetailRoute,
+                            expanded = false,
+                            modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = false,
+                        )
+                    }
+                    entry<CitelSettingsRoute> {
+                        SectionDestination(
+                            route = CitelSettingsRoute,
+                            expanded = false,
+                            modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = false,
+                        )
+                    }
+                    entry<CitelDetailRoute> {
+                        SectionDestination(
+                            route = CitelDetailRoute,
                             expanded = false,
                             modifier = Modifier.fillMaxSize(),
                             usesLegacySmartTransport = false,

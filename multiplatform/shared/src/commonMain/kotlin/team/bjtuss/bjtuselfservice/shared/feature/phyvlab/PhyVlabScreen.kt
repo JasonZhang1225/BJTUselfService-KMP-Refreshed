@@ -3,6 +3,8 @@ package team.bjtuss.bjtuselfservice.shared.feature.phyvlab
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
 import androidx.compose.foundation.Canvas
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.*
+import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkSummaryBanner
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -30,6 +32,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -110,11 +113,17 @@ fun PhyVlabWorkspace(
     var showUploadConfirm by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var uploadFiles by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<List<HomeworkFileContent>>(emptyList()) }
     var uploadFeedback by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
-    var activityOrderDescending by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
+    var showFilters by remember { mutableStateOf(false) }
+    val filters = state.filters
     val listState = rememberLazyListState()
     // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
-    val displayedActivities = orderPhyVlabActivities(state.activities, activityOrderDescending)
     val nowEpochSeconds = rememberPhyVlabNowEpochSeconds()
+    val allActivities = model.allActivities()
+    val displayedActivities = filterPhyVlabActivities(allActivities, filters, nowEpochSeconds)
+    val dueSoon = displayedActivities.count { !it.completed && it.dueTimestamp?.let { due -> due in nowEpochSeconds..(nowEpochSeconds + 48 * 3600) } == true }
+    val subtitle = (if (dueSoon > 0) "未来 48 小时内有 $dueSoon 项未提交" else "未来 48 小时内暂无临近截止项") +
+        if (filters.active) " · 已筛选" else ""
+    LaunchedEffect(filters) { listState.scrollToItem(0) }
 
     LaunchedEffect(model, holdNetwork) {
         if (!holdNetwork) model.initialize()
@@ -228,44 +237,14 @@ fun PhyVlabWorkspace(
                         }
                     }
                 }
-                item(key = "courses") {
-                    Text("我的课程", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                item(key = "summary") {
+                    HomeworkSummaryBanner(displayedActivities.size, subtitle, onOpenFilter = { showFilters = true })
                 }
-                items(state.courses, key = { "course-${it.id}" }) { course ->
-                    PhyVlabCourseRow(course = course, selected = course.id == state.selectedCourse?.id) {
-                        model.selectCourse(course)
-                    }
-                }
-                item(key = "activities") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "课程作业",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Surface(
-                            onClick = { activityOrderDescending = !activityOrderDescending },
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .size(44.dp)
-                                .semantics {
-                                    contentDescription = if (activityOrderDescending) {
-                                        "排序：最新在前，点击切换为最旧在前"
-                                    } else {
-                                        "排序：最旧在前，点击切换为最新在前"
-                                    }
-                                },
-                        ) {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                PhyVlabSortIcon(descending = activityOrderDescending)
-                            }
-                        }
+                if (displayedActivities.isEmpty()) item {
+                    Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(if (allActivities.isEmpty()) "暂无作业" else "当前筛选下没有作业", style = MaterialTheme.typography.titleMedium)
+                        TextButton(onClick = { showFilters = true }) { Text("调整筛选") }
                     }
                 }
                 items(displayedActivities, key = { "activity-${it.id}" }) { activity ->
@@ -277,6 +256,10 @@ fun PhyVlabWorkspace(
                 }
             }
         }
+    }
+
+    if (showFilters) AppleSheet(onDismissRequest = { showFilters = false }, title = "作业筛选", needsFullHeight = true) {
+        AssignmentFilterSheet(state.courses.map { it.id to it.name }, filters, model::updateFilters)
     }
 
     if (showDetailSheet) state.selectedActivity?.let { activity ->
@@ -293,6 +276,13 @@ fun PhyVlabWorkspace(
                 failure = state.detailFailure,
                 feedback = state.submissionFeedback,
                 fileGatewayAvailable = fileGateway.isAvailable,
+                fileGateway = fileGateway,
+                isSubmitting = state.isSubmitting,
+                onSaveFiles = { added, removed -> scope.launch { model.submitSelectedActivity(added, removed) } },
+                onFinalize = { scope.launch { model.submitSelectedActivity(emptyList(), finalize = true) } },
+                onPrepareFinalization = model::prepareFinalization,
+                finalizationStatement = state.finalizationStatement,
+                submissionRevision = state.submissionRevision,
                 nowEpochSeconds = nowEpochSeconds,
                 onRetry = retryDetail,
                 onUpload = {
@@ -389,6 +379,13 @@ fun PhyVlabDetailWorkspace(
             failure = state.detailFailure,
             feedback = state.submissionFeedback,
             fileGatewayAvailable = fileGateway.isAvailable,
+                fileGateway = fileGateway,
+                isSubmitting = state.isSubmitting,
+                onSaveFiles = { added, removed -> scope.launch { model.submitSelectedActivity(added, removed) } },
+                onFinalize = { scope.launch { model.submitSelectedActivity(emptyList(), finalize = true) } },
+                onPrepareFinalization = model::prepareFinalization,
+                finalizationStatement = state.finalizationStatement,
+                submissionRevision = state.submissionRevision,
             nowEpochSeconds = nowEpochSeconds,
             fullScreen = true,
             modifier = modifier,
@@ -465,83 +462,25 @@ private fun PhyVlabCourseRow(course: PhyVlabCourse, selected: Boolean, onSelect:
     }
 }
 
+internal fun filterPhyVlabActivities(activities: List<PhyVlabActivity>, filters: AssignmentFilters, now: Long): List<PhyVlabActivity> {
+    val visible = activities.filter { (filters.courses.isEmpty() || it.courseId in filters.courses) &&
+        (!filters.hideSubmitted || !it.completed) && (!filters.hideExpired || it.dueTimestamp?.let { due -> due > now } != false) }
+    return when (filters.sortOrder) {
+        1 -> visible.sortedBy { it.dueTimestamp ?: Long.MAX_VALUE }
+        2 -> visible.sortedByDescending { it.dueTimestamp ?: Long.MIN_VALUE }
+        else -> visible
+    }
+}
+
 @Composable
-private fun PhyVlabActivityRow(
-    activity: PhyVlabActivity,
-    nowEpochSeconds: Long,
-    onOpen: () -> Unit,
-) {
-    val openedAt = activity.openText?.let(::formatPhyVlabDateTime)
-    val dueAt = activity.dueText?.let(::formatPhyVlabDateTime)
-    val deadlineState = phyVlabActivityDeadlineState(activity, nowEpochSeconds)
-    val statusPalette = phyVlabActivityStatusPalette(deadlineState)
-    ElevatedCard(
-        onClick = onOpen,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Column(
-            Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(activity.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (openedAt != null || dueAt != null) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.surfaceVariant.accessibleAlpha(0.78f),
-                    shape = RoundedCornerShape(12.dp),
-                ) {
-                    Column(
-                        Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(5.dp),
-                    ) {
-                        Text(
-                            "时间",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        openedAt?.let { PhyVlabTimeRow("开放", it) }
-                        dueAt?.let {
-                            PhyVlabTimeRow(
-                                label = "截止",
-                                value = it,
-                                valueColor = statusPalette.content,
-                                 valueFontWeight = if (
-                                     deadlineState == PhyVlabActivityDeadlineState.OVERDUE ||
-                                     deadlineState == PhyVlabActivityDeadlineState.LATE_SUBMITTED
-                                 ) {
-                                    FontWeight.Bold
-                                } else {
-                                    FontWeight.Normal
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-            Surface(
-                color = statusPalette.container,
-                contentColor = statusPalette.content,
-                shape = RoundedCornerShape(999.dp),
-                modifier = Modifier.semantics {
-                    contentDescription = phyVlabActivityStatusDescription(deadlineState)
-                },
-            ) {
-                Text(
-                    phyVlabActivityStatusLabel(deadlineState),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (
-                        deadlineState == PhyVlabActivityDeadlineState.OVERDUE ||
-                        deadlineState == PhyVlabActivityDeadlineState.LATE_SUBMITTED
-                    ) {
-                        FontWeight.Bold
-                    } else {
-                        FontWeight.SemiBold
-                    },
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                )
-            }
+internal fun PhyVlabActivityRow(activity: PhyVlabActivity, nowEpochSeconds: Long, onOpen: () -> Unit) {
+    ElevatedCard(onClick = onOpen, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            AssignmentCardHeader(activity.courseName, activity.title, activity.completed)
+            Text("类型 · ${activity.activityType}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            activity.openText?.let { Text("开始 · ${formatPhyVlabDateTime(it)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            activity.dueText?.let { Text("截止 · ${formatPhyVlabDateTime(it)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
 }
@@ -678,13 +617,24 @@ private fun PhyVlabAssignmentDetailContent(
     onOpenWeb: () -> Unit,
     fullScreen: Boolean = false,
     modifier: Modifier = Modifier,
+    fileGateway: HomeworkFileGateway = team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway,
+    isSubmitting: Boolean = false,
+    onSaveFiles: (List<HomeworkFileContent>, Set<String>) -> Unit = { _, _ -> onUpload() },
+    onFinalize: () -> Unit = {},
+    onPrepareFinalization: suspend () -> Boolean = { true },
+    finalizationStatement: String? = null,
+    submissionRevision: Long = 0,
 ) {
+    var confirmFinal by remember(activity.id) { mutableStateOf(false) }
+    var acceptedStatement by remember(activity.id) { mutableStateOf(false) }
+    var showFileEditor by remember(activity.id) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
     // 真实偏移上报给壳层算玻璃浓度；只在全屏路由页生效（sheet 里复用不受影响）。
     val openedAt = activity.openText?.let(::formatPhyVlabDateTime)
     val dueAt = activity.dueText?.let(::formatPhyVlabDateTime)
     val submittedAt = detail?.submissionDateText?.let(::formatPhyVlabDateTime)
-    val submitted = activity.completed || detail?.let(::phyVlabAssignmentDetailHasSubmission) == true
+    val submitted = detail?.let { !it.isDraft && phyVlabAssignmentDetailHasSubmission(it) } ?: activity.completed
     val submissionTiming = phyVlabSubmissionTimingLabel(activity, detail)
     val deadlineState = phyVlabActivityDeadlineState(
         activity = activity,
@@ -764,6 +714,7 @@ private fun PhyVlabAssignmentDetailContent(
                 Text(it, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium)
             }
         }
+        if (isSubmitting) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (isLoading) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 CircularProgressIndicator(modifier = Modifier.padding(2.dp))
@@ -817,17 +768,42 @@ private fun PhyVlabAssignmentDetailContent(
                 }
             }
             if (page.canSubmit) {
-                Button(
-                    onClick = onUpload,
-                    enabled = fileGatewayAvailable,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
+                Button(onClick = { showFileEditor = true }, enabled = fileGatewayAvailable && !isSubmitting,
+                    modifier = Modifier.fillMaxWidth()) {
                     Text(if (fileGatewayAvailable) "上传作业" else "当前平台未接入文件选择器")
                 }
+            }
+            if (page.canFinalize) {
+                FilledTonalButton(onClick = { scope.launch { if (onPrepareFinalization()) { acceptedStatement = false; confirmFinal = true } } }, enabled = !isSubmitting, modifier = Modifier.fillMaxWidth()) { Text("最终提交") }
             }
         }
         FilledTonalButton(onClick = onOpenWeb, modifier = Modifier.fillMaxWidth()) {
             Text("在网页中打开")
+        }
+    }
+    LaunchedEffect(submissionRevision) { showFileEditor = false }
+    if (showFileEditor && detail != null) AppleSheet(onDismissRequest = { if (!isSubmitting) showFileEditor = false },
+        title = "上传作业", needsFullHeight = true, scrollableBody = true) {
+        val uploadScroll = rememberScrollState()
+        Column(Modifier.fillMaxWidth().verticalScroll(uploadScroll).desktopTouchScroll(uploadScroll).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentFilesEditor(
+                detail.submittedFiles.map { it.fileName }, fileGateway, isSubmitting,
+                "先保存文件并检查，再最终提交。最终提交后不能修改文件。",
+                "保存文件", onSave = onSaveFiles, revision = submissionRevision)
+            feedback?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        }
+    }
+    if (confirmFinal) AppleSheetOrAlert(onDismissRequest = { confirmFinal = false }, title = "最终提交作业？",
+        confirmLabel = "确认最终提交", confirmEnabled = finalizationStatement == null || acceptedStatement,
+        onConfirm = { confirmFinal = false; onFinalize() }, dismissLabel = "取消") {
+        Text("提交后不能再修改或删除附件。请确认所有文件正确、完整。")
+        finalizationStatement?.let { statement ->
+            Text(statement)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Checkbox(acceptedStatement, { acceptedStatement = it })
+                Text("我已阅读并同意上述声明")
+            }
         }
     }
 }

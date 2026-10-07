@@ -17,7 +17,6 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 private val PHYVLAB_COURSES_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/my/courses.php"
 private val PHYVLAB_COURSE_VIEW_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/course/view.php"
 private val PHYVLAB_CALENDAR_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/calendar/view.php"
-private val PHYVLAB_REPOSITORY_UPLOAD_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/repository/repository_ajax.php"
 
 enum class PhyVlabRemoteFailure {
     NETWORK,
@@ -35,6 +34,12 @@ interface PhyVlabRemoteDataSource {
     suspend fun fetchEvents(monthTimestampSeconds: Long): List<PhyVlabEvent>
     suspend fun fetchAssignmentDetail(activity: PhyVlabActivity): PhyVlabAssignmentDetail
     suspend fun submitAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>)
+    suspend fun saveAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>, removed: Set<String>) {
+        if (removed.isNotEmpty()) throw PhyVlabRemoteException(PhyVlabRemoteFailure.PARSE)
+        submitAssignment(activity, files)
+    }
+    suspend fun finalizationStatement(activity: PhyVlabActivity): String? = throw PhyVlabRemoteException(PhyVlabRemoteFailure.PARSE)
+    suspend fun finalizeAssignment(activity: PhyVlabActivity, acceptedStatement: String?) { throw PhyVlabRemoteException(PhyVlabRemoteFailure.PARSE) }
 }
 
 /**
@@ -44,7 +49,14 @@ interface PhyVlabRemoteDataSource {
 class SchoolPhyVlabRemoteDataSource(
     private val transport: SchoolHttpTransport,
 ) : PhyVlabRemoteDataSource {
-    private val submissionContexts = mutableMapOf<Int, PhyVlabAssignmentSubmissionContext>()
+    private val assignmentClient = team.bjtuss.bjtuselfservice.shared.data.moodle.MoodleAssignmentClient(
+        SchoolEndpoints.PHYVLAB_ORIGIN,
+        read = { fetchPage(it, SchoolEndpoints.PHYVLAB_ORIGIN) }, write = { transport.executeWithoutRedirects(it) })
+    override suspend fun saveAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>, removed: Set<String>) {
+        assignmentClient.saveFiles(activity.id, files, removed)
+    }
+    override suspend fun finalizationStatement(activity: PhyVlabActivity) = assignmentClient.finalizationStatement(activity.id)
+    override suspend fun finalizeAssignment(activity: PhyVlabActivity, acceptedStatement: String?) { assignmentClient.finalize(activity.id, acceptedStatement) }
 
     override suspend fun fetchCourses(): List<PhyVlabCourse> {
         val response = fetchPage(PHYVLAB_COURSES_URL, referer = "${SchoolEndpoints.PHYVLAB_ORIGIN}/?redirect=0")
@@ -84,7 +96,7 @@ class SchoolPhyVlabRemoteDataSource(
             is PhyVlabParseResult.Failure -> parse()
             is PhyVlabParseResult.Success -> {
                 var page = parsed.value
-                page.submissionContext?.let { submissionContexts[activity.id] = it }
+
                 // Moodle 默认详情页只给“编辑提交”链接，真正的 filemanager 草稿上下文
                 // 在编辑页生成；该 GET 仍是只读，不会改变提交状态。
                 if (page.submissionContext == null) {
@@ -110,7 +122,7 @@ class SchoolPhyVlabRemoteDataSource(
                                 page = editPage.value.copy(
                                     detail = mergeAssignmentDetails(page.detail, editPage.value.detail),
                                 )
-                                page.submissionContext?.let { submissionContexts[activity.id] = it }
+
                             }
                         }
                     }
@@ -134,103 +146,13 @@ class SchoolPhyVlabRemoteDataSource(
         feedbackText = secondary.feedbackText ?: original.feedbackText,
         submittedFiles = secondary.submittedFiles.ifEmpty { original.submittedFiles },
         canSubmit = secondary.canSubmit || original.canSubmit,
+        canFinalize = secondary.canFinalize || original.canFinalize,
+        isDraft = secondary.isDraft || original.isDraft,
     )
 
     override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>) {
-        require(files.isNotEmpty()) { "At least one physical-online assignment file is required" }
-        val context = submissionContexts[activity.id] ?: run {
-            fetchAssignmentDetail(activity)
-            submissionContexts[activity.id] ?: parse()
-        }
-        if (!context.isUploadReady) parse()
-        val draftItemId = context.draftItemId ?: parse()
-        files.forEach { file -> uploadDraftFile(context, draftItemId, file) }
-
-        val formFields = LinkedHashMap(context.formFields)
-        formFields["sesskey"] = context.sesskey
-        // Moodle filemanager 接收的是草稿区 item id；服务端随后把草稿移动到本次提交。
-        val fileManagerName = formFields.keys.firstOrNull { it.contains("filemanager") }
-            ?: "assignsubmission_file_filemanager"
-        formFields[fileManagerName] = draftItemId
-        formFields["id"] = formFields["id"] ?: activity.id.toString()
-        formFields["action"] = formFields["action"] ?: "savesubmission"
-        val submitButton = formFields.keys.firstOrNull { it.equals("submitbutton", ignoreCase = true) }
-        if (submitButton == null) formFields["submitbutton"] = "保存更改"
-        val response = execute(
-            SchoolHttpRequest(
-                method = SchoolHttpMethod.POST,
-                url = context.formUrl,
-                headers = mapOf(
-                    "Accept" to "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
-                    "Referer" to activity.activityUrl,
-                ),
-                formFields = formFields,
-            ),
-        )
-        validateWriteResponse(response)
-        submissionContexts.remove(activity.id)
+        saveAssignment(activity, files, emptySet())
     }
-
-    private suspend fun uploadDraftFile(
-        context: PhyVlabAssignmentSubmissionContext,
-        draftItemId: String,
-        file: HomeworkFileContent,
-    ) {
-        val fields = linkedMapOf(
-            "action" to "upload",
-            "repo_id" to (context.repositoryId ?: "4"),
-            "itemid" to draftItemId,
-            "ctx_id" to (context.contextId ?: ""),
-            "client_id" to (context.clientId ?: ""),
-            "sesskey" to context.sesskey,
-            "p" to "",
-            "page" to "",
-            "env" to "filepicker",
-            "maxbytes" to "-1",
-            "areamaxbytes" to "-1",
-            "savepath" to "/",
-            "filepath" to "/",
-            "title" to file.fileName,
-            "author" to "",
-            "license" to "unknown",
-        )
-        val response = execute(
-            SchoolHttpRequest(
-                method = SchoolHttpMethod.POST,
-                url = PHYVLAB_REPOSITORY_UPLOAD_URL,
-                headers = mapOf(
-                    "Accept" to "application/json,text/plain,*/*",
-                    "Referer" to context.formUrl,
-                ),
-                formFields = fields,
-                multipartFiles = listOf(
-                    team.bjtuss.bjtuselfservice.shared.network.SchoolMultipartFile(
-                        fieldName = "repo_upload_file",
-                        fileName = file.fileName,
-                        contentType = file.contentType,
-                        bytes = file.bytes,
-                    ),
-                ),
-            ),
-        )
-        validateWriteResponse(response)
-        val body = response.bodyText()
-        if (body.contains("\"error\"", ignoreCase = true) &&
-            Regex("\"error\"\\s*:\\s*(true|1)", RegexOption.IGNORE_CASE).containsMatchIn(body)
-        ) {
-            parse()
-        }
-    }
-
-    private fun validateWriteResponse(response: SchoolHttpResponse) {
-        if (response.statusCode !in 200..299) network()
-        if (!response.finalUrl.startsWith(SchoolEndpoints.PHYVLAB_ORIGIN)) sessionExpired()
-        if (response.finalUrl.contains("/login/index.php") || looksLikePhyVlabLoginPage(response.bodyText())) {
-            sessionExpired()
-        }
-        if (response.bodyText().contains("系统发生了未处理的异常", ignoreCase = true)) parse()
-    }
-
     private suspend fun fetchPage(url: String, referer: String): SchoolHttpResponse {
         phyVlabDebug("page GET start ${safePhyVlabEndpoint(url)}")
         val response = execute(

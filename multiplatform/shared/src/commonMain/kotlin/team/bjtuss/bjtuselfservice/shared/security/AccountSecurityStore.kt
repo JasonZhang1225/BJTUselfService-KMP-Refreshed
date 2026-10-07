@@ -6,6 +6,7 @@ data class AccountSecurityStore(
     val credentialVault: CredentialVault?,
     val preferences: AccountPreferences,
     val physicsLabVault: ((String) -> CredentialVault)? = null,
+    val citelVault: ((String) -> CredentialVault)? = null,
 )
 
 interface AccountPreferences {
@@ -25,6 +26,7 @@ class AccountSecurityCoordinator(
     private val store: AccountSecurityStore,
 ) {
     fun physicsLabVault(accountScope: String): CredentialVault? = store.physicsLabVault?.invoke(accountScope)
+    fun citelVault(accountScope: String): CredentialVault? = store.citelVault?.invoke(accountScope)
 
     val canStoreCredentials: Boolean get() = store.credentialVault != null
 

@@ -30,8 +30,10 @@ data class AppPreferences(
     val redesignGuideAcknowledged: Boolean = false,
     /** null migrates the previous account-scoped physicslab.enabled setting on session creation. */
     val physicsLabEnabled: Boolean? = null,
+    val citelEnabled: Boolean? = null,
 ) {
     val isPhysicsLabEnabled: Boolean get() = physicsLabEnabled == true
+    val isCitelEnabled: Boolean get() = citelEnabled == true
 
     /** 物理在线只有一个总开关：关闭时不自动同步，也不显示入口。 */
     val isPhyVlabEnabled: Boolean
@@ -371,6 +373,7 @@ class CacheStore(
         autoSyncSchedule = true,
         autoSyncExams = true,
         physicsLabEnabled = setting(SettingKey.PHYSICS_LAB_ENABLED)?.toBooleanStrictOrNull(),
+        citelEnabled = setting(SettingKey.CITEL_ENABLED)?.toBooleanStrictOrNull(),
         autoSyncPhyVlab = booleanSetting(SettingKey.AUTO_SYNC_PHYVLAB, true),
         currentWeek = setting(SettingKey.CURRENT_WEEK)?.toIntOrNull()?.coerceIn(0, 56) ?: 0,
         checkUpdate = booleanSetting(SettingKey.CHECK_UPDATE, true),
@@ -389,6 +392,7 @@ class CacheStore(
             putSetting(SettingKey.AUTO_SYNC_SCHEDULE, preferences.autoSyncSchedule.toString())
             putSetting(SettingKey.AUTO_SYNC_EXAMS, preferences.autoSyncExams.toString())
             putSetting(SettingKey.PHYSICS_LAB_ENABLED, preferences.physicsLabEnabled?.toString() ?: "legacy")
+            putSetting(SettingKey.CITEL_ENABLED, preferences.citelEnabled?.toString() ?: "legacy")
             putSetting(SettingKey.AUTO_SYNC_PHYVLAB, preferences.autoSyncPhyVlab.toString())
             putSetting(SettingKey.CURRENT_WEEK, preferences.currentWeek.coerceIn(0, 56).toString())
             putSetting(SettingKey.CHECK_UPDATE, preferences.checkUpdate.toString())
@@ -414,7 +418,8 @@ class CacheStore(
 
     fun clearAccount(accountScope: String) {
         // 独立实验账号是同步设置；清离线副本时保留标记，完整清空时再统一清安全存储。
-        val labSettings = listOf("physicslab.enabled", "physicslab.configured", "physicslab.twoWeekOverrides").mapNotNull { key ->
+        val labSettings = listOf("physicslab.enabled", "physicslab.configured", "physicslab.twoWeekOverrides",
+            "citel.enabled", "citel.remember", "citel.username").mapNotNull { key ->
             metadata(accountScope, key)?.let { key to it }
         }
         val scope = protectedAccountScope(accountScope)
@@ -573,6 +578,7 @@ private object SettingKey {
     const val AUTO_SYNC_SCHEDULE = "auto_sync_schedule"
     const val AUTO_SYNC_EXAMS = "auto_sync_exams"
     const val PHYSICS_LAB_ENABLED = "physics_lab_enabled"
+    const val CITEL_ENABLED = "citel_enabled"
     const val AUTO_SYNC_PHYVLAB = "auto_sync_phyvlab"
     const val CURRENT_WEEK = "current_week"
     const val CHECK_UPDATE = "check_update"

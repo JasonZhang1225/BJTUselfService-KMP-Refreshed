@@ -258,53 +258,23 @@ class PhyVlabRemoteDataSourceTest {
 
     @Test
     fun submitsThroughMoodleDraftUploadAndAssignmentForm() = runBlocking {
-        val activity = PhyVlabActivity(
-            id = 3700,
-            courseId = 72,
-            courseName = "大学物理I_(2026春)",
-            title = "Chap-2-3",
-            activityType = "作业",
-            activityUrl = "https://phyvlab.bjtu.edu.cn/mod/assign/view.php?id=3700",
-        )
+        val activity = PhyVlabActivity(3700, 72, "测试课程", "测试作业", "作业", "https://phyvlab.bjtu.edu.cn/mod/assign/view.php?id=3700")
         val transport = QueueTransport(
-            SchoolHttpResponse(
-                200,
-                activity.activityUrl,
-                body = """
-                    <main><div id="intro">完成第二章练习</div>
-                    <a href="/mod/assign/view.php?id=3700&amp;action=editsubmission">编辑提交</a></main>
-                """.trimIndent().encodeToByteArray(),
-            ),
-            SchoolHttpResponse(
-                200,
-                "https://phyvlab.bjtu.edu.cn/mod/assign/view.php?id=3700&action=editsubmission",
-                body = """
-                    <form action="/mod/assign/view.php?id=3700&amp;action=editsubmission" method="post">
-                      <input type="hidden" name="sesskey" value="abc123">
-                      <input type="hidden" name="id" value="3700">
-                      <input type="hidden" name="files_filemanager" value="0">
-                      <div class="filemanager" data-itemid="0" data-contextid="17" data-clientid="client-3700" data-repositoryid="4"></div>
-                    </form>
-                """.trimIndent().encodeToByteArray(),
-            ),
-            SchoolHttpResponse(
-                200,
-                "https://phyvlab.bjtu.edu.cn/repository/repository_ajax.php",
-                body = "{\"success\":true}".encodeToByteArray(),
-            ),
-            SchoolHttpResponse(
-                200,
-                "https://phyvlab.bjtu.edu.cn/mod/assign/view.php?id=3700",
-                body = "<html>success</html>".encodeToByteArray(),
-            ),
+            SchoolHttpResponse(200, activity.activityUrl, body = """<main id="region-main"><form><input name="action" value="editsubmission"></form></main>""".encodeToByteArray()),
+            SchoolHttpResponse(200, "${activity.activityUrl}&action=editsubmission", body = """
+                <form action="https://phyvlab.bjtu.edu.cn/mod/assign/view.php">
+                    <input type="hidden" name="sesskey" value="abc123"><input type="hidden" name="id" value="3700">
+                    <input type="hidden" name="action" value="savesubmission"><input type="hidden" name="files_filemanager" value="42">
+                </form>
+                <script>M.form_filemanager.init(Y,{"itemid":42,"client_id":"client-3700","context":{"id":17},"maxfiles":20,"maxbytes":1000,"accepted_types":[".pdf"],"list":[],"filepicker":{"repositories":{"4":{"type":"upload"}}}});</script>
+                """.encodeToByteArray()),
+            SchoolHttpResponse(200, "https://phyvlab.bjtu.edu.cn/repository/repository_ajax.php", body = "{\"success\":true}".encodeToByteArray()),
+            SchoolHttpResponse(200, activity.activityUrl, body = "<html>success</html>".encodeToByteArray()),
+            SchoolHttpResponse(200, activity.activityUrl, body = """<main id="region-main"><table class="submissionstatustable"><tr><th>Submission status</th><td>Draft (not submitted)</td></tr><tr><td><a href="/pluginfile.php/report.pdf">report.pdf</a></td></tr></table><form><input name="action" value="submit"></form></main>""".encodeToByteArray()),
         )
-
-        SchoolPhyVlabRemoteDataSource(transport).submitAssignment(
-            activity,
-            listOf(HomeworkFileContent("report.pdf", "application/pdf", byteArrayOf(1, 2, 3))),
-        )
-
-        assertEquals(4, transport.requests.size)
+        SchoolPhyVlabRemoteDataSource(transport).submitAssignment(activity,
+            listOf(HomeworkFileContent("report.pdf", "application/pdf", byteArrayOf(1, 2, 3))))
+        assertEquals(5, transport.requests.size)
         val upload = transport.requests[2]
         assertEquals("upload", upload.formFields["action"])
         assertEquals("abc123", upload.formFields["sesskey"])
@@ -312,12 +282,12 @@ class PhyVlabRemoteDataSourceTest {
         assertEquals("17", upload.formFields["ctx_id"])
         assertEquals("client-3700", upload.formFields["client_id"])
         assertEquals("repo_upload_file", upload.multipartFiles.single().fieldName)
-        val submit = transport.requests[3]
-        assertEquals("0", submit.formFields["files_filemanager"])
-        assertEquals("savesubmission", submit.formFields["action"])
-        assertTrue("abc123" !in submit.toString())
+        val save = transport.requests[3]
+        assertEquals("42", save.formFields["files_filemanager"])
+        assertEquals("savesubmission", save.formFields["action"])
+        assertTrue(transport.requests.none { it.formFields["action"] == "confirmsubmit" })
+        assertTrue("abc123" !in save.toString())
     }
-
     private fun coursePageHtml(): String = """
         <div data-region="course-content" data-course-id="72">
           <a class="aalink coursename" href="https://phyvlab.bjtu.edu.cn/course/view.php?id=72">

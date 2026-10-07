@@ -101,6 +101,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.AcademicWeek
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.academicWeekSlots
 import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeAgenda
+import team.bjtuss.bjtuselfservice.shared.domain.home.agendaWeekMarks
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeAgendaDay
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeDomain
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeRecord
@@ -930,7 +931,7 @@ private fun HomeAgendaWeekCard(
 }
 
 @Composable
-private fun HomeAgendaCalendarContent(
+internal fun HomeAgendaCalendarContent(
     weekSlot: AcademicWeekSlot,
     weekAgenda: HomeAgenda,
     today: LocalDate,
@@ -966,8 +967,7 @@ private fun HomeAgendaCalendarContent(
                     Text(
                         text = when {
                             weekSlot.isNonTeachingWeek -> "校历未安排教学周，仍显示本周日程"
-                            phyVlabEvents.isEmpty() -> "作业、考试与课表安排"
-                            else -> "作业、考试与课表安排（含物理在线）"
+                            else -> "作业、考试与课表安排"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1018,6 +1018,7 @@ private fun HomeAgendaCalendarContent(
         ) {
             buildList {
                 add("课程" to courseAgendaMarkColor())
+                add("作业开始" to startingHomeworkMarkColor())
                 add("待提交作业" to pendingHomeworkMarkColor())
                 add("已提交作业" to submittedHomeworkMarkColor())
                 if (weekAgenda.days.any { it.physicsLabCourses.isNotEmpty() }) {
@@ -1160,6 +1161,9 @@ private fun pendingHomeworkMarkColor(): Color =
 private fun submittedHomeworkMarkColor(): Color = Color(0xFF16723B)
 
 @Composable
+private fun startingHomeworkMarkColor(): Color = Color(0xFFD5A000)
+
+@Composable
 private fun AgendaDayCell(
     day: HomeAgendaDay,
     selected: Boolean,
@@ -1216,6 +1220,7 @@ private fun AgendaDayCell(
                 },
             )
             val homeworkMarks = listOfNotNull(
+                marks.startingHomework.takeIf { it > 0 }?.let { AgendaCategoryCount("作业开始", it, startingHomeworkMarkColor()) },
                 marks.pendingHomework.takeIf { it > 0 }?.let {
                     AgendaCategoryCount("待提交作业", it, pendingHomeworkMarkColor())
                 },
@@ -1244,32 +1249,6 @@ private fun AgendaDayCell(
 }
 
 private data class AgendaCategoryCount(val label: String, val count: Int, val color: Color)
-
-private data class AgendaWeekMarks(
-    val courses: Int,
-    val labs: Int,
-    val exams: Int,
-    val pendingHomework: Int,
-    val submittedHomework: Int,
-)
-
-private fun agendaWeekMarks(day: HomeAgendaDay): AgendaWeekMarks {
-    var pending = 0
-    var submitted = 0
-    day.homeworkDue.forEach { item ->
-        if (isHomeworkSubmitted(item)) submitted += 1 else pending += 1
-    }
-    day.phyVlabEvents.filter { it.kind == PhyVlabEventKind.DEADLINE }.forEach { event ->
-        if (event.submitted) submitted += 1 else pending += 1
-    }
-    return AgendaWeekMarks(
-        courses = day.courses.size,
-        labs = day.physicsLabCourses.size,
-        exams = day.exams.size,
-        pendingHomework = pending,
-        submittedHomework = submitted,
-    )
-}
 
 /** 一行小点的固定高度。两行叠起来，有没有作业都一样高。 */
 private val agendaMarkRowHeight = 13.dp
@@ -1357,7 +1336,13 @@ private fun AgendaDayDetails(
         }
         day.phyVlabEvents.forEach { event ->
             AgendaEventRow(
-                type = if (event.kind == PhyVlabEventKind.START) "物理开始" else "物理截止",
+                type = when {
+                    event.id.startsWith("citel-discount-") -> "折扣开始"
+                    event.id.startsWith("citel-start-") -> "CITEL开始"
+                    event.id.startsWith("citel-") -> "CITEL截止"
+                    event.kind == PhyVlabEventKind.START -> "物理开始"
+                    else -> "物理截止"
+                },
                 title = event.title,
                 detail = formatPhyVlabAgendaDate(event),
                 onClick = { onOpenPhyVlab(event) },

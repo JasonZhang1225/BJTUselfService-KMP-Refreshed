@@ -161,3 +161,15 @@ fun phyVlabEventDate(event: PhyVlabEvent, timeZone: TimeZone): LocalDate? =
         }
         effectiveInstant.toLocalDateTime(PHYVLAB_TIME_ZONE).date
     }.getOrNull()
+
+/** Start and deadline counters include every homework source; discounts are distinct agenda events. */
+data class AgendaWeekMarks(val courses: Int, val labs: Int, val exams: Int, val startingHomework: Int,
+    val pendingHomework: Int, val submittedHomework: Int)
+
+fun agendaWeekMarks(day: HomeAgendaDay): AgendaWeekMarks {
+    val deadlines = day.phyVlabEvents.filter { it.kind == PhyVlabEventKind.DEADLINE }
+    val submitted = day.homeworkDue.count(::isHomeworkSubmitted) + deadlines.count { it.submitted }
+    return AgendaWeekMarks(day.courses.size, day.physicsLabCourses.size, day.exams.size,
+        day.homeworkStarting.size + day.phyVlabEvents.count { it.kind == PhyVlabEventKind.START },
+        day.homeworkDue.size + deadlines.size - submitted, submitted)
+}

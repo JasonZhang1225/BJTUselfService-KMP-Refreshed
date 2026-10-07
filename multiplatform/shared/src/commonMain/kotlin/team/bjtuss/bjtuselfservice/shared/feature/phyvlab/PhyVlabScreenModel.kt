@@ -33,6 +33,8 @@ import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEventKind
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import kotlin.time.Clock
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentFilters
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentFilterStore
 import kotlin.time.Instant
 
 /** 物理在线是学校平台，页面日期和 Moodle 日历均以北京时间为准。 */
@@ -45,6 +47,7 @@ enum class PhyVlabContentSource {
 }
 
 data class PhyVlabUiState(
+    val filters: AssignmentFilters = AssignmentFilters(),
     val courses: List<PhyVlabCourse> = emptyList(),
     val events: List<PhyVlabEvent> = emptyList(),
     /** 不受当前物理在线月视图限制，专供首页“本周安排”使用。 */
@@ -58,6 +61,8 @@ data class PhyVlabUiState(
     val isSubmitting: Boolean = false,
     val detailFailure: PhyVlabSyncFailure? = null,
     val submissionFeedback: String? = null,
+    val finalizationStatement: String? = null,
+    val submissionRevision: Long = 0,
     val isLoading: Boolean = false,
     val failure: PhyVlabSyncFailure? = null,
     val failureDetail: String? = null,
@@ -82,8 +87,9 @@ class PhyVlabScreenModel(
     private val changeRecorder: DataChangeRecorder<PhyVlabActivity>? = null,
     accountScope: String? = null,
     private val nowProvider: () -> Instant = { Clock.System.now() },
+    private val filterStore: AssignmentFilterStore? = null,
 ) {
-    private val mutableState = MutableStateFlow(PhyVlabUiState())
+    private val mutableState = MutableStateFlow(PhyVlabUiState(filters = filterStore?.load() ?: AssignmentFilters()))
     val state: StateFlow<PhyVlabUiState> = mutableState.asStateFlow()
     private val refreshMutex = Mutex()
     private var lastRequestedMonthSeconds: Long? = null
@@ -241,6 +247,13 @@ class PhyVlabScreenModel(
         }
     }
 
+    fun updateFilters(filters: AssignmentFilters) {
+        filterStore?.save(filters)
+        mutableState.value = mutableState.value.copy(filters = filters)
+    }
+
+    fun allActivities(): List<PhyVlabActivity> = activitiesByCourse.values.flatten().distinctBy { it.courseId to it.id }
+
     fun selectCourse(course: PhyVlabCourse) {
         mutableState.value = mutableState.value.copy(
             selectedCourse = course,
@@ -310,6 +323,18 @@ class PhyVlabScreenModel(
                         detailFailure = null,
                     )
                     assignmentDetailsByActivity[activity.cacheKey()] = result.detail
+                    val completed = phyVlabAssignmentDetailHasSubmission(result.detail)
+                    activitiesByCourse[activity.courseId] = activitiesByCourse[activity.courseId].orEmpty().map {
+                        if (it.id == activity.id) it.copy(completed = completed) else it
+                    }
+                    scheduleEvents = resolveEventSubmitted(scheduleEvents)
+                    mutableState.value = mutableState.value.copy(
+                        activities = mutableState.value.activities.map { if (it.id == activity.id) it.copy(completed = completed) else it },
+                        selectedActivity = mutableState.value.selectedActivity?.let { if (it.id == activity.id) it.copy(completed = completed) else it },
+                        agendaEvents = scheduleEvents,
+                        events = mutableState.value.selectedCourse?.let { eventsForSelectedCourse(it, lastRequestedMonthSeconds ?: currentBeijingMonthStartSeconds()) }
+                            ?: scheduleEvents,
+                    )
                     persistCache(mutableState.value.cachedAtEpochMillis ?: Clock.System.now().toEpochMilliseconds())
                 }
                 is PhyVlabAssignmentDetailResult.Failure -> {
@@ -326,9 +351,10 @@ class PhyVlabScreenModel(
         }
     }
 
-    suspend fun submitSelectedActivity(files: List<HomeworkFileContent>) {
+    suspend fun submitSelectedActivity(files: List<HomeworkFileContent>, removed: Set<String> = emptySet(), finalize: Boolean = false) {
+        if (mutableState.value.isSubmitting) return
         val activity = mutableState.value.selectedActivity ?: return
-        if (files.isEmpty()) return
+        if (files.isEmpty() && removed.isEmpty() && !finalize) return
         mutableState.value = mutableState.value.copy(isSubmitting = true, submissionFeedback = null)
         try {
             if (!ensureSessionForOperation()) {
@@ -341,11 +367,12 @@ class PhyVlabScreenModel(
             }
             // 提交是写操作：只在提交前恢复会话，不对一个不确定的 POST 结果自动重放，
             // 避免服务端已接收文件但响应丢失时产生重复提交。
-            when (val result = repository.submitAssignment(activity, files)) {
+            when (val result = if (finalize) repository.finalizeAssignment(activity, mutableState.value.finalizationStatement) else repository.saveAssignment(activity, files, removed)) {
                 PhyVlabSubmissionResult.Success -> {
                     mutableState.value = mutableState.value.copy(
+                        submissionRevision = mutableState.value.submissionRevision + 1,
                         isSubmitting = false,
-                        submissionFeedback = "已提交，正在刷新批改状态。",
+                        submissionFeedback = if (finalize) "已最终提交，正在核对状态。" else "文件已保存；若显示待最终提交，请检查文件后点击最终提交。",
                         assignmentDetail = null,
                     )
                     loadSelectedActivityDetail(force = true)
@@ -371,6 +398,22 @@ class PhyVlabScreenModel(
                 submissionFeedback = "提交失败，请检查网络后重试。",
             )
         }
+    }
+
+    suspend fun prepareFinalization(): Boolean {
+        val activity = mutableState.value.selectedActivity ?: return false
+        if (mutableState.value.isSubmitting) return false
+        mutableState.value = mutableState.value.copy(isSubmitting = true, submissionFeedback = null, finalizationStatement = null)
+        return try {
+            if (!ensureSessionForOperation()) return false
+            val statement = repository.finalizationStatement(activity)
+            mutableState.value = mutableState.value.copy(finalizationStatement = statement)
+            true
+        } catch (error: CancellationException) { throw error
+        } catch (_: Exception) {
+            mutableState.value = mutableState.value.copy(submissionFeedback = "无法读取最终提交确认，请刷新或到网页核对。")
+            false
+        } finally { mutableState.value = mutableState.value.copy(isSubmitting = false) }
     }
 
     suspend fun loadSelectedActivities() {
@@ -522,7 +565,7 @@ class PhyVlabScreenModel(
                 courseId = key.courseId,
                 activityId = key.activityId,
                 // 缓存只用于离线阅读，不能把当前会话的上传能力带到下次启动。
-                detail = detail.copy(canSubmit = false),
+                detail = detail.copy(canSubmit = false, canFinalize = false),
             )
         }
         runCatching {
@@ -576,7 +619,6 @@ class PhyVlabScreenModel(
      * 关联不上时保持 false，不猜测。
      */
     private fun resolveEventSubmitted(events: List<PhyVlabEvent>): List<PhyVlabEvent> {
-        if (events.none { !it.submitted }) return events
         val activities = activitiesByCourse.values.flatten()
         if (activities.isEmpty()) return events
         val submittedByUrl = activities.associate { it.activityUrl to submittedSignal(it) }
@@ -587,9 +629,7 @@ class PhyVlabScreenModel(
     }
 
     private fun submittedSignal(activity: PhyVlabActivity): Boolean =
-        activity.completed ||
-            assignmentDetailsByActivity[activity.cacheKey()]
-                ?.let(::phyVlabAssignmentDetailHasSubmission) == true
+        assignmentDetailsByActivity[activity.cacheKey()]?.let(::phyVlabAssignmentDetailHasSubmission) ?: activity.completed
 
     private fun findSubmittedActivity(
         event: PhyVlabEvent,

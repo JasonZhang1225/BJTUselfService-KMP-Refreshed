@@ -17,6 +17,23 @@ import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEventKind
 
 class HomeAgendaTest {
     @Test
+    fun allThreeSourcesCountStartsAndDeadlinesWhileDiscountIsNotAnotherDeadline() {
+        val start = homework(title = "开始", openDate = "2026-10-08 00:00", endTime = "2026-10-09 23:59")
+        val due = homework(title = "截止", openDate = "2026-10-01 00:00", endTime = "2026-10-08 23:59")
+        val day = HomeAgendaDay(LocalDate(2026, 10, 8), listOf(start), listOf(due), emptyList(), listOf(
+            PhyVlabEvent("citel-start-1", "CITEL 开始", "", 0, kind = PhyVlabEventKind.START),
+            PhyVlabEvent("physical-start-1", "物理开始", "", 0, kind = PhyVlabEventKind.START),
+            PhyVlabEvent("citel-due-1", "CITEL 截止", "", 0, submitted = false),
+            PhyVlabEvent("citel-due-2", "CITEL 截止", "", 0, submitted = true),
+            PhyVlabEvent("physical-due-1", "物理截止", "", 0, submitted = true),
+            PhyVlabEvent("citel-discount-1", "折扣", "", 0, kind = PhyVlabEventKind.DISCOUNT),
+        ))
+        val marks = agendaWeekMarks(day)
+        assertEquals(3, marks.startingHomework)
+        assertEquals(2, marks.submittedHomework)
+        assertEquals(2, marks.pendingHomework)
+    }
+    @Test
     fun nonTeachingWeekKeepsNaturalWeekAndShowsOctoberFirstDeadline() {
         val today = LocalDate(2026, 10, 1)
         val deadline = homework(

@@ -79,11 +79,24 @@ interface PhyVlabRepository {
         activity: PhyVlabActivity,
         files: List<HomeworkFileContent>,
     ): PhyVlabSubmissionResult
+    suspend fun saveAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>, removed: Set<String>): PhyVlabSubmissionResult =
+        if (removed.isEmpty()) submitAssignment(activity, files) else PhyVlabSubmissionResult.Failure(PhyVlabSyncFailure.PARSE)
+    suspend fun finalizationStatement(activity: PhyVlabActivity): String? = throw IllegalStateException("Finalization unavailable")
+    suspend fun finalizeAssignment(activity: PhyVlabActivity, acceptedStatement: String?): PhyVlabSubmissionResult = PhyVlabSubmissionResult.Failure(PhyVlabSyncFailure.PARSE)
 }
 
 class DefaultPhyVlabRepository(
     private val remote: PhyVlabRemoteDataSource,
 ) : PhyVlabRepository {
+    override suspend fun saveAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>, removed: Set<String>): PhyVlabSubmissionResult =
+        writeAssignment { remote.saveAssignment(activity, files, removed) }
+    override suspend fun finalizationStatement(activity: PhyVlabActivity): String? = remote.finalizationStatement(activity)
+    override suspend fun finalizeAssignment(activity: PhyVlabActivity, acceptedStatement: String?): PhyVlabSubmissionResult = writeAssignment { remote.finalizeAssignment(activity, acceptedStatement) }
+    private suspend fun writeAssignment(operation: suspend () -> Unit): PhyVlabSubmissionResult = try {
+        operation(); PhyVlabSubmissionResult.Success
+    } catch (error: CancellationException) { throw error
+    } catch (error: PhyVlabRemoteException) { PhyVlabSubmissionResult.Failure(error.reason.toSyncFailure())
+    } catch (_: Exception) { PhyVlabSubmissionResult.Failure(PhyVlabSyncFailure.NETWORK) }
     override suspend fun fetchCourses(): PhyVlabCoursesResult = try {
         PhyVlabCoursesResult.Success(remote.fetchCourses())
     } catch (error: CancellationException) {

@@ -6,6 +6,7 @@ fun createDesktopAccountSecurityStore(): AccountSecurityStore = AccountSecurityS
     credentialVault = MacOsKeychainCredentialVault(),
     preferences = DesktopAccountPreferences(),
     physicsLabVault = { MacOsKeychainCredentialVault(service = "team.bjtuss.bjtuselfservice.kmp.physicslab", account = it) },
+    citelVault = { MacOsKeychainCredentialVault(service = "team.bjtuss.bjtuselfservice.kmp.citel", account = it) },
 )
 
 private class DesktopAccountPreferences : AccountPreferences {

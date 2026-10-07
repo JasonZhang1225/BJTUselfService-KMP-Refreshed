@@ -35,7 +35,7 @@ class NativeShellBridgeTest {
         assertEquals("首页", nativeRouteTitle("HOME"))
         assertEquals("应用", nativeRouteTitle("MORE"))
         assertEquals("作业详情", nativeRouteTitle(HOMEWORK_DETAIL_ROUTE_ID))
-        assertEquals("物理实验同步", nativeRouteTitle("PHYSICS_LAB_SETTINGS"))
+        assertEquals("物理实验账号设置", nativeRouteTitle("PHYSICS_LAB_SETTINGS"))
         assertEquals("校历下载", nativeRouteTitle("CALENDAR"))
         assertEquals("邮件详情", nativeRouteTitle(MAILBOX_DETAIL_ROUTE_ID))
         // 写信页的返回要先取消草稿，标题栏仍归页面自己，宿主不得抢先显示。

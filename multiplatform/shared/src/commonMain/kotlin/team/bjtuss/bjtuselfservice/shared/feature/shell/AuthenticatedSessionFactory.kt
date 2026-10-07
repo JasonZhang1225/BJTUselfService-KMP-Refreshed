@@ -211,6 +211,7 @@ internal fun rememberAuthenticatedSession(
             initialPreferences = appPreferences.copy(
                 physicsLabEnabled = appPreferences.physicsLabEnabled
                     ?: (cacheStore.metadata(profile.studentId, "physicslab.enabled") == "true"),
+                citelEnabled = appPreferences.citelEnabled ?: (cacheStore.metadata(profile.studentId, "citel.enabled") == "true"),
             ),
             persistPreferences = onPreferencesChanged,
             clearAccountCache = {
@@ -220,6 +221,8 @@ internal fun rememberAuthenticatedSession(
                 val labAccounts = (cacheStore.metadataAccountScopes("physicslab.configured") + profile.studentId).distinct()
                 val labCredentialsPurged = runCatching {
                     labAccounts.forEach { securityCoordinator.physicsLabVault(it)?.clear() }
+                    (cacheStore.metadataAccountScopes("citel.username") + profile.studentId).distinct()
+                        .forEach { securityCoordinator.citelVault(it)?.clear() }
                 }.isSuccess
                 val cacheCleared = labCredentialsPurged && runCatching { cacheStore.clearAll() }.isSuccess
                 val credentialsPurged = securityCoordinator.purge()
@@ -277,6 +280,7 @@ internal fun rememberAuthenticatedSession(
             localDataSource = phyVlabLocalDataSource,
             changeRecorder = phyvlabChangeRecorder(homeChangeFeed),
             accountScope = profile.studentId,
+            filterStore = team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentFilterStore(cacheStore, profile.studentId, "phyvlab"),
         )
     }
     val physicsLabModel = remember(profile.studentId, cacheStore, securityCoordinator) {
@@ -293,6 +297,10 @@ internal fun rememberAuthenticatedSession(
         )
     }
     val homeModel = remember(homeStatusRepository) { HomeScreenModel(homeStatusRepository) }
+    val citelModel = remember(profile.studentId, cacheStore, securityCoordinator, transport) {
+        team.bjtuss.bjtuselfservice.shared.feature.citel.CitelModel(profile.studentId, cacheStore,
+            securityCoordinator.citelVault(profile.studentId), team.bjtuss.bjtuselfservice.shared.feature.citel.CitelRemote(transport))
+    }
     val session = remember(
         profile,
         gradeModel,
@@ -330,6 +338,7 @@ internal fun rememberAuthenticatedSession(
             mailboxModel = mailboxModel,
             phyVlabModel = phyVlabModel,
             physicsLabModel = physicsLabModel,
+            citelModel = citelModel,
             homeModel = homeModel,
             homeChangeFeed = homeChangeFeed,
             homeworkFileGateway = homeworkFileGateway,

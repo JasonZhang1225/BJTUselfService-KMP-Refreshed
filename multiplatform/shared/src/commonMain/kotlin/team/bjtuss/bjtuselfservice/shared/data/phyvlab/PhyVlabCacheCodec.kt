@@ -77,6 +77,7 @@ private data class AssignmentDetailPayload(
     val gradeText: String? = null,
     val feedbackText: String? = null,
     val submittedFiles: List<String> = emptyList(),
+    val isDraft: Boolean = false,
 )
 
 internal fun encodePhyVlabCache(snapshot: PhyVlabCacheSnapshot): String = json.encodeToString(
@@ -129,6 +130,7 @@ internal fun encodePhyVlabCache(snapshot: PhyVlabCacheSnapshot): String = json.e
                 gradeText = cached.detail.gradeText,
                 feedbackText = cached.detail.feedbackText,
                 submittedFiles = cached.detail.submittedFiles.map(PhyVlabSubmissionFile::fileName),
+                isDraft = cached.detail.isDraft,
             )
         },
     ),
@@ -193,8 +195,8 @@ internal fun decodePhyVlabCache(value: String): PhyVlabCacheSnapshot? = runCatch
     val assignmentDetails = payload.assignmentDetails.map { cached ->
         // 旧版本可能已经把开放时间误存成了“提交时间”。缓存不能凭一个孤立日期
         // 继续证明作业已提交；必须有提交文件或明确的已提交状态。
-        val hasTrustedSubmission = cached.submittedFiles.isNotEmpty() ||
-            cached.submissionStatusIndicatesSubmission()
+        val hasTrustedSubmission = !cached.isDraft && !cached.submissionStatus.contains("draft", true) && !cached.submissionStatus.contains("草稿") &&
+            (cached.submittedFiles.isNotEmpty() || cached.submissionStatusIndicatesSubmission())
         PhyVlabCachedAssignmentDetail(
             courseId = cached.courseId,
             activityId = cached.activityId,
@@ -209,6 +211,7 @@ internal fun decodePhyVlabCache(value: String): PhyVlabCacheSnapshot? = runCatch
                 submittedFiles = cached.submittedFiles.map(::PhyVlabSubmissionFile),
                 // 上传所需的短期表单上下文从不进缓存；离线详情不能显示可提交按钮。
                 canSubmit = false,
+                isDraft = cached.isDraft || cached.submissionStatus.contains("draft", true) || cached.submissionStatus.contains("草稿"),
             ),
         )
     }

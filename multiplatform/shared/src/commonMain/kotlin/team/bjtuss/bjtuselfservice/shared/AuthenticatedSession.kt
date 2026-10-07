@@ -61,8 +61,10 @@ class AuthenticatedSession(
     /** 刷新前探测 MIS 会话；返回 false 时由共享刷新协调器触发恢复。 */
     val probeSession: (suspend () -> Boolean)? = null,
     val physicsLabModel: team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabModel? = null,
+    val citelModel: team.bjtuss.bjtuselfservice.shared.feature.citel.CitelModel? = null,
 ) {
     private val appResumeGenerationState = MutableStateFlow(0L)
+    private val appForegroundGenerationState = MutableStateFlow(0L)
     private val appResumeMutex = Mutex()
     private var claimedAppResumeGeneration = 0L
 
@@ -100,9 +102,16 @@ class AuthenticatedSession(
 
     /** 平台回到前台时递增；应用壳会针对当前页面的失效请求自动重试一次。 */
     val appResumeGeneration: StateFlow<Long> = appResumeGenerationState.asStateFlow()
+    val appForegroundGeneration: StateFlow<Long> = appForegroundGenerationState.asStateFlow()
 
     /** Android/iOS 宿主调用；同一前台事件只允许一个 Compose 壳消费。 */
     fun notifyAppBecameActive() {
+        appForegroundGenerationState.update { it + 1L }
+        notifyPageBecameActive()
+    }
+
+    /** Page navigation may recover expired school requests without triggering a full CITEL sync. */
+    fun notifyPageBecameActive() {
         appResumeGenerationState.update { it + 1L }
     }
 
@@ -136,22 +145,18 @@ class AuthenticatedSession(
     var entryLoggingIn: Boolean by mutableStateOf(entryLoggingIn)
 }
 
-/** 只有这些目的地属于一级 tab 之上的原生导航层级。 */
+/** 可从应用目录压入原生导航的页面；是否实际压栈由当前底栏配置决定。 */
 fun isNativeDetailRoute(routeId: String): Boolean =
-    routeId == "EXAMS" ||
-        routeId == "COURSEWARE" ||
-        routeId == "CLASSROOMS" ||
-        routeId == "CLASSROOM_OCCUPANCY" ||
-        routeId == "CLASSROOM_DETAIL" ||
+    team.bjtuss.bjtuselfservice.shared.feature.shell.AppSection.entries.any {
+        it.name == routeId && it != team.bjtuss.bjtuselfservice.shared.feature.shell.AppSection.HOME &&
+            it != team.bjtuss.bjtuselfservice.shared.feature.shell.AppSection.MORE
+    } || routeId == "CLASSROOM_DETAIL" ||
         routeId == "CLASSROOM_OCCUPANCY_DETAIL" ||
         routeId == "HOMEWORK_DETAIL" ||
         routeId == "EXAM_DETAIL" ||
-        routeId == "MAILBOX" ||
         routeId == "MAILBOX_DETAIL" ||
         routeId == "MAILBOX_COMPOSE" ||
-        routeId == "CALENDAR" ||
-        routeId == "REPORT_CARD_DOWNLOAD" ||
-        routeId == "PHYVLAB" ||
+        routeId == "CITEL_DETAIL" ||
+        routeId == "CITEL_SETTINGS" ||
         routeId == "PHYVLAB_DETAIL" ||
-        routeId == "PHYSICS_LAB_SETTINGS" ||
-        routeId == "SETTINGS"
+        routeId == "PHYSICS_LAB_SETTINGS"

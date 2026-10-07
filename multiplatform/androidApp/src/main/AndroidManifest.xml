@@ -12,6 +12,7 @@
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".MainActivity"
+            android:windowSoftInputMode="adjustResize"
             android:enableOnBackInvokedCallback="true"
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|uiMode">
@@ -24,6 +25,7 @@
         </activity>
         <activity
             android:name=".NativeDetailActivity"
+            android:windowSoftInputMode="adjustResize"
             android:enableOnBackInvokedCallback="true"
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|uiMode" />

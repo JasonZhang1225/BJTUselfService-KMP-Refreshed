@@ -11,6 +11,20 @@ import team.bjtuss.bjtuselfservice.shared.network.*
 import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
 
 class PhysicsLabModelTest {
+    @Test fun saveAndSyncReportsFailureAndKeepsFeatureSwitchOff() = runBlocking<Unit> {
+        val cache = store()
+        try {
+            val transport = TestTransport()
+            val model = PhysicsLabModel("fixture-save", cache, MemoryVault(), PhysicsLabRemote(transport))
+            assertTrue(model.saveAccountAndSync("fixture", "fixture"))
+            assertFalse(model.state.value.enabled)
+            transport.fail = true
+            assertFalse(model.saveAccountAndSync("fixture", ""))
+            assertTrue(model.state.value.configured)
+            assertTrue(model.state.value.failed)
+            assertNotNull(model.state.value.message)
+        } finally { cache.close() }
+    }
     @Test fun masterSwitchCanEnableBeforeCredentialsAndKeepsSavedAccountWhenDisabled() = runBlocking {
         val cache = store()
         try {
@@ -19,8 +33,13 @@ class PhysicsLabModelTest {
             val model = PhysicsLabModel("fixture-toggle", cache, vault, PhysicsLabRemote(transport))
             model.setEnabled(true)
             assertTrue(model.state.value.enabled)
+            assertFalse(model.state.value.configured)
             assertEquals(0, transport.calls)
             model.configure("fixture-lab", "fixture-password", true)
+            assertTrue(model.state.value.configured)
+            val restored = PhysicsLabModel("fixture-toggle", cache, vault, PhysicsLabRemote(transport))
+            restored.initialize()
+            assertTrue(restored.state.value.configured)
             val calls = transport.calls
             val labs = model.state.value.labs
             model.setEnabled(false)

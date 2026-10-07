@@ -21,6 +21,7 @@ data class PhysicsLabState(
     val message: String? = null,
     val failed: Boolean = false,
     val synced: Boolean = false,
+    val configured: Boolean = false,
 )
 
 class PhysicsLabModel(
@@ -46,7 +47,8 @@ class PhysicsLabModel(
             json.decodeFromString<Map<String, Boolean>>(cache.metadata(scope, "physicslab.twoWeekOverrides").orEmpty())
         }.getOrDefault(emptyMap())
         val labs = applyWeekOverrides(runCatching { json.decodeFromString<List<PhysicsLab>>(cache.metadata(scope, "physicslab.results").orEmpty()) }.getOrDefault(emptyList()))
-        mutableState.value = PhysicsLabState(enabled, credentials?.username.orEmpty(), labs, fromCache = labs.isNotEmpty())
+        mutableState.value = PhysicsLabState(enabled, credentials?.username.orEmpty(), labs, fromCache = labs.isNotEmpty(),
+            configured = credentials?.isValid == true)
         initialized = true
     }
     /** Settings owns activation; enabling may precede entering separate lab credentials. */
@@ -62,7 +64,10 @@ class PhysicsLabModel(
         initialize()
         mutex.withLock {
             try {
-                if (enabled && (username.isBlank() || password.isBlank())) throw PhysicsLabFailure("请填写实验系统账号和密码。")
+                val existing = vault?.load()
+                val next = if (password.isNotBlank()) Credentials(username.trim(), password)
+                    else existing?.takeIf { it.username == username.trim() }
+                if (next == null || !next.isValid) throw PhysicsLabFailure("请填写实验系统账号和密码。")
                 if (username.isNotBlank() && password.isNotBlank()) {
                     val storage = vault ?: throw PhysicsLabFailure("当前平台安全存储不可用。")
                     storage.save(Credentials(username.trim(), password))
@@ -77,22 +82,34 @@ class PhysicsLabModel(
                 cache.putMetadata(scope, "physicslab.configured", "true")
                 mutableState.value = mutableState.value.copy(enabled = enabled, username = username.trim(),
                     labs = if (changedAccount) emptyList() else mutableState.value.labs, failed = false,
-                    message = if (enabled) null else "已保存，物理实验同步已关闭。")
+                    message = if (enabled) null else "已保存，物理实验同步已关闭。", configured = next.isValid)
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
-                mutableState.value = mutableState.value.copy(message = (e as? PhysicsLabFailure)?.userMessage ?: "安全保存失败，请重试。")
+                mutableState.value = mutableState.value.copy(failed = true, message = (e as? PhysicsLabFailure)?.userMessage ?: "安全保存失败，请重试。")
                 return
             }
         }
         if (enabled) refresh()
     }
     suspend fun refresh() {
+        refresh(includeDisabled = false)
+    }
+
+    suspend fun saveAccountAndSync(username: String, password: String): Boolean {
+        initialize()
+        configure(username, password, state.value.enabled)
+        if (state.value.failed || !state.value.configured) return false
+        if (!state.value.enabled) refresh(includeDisabled = true)
+        return !state.value.failed && state.value.configured
+    }
+
+    private suspend fun refresh(includeDisabled: Boolean) {
         initialize()
         mutex.withLock {
-            if (!mutableState.value.enabled) return@withLock
+            if (!includeDisabled && !mutableState.value.enabled) return@withLock
             mutableState.value = mutableState.value.copy(refreshing = true, message = null, failed = false)
             try {
-                val credentials = vault?.load() ?: throw PhysicsLabFailure("请先设置实验系统账号和密码。")
+                val credentials = vault?.load() ?: throw PhysicsLabFailure("请在应用设置中配置物理实验账号和密码。")
                 val labs = applyWeekOverrides(withTimeout(25_000) { remote.fetch(credentials) })
                 cache.putMetadata(scope, "physicslab.results", json.encodeToString(labs))
                 mutableState.value = mutableState.value.copy(labs = labs, username = credentials.username, fromCache = false, failed = false, synced = true, message = "已同步 ${labs.size} 个实验。")

@@ -4,6 +4,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class HomeIdleStatusTest {
+    @Test fun waitingSourceCannotShowTheSuccessCheckmark() {
+        assertEquals("等待同步", homeIdleStatusText(false, false, false, false,
+            hasAnySource = true, hasWaitingSource = true))
+    }
     @Test
     fun homeFailureIsFullSyncFailureEvenIfChildrenSucceeded() {
         assertEquals(

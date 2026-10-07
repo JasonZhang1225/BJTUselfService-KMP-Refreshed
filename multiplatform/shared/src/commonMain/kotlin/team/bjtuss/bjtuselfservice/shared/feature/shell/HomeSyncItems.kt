@@ -223,6 +223,10 @@ internal fun buildHomeSyncItems(
     physicsLabBusy: Boolean = false,
     physicsLabFailed: Boolean = false,
     physicsLabReady: Boolean = false,
+    citelEnabled: Boolean = false,
+    citelBusy: Boolean = false,
+    citelFailed: Boolean = false,
+    citelReady: Boolean = false,
 ): List<HomeSyncItem> = buildList {
     add(
         homeSyncItem(
@@ -281,6 +285,10 @@ internal fun buildHomeSyncItems(
     if (physicsLabEnabled) {
         add(homeSyncItem("物理实验", physicsLabBusy, physicsLabFailed, physicsLabReady,
             busyDetail = "正在读取已选实验（需要校园网）"))
+    }
+    if (citelEnabled) {
+        add(homeSyncItem("CITEL 作业", citelBusy, citelFailed, citelReady,
+            busyDetail = "正在读取作业折扣与截止时间"))
     }
     if (phyVlabEnabled) {
         add(

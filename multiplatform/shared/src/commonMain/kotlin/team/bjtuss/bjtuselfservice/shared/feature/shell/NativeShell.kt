@@ -65,12 +65,14 @@ fun nativeRouteTitle(routeId: String): String {
     val route = routeId.toAppRoute() ?: return ""
     return when (route) {
         MailboxComposeRoute -> ""
-        PhysicsLabSettingsRoute -> "物理实验同步"
+        PhysicsLabSettingsRoute -> "物理实验账号设置"
         ClassroomDetailRoute -> AppSection.CLASSROOMS.title
         ClassroomOccupancyDetailRoute -> AppSection.CLASSROOM_OCCUPANCY.title
         HomeworkDetailRoute -> "作业详情"
         ExamDetailRoute -> "考试详情"
         PhyVlabDetailRoute -> "物理作业详情"
+        CitelDetailRoute -> "作业详情"
+        CitelSettingsRoute -> "CITEL 账号设置"
         MailboxDetailRoute -> "邮件详情"
         is AppSection -> route.title
     }

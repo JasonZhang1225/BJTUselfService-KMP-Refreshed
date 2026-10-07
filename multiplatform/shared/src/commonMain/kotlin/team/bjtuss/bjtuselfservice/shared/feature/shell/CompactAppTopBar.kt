@@ -198,6 +198,8 @@ internal fun CompactAppTopBar(
     onStatusClick: (() -> Unit)? = null,
     action: (@Composable () -> Unit)? = null,
     leadingAction: (@Composable () -> Unit)? = null,
+    titleAction: (@Composable () -> Unit)? = null,
+    statusAsText: Boolean = false,
     onBack: (() -> Unit)? = null,
     /** 教室查询详情把标题压矮，把高度留给教室列表。其它页保持原高度。 */
     dense: Boolean = false,
@@ -246,8 +248,13 @@ internal fun CompactAppTopBar(
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
+                modifier = if (titleAction == null) Modifier.weight(1f) else Modifier,
             )
+            if (titleAction != null) {
+                Spacer(Modifier.width(8.dp))
+                titleAction()
+                Spacer(Modifier.weight(1f))
+            }
             if (action != null) {
                 action()
                 Spacer(Modifier.width(8.dp))
@@ -270,7 +277,12 @@ internal fun CompactAppTopBar(
                 idleStatusText != null || onRefresh != null -> {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         idleStatusText?.let { status ->
-                            TopBarStatusCircle(
+                            if (statusAsText && onStatusClick != null) TextButton(onClick = onStatusClick) {
+                                Text(status, style = MaterialTheme.typography.labelMedium)
+                            }
+                            else if (statusAsText) Text(status, style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            else TopBarStatusCircle(
                                 text = status,
                                 onClick = onStatusClick,
                                 enabled = onStatusClick != null,

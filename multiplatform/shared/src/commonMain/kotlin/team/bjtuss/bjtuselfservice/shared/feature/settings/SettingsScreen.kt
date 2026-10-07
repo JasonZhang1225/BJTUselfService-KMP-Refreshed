@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -29,6 +30,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.TextStyle
@@ -52,6 +56,42 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
 
 @Composable
+internal fun FeatureSwitchesCard(
+    phyVlabEnabled: Boolean, physicsLabEnabled: Boolean, citelEnabled: Boolean,
+    physicsLabConfigured: Boolean, citelConfigured: Boolean,
+    onPhyVlabEnabled: (Boolean) -> Unit, onPhysicsLabEnabled: (Boolean) -> Unit, onCitelEnabled: (Boolean) -> Unit,
+    onPhysicsLabSettings: () -> Unit, onCitelSettings: () -> Unit,
+) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("功能开关", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            FeatureSwitchRow("启用物理在线", phyVlabEnabled, false, onPhyVlabEnabled)
+            FeatureSwitchRow("启用物理实验", physicsLabEnabled, physicsLabConfigured, onPhysicsLabEnabled, onPhysicsLabSettings)
+            FeatureSwitchRow("启用 CITEL", citelEnabled, citelConfigured, onCitelEnabled, onCitelSettings)
+        }
+    }
+}
+
+@Composable
+private fun FeatureSwitchRow(name: String, enabled: Boolean, configured: Boolean,
+    onEnabled: (Boolean) -> Unit, onSettings: (() -> Unit)? = null) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(name)
+            if (configured) Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
+                Text("已配置", Modifier.padding(horizontal = 6.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1)
+            }
+        }
+        if (onSettings != null) TextButton(onClick = onSettings,
+            modifier = Modifier.semantics { contentDescription = "${name.removePrefix("启用").trim()}账号设置" }) { Text("设置") }
+        Switch(checked = enabled, onCheckedChange = onEnabled)
+    }
+}
+
+@Composable
 fun SettingsWorkspace(
     model: SettingsScreenModel,
     accountName: String,
@@ -59,6 +99,10 @@ fun SettingsWorkspace(
     expanded: Boolean,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
+    physicsLabConfigured: Boolean = false,
+    citelConfigured: Boolean = false,
+    onPhysicsLabSettings: () -> Unit = {},
+    onCitelSettings: () -> Unit = {},
 ) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
@@ -117,19 +161,10 @@ fun SettingsWorkspace(
     ) {
         SettingCard("账户", accountName.ifBlank { "未登录" })
 
-        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("功能开关", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text("启用物理在线", modifier = Modifier.weight(1f))
-                    Switch(checked = state.preferences.isPhyVlabEnabled, onCheckedChange = model::setPhyVlabEnabled)
-                }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text("启用物理实验", modifier = Modifier.weight(1f))
-                    Switch(checked = state.preferences.isPhysicsLabEnabled, onCheckedChange = model::setPhysicsLabEnabled)
-                }
-            }
-        }
+        FeatureSwitchesCard(state.preferences.isPhyVlabEnabled, state.preferences.isPhysicsLabEnabled,
+            state.preferences.isCitelEnabled, physicsLabConfigured, citelConfigured,
+            model::setPhyVlabEnabled, model::setPhysicsLabEnabled, model::setCitelEnabled,
+            onPhysicsLabSettings, onCitelSettings)
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("底栏显示", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

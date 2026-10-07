@@ -183,6 +183,8 @@ internal expect fun decodeLegacyGb18030OrNull(bytes: ByteArray): String?
 
 private val sensitiveFormFieldNames = setOf(
     "password",
+    "username",
+    "logintoken",
     "captcha_0",
     "captcha_1",
     "csrfmiddlewaretoken",

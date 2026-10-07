@@ -16,6 +16,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AndroidAuthenticatedSessionRegistry.installLifecycle(application)
         enableImmersiveEdgeToEdge()
         // 调试日志只在 debug 构建开启；release 保持关闭。
         AppLog.enabled = BuildConfig.DEBUG

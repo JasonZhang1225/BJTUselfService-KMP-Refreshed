@@ -28,6 +28,24 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
 class PhyVlabScreenModelTest {
+    @Test fun draftOverridesCompletionMarkAndFinalSubmissionUpdatesHomeImmediately() = runBlocking {
+        val course = PhyVlabCourse(72, "测试课程", "", 0, "https://phyvlab.bjtu.edu.cn/course/view.php?id=72")
+        val activity = PhyVlabActivity(7, 72, course.name, "测试报告", "作业", "https://phyvlab.bjtu.edu.cn/mod/assign/view.php?id=7", dueTimestamp = 1792339140, completed = true)
+        val draft = PhyVlabAssignmentDetail(submissionStatus = "草稿（未提交）", isDraft = true,
+            submittedFiles = listOf(team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabSubmissionFile("draft.pdf")), canFinalize = true)
+        val local = MemoryLocalDataSource(PhyVlabCacheSnapshot(listOf(course), listOf(activity), emptyList(), emptyList(), 1L))
+        val repository = DetailRepository(draft)
+        val model = PhyVlabScreenModel(repository, PhyVlabSessionProtocol(AuthenticatedTransport), localDataSource = local, accountScope = "fixture")
+        model.initialize(refreshFromNetwork = false)
+        model.showActivityDetails(activity)
+        model.loadSelectedActivityDetail()
+        assertFalse(model.state.value.activities.single().completed)
+        assertFalse(model.state.value.agendaEvents.single().submitted)
+        repository.freshDetail = draft.copy(submissionStatus = "已提交请评分", isDraft = false, canFinalize = false)
+        model.loadSelectedActivityDetail(force = true)
+        assertTrue(model.state.value.activities.single().completed)
+        assertTrue(model.state.value.agendaEvents.single().submitted)
+    }
     @Test
     fun assignmentDetailShowsCacheImmediatelyAndRefreshesItInBackground() = runBlocking {
         val course = PhyVlabCourse(
@@ -320,7 +338,7 @@ class PhyVlabScreenModelTest {
     }
 
     private class DetailRepository(
-        private val freshDetail: PhyVlabAssignmentDetail,
+        var freshDetail: PhyVlabAssignmentDetail,
     ) : PhyVlabRepository {
         var detailRequestCount = 0
 

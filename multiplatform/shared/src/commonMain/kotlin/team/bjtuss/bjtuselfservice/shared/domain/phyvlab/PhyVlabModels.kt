@@ -40,12 +40,16 @@ data class PhyVlabAssignmentDetail(
     val feedbackText: String? = null,
     val submittedFiles: List<PhyVlabSubmissionFile> = emptyList(),
     val canSubmit: Boolean = false,
+    val canFinalize: Boolean = false,
+    val isDraft: Boolean = false,
 )
 
 /** 平台日历中的一个事件（安排）。 */
 enum class PhyVlabEventKind {
     /** 作业开放/启动时间。 */
     START,
+    /** 作业开始按折扣计分，与开放和最终截止分开。 */
+    DISCOUNT,
 
     /** 作业截止时间；00:00 在首页议程中归到前一天。 */
     DEADLINE,

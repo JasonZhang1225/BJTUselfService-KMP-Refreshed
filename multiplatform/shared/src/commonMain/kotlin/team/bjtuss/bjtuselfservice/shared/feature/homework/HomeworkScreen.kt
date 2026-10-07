@@ -527,6 +527,11 @@ private fun HomeworkSummary(
             append(" · 已筛选")
         }
     }
+    HomeworkSummaryBanner(state.visibleHomework.size, subtitle, onOpenFilter)
+}
+
+@Composable
+internal fun HomeworkSummaryBanner(count: Int, subtitle: String, onOpenFilter: (() -> Unit)? = null) {
     // 与成绩/课表 Banner 对齐：摘要 + 右侧筛选 pill；同步态在顶栏右上。
     Surface(
         color = MaterialTheme.colorScheme.primaryContainer,
@@ -552,7 +557,7 @@ private fun HomeworkSummary(
                     ),
             ) {
                 Text(
-                    "${state.visibleHomework.size} 项作业",
+                    "${count} 项作业",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
@@ -873,7 +878,7 @@ private fun HomeworkScrollableContent(
 }
 
 @Composable
-private fun HomeworkCard(
+internal fun HomeworkCard(
     item: Homework,
     selected: Boolean,
     onOpen: (String) -> Unit,
@@ -895,22 +900,9 @@ private fun HomeworkCard(
             modifier = Modifier.fillMaxWidth().padding(15.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            Text(
-                item.courseName,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                item.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCardHeader(
+                item.courseName, item.title, team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkSubmitted(item))
             HomeworkCardLine("类型", item.typeLabel())
-            HomeworkCardLine("提交状态", item.subStatus.ifBlank { "未标明" })
             HomeworkCardLine("截止", item.endTime.ifBlank { "未提供" })
             HomeworkCardLine("提交人数", "${item.submitCount} / ${item.allCount}")
             if (item.score.isNotBlank()) HomeworkCardLine("评分", item.score)

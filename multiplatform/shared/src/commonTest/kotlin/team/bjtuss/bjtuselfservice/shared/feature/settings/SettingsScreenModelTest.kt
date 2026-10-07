@@ -10,6 +10,18 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class SettingsScreenModelTest {
+    @Test fun citelSwitchControlsItsEntryAndKeepsOtherFeatureSwitches() {
+        var stored = AppPreferences(physicsLabEnabled = true, citelEnabled = true, bottomNavigationItems = listOf("CITEL"))
+        val model = model(initialPreferences = stored, persistPreferences = { stored = it; true })
+        model.setCitelEnabled(false)
+        assertFalse(stored.isCitelEnabled)
+        assertTrue(stored.isPhysicsLabEnabled)
+        assertTrue(stored.isPhyVlabEnabled)
+        assertTrue(team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavSections(stored).none { it.name == "CITEL" })
+        assertTrue(team.bjtuss.bjtuselfservice.shared.feature.shell.applicationSections(stored).none { it.name == "CITEL" })
+        model.setCitelEnabled(true)
+        assertTrue(team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavSections(stored).any { it.name == "CITEL" })
+    }
     @Test
     fun redesignConfirmationRequiresSuccessfulSaveAndKeepsNavigation() {
         var canSave = false

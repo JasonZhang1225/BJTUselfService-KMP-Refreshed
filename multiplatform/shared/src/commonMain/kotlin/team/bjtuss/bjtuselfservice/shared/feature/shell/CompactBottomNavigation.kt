@@ -321,7 +321,7 @@ internal fun CompactTabIcon(section: AppSection) {
                     )
                 }
             }
-            AppSection.HOMEWORK -> {
+            AppSection.HOMEWORK, AppSection.CITEL -> {
                 // 便签框 + 对勾
                 val left = 5.dp.toPx()
                 val top = 4.dp.toPx()

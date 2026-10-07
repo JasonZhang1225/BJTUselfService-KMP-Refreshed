@@ -11,11 +11,13 @@ internal fun homeIdleStatusText(
     courseFailed: Boolean,
     phyVlabFailed: Boolean = false,
     hasAnySource: Boolean,
+    hasWaitingSource: Boolean = false,
 ): String {
     val childFailed = homeworkFailed || examFailed || courseFailed || phyVlabFailed
     return when {
         homeFailed -> "同步失败"
         childFailed -> "部分同步失败"
+        hasWaitingSource -> "等待同步"
         hasAnySource -> "已同步"
         else -> "未同步"
     }

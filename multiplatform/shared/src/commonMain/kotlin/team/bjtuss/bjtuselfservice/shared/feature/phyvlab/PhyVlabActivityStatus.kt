@@ -39,6 +39,7 @@ internal fun phyVlabActivityDeadlineState(
 /** 详情页只接受明确的提交状态或已提交文件，不把孤立日期当成提交信号。 */
 internal fun phyVlabAssignmentDetailHasSubmission(detail: PhyVlabAssignmentDetail): Boolean {
     val status = detail.submissionStatus.trim().lowercase()
+    if (detail.isDraft || detail.canFinalize || status.contains("draft") || status.contains("草稿")) return false
     return detail.submittedFiles.isNotEmpty() ||
         status.contains("已提交") ||
         (status.contains("submitted") && !status.contains("not submitted"))
@@ -46,6 +47,7 @@ internal fun phyVlabAssignmentDetailHasSubmission(detail: PhyVlabAssignmentDetai
 
 /** 详情页展示用的提交状态；批改文案（如“尚未批改”）不能冒充提交状态。 */
 internal fun phyVlabSubmissionStatusLabel(detail: PhyVlabAssignmentDetail): String {
+    if (detail.isDraft || detail.canFinalize) return "草稿 · 待最终提交"
     if (!phyVlabAssignmentDetailHasSubmission(detail)) return "未提交"
     val status = detail.submissionStatus.trim()
     return if (
