@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -471,10 +473,13 @@ internal fun HomeSyncDetailsDialog(
         // Physical Online adds a seventh row, start at large so the last
         // status is not clipped; UIKit still keeps the native sheet gesture.
         needsFullHeight = items.size > 6,
+        scrollableBody = true,
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 4.dp),
         ) {
             // The sheet itself supplies the single material surface. A second

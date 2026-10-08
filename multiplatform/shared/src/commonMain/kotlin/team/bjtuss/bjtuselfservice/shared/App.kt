@@ -2,6 +2,11 @@ package team.bjtuss.bjtuselfservice.shared
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
@@ -72,7 +77,11 @@ fun App(
     ) { effectiveFontScale ->
         CompositionLocalProvider(LocalNativeSheetPresenter provides nativeSheetPresenter) {
             Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                BoxWithConstraints(modifier = Modifier.fillMaxSize().then(
+                    if (currentPlatform().family == PlatformFamily.IOS) {
+                        Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                    } else Modifier,
+                )) {
                     LoginRoute(
                         platform = currentPlatform(),
                         windowClass = adaptiveWindowClassFor(
@@ -126,7 +135,11 @@ fun AuthenticatedDestinationApp(
     ) { effectiveFontScale ->
         CompositionLocalProvider(LocalNativeSheetPresenter provides nativeSheetPresenter) {
             Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                BoxWithConstraints(modifier = Modifier.fillMaxSize().then(
+                    if (currentPlatform().family == PlatformFamily.IOS && !session.systemManagedContentBounds) {
+                        Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                    } else Modifier,
+                )) {
                     team.bjtuss.bjtuselfservice.shared.feature.shell.AuthenticatedAppShell(
                         session = session,
                         platform = currentPlatform(),

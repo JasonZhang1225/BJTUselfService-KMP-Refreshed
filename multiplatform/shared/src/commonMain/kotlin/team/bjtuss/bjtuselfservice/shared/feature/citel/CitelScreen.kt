@@ -42,7 +42,10 @@ fun CitelWorkspace(model: CitelModel, holdNetwork: Boolean, onOpen: (String) -> 
     var showFilters by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var now by remember { mutableStateOf(Clock.System.now().epochSeconds) }
-    LaunchedEffect(model) { model.initialize() }
+    LaunchedEffect(model, holdNetwork) {
+        model.initialize()
+        if (!holdNetwork && model.state.value.enabled) model.refresh()
+    }
     LaunchedEffect(Unit) { while (true) { now = Clock.System.now().epochSeconds; delay(30_000) } }
     val scroll = rememberLazyListState()
     val tasks = filteredCitelTasks(state.tasks.filter { selectedCourses.isEmpty() || it.courseId in selectedCourses }, pendingOnly, hideExpired, null, sortOrder, now)

@@ -34,3 +34,6 @@ internal fun resolveVisualTopScrollOffset(
     val elasticOffset = if (viewportTop != null && contentTop != null) viewportTop - contentTop else 0f
     return (logicalOffset + elasticOffset).coerceAtLeast(0f)
 }
+
+/** Present only on a page whose UIKit host owns vertical scrolling. */
+internal val LocalNativeScrollControllerReporter = staticCompositionLocalOf<((NativeScrollController?) -> Unit)?> { null }

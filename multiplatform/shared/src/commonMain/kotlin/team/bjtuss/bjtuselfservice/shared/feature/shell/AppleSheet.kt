@@ -1,10 +1,16 @@
 package team.bjtuss.bjtuselfservice.shared.feature.shell
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -86,10 +92,14 @@ fun AppleSheet(
                         modifier = Modifier
                             .fillMaxWidth()
                             // 半屏 detent 也要吃满宿主高度，内部 verticalScroll 才有视口。
-                            .then(if (needsFullHeight || scrollableBody) Modifier.fillMaxHeight() else Modifier)
+                            .fillMaxHeight()
+                            .then(if (LocalNativeSheetContentBoundsHandled.current) Modifier else
+                                Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)))
+                            // Short informational sheets also need a bounded scroll viewport in landscape.
+                            .then(if (!needsFullHeight && !scrollableBody) Modifier.verticalScroll(rememberScrollState()) else Modifier)
                             // Scrollable bodies use UIKit's title-bar clearance and
                             // own their bottom inset inside the scrolling content.
-                            .padding(top = if (scrollableBody) 0.dp else 44.dp)
+                            .padding(top = if (scrollableBody) 0.dp else 8.dp)
                             .then(if (scrollableBody) Modifier else Modifier.navigationBarsPadding()),
                         content = content,
                     )

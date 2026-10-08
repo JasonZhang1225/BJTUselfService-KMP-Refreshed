@@ -95,4 +95,56 @@ class TopScrollContainersTest {
             }
         }
     }
+
+    @Test fun nativeDelegateConsumesRealDistanceAndKeepsComposePhysicsOff() {
+        SwingUtilities.invokeAndWait {
+            for (lazy in listOf(true, false)) {
+                var controller: NativeScrollController? = null
+                var logicalOffset = 0
+                val factory = object : OverscrollFactory {
+                    override fun createOverscrollEffect(): OverscrollEffect = error("Native scrolling must not create Compose physics")
+                    override fun equals(other: Any?) = this === other
+                    override fun hashCode() = System.identityHashCode(this)
+                }
+                val scene = ImageComposeScene(width = 390, height = 844, density = Density(1f), coroutineContext = Dispatchers.Unconfined) {
+                    CompositionLocalProvider(
+                        LocalOverscrollFactory provides factory,
+                        LocalNativeScrollControllerReporter provides { controller = it },
+                    ) {
+                        if (lazy) {
+                            val state = rememberLazyListState()
+                            logicalOffset = state.firstVisibleItemIndex * 100 + state.firstVisibleItemScrollOffset
+                            TopScrollLazyColumn(state, Modifier.fillMaxSize()) {
+                                items(40) { Box(Modifier.height(100.dp)) }
+                            }
+                        } else {
+                            val state = rememberScrollState()
+                            logicalOffset = state.value
+                            TopScrollColumn(state, Modifier.fillMaxSize()) {
+                                repeat(40) { Box(Modifier.height(100.dp)) }
+                            }
+                        }
+                    }
+                }
+                try {
+                    var frame = 0L
+                    fun settle() = repeat(6) { scene.render(++frame * 16_000_000L).close() }
+                    settle()
+                    assertTrue(controller?.canScrollForward == true)
+                    assertEquals(150f, controller!!.consumeScroll(150f))
+                    settle()
+                    assertEquals(150, logicalOffset, "Only the native consumed delta should move content")
+                    val remaining = controller!!.consumeScroll(100_000f)
+                    settle()
+                    assertTrue(remaining in 0f..4000f, "The consumer must report the actual end, not the requested delta")
+                    assertEquals(false, controller!!.canScrollForward)
+                    assertEquals(-logicalOffset.toFloat(), controller!!.consumeScroll(-100_000f))
+                    settle()
+                    assertEquals(0, logicalOffset)
+                    assertEquals(false, controller!!.canScrollBackward)
+                } finally { scene.close() }
+            }
+        }
+    }
+
 }

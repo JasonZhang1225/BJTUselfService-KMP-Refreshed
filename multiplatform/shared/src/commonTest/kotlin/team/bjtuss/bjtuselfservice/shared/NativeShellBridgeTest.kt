@@ -17,6 +17,16 @@ import kotlin.test.assertTrue
  */
 class NativeShellBridgeTest {
     @Test
+    fun hostedRoutesKeepOneBackStackAcrossRotationAndUnfolding() {
+        WindowClass.entries.forEach { windowClass ->
+            assertTrue(team.bjtuss.bjtuselfservice.shared.feature.shell.usesNativeSecondaryRoutes(true, windowClass, true))
+            assertFalse(team.bjtuss.bjtuselfservice.shared.feature.shell.usesNativeSecondaryRoutes(false, windowClass, true))
+        }
+        assertFalse(team.bjtuss.bjtuselfservice.shared.feature.shell.usesNativeSecondaryRoutes(true, WindowClass.Expanded, false))
+        assertTrue(team.bjtuss.bjtuselfservice.shared.feature.shell.usesNativeSecondaryRoutes(true, WindowClass.Compact, false))
+    }
+
+    @Test
     fun compactBottomBarEntriesAreNativeTabs() {
         listOf("HOME", "SCHEDULE", "GRADES", "HOMEWORK", "MORE", "PHYVLAB").forEach {
             assertTrue(isNativeTabRoute(it), "$it 应被识别为一级入口")

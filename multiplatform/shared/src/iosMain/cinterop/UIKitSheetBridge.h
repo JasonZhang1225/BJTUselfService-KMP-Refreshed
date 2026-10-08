@@ -48,7 +48,8 @@ static inline void BJTUConfigureNativeSheetHeader(
     navigation.navigationBar.translucent = YES;
     navigation.navigationBar.backgroundColor = UIColor.clearColor;
     content.navigationItem.largeTitleDisplayMode = UINavigationItemLargeTitleDisplayModeNever;
-    content.additionalSafeAreaInsets = UIEdgeInsetsMake(hasNativeHeader ? 44.0 : 0.0, 0.0, 0.0, 0.0);
+    // The navigation container already excludes its header from the body frame.
+    content.additionalSafeAreaInsets = UIEdgeInsetsZero;
     content.navigationItem.title = title;
     navigation.navigationBar.topItem.title = title;
     navigation.title = title;

@@ -83,6 +83,9 @@ class AuthenticatedSession(
      */
     var glassTabBarBottomInsetDp: Float by mutableStateOf(0f)
 
+    /** True when UIKit already bounds the body beside/below its adaptive system bars. */
+    var systemManagedContentBounds: Boolean by mutableStateOf(false)
+
     /**
      * 窗口底部系统安全区（Home Indicator / 导航条），点；iOS 上 1pt == 1dp。
      *

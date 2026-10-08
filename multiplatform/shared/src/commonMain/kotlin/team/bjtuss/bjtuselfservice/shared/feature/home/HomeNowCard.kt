@@ -87,7 +87,7 @@ internal fun HomeNowSection(
         }
     }
     selected?.let { course ->
-        AppleSheet(onDismissRequest = { selected = null }, title = "课程详情") {
+        AppleSheet(onDismissRequest = { selected = null }, title = "课程详情", scrollableBody = true) {
             val detailScroll = rememberScrollState()
             CourseDetailContent(
                 course,

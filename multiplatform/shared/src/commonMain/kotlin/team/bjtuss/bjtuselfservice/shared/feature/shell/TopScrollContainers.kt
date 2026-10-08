@@ -15,8 +15,11 @@ import androidx.compose.foundation.overscroll
 import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.withoutVisualEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +41,25 @@ internal fun TopScrollLazyColumn(
     horizontalAlignment: Alignment.Horizontal = Alignment.Start,
     content: LazyListScope.() -> Unit,
 ) {
+    val nativeReporter = LocalNativeScrollControllerReporter.current
+    val consumeNativeScroll = remember(state) { { delta: Float -> state.dispatchRawDelta(delta) } }
+    if (nativeReporter != null) {
+        val controller = NativeScrollController(-1f, state.canScrollBackward, state.canScrollForward, consumeNativeScroll)
+        SideEffect { nativeReporter(controller) }
+        DisposableEffect(nativeReporter, state) { onDispose { nativeReporter(null) } }
+    }
+    val topClearance = LocalTopBarClearance.current
+    var previousClearance by remember { mutableStateOf(topClearance) }
+    if (previousClearance != topClearance) {
+        val wasAtTop = state.firstVisibleItemIndex == 0 && state.firstVisibleItemScrollOffset == 0
+        SideEffect {
+            // A newly measured or rotated bar changes content padding. LazyColumn
+            // otherwise preserves the old physical anchor and hides the first item
+            // behind the bar even when the user has never scrolled.
+            if (wasAtTop) state.requestScrollToItem(0)
+            previousClearance = topClearance
+        }
+    }
     VisualTopScrollContainer(
         modifier = modifier,
         logicalOffset = {
@@ -45,15 +67,18 @@ internal fun TopScrollLazyColumn(
             else state.firstVisibleItemScrollOffset.toFloat()
         },
     ) { viewportModifier, effect ->
-        LazyColumn(
-            state = state,
-            modifier = viewportModifier,
-            contentPadding = contentPadding,
-            verticalArrangement = verticalArrangement,
-            horizontalAlignment = horizontalAlignment,
-            overscrollEffect = effect,
-            content = content,
-        )
+        CompositionLocalProvider(LocalNativeScrollControllerReporter provides null) {
+            LazyColumn(
+                state = state,
+                modifier = viewportModifier,
+                contentPadding = contentPadding,
+                verticalArrangement = verticalArrangement,
+                horizontalAlignment = horizontalAlignment,
+                overscrollEffect = effect,
+                userScrollEnabled = nativeReporter == null,
+                content = content,
+            )
+        }
     }
 }
 
@@ -67,13 +92,23 @@ internal fun TopScrollColumn(
     horizontalAlignment: Alignment.Horizontal = Alignment.Start,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val nativeReporter = LocalNativeScrollControllerReporter.current.takeIf { enabled }
+    val consumeNativeScroll = remember(state) { { delta: Float -> state.dispatchRawDelta(delta) } }
+    if (nativeReporter != null) {
+        val range = state.maxValue.takeUnless { it == Int.MAX_VALUE }?.toFloat() ?: -1f
+        val controller = NativeScrollController(range, state.canScrollBackward, state.canScrollForward, consumeNativeScroll)
+        SideEffect { nativeReporter(controller) }
+        DisposableEffect(nativeReporter, state) { onDispose { nativeReporter(null) } }
+    }
     VisualTopScrollContainer(modifier, { state.value.toFloat() }, enabled) { viewportModifier, effect ->
-        Column(
-            modifier = viewportModifier.verticalScroll(state, overscrollEffect = effect).then(contentModifier),
-            verticalArrangement = verticalArrangement,
-            horizontalAlignment = horizontalAlignment,
-            content = content,
-        )
+        CompositionLocalProvider(LocalNativeScrollControllerReporter provides null) {
+            Column(
+                modifier = viewportModifier.verticalScroll(state, enabled = enabled && nativeReporter == null, overscrollEffect = effect).then(contentModifier),
+                verticalArrangement = verticalArrangement,
+                horizontalAlignment = horizontalAlignment,
+                content = content,
+            )
+        }
     }
 }
 
@@ -85,7 +120,7 @@ private fun VisualTopScrollContainer(
     enabled: Boolean = true,
     content: @Composable (Modifier, OverscrollEffect?) -> Unit,
 ) {
-    val effect = rememberOverscrollEffect()
+    val effect = if (LocalNativeScrollControllerReporter.current == null) rememberOverscrollEffect() else null
     val report = LocalReportTopScroll.current
     val currentOffset by rememberUpdatedState(logicalOffset)
     val tracksPlacement = enabled && LocalTopBarClearance.current > 0.dp

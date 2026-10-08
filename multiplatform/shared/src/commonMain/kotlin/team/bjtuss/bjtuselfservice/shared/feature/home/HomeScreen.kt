@@ -189,7 +189,7 @@ fun HomeWorkspace(
         )
     }
     selectedChangeCourse?.let { course ->
-        AppleSheet(onDismissRequest = { selectedChangeCourse = null }, title = "课程详情") {
+        AppleSheet(onDismissRequest = { selectedChangeCourse = null }, title = "课程详情", scrollableBody = true) {
             val detailScroll = rememberScrollState()
             CourseDetailContent(
                 course,
@@ -512,7 +512,11 @@ private fun HomeAgendaSection(
         // 后面的周列表一换，启动时就会看起来像被滑到第 1 周。
         // 点选日期仍使用下面的内容过渡；周数确认后再换成手指横滑页。
         val pendingSlot = if (todayRequest > 0) selectedSlot else startupSlot
-        SideEffect { onTodaySelectedChanged(selectedDateFor(pendingSlot) == today) }
+        SideEffect {
+            onTodaySelectedChanged(
+                pendingSlot.startDate == todayMonday && selectedDateFor(pendingSlot) == today,
+            )
+        }
         HomeAgendaWeekCard(
             homework = homework,
             exams = exams,
@@ -600,7 +604,9 @@ private fun HomeAgendaSection(
         val settledPage = pagerState.settledPage.coerceIn(pagerWeeks.indices)
         val settledSlot = weekForPage(settledPage)
         val settledDate = selectedDateFor(settledSlot)
-        SideEffect { onTodaySelectedChanged(settledDate == today) }
+        SideEffect {
+            onTodaySelectedChanged(settledSlot.startDate == todayMonday && settledDate == today)
+        }
         val scheduleSwipeThresholdPx = with(density) { 56.dp.toPx() }
         var scheduleSwipeTargetPage by remember { mutableStateOf<Int?>(null) }
         LaunchedEffect(scheduleSwipeTargetPage) {
@@ -800,7 +806,11 @@ private fun HomeAgendaSection(
         }
     } else {
         val weekStartDate = selectedSlot.startDate
-        SideEffect { onTodaySelectedChanged(selectedDateFor(selectedSlot) == today) }
+        SideEffect {
+            onTodaySelectedChanged(
+                selectedSlot.startDate == todayMonday && selectedDateFor(selectedSlot) == today,
+            )
+        }
         HomeAgendaWeekCard(
             homework = homework,
             exams = exams,
@@ -1408,7 +1418,7 @@ private fun AgendaDayDetails(
 
     }
     selectedCourse?.let { course ->
-        AppleSheet(onDismissRequest = { selectedCourse = null }, title = "课程详情") {
+        AppleSheet(onDismissRequest = { selectedCourse = null }, title = "课程详情", scrollableBody = true) {
             val detailScroll = rememberScrollState()
             CourseDetailContent(
                 course,

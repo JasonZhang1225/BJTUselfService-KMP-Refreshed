@@ -318,6 +318,7 @@ fun CourseScheduleWorkspace(
                         AppleSheet(
                             onDismissRequest = model::dismissCourseDetails,
                             title = "课程详情",
+                            scrollableBody = true,
                         ) {
                             val detailScrollState = rememberScrollState()
                             CourseDetailContent(
@@ -651,10 +652,13 @@ private fun CourseDatePickerDialog(
         todayLabel = if (isIos) "今天" else null,
         onToday = if (isIos) ({ onSelect(today) }) else null,
         dismissLabel = "取消",
-        needsFullHeight = false,
+        needsFullHeight = isIos,
+        scrollableBody = isIos,
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth()
+                .then(if (isIos) Modifier.fillMaxHeight().verticalScroll(rememberScrollState()) else Modifier)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
             if (isIos) {
                 IosNativeDatePicker(
@@ -781,6 +785,23 @@ private fun CourseScheduleUiState.compactSummarySubtitle(includeToday: Boolean):
     return listOfNotNull(currentWeekText, todayText).joinToString("，").ifBlank { null }
 }
 
+/** Keep seven time slots readable in a short viewport; horizontal week paging stays independent. */
+@Composable
+private fun ReadableWeekGridViewport(modifier: Modifier, fitAllSlots: Boolean = false, content: @Composable (Modifier) -> Unit) {
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
+        val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f)
+        // Normal portrait and unfolded views fit all seven slots. Only genuinely
+        // short landscape viewports retain a larger scrollable grid.
+        val gridHeight = if (fitAllSlots) maxOf(maxHeight, 42.dp + 28.dp * 7 * fontScale + 2.dp)
+            else if (maxHeight >= 300.dp * fontScale) maxHeight
+            else maxOf(maxHeight, 42.dp + 56.dp * 7 * fontScale + 2.dp)
+        val scrollState = rememberScrollState()
+        Box(Modifier.fillMaxSize().verticalScroll(scrollState)) {
+            content(Modifier.fillMaxWidth().height(gridHeight))
+        }
+    }
+}
+
 @Composable
 private fun WeekGrid(
     courses: List<Course>,
@@ -789,54 +810,57 @@ private fun WeekGrid(
     selectedCourseId: Int?,
     onOpen: (Int) -> Unit,
     modifier: Modifier,
+    fitAllSlots: Boolean = false,
 ) {
     val byLocation = courses.groupBy(Course::courseLocationIndex)
-    Column(
-        modifier = modifier.border(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant,
-            shape = RoundedCornerShape(16.dp),
-        ).padding(1.dp),
-    ) {
-        Row(modifier = Modifier.fillMaxWidth().height(42.dp)) {
-            Box(modifier = Modifier.width(78.dp).fillMaxHeight())
-            dayLabels.forEachIndexed { index, day ->
-                Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(day, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                        weekStartDate?.let { start ->
-                            Text(
-                                start.plusDays(index).displayMonthDay(),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+    ReadableWeekGridViewport(modifier, fitAllSlots) { gridModifier ->
+        Column(
+            modifier = gridModifier.border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                shape = RoundedCornerShape(16.dp),
+            ).padding(1.dp),
+        ) {
+            Row(modifier = Modifier.fillMaxWidth().height(42.dp)) {
+                Box(modifier = Modifier.width(78.dp).fillMaxHeight())
+                dayLabels.forEachIndexed { index, day ->
+                    Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(day, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                            weekStartDate?.let { start ->
+                                Text(
+                                    start.plusDays(index).displayMonthDay(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
-        repeat(7) { slot ->
-            Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                Box(
-                    modifier = Modifier.width(78.dp).fillMaxHeight()
-                        .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        slotLabels[slot],
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                repeat(7) { day ->
-                    val location = slot * 8 + day + 1
-                    CourseGridCell(
-                        courses = byLocation[location].orEmpty(),
-                        courseTypesByCode = courseTypesByCode,
-                        selectedCourseId = selectedCourseId,
-                        onOpen = onOpen,
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                    )
+            repeat(7) { slot ->
+                Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier.width(78.dp).fillMaxHeight()
+                            .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            slotLabels[slot],
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    repeat(7) { day ->
+                        val location = slot * 8 + day + 1
+                        CourseGridCell(
+                            courses = byLocation[location].orEmpty(),
+                            courseTypesByCode = courseTypesByCode,
+                            selectedCourseId = selectedCourseId,
+                            onOpen = onOpen,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
+                    }
                 }
             }
         }
@@ -1061,38 +1085,110 @@ private fun CourseCompactScrollableContent(
     onOpen: (Int) -> Unit,
     modifier: Modifier,
 ) {
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxSize()) {
+        val landscape = maxWidth >= 520.dp && maxWidth > maxHeight
+        val landscapeControlsWidth = (maxWidth * 0.28f).coerceIn(210.dp, 280.dp)
+        if (landscape) {
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                LandscapeCourseControls(
+                    state = state, courseTypesByCode = courseTypesByCode, model = model,
+                    onOpenPicker = onOpenPicker, onOpenDatePicker = onOpenDatePicker,
+                    modifier = Modifier.width(landscapeControlsWidth).fillMaxHeight(),
+                )
+                val tableModifier = Modifier.weight(1f).fillMaxHeight()
+                if (state.dateOutsideTeachingWeeks && state.selectedNonTeachingWeekStart == null) {
+                    NonTeachingDateState(state.selectedDate, tableModifier)
+                } else if (state.compactViewMode == CourseCompactViewMode.DAY) {
+                    CompactDayPager(
+                        courses = state.visibleCourses, courseTypesByCode = courseTypesByCode,
+                        selectedDay = state.selectedDay, onSelectDay = model::selectDay, onOpen = onOpen,
+                        modifier = tableModifier,
+                    )
+                } else {
+                    CompactWeekPager(
+                        state = state, courseTypesByCode = courseTypesByCode, model = model,
+                        onOpen = onOpen, modifier = tableModifier, showControls = false, fitAllSlots = true,
+                    )
+                }
+            }
+        } else {
+            val shortViewport = maxHeight < 300.dp
+            val gridHeight = 42.dp + 56.dp * 7 * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f) + 50.dp
+            Column(
+                modifier = if (shortViewport) Modifier.fillMaxSize().verticalScroll(rememberScrollState()) else Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                CourseSummary(
+                    state = state,
+                    compact = true,
+                    onOpenPicker = onOpenPicker,
+                    onOpenDatePicker = onOpenDatePicker,
+                )
+                CompactViewModeSelector(state.compactViewMode, model::selectCompactViewMode)
+                if (state.dateOutsideTeachingWeeks && state.selectedNonTeachingWeekStart == null) {
+                    NonTeachingDateState(state.selectedDate, if (shortViewport) Modifier.fillMaxWidth().height(gridHeight) else Modifier.weight(1f).fillMaxWidth())
+                } else if (state.compactViewMode == CourseCompactViewMode.DAY) {
+                    CompactDaySelector(state.selectedDay, model::selectDay)
+                    CompactDayPager(
+                        courses = state.visibleCourses,
+                        courseTypesByCode = courseTypesByCode,
+                        selectedDay = state.selectedDay,
+                        onSelectDay = model::selectDay,
+                        onOpen = onOpen,
+                        modifier = if (shortViewport) Modifier.fillMaxWidth().height(gridHeight) else Modifier.weight(1f).fillMaxWidth(),
+                    )
+                } else {
+                    CompactWeekPager(
+                        state = state,
+                        courseTypesByCode = courseTypesByCode,
+                        model = model,
+                        onOpen = onOpen,
+                        modifier = if (shortViewport) Modifier.fillMaxWidth().height(gridHeight) else Modifier.weight(1f).fillMaxWidth(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LandscapeCourseControls(
+    state: CourseScheduleUiState,
+    courseTypesByCode: Map<String, CourseType>?,
+    model: CourseScheduleScreenModel,
+    onOpenPicker: () -> Unit,
+    onOpenDatePicker: () -> Unit,
+    modifier: Modifier,
+) {
     Column(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.verticalScroll(rememberScrollState()).padding(
+            bottom = if (state.compactViewMode == CourseCompactViewMode.DAY) LocalBottomBarClearance.current else 0.dp,
+        ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        CourseSummary(
-            state = state,
-            compact = true,
-            onOpenPicker = onOpenPicker,
-            onOpenDatePicker = onOpenDatePicker,
-        )
-        CompactViewModeSelector(state.compactViewMode, model::selectCompactViewMode)
-        if (state.dateOutsideTeachingWeeks && state.selectedNonTeachingWeekStart == null) {
-            NonTeachingDateState(state.selectedDate, Modifier.weight(1f).fillMaxWidth())
-        } else if (state.compactViewMode == CourseCompactViewMode.DAY) {
-            CompactDaySelector(state.selectedDay, model::selectDay)
-            CompactDayPager(
-                courses = state.visibleCourses,
-                courseTypesByCode = courseTypesByCode,
-                selectedDay = state.selectedDay,
-                onSelectDay = model::selectDay,
-                onOpen = onOpen,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-            )
-        } else {
-            CompactWeekPager(
-                state = state,
-                courseTypesByCode = courseTypesByCode,
-                model = model,
-                onOpen = onOpen,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-            )
+        Column(Modifier.fillMaxWidth().clickable(onClick = onOpenPicker)) {
+            Text(if (state.scheduleType == CourseScheduleType.CURRENT) "本学期课表" else "选课课表",
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(when {
+                state.isNonTeachingWeek -> "非教学周"
+                state.selectedWeek == 0 -> "全部教学周"
+                else -> "第 ${state.selectedWeek} 周"
+            }, style = MaterialTheme.typography.bodyMedium)
+            state.compactSummarySubtitle(includeToday = state.compactViewMode == CourseCompactViewMode.DAY)?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SummaryAction("课表／周次", "切换课表类型与周次", onOpenPicker)
+            SummaryAction("前往日期", "选择日期并前往对应课程", onOpenDatePicker)
+        }
+        CompactViewModeSelector(state.compactViewMode, model::selectCompactViewMode, showIcons = false)
+        if (state.compactViewMode == CourseCompactViewMode.DAY) {
+            CompactDaySelector(state.selectedDay, model::selectDay)
+        }
+        CourseTypeLegend(mappingLoaded = courseTypesByCode != null, modifier = Modifier.fillMaxWidth(), separateEvents = true)
+        Text(if (state.compactViewMode == CourseCompactViewMode.WEEK) "左右滑动切换周数" else "左右滑动切换日期",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -1100,16 +1196,17 @@ private fun CourseCompactScrollableContent(
 private fun CompactViewModeSelector(
     mode: CourseCompactViewMode,
     onSelect: (CourseCompactViewMode) -> Unit,
+    showIcons: Boolean = true,
 ) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FilterChip(
             selected = mode == CourseCompactViewMode.WEEK,
             onClick = { onSelect(CourseCompactViewMode.WEEK) },
             label = {
-                CompactViewModeLabel(
-                    text = "色块概览-点击展开",
+                if (showIcons) CompactViewModeLabel(
+                    text = "色块概览",
                     icon = { CompactTableIcon(Modifier.size(17.dp)) },
-                )
+                ) else Text("色块概览", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp), maxLines = 1)
             },
             modifier = Modifier.weight(1f),
         )
@@ -1117,10 +1214,10 @@ private fun CompactViewModeSelector(
             selected = mode == CourseCompactViewMode.DAY,
             onClick = { onSelect(CourseCompactViewMode.DAY) },
             label = {
-                CompactViewModeLabel(
-                    text = "课程详情-列表展示",
+                if (showIcons) CompactViewModeLabel(
+                    text = "课程列表",
                     icon = { CompactListIcon(Modifier.size(17.dp)) },
-                )
+                ) else Text("课程列表", style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp), maxLines = 1)
             },
             modifier = Modifier.weight(1f),
         )
@@ -1137,7 +1234,7 @@ private fun CompactViewModeLabel(
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         icon()
-        Text(text)
+        Text(text, style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -1309,6 +1406,8 @@ private fun CompactWeekPager(
     model: CourseScheduleScreenModel,
     onOpen: (Int) -> Unit,
     modifier: Modifier,
+    showControls: Boolean = true,
+    fitAllSlots: Boolean = false,
 ) {
     // Page 0 仍是“全部教学周”；其后的页面严格按校历自然周排序，
     // 中间缺失的周会显示为非教学周，而不是直接从第 3 周跳到第 4 周。
@@ -1365,7 +1464,7 @@ private fun CompactWeekPager(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Row(
+        if (showControls) Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1390,6 +1489,7 @@ private fun CompactWeekPager(
                 courses = state.coursesForPage(null, weekPage.startDate), courseTypesByCode = courseTypesByCode,
                 weekStartDate = weekPage.startDate, selectedCourseId = state.selectedCourseId,
                 onOpen = model::showCourseDetails, modifier = Modifier.fillMaxSize(),
+                fitAllSlots = fitAllSlots,
             )
             } else {
                 CompactWeekGrid(
@@ -1400,17 +1500,18 @@ private fun CompactWeekPager(
                         ?: weekPage.teachingWeek?.let { state.weekDate(it)?.startDate },
                     onOpen = onOpen,
                     modifier = Modifier.fillMaxSize(),
+                    fitAllSlots = fitAllSlots,
                 )
             }
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CourseTypeLegend(
     mappingLoaded: Boolean,
     modifier: Modifier = Modifier,
+    separateEvents: Boolean = false,
 ) {
     val types = listOf(
         CourseType.REQUIRED,
@@ -1420,37 +1521,49 @@ private fun CourseTypeLegend(
         CourseType.UNKNOWN,
     )
     val unknownLabel = if (mappingLoaded) "未知" else "未同步"
+    val courseEntries = types.map { type ->
+        (if (type == CourseType.UNKNOWN) unknownLabel else type.displayName()) to courseScheduleTypeColors(type)
+    }
+    val eventEntries = listOf("实验" to scheduleEventColors("physicslab"), "考试" to scheduleEventColors("exam"))
+    val legendModifier = modifier.semantics {
+        contentDescription = "课程性质图例：必修、限选、任选、体育、$unknownLabel、实验、考试"
+    }
+    if (separateEvents) {
+        // 横屏左栏按语义分成课程性质与特殊安排，避免最后一枚标签孤零零换行。
+        Column(legendModifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            CourseLegendRow(courseEntries, Modifier.fillMaxWidth())
+            CourseLegendRow(eventEntries, Modifier.fillMaxWidth())
+        }
+    } else {
+        CourseLegendRow(courseEntries + eventEntries, legendModifier)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CourseLegendRow(
+    entries: List<Pair<String, team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors>>,
+    modifier: Modifier,
+) {
     androidx.compose.foundation.layout.FlowRow(
-        modifier = modifier.semantics {
-            contentDescription = "课程性质图例：必修、限选、任选、体育、$unknownLabel、实验、考试"
-        },
+        modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(3.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        types.forEach { type ->
-            val colors = courseScheduleTypeColors(type)
+        entries.forEach { (label, colors) ->
             Surface(
                 color = colors.container,
                 shape = RoundedCornerShape(7.dp),
                 border = androidx.compose.foundation.BorderStroke(0.5.dp, colors.border),
             ) {
                 Text(
-                    if (type == CourseType.UNKNOWN) unknownLabel else type.displayName(),
+                    label,
                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                     color = colors.onContainer,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                 )
-            }
-        }
-        listOf("实验" to "physicslab", "考试" to "exam").forEach { (label, kind) ->
-            val colors = scheduleEventColors(kind)
-            Surface(color = colors.container, shape = RoundedCornerShape(7.dp),
-                border = androidx.compose.foundation.BorderStroke(0.5.dp, colors.border)) {
-                Text(label, Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = colors.onContainer,
-                    fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
         }
     }
@@ -1464,58 +1577,61 @@ private fun CompactWeekGrid(
     weekStartDate: LocalDate?,
     onOpen: (Int) -> Unit,
     modifier: Modifier,
+    fitAllSlots: Boolean = false,
 ) {
     val byLocation = courses.groupBy(Course::courseLocationIndex)
-    Column(
-        modifier = modifier
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(13.dp))
-            .padding(1.dp),
-    ) {
-        Row(modifier = Modifier.fillMaxWidth().height(38.dp)) {
-            Box(modifier = Modifier.width(45.dp).fillMaxHeight())
-            compactDayLabels.forEachIndexed { day, label ->
-                Box(
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                        weekStartDate?.let { start ->
-                            Text(
-                                start.plusDays(day).displayMonthDay(),
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                            )
+    ReadableWeekGridViewport(modifier, fitAllSlots) { gridModifier ->
+        Column(
+            modifier = gridModifier
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(13.dp))
+                .padding(1.dp),
+        ) {
+            Row(modifier = Modifier.fillMaxWidth().height(38.dp)) {
+                Box(modifier = Modifier.width(45.dp).fillMaxHeight())
+                compactDayLabels.forEachIndexed { day, label ->
+                    Box(
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                            weekStartDate?.let { start ->
+                                Text(
+                                    start.plusDays(day).displayMonthDay(),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
-        repeat(7) { slot ->
-            Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                Box(
-                    modifier = Modifier.width(45.dp).fillMaxHeight()
-                        .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        compactSlotLabels[slot],
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                    )
-                }
-                repeat(7) { day ->
-                    val location = slot * 8 + day + 1
-                    CompactCourseGridCell(
-                        courses = byLocation[location].orEmpty(),
-                        courseTypesByCode = courseTypesByCode,
-                        aggregateAllWeeks = aggregateAllWeeks,
-                        onOpen = onOpen,
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                    )
+            repeat(7) { slot ->
+                Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier.width(45.dp).fillMaxHeight()
+                            .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            compactSlotLabels[slot],
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                        )
+                    }
+                    repeat(7) { day ->
+                        val location = slot * 8 + day + 1
+                        CompactCourseGridCell(
+                            courses = byLocation[location].orEmpty(),
+                            courseTypesByCode = courseTypesByCode,
+                            aggregateAllWeeks = aggregateAllWeeks,
+                            onOpen = onOpen,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                        )
+                    }
                 }
             }
         }

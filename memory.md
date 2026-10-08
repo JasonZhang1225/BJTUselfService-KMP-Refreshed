@@ -13,6 +13,7 @@
 - 数据变动：只显示真变化字段；iOS 半屏原生 sheet，标记已读在左上角；点卡片进详情，不跳一级页。
 - 摘要「已筛选」加粗。
 - 本轮已推到 `mine/codex/CITEL`。未并 `main`。
+- 本地安装包已放到 Downloads（未覆盖旧包）：`BJTUSelfService-KMP-1.8.2-CITEL-20261008-iOS-unsigned.ipa`、`BJTUSelfService-KMP-1.8.2-CITEL-20261008-macOS-arm64.dmg`。IPA 未签名需自签；DMG 为 ad-hoc。
 
 ## 当前注意事项
 
@@ -22,5 +23,5 @@
 
 ## 接下来
 
-1. 模拟器重装后看：聚合开关、正在上课卡、变动弹窗。
+1. 用本轮 CITEL 安装包在 iOS（自签）和 Mac 上看聚合开关、正在上课卡、变动弹窗。
 2. 需要并进 main 或发布时再确认范围。

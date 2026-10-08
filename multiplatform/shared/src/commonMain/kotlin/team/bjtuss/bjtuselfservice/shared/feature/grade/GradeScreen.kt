@@ -305,6 +305,7 @@ internal fun GradeWorkspace(
                         AppleSheet(
                             onDismissRequest = model::dismissGradeDetails,
                             title = "成绩详情",
+                            scrollableBody = true,
                         ) {
                             val detailScrollState = rememberScrollState()
                             GradeDetailSheetBody(

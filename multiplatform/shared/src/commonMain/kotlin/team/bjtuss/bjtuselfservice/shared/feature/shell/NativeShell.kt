@@ -18,8 +18,7 @@ data class NativeTabItem(
  * 二级页的刷新与同步状态原本自绘成单独一行胶囊，把内容区整整压掉一条；这两者本来就是
  * 导航栏级信息（Mail/Files 都在这里），所以在原生标题栏生效时交给宿主渲染。[onClick] 作为
  * ObjC block 导出给 Swift，点击直接回到本页的刷新闭包，不经过全局状态，pop 之后也不会串页。
- * 没有右侧动作的页面也会发送一个空动作对象，仅用于驱动 scroll-edge 材质；
- * 宿主不会为它画任何按钮。
+ * 没有右侧动作的页面也会发送一个空动作对象，仅用于同步滚动状态；宿主不会为它画按钮。
  */
 class NativeBarAction(
     /** 空闲时的状态文案，如「已同步」；空串表示本页没有状态要显示。 */
@@ -37,11 +36,10 @@ class NativeBarAction(
     /** 页面级动作的文字（如课程表「添加到日历」）；null 表示本页没有。 */
     val extraLabel: String? = null,
     val onExtraClick: (() -> Unit)? = null,
-    /**
-     * 内容滚进原生栏的进度（0 为顶部，1 为完全盖住过渡带），宿主据此直接驱动玻璃透明度，
-     * 玻璃跟手而不是在布尔边沿闪现。过渡带高度由发送方按栏高折算。
-     */
+    /** 页面滚动进度（0 为顶部，1 为越过顶栏过渡区），用于横向栏的玻璃材质。 */
     val scrollProgress: Float = 0f,
+    /** Optional single-owner native scroller. Offsets are consumed, never estimated by item index. */
+    val scrollController: NativeScrollController? = null,
 )
 
 /** 原生底栏实际承载的一级入口；物理在线开启后与主分支一样是一级 tab。 */
@@ -76,4 +74,19 @@ fun nativeRouteTitle(routeId: String): String {
         MailboxDetailRoute -> "邮件详情"
         is AppSection -> route.title
     }
+}
+
+/** A hosted page always keeps routing through its host, including after rotation/unfolding. */
+internal fun usesNativeSecondaryRoutes(nativeNavigationEnabled: Boolean, windowClass: team.bjtuss.bjtuselfservice.shared.WindowClass, hostedDestination: Boolean): Boolean =
+    nativeNavigationEnabled && (hostedDestination || windowClass != team.bjtuss.bjtuselfservice.shared.WindowClass.Expanded)
+
+/** UIKit owns scrolling physics; Compose consumes the exact native delta for rendering. */
+data class NativeScrollController(
+    /** Exact ScrollState range, or -1 for a virtualized list whose total height is not known. */
+    val maxOffsetPx: Float,
+    val canScrollBackward: Boolean,
+    val canScrollForward: Boolean,
+    private val consume: (Float) -> Float,
+) {
+    fun consumeScroll(deltaPx: Float): Float = consume(deltaPx)
 }

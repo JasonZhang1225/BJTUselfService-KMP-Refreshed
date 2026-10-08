@@ -1,6 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -8,14 +9,19 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeUIViewController
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCAction
+import kotlinx.cinterop.useContents
+import platform.CoreGraphics.CGRectMake
 import platform.UIKit.UIAdaptivePresentationControllerDelegateProtocol
 import platform.UIKit.UIPresentationController
 import platform.UIKit.UIViewController
 import platform.UIKit.UINavigationController
 import platform.UIKit.UIRectEdgeBottom
 import platform.UIKit.UIRectEdgeNone
+import platform.UIKit.addChildViewController
+import platform.UIKit.didMoveToParentViewController
 import platform.darwin.NSObject
 import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeSheetPresenter
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalNativeSheetContentBoundsHandled
 
 /**
  * Presents shared Compose content through UIKit's real sheet presentation
@@ -103,10 +109,12 @@ class IosNativeSheetPresenter(
         val contentController = ComposeUIViewController(
             configure = { opaque = false },
         ) {
-            currentContent?.invoke()
+            CompositionLocalProvider(LocalNativeSheetContentBoundsHandled provides true) {
+                currentContent?.invoke()
+            }
         }
         val sheet = BJTUCreateNativeSheetController(
-            content = contentController,
+            content = NativeSheetContentHost(contentController),
             title = title,
             confirmLabel = confirmLabel,
             confirmEnabled = confirmEnabled,
@@ -182,5 +190,25 @@ class IosNativeSheetPresenter(
         override fun presentationControllerDidDismiss(presentationController: UIPresentationController) {
             onDidDismiss()
         }
+    }
+}
+
+/** Uses this presentation's insets, never the underlying tab/navigation bars. */
+@OptIn(ExperimentalForeignApi::class)
+private class NativeSheetContentHost(private val content: UIViewController) : UIViewController(null, null) {
+    override fun viewDidLoad() {
+        super.viewDidLoad()
+        addChildViewController(content)
+        view.addSubview(content.view)
+        content.didMoveToParentViewController(this)
+    }
+
+    override fun viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        val width = view.bounds.useContents { size.width }
+        val height = view.bounds.useContents { size.height }
+        val left = view.safeAreaInsets.useContents { left }
+        val right = view.safeAreaInsets.useContents { right }
+        content.view.setFrame(CGRectMake(left, 0.0, (width - left - right).coerceAtLeast(0.0), height))
     }
 }

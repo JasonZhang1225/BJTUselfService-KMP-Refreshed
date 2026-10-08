@@ -74,7 +74,7 @@ private final class NativeNavigationController: UINavigationController, UINaviga
         interactivePopGestureRecognizer?.isEnabled = viewControllers.count > 1
     }
 
-    init() {
+    init(offlineSession: AuthenticatedSession? = nil) {
         super.init(nibName: nil, bundle: nil)
         delegate = self
         view.backgroundColor = appBackgroundUIColor
@@ -87,7 +87,14 @@ private final class NativeNavigationController: UINavigationController, UINaviga
         ) { [weak self] _ in
             self?.authenticatedSession?.notifyAppBecameActive()
         }
-        let rootController = MainViewControllerKt.NativeMainViewController(
+        let rootController: UIViewController
+        if let offlineSession {
+            authenticatedSession = offlineSession
+            rootController = OfflineLayoutProbeKt.OfflineLayoutRootViewController(session: offlineSession, onOpenRoute: { [weak self] routeId in
+                self?.openNativeRoute(routeId)
+            })
+        } else {
+        rootController = MainViewControllerKt.NativeMainViewController(
             onAuthenticatedSessionChanged: { [weak self] session in
                 self?.authenticatedSession = session
                 if session == nil, (self?.viewControllers.count ?? 0) > 1 {
@@ -100,9 +107,15 @@ private final class NativeNavigationController: UINavigationController, UINaviga
             },
             nativeTabBarEnabled: false
         )
+        }
         configureComposeHost(rootController)
         setViewControllers([rootController], animated: false)
         updateInteractivePopEnabled()
+#if DEBUG
+        if offlineSession != nil, let route = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--route=") }) {
+            DispatchQueue.main.async { [weak self] in self?.openNativeRoute(String(route.dropFirst(8))) }
+        }
+#endif
     }
 
     deinit {
@@ -186,7 +199,10 @@ private final class NativeChromeBinding {
     private var retainedActionTargets: [NativeBarActionTarget] = []
     private var actionTargets: [NativeBarActionRole: NativeBarActionTarget] = [:]
     private var actionButtons: [NativeBarActionRole: NativeBarIconButton] = [:]
+    private var systemActionItems: [NativeBarActionRole: UIBarButtonItem] = [:]
+    private var usesSystemBars: Bool { (controller?.navigationController as? TabRootNavigationController)?.usesSystemBars == true }
     private var lastActionLayoutKey: NativeBarActionLayoutKey?
+    private var lastActionVertical: Bool?
     private var pendingTitle: String?
     private var pendingAction: NativeBarAction?
     private var hasPendingAction = false
@@ -224,7 +240,7 @@ private final class NativeChromeBinding {
         guard let controller else { return }
         if let title = pendingTitle {
             pendingTitle = nil
-            controller.navigationItem.title = title
+            if controller.navigationItem.title != title { controller.navigationItem.title = title }
             if controller.navigationController?.topViewController === controller {
                 (controller.navigationController as? NativeChromeHosting)?.setNativeTitle(title)
             }
@@ -245,6 +261,16 @@ private final class NativeChromeBinding {
         onClick: (() -> Void)?,
         enabled: Bool = true,
     ) -> UIBarButtonItem {
+        if usesSystemBars {
+            let target = onClick.map { makeActionTarget(role: role, onInvoke: $0) }
+            let item = UIBarButtonItem(image: UIImage(systemName: symbolName), style: .plain, target: target, action: #selector(NativeBarActionTarget.invoke(_:)))
+            item.title = title
+            item.accessibilityLabel = title
+            item.isEnabled = enabled && onClick != nil
+            if #available(iOS 27.1, *) { item.axisBehavior = .verticalPreferred }
+            systemActionItems[role] = item
+            return item
+        }
         let button = NativeBarIconButton(symbolName: symbolName)
         button.setVisualEnabled(enabled)
         if let onClick {
@@ -267,6 +293,14 @@ private final class NativeChromeBinding {
     }
 
     private func todayBarItem(onClick: @escaping () -> Void) -> UIBarButtonItem {
+        if usesSystemBars {
+            let target = makeActionTarget(role: .extra, onInvoke: onClick)
+            let item = UIBarButtonItem(title: "今", style: .plain, target: target, action: #selector(NativeBarActionTarget.invoke(_:)))
+            item.accessibilityLabel = "回到今天"
+            item.setTitleTextAttributes([.font: UIFontMetrics(forTextStyle: .title3).scaledFont(for: UIFont.systemFont(ofSize: 22, weight: .semibold))], for: .normal)
+            if #available(iOS 27.1, *) { item.axisBehavior = .verticalPreferred }
+            return item
+        }
         // Use the same square carrier and system bar background as the right-side
         // icons. A configured glass text button gets compressed into a capsule.
         let button = NativeBarIconButton(title: "今")
@@ -303,6 +337,7 @@ private final class NativeChromeBinding {
         ])
 
         let item = UIBarButtonItem(customView: button)
+        if usesSystemBars, #available(iOS 27.1, *) { item.axisBehavior = .verticalPreferred }
         // Same as iconBarItem: keep the shared bar background so _UIBarBackground is built.
         return item
     }
@@ -325,6 +360,10 @@ private final class NativeChromeBinding {
     }
 
     private func updateActionVisuals(_ action: NativeBarAction) {
+        systemActionItems[.status]?.image = UIImage(systemName: symbolName(for: action.status, kind: .status))
+        systemActionItems[.status]?.accessibilityLabel = action.status
+        systemActionItems[.status]?.title = action.status
+        systemActionItems[.refresh]?.title = action.label
         actionButtons[.status]?.update(
             symbolName: symbolName(for: action.status, kind: .status),
             accessibilityLabel: action.status,
@@ -344,6 +383,7 @@ private final class NativeChromeBinding {
             if label.localizedCaseInsensitiveContains("日历") {
                 return "calendar.badge.plus"
             }
+            if label.contains("导出") { return "square.and.arrow.up" }
             return "ellipsis.circle"
         case .status:
             if label.contains("失败") || label.contains("错误") {
@@ -358,10 +398,12 @@ private final class NativeChromeBinding {
 
     private func applyAction(_ action: NativeBarAction?) {
         guard let controller else { return }
+        (controller as? SafeAreaComposeHost)?.setScrollController(action?.scrollController)
         guard let action else {
             retainedActionTargets.removeAll()
             actionTargets.removeAll()
             actionButtons.removeAll()
+            systemActionItems.removeAll()
             lastActionLayoutKey = nil
             UIView.performWithoutAnimation {
                 controller.navigationItem.leftBarButtonItems = nil
@@ -373,8 +415,9 @@ private final class NativeChromeBinding {
             return
         }
         let layoutKey = NativeBarActionLayoutKey(action)
-        if layoutKey == lastActionLayoutKey {
-            // The only expected change here is the scroll-driven glass progress or a
+        let vertical = usesSystemBars && nativeBarIsVertical(in: controller.traitCollection)
+        if layoutKey == lastActionLayoutKey && lastActionVertical == vertical {
+            // The only expected change here is scroll-driven glass/title progress or a
             // freshly captured Kotlin callback. Keep every UIKit view alive.
             updateActionTargets(action)
             updateActionVisuals(action)
@@ -382,16 +425,23 @@ private final class NativeChromeBinding {
             return
         }
         lastActionLayoutKey = layoutKey
+        lastActionVertical = vertical
         retainedActionTargets.removeAll()
         actionTargets.removeAll()
         actionButtons.removeAll()
+        systemActionItems.removeAll()
         var items: [UIBarButtonItem] = []
         var leftItems: [UIBarButtonItem] = []
         // Login and content sync share the same trailing spinner. Busy must
         // still draw when canRefresh is false (silent auto-login sets it so
         // the user cannot start another refresh mid-login).
         let refreshItem: UIBarButtonItem?
-        if action.busy {
+#if DEBUG
+        let isBusy = action.busy || (ProcessInfo.processInfo.arguments.contains("--layout-smoke") && ProcessInfo.processInfo.arguments.contains("--chrome-busy"))
+#else
+        let isBusy = action.busy
+#endif
+        if isBusy {
             let title = action.label.isEmpty ? action.status : action.label
             refreshItem = spinnerBarItem(title: title.isEmpty ? "加载中" : title)
         } else if action.canRefresh {
@@ -418,7 +468,7 @@ private final class NativeChromeBinding {
             // rightBarButtonItems is laid out from index 0 at the trailing
             // edge, so refresh is first and status follows after a fixed gap.
             items.append(refreshItem)
-            items.append(fixedActionSpacing())
+            if !usesSystemBars { items.append(fixedActionSpacing()) }
             items.append(statusItem)
         } else if let statusItem {
             items.append(statusItem)
@@ -439,10 +489,34 @@ private final class NativeChromeBinding {
                 )
             }
         }
+        if usesSystemBars {
+            // In a horizontal bar, export has its own leading placement so the
+            // status/refresh group leaves a readable gap around the centered title.
+            // Duo's vertical layout keeps all three in the same side group.
+            let leadingExport = !vertical && action.extraLabel?.contains("导出") == true
+            if !leadingExport {
+                items.append(contentsOf: leftItems)
+                leftItems.removeAll()
+            }
+        }
         UIView.performWithoutAnimation {
             controller.navigationItem.leftItemsSupplementBackButton = !leftItems.isEmpty
             controller.navigationItem.leftBarButtonItems = leftItems.isEmpty ? nil : leftItems
             controller.navigationItem.rightBarButtonItems = items.isEmpty ? nil : items
+            if usesSystemBars {
+                let ordered = Array(items.reversed())
+                if action.extraLabel == "今", let today = ordered.first {
+                    // Separate groups give Today its own system glass circle.
+                    controller.navigationItem.trailingItemGroups = [
+                        UIBarButtonItemGroup(barButtonItems: [today], representativeItem: nil),
+                        UIBarButtonItemGroup(barButtonItems: Array(ordered.dropFirst()), representativeItem: nil),
+                    ].filter { !$0.barButtonItems.isEmpty }
+                } else {
+                    controller.navigationItem.trailingItemGroups = ordered.isEmpty ? [] : [
+                        UIBarButtonItemGroup(barButtonItems: ordered, representativeItem: nil)
+                    ]
+                }
+            }
         }
         ensureTransparentBar()
         applyGlassProgress(CGFloat(action.scrollProgress))
@@ -460,7 +534,7 @@ private final class NativeChromeBinding {
     /// leaves UIKit's old large-title height behind. The title stays compact
     /// while the content moves underneath it.
     private func ensureTransparentBar() {
-        guard let controller, let navigationController = controller.navigationController else { return }
+        guard !usesSystemBars, let controller, let navigationController = controller.navigationController else { return }
         let appearance = UINavigationBarAppearance()
         appearance.backgroundColor = .clear
         appearance.shadowColor = .clear
@@ -492,6 +566,8 @@ private final class NativeChromeBinding {
             (navigationController as? TabRootNavigationController)?.setTopGlassProgress(progress, for: controller)
         }
     }
+
+
 }
 
 private enum NativeBarActionRole: Hashable {
@@ -592,15 +668,14 @@ private final class NativeSpinnerButton: UIButton {
     }
 }
 
-/// Title-bar Liquid Glass: a real glass surface spanning the status + navigation area,
-/// below the bar's own title/actions and above the Compose content.
+/// Scroll-edge Liquid Glass behind the native title, above Compose content.
 ///
 /// Why an overlay instead of UINavigationBarAppearance.backgroundEffect (verified live):
 /// manually built appearances ignore configureWith* on iOS 27, and
 /// sharesBackground=false suppresses _UIBarBackground entirely. The overlay uses the
-/// same Regular glass as the native sheets (see BJTUInstallNativeSheetMaterial), so the
-/// title bar refracts like the system TabBar instead of frosting like a plain blur.
-/// Visibility is driven by scroll-edge state; at the top the bar stays transparent.
+/// same Regular glass as the native sheets (see BJTUInstallNativeSheetMaterial).
+/// Visibility follows the actual Compose scroll state. Duo's vertical system bar has no
+/// scroll-edge effect by default, so this material is only used with horizontal bars.
 private final class NativeNavigationBarGlassView: UIVisualEffectView {
     private var scrollProgress: CGFloat = 0
     var hasVisibleMaterial: Bool { scrollProgress > 0 }
@@ -672,6 +747,181 @@ private final class NativeCenteredNavigationTitle: UILabel {
     }
 }
 
+private func nativeBarIsVertical(in traits: UITraitCollection) -> Bool {
+    if #available(iOS 27.1, *) { return traits.verticalBarEdge != .unspecified }
+    return false
+}
+
+/// One physical vertical scroller. Compose's own vertical gesture/physics is disabled.
+private final class NativePageScrollView: UIScrollView, UIGestureRecognizerDelegate {
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === panGestureRecognizer else { return true }
+        let velocity = panGestureRecognizer.velocity(in: self)
+        return abs(velocity.y) >= abs(velocity.x)
+    }
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        // Preserve horizontal week paging and the native interactive back gesture.
+        true
+    }
+}
+
+/// UIKit scrolls and animates chrome; the fixed-size Skia viewport renders consumed deltas.
+private final class SafeAreaComposeHost: UIViewController, UIScrollViewDelegate {
+    private let content: UIViewController
+    private let session: AuthenticatedSession
+    private var contentConstraints: [NSLayoutConstraint] = []
+    private var contentLayoutVertical: Bool?
+    private var nativeScrollView: NativePageScrollView?
+    private var scrollController: NativeScrollController?
+    private var renderedOffset: CGFloat = 0
+    private var nativeRange: CGFloat = 0
+    private var updatingRange = false
+    var hasNativeScroller: Bool { scrollController != nil }
+
+    init(content: UIViewController, session: AuthenticatedSession) {
+        self.content = content
+        self.session = session
+        super.init(nibName: nil, bundle: nil)
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = appBackgroundUIColor
+        addChild(content)
+        content.view.translatesAutoresizingMaskIntoConstraints = false
+        // Establish the final viewport before Compose's first action report. Never
+        // reparent the Metal surface or resize it during a navigation transition.
+        let scroller = NativePageScrollView(frame: view.bounds)
+        scroller.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        scroller.contentInsetAdjustmentBehavior = .never
+        scroller.showsVerticalScrollIndicator = false
+        scroller.isDirectionalLockEnabled = true
+        scroller.alwaysBounceVertical = true
+        scroller.isScrollEnabled = false
+        scroller.delegate = self
+        scroller.panGestureRecognizer.delegate = scroller
+        scroller.backgroundColor = appBackgroundUIColor
+        nativeScrollView = scroller
+        view.addSubview(scroller)
+        scroller.addSubview(content.view)
+        content.didMove(toParent: self)
+        updateBarLayout()
+    }
+
+    func setScrollController(_ controller: NativeScrollController?) {
+        loadViewIfNeeded()
+        let wasEnabled = hasNativeScroller
+        // An exact false edge transition represents a real Compose action such as
+        // Today scrolling to the first item. A stale initial false snapshot does not.
+        let returnedToTop = scrollController?.canScrollBackward == true &&
+            controller?.canScrollBackward == false && renderedOffset > 0.5
+        scrollController = controller
+        if wasEnabled != hasNativeScroller {
+            nativeScrollView?.isScrollEnabled = hasNativeScroller
+            setContentScrollView(hasNativeScroller ? nativeScrollView : nil, for: .top)
+            if !hasNativeScroller, let scroller = nativeScrollView {
+                // Loading/empty content can remove the consumer. Drop its old range
+                // and rubber-band displacement without changing the viewport.
+                updatingRange = true
+                renderedOffset = 0
+                nativeRange = 0
+                scroller.setContentOffset(.zero, animated: false)
+                scroller.contentSize = scroller.bounds.size
+                content.view.transform = .identity
+                updatingRange = false
+            }
+            if let navigationController = navigationController as? TabRootNavigationController {
+                navigationController.configureScrollMinimization(for: self, enabled: hasNativeScroller)
+            }
+        }
+        if returnedToTop {
+            renderedOffset = 0
+            nativeScrollView?.setContentOffset(.zero, animated: false)
+            content.view.transform = .identity
+        }
+        updateNativeRange()
+    }
+
+    override func viewWillLayoutSubviews() {
+        super.viewWillLayoutSubviews()
+        updateBarLayout()
+    }
+    private func updateBarLayout() {
+        let vertical = nativeBarIsVertical(in: traitCollection)
+        let itemStyle: UINavigationItem.ItemStyle = vertical ? .browser : .navigator
+        if navigationItem.style != itemStyle { navigationItem.style = itemStyle }
+        guard contentLayoutVertical != vertical || contentConstraints.isEmpty else { return }
+        NSLayoutConstraint.deactivate(contentConstraints)
+        guard let scroller = nativeScrollView else { return }
+        // Identical constraints before and after the consumer arrives. All hosted
+        // pages reserve the header within Compose, using the measured UIKit inset.
+        contentConstraints = [
+            content.view.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            content.view.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            content.view.topAnchor.constraint(equalTo: scroller.frameLayoutGuide.topAnchor),
+            content.view.bottomAnchor.constraint(equalTo: scroller.frameLayoutGuide.bottomAnchor),
+        ]
+        NSLayoutConstraint.activate(contentConstraints)
+        contentLayoutVertical = vertical
+    }
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateNativeRange()
+        guard view.window != nil, navigationController?.topViewController === self else { return }
+        let bottom = Float(view.safeAreaInsets.bottom)
+        if abs(session.systemBottomInsetDp - bottom) > 0.5 { session.systemBottomInsetDp = bottom }
+    }
+
+    private func updateNativeRange() {
+        guard !updatingRange, let controller = scrollController, let scroller = nativeScrollView else { return }
+        let scale = max(1, traitCollection.displayScale)
+        let height = max(1, scroller.bounds.height)
+        if controller.maxOffsetPx >= 0 {
+            nativeRange = CGFloat(controller.maxOffsetPx) / scale
+        } else if controller.canScrollForward {
+            // Virtualized content supplies exact consumed deltas and an exact end flag.
+            // Reserve viewport-sized headroom; never infer an offset from item indices.
+            nativeRange = max(nativeRange, renderedOffset + height * 2)
+        } else {
+            nativeRange = renderedOffset
+        }
+        let size = CGSize(width: max(1, scroller.bounds.width), height: height + nativeRange)
+        if abs(scroller.contentSize.height - size.height) > 0.5 || scroller.contentSize.width != size.width {
+            updatingRange = true
+            scroller.contentSize = size
+            updatingRange = false
+        }
+
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard !updatingRange, let controller = scrollController else { return }
+        let scale = max(1, traitCollection.displayScale)
+        let position = min(max(0, scrollView.contentOffset.y), nativeRange)
+        let delta = position - renderedOffset
+        if abs(delta) > 0.001 {
+            let consumed = CGFloat(controller.consumeScroll(deltaPx: Float(delta * scale))) / scale
+            renderedOffset += consumed
+            if delta > 0 && consumed < delta - 0.5 {
+                // Compose reports the actual end; let UIKit own the ensuing rubber band.
+                nativeRange = renderedOffset
+                updatingRange = true
+                scrollView.contentSize.height = scrollView.bounds.height + nativeRange
+                updatingRange = false
+            }
+        }
+        // The displacement comes directly from UIKit's rubber band, with no app timer,
+        // easing curve, accumulated gesture translation or independent animation.
+        content.view.transform = CGAffineTransform(translationX: 0, y: -(scrollView.contentOffset.y - renderedOffset))
+        if controller.maxOffsetPx < 0 && controller.canScrollForward && renderedOffset > nativeRange - scrollView.bounds.height {
+            updateNativeRange()
+        }
+    }
+}
+
 private protocol NativeChromeHosting: AnyObject {
     func setNativeTitle(_ title: String)
     func refreshNavigationBarVisibility()
@@ -683,12 +933,14 @@ private final class TabRootNavigationController: UINavigationController, UINavig
     private let session: AuthenticatedSession
     private let tabRouteId: String
     private let selectTab: (String) -> Void
+    let usesSystemBars: Bool
     private var centeredTitleLabel: NativeCenteredNavigationTitle?
     private var navigationBarHiddenState: Bool?
-    /// 原生导航栏实际占掉的顶部高度（栏底 maxY，含状态栏），推给 Compose 做滚动内容顶边距：
-    /// 内容要能伸进栏后，玻璃才有东西可折射。栏隐藏时推 0。镜像底栏的容差推送。
+    /// 原生导航栏实际占掉的顶部高度（栏底 maxY，含状态栏），推给 Compose 做滚动内容顶边距；
+    /// 内容经过横向玻璃，滚动方向驱动 iOS 27 原生栏划出。栏隐藏时推 0。
     private var pushedTopInset: CGFloat = -1
     private var navigationBarGlassView: NativeNavigationBarGlassView?
+    private var systemTitleVertical: Bool?
     private let glassState = NativeNavigationGlassState<ObjectIdentifier>()
     /// 二级页盖住底栏玻璃。玻璃留在原位，这里不负责把它收起或延后显示。
     var onNavigationWillShow: ((UINavigationController, UIViewController, Bool) -> Void)?
@@ -696,11 +948,13 @@ private final class TabRootNavigationController: UINavigationController, UINavig
     init(
         session: AuthenticatedSession,
         tabRouteId: String,
-        selectTab: @escaping (String) -> Void
+        selectTab: @escaping (String) -> Void,
+        usesSystemBars: Bool = false
     ) {
         self.session = session
         self.tabRouteId = tabRouteId
         self.selectTab = selectTab
+        self.usesSystemBars = usesSystemBars
         super.init(nibName: nil, bundle: nil)
         delegate = self
         // 一级页固定使用一条紧凑的原生标题栏；正文滚动不改变导航栏高度，
@@ -714,20 +968,51 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         fatalError("init(coder:) has not been implemented")
     }
 
+    private func configureNativeBarMinimization(for item: UINavigationItem) {
+        guard usesSystemBars else { return }
+        if #available(iOS 27.0, *) {
+            // Keep viewport geometry stable from creation, before Compose reports
+            // its primary scroll consumer. UIKit alone animates the navigation bar.
+            item.navigationBarMinimization.minimizationBehavior = .automatic
+            item.navigationBarMinimization.safeAreaAdjustment = .disabled
+        }
+    }
+
+    func configureScrollMinimization(for owner: UIViewController, enabled: Bool) {
+        guard usesSystemBars, #available(iOS 27.0, *) else { return }
+        let vertical = nativeBarIsVertical(in: traitCollection)
+        var configuration = owner.navigationItem.navigationBarMinimization
+        let oldBehavior = configuration.minimizationBehavior
+        let oldAdjustment = configuration.safeAreaAdjustment
+        configuration.minimizationBehavior = enabled && vertical ? .onScrollDown : .automatic
+        configuration.safeAreaAdjustment = .disabled
+        if oldBehavior != configuration.minimizationBehavior || oldAdjustment != configuration.safeAreaAdjustment {
+            owner.navigationItem.navigationBarMinimization = configuration
+        }
+    }
+
     /// Compose 根控制器推迟到这里创建，冷启动不必同时付多份组合与 Metal 层的成本。
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = appBackgroundUIColor
         guard viewControllers.isEmpty else { return }
         navigationBar.clipsToBounds = false
-        // 注意：不要在这里直接设 navigationBar.backgroundColor。栏背景完全由
-        // NativeNavigationBarGlassView（真玻璃）提供，appearance 只负责透明底 + 藏系统标题；
-        // 直接写死 .clear 会把材质压成"看穿到纯色"。
+        // Don't set navigationBar.backgroundColor here. Horizontal scroll-underlap
+        // uses NativeNavigationBarGlassView; Duo's vertical system bar keeps Apple's
+        // default side-bar material and moves as a complete native bar on scroll.
         let glassView = NativeNavigationBarGlassView()
         navigationBarGlassView = glassView
         view.insertSubview(glassView, belowSubview: navigationBar)
+        if usesSystemBars {
+            let appearance = UINavigationBarAppearance()
+            appearance.configureWithTransparentBackground()
+            appearance.titleTextAttributes = [.font: UIFontMetrics(forTextStyle: .headline).scaledFont(for: UIFont.systemFont(ofSize: 20, weight: .semibold))]
+            navigationBar.standardAppearance = appearance
+            navigationBar.scrollEdgeAppearance = appearance
+            navigationBar.compactAppearance = appearance
+        }
         let binding = NativeChromeBinding()
-        let root = MainViewControllerKt.NativeTabRootViewController(
+        let composeRoot = MainViewControllerKt.NativeTabRootViewController(
             session: session,
             routeId: tabRouteId,
             onOpenNativeRoute: { [weak self] routeId in
@@ -747,11 +1032,15 @@ private final class TabRootNavigationController: UINavigationController, UINavig
                 self?.selectTab(routeId)
             }
         )
+        let root = usesSystemBars ? SafeAreaComposeHost(content: composeRoot, session: session) : composeRoot
+        if usesSystemBars { root.navigationItem.style = nativeBarIsVertical(in: traitCollection) ? .browser : .navigator }
         root.restorationIdentifier = tabRouteId
         let rootTitle = NativeShellKt.nativeRouteTitle(routeId: tabRouteId)
         root.navigationItem.title = rootTitle
         root.navigationItem.largeTitleDisplayMode = .never
+        configureNativeBarMinimization(for: root.navigationItem)
         configureComposeHost(root)
+
         binding.controller = root
         setViewControllers([root], animated: false)
         setNativeTitle(rootTitle)
@@ -765,7 +1054,7 @@ private final class TabRootNavigationController: UINavigationController, UINavig
     private func openNativeRoute(_ routeId: String) {
         guard topViewController?.restorationIdentifier != routeId else { return }
         let binding = NativeChromeBinding()
-        let destination = MainViewControllerKt.NativeDestinationViewController(
+        let composeDestination = MainViewControllerKt.NativeDestinationViewController(
             session: session,
             routeId: routeId,
             useNativeTitleBar: true,
@@ -785,12 +1074,18 @@ private final class TabRootNavigationController: UINavigationController, UINavig
                 self?.selectTab(targetRouteId)
             }
         )
+        let destination = usesSystemBars ? SafeAreaComposeHost(content: composeDestination, session: session) : composeDestination
+        if usesSystemBars { destination.navigationItem.style = nativeBarIsVertical(in: traitCollection) ? .browser : .navigator }
         destination.restorationIdentifier = routeId
         let destinationTitle = NativeShellKt.nativeRouteTitle(routeId: routeId)
         destination.navigationItem.title = destinationTitle
         // 被 push 的页也使用行内标题，保持根页与二级页的高度和排版一致。
         destination.navigationItem.largeTitleDisplayMode = .never
+        configureNativeBarMinimization(for: destination.navigationItem)
         configureComposeHost(destination)
+        if usesSystemBars {
+            destination.hidesBottomBarWhenPushed = true
+        }
         binding.controller = destination
         setNativeTitle(destinationTitle)
         // 先把目的地按最终尺寸 layout 一次，让 Compose 在转场开始前就开始画，
@@ -806,6 +1101,10 @@ private final class TabRootNavigationController: UINavigationController, UINavig
     // MARK: - NativeChromeHosting
 
     func setNativeTitle(_ title: String) {
+        if usesSystemBars && nativeBarIsVertical(in: traitCollection) {
+            centeredTitleLabel?.isHidden = true
+            return
+        }
         guard !title.isEmpty else {
             centeredTitleLabel?.text = nil
             centeredTitleLabel?.isHidden = true
@@ -834,38 +1133,70 @@ private final class TabRootNavigationController: UINavigationController, UINavig
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        let vertical = usesSystemBars && nativeBarIsVertical(in: traitCollection)
+        if usesSystemBars, systemTitleVertical != vertical {
+            systemTitleVertical = vertical
+            // UIKit can move its inline title to the leading edge to avoid a
+            // long action group. Keep horizontal titles centered independently;
+            // vertical layouts use the system's leading title representation.
+            let appearance = navigationBar.standardAppearance.copy() as! UINavigationBarAppearance
+            appearance.titleTextAttributes[.foregroundColor] = vertical ? UIColor.label : UIColor.clear
+            navigationBar.standardAppearance = appearance
+            navigationBar.scrollEdgeAppearance = appearance
+            navigationBar.compactAppearance = appearance
+            setNativeTitle(topViewController?.navigationItem.title ?? "")
+            if let topViewController {
+                configureScrollMinimization(for: topViewController, enabled: (topViewController as? SafeAreaComposeHost)?.hasNativeScroller == true)
+                restoreTopGlass(for: topViewController)
+            }
+        }
+        let currentOwner = topViewController
+        if let currentOwner {
+            configureScrollMinimization(for: currentOwner, enabled: (currentOwner as? SafeAreaComposeHost)?.hasNativeScroller == true)
+        }
+        // Every system-bar host uses the same full-height viewport, including its
+        // first frame. Compose consumes the header inset inside its list or spacer.
+        let topInset: CGFloat = usesSystemBars
+            ? (currentOwner?.view.safeAreaInsets.top ?? 0)
+            : (navigationBar.isHidden ? 0 : navigationBar.frame.maxY)
         if let glassView = navigationBarGlassView {
-            let barFrame = navigationBar.frame
-            glassView.frame = CGRect(
+            let glassBounds = CGRect(
                 x: 0,
                 y: 0,
                 width: view.bounds.width,
-                height: navigationBar.isHidden ? 0 : barFrame.maxY,
+                height: navigationBar.isHidden ? 0 : topInset,
             )
-            glassView.isHidden = navigationBar.isHidden || !glassView.hasVisibleMaterial
+            glassView.frame = glassBounds
+            glassView.isHidden = navigationBar.isHidden || vertical || !glassView.hasVisibleMaterial
             view.bringSubviewToFront(glassView)
             view.bringSubviewToFront(navigationBar)
         }
-        if let centeredTitleLabel {
-            navigationBar.bringSubviewToFront(centeredTitleLabel)
-        }
-        let topInset = navigationBar.isHidden ? 0 : navigationBar.frame.maxY
-        if abs(topInset - pushedTopInset) > 0.5 {
+        if let centeredTitleLabel { navigationBar.bringSubviewToFront(centeredTitleLabel) }
+        if view.window != nil, abs(topInset - pushedTopInset) > 0.5 {
             pushedTopInset = topInset
             session.glassTopBarInsetDp = Float(topInset)
         }
     }
 
-    /// Reveal the native material from the page's actual scroll depth.
-    /// No autonomous motion is introduced, including when Reduce Motion is enabled.
+    /// Horizontal bars retain their existing material. Vertical bars use UIKit's
+    /// default layout; scroll updates never hide, move or resize the navigation bar.
     func setTopGlassProgress(_ progress: CGFloat, for owner: UIViewController) {
         if let visibleProgress = glassState.update(progress, for: ObjectIdentifier(owner)) {
-            navigationBarGlassView?.setProgress(visibleProgress)
+            if (owner as? SafeAreaComposeHost)?.hasNativeScroller == true || (usesSystemBars && nativeBarIsVertical(in: traitCollection)) {
+                navigationBarGlassView?.setProgress(0)
+            } else {
+                navigationBarGlassView?.setProgress(visibleProgress)
+            }
         }
     }
 
     private func restoreTopGlass(for controller: UIViewController) {
-        navigationBarGlassView?.setProgress(glassState.show(ObjectIdentifier(controller)))
+        let progress = glassState.show(ObjectIdentifier(controller))
+        if (controller as? SafeAreaComposeHost)?.hasNativeScroller == true || (usesSystemBars && nativeBarIsVertical(in: traitCollection)) {
+            navigationBarGlassView?.setProgress(0)
+        } else {
+            navigationBarGlassView?.setProgress(progress)
+        }
     }
 
     /// 只有一页例外不显示系统栏：没有标题的页（写信这类自绘返回的页）。一级 tab 根页现在也有标题，
@@ -876,10 +1207,14 @@ private final class TabRootNavigationController: UINavigationController, UINavig
 
     func refreshNavigationBarVisibility() {
         guard let top = topViewController else { return }
-        let shouldHide = navigationBarShouldBeHidden(for: top)
+        let shouldHide = shouldHideBar(for: top)
         guard navigationBarHiddenState != shouldHide else { return }
         navigationBarHiddenState = shouldHide
         setNavigationBarHidden(shouldHide, animated: false)
+    }
+
+    private func shouldHideBar(for viewController: UIViewController) -> Bool {
+        navigationBarShouldBeHidden(for: viewController)
     }
 
     private func updateInteractivePopEnabled() {
@@ -894,7 +1229,7 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         animated: Bool
     ) {
         restoreTopGlass(for: viewController)
-        let shouldHide = navigationBarShouldBeHidden(for: viewController)
+        let shouldHide = shouldHideBar(for: viewController)
         navigationBarHiddenState = shouldHide
         setNavigationBarHidden(shouldHide, animated: animated)
         // 玻璃不跟着进二级页消失，也不等返回动画结束再出现。宿主让二级页盖在它上面。
@@ -906,10 +1241,13 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         didShow viewController: UIViewController,
         animated: Bool
     ) {
-        // A pop does not recreate Compose. Restore this page's own title and material,
+        // A pop does not recreate Compose. Restore this page's own title and scroll state,
         // including a cancelled interactive pop, without requiring a new scroll event.
         glassState.retain(Set(viewControllers.map { ObjectIdentifier($0) }))
         restoreTopGlass(for: viewController)
+        let shouldHide = shouldHideBar(for: viewController)
+        navigationBarHiddenState = shouldHide
+        setNavigationBarHidden(shouldHide, animated: false)
         setNativeTitle(viewController.navigationItem.title ?? "")
         updateInteractivePopEnabled()
         // 部分系统版本在 didShow 后会把 delegate 重置；每次确认仍由本类接管。
@@ -934,8 +1272,8 @@ private final class TabRootNavigationController: UINavigationController, UINavig
 
 /// 一级入口的系统玻璃 TabBar。tab 列表来自 Kotlin 的同一份 bottomNavSections，
 /// 两端不会漂移；图标改用 SF Symbols，交给系统做选中态填充与玻璃着色。
-private final class AppTabBarController: UIViewController, UITabBarDelegate {
-    private static let symbolNames: [String: String] = [
+private final class AppTabBarController: UIViewController, UITabBarDelegate, NativeTabsHosting {
+    fileprivate static let symbolNames: [String: String] = [
         "HOME": "house",
         "SCHEDULE": "calendar",
         "GRADES": "list.bullet.rectangle",
@@ -997,6 +1335,10 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
         for arg in ProcessInfo.processInfo.arguments where arg.hasPrefix("--tab=") {
             let routeId = String(arg.dropFirst("--tab=".count))
             select(routeId: routeId)
+        }
+        if ProcessInfo.processInfo.arguments.contains("--layout-smoke"),
+           let route = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--route=") }) {
+            DispatchQueue.main.async { [weak self] in self?.activeController?.openNativeRouteFromHost(String(route.dropFirst(8))) }
         }
 #endif
     }
@@ -1290,9 +1632,98 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
 /// 把它的视图移出窗口，Compose 组合可能被回收，会话来源与 `onAuthenticatedSessionChanged`
 /// 的时序就不再可控。被玻璃 TabBar 盖住的登录组合此时只渲染一个占位空白（Kotlin 侧
 /// nativeTabBarEnabled 分支），成本可忽略。
+private protocol NativeTabsHosting: AnyObject {
+    func reloadTabs(session: AuthenticatedSession)
+}
+
+private func makeNativeTabs(session: AuthenticatedSession) -> UIViewController & NativeTabsHosting {
+    if #available(iOS 27.0, *) { return AdaptiveAppTabBarController(session: session) }
+    return AppTabBarController(session: session)
+}
+
+/// Standard containers own the axes, safe content rectangle and transitions on Duo.
+@available(iOS 27.0, *)
+private final class AdaptiveAppTabBarController: UITabBarController, NativeTabsHosting {
+    private var session: AuthenticatedSession
+    private var controllersByRoute: [String: TabRootNavigationController] = [:]
+    private var tabsByRoute: [String: UITab] = [:]
+    private var routeIds: [String] = []
+    private var studentId: String
+
+    init(session: AuthenticatedSession) {
+        self.session = session
+        studentId = session.profile.studentId
+        super.init(nibName: nil, bundle: nil)
+        session.systemManagedContentBounds = true
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = appBackgroundUIColor
+        mode = .tabSidebar
+        sidebar.preferredPlacement = .automatic
+        reloadTabs(session: session)
+#if DEBUG
+        for arg in ProcessInfo.processInfo.arguments where arg.hasPrefix("--tab=") {
+            select(routeId: String(arg.dropFirst(6)))
+        }
+        if ProcessInfo.processInfo.arguments.contains("--layout-smoke"),
+           let route = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--route=") }) {
+            DispatchQueue.main.async { [weak self] in self?.select(routeId: String(route.dropFirst(8))) }
+        }
+#endif
+    }
+
+    func reloadTabs(session: AuthenticatedSession) {
+        self.session = session
+        session.systemManagedContentBounds = true
+        guard isViewLoaded else { return }
+        let items = NativeShellKt.nativeTabItems(session: session)
+        let nextIds = items.map(\.routeId)
+        let accountChanged = studentId != session.profile.studentId
+        guard nextIds != routeIds || accountChanged else { return }
+        let previousSelection = accountChanged ? nil : selectedTab?.identifier
+        studentId = session.profile.studentId
+        if accountChanged { controllersByRoute.removeAll(); tabsByRoute.removeAll() }
+        controllersByRoute = controllersByRoute.filter { nextIds.contains($0.key) }
+        tabsByRoute = tabsByRoute.filter { nextIds.contains($0.key) }
+        for item in items where tabsByRoute[item.routeId] == nil {
+            let controller = TabRootNavigationController(session: session, tabRouteId: item.routeId,
+                selectTab: { [weak self] route in self?.select(routeId: route) }, usesSystemBars: true)
+            controllersByRoute[item.routeId] = controller
+            tabsByRoute[item.routeId] = UITab(title: item.title,
+                image: UIImage(systemName: AppTabBarController.symbolNames[item.routeId] ?? "circle"),
+                identifier: item.routeId) { _ in controller }
+        }
+        routeIds = nextIds
+        UIView.performWithoutAnimation {
+            tabs = nextIds.compactMap { tabsByRoute[$0] }
+            selectedTab = previousSelection.flatMap { tabsByRoute[$0] } ?? tabs.first
+        }
+    }
+
+    private func select(routeId: String) {
+        if let tab = tabsByRoute[routeId] {
+            selectedTab = tab
+        } else if let route = selectedTab?.identifier, let navigation = controllersByRoute[route] {
+            navigation.loadViewIfNeeded()
+            navigation.openNativeRouteFromHost(routeId)
+        }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // Bodies are already constrained by UIKit. Only their remaining system
+        // bottom safe area is needed for scrolling to the home indicator.
+        session.glassTabBarBottomInsetDp = 0
+    }
+}
+
 private final class LiquidGlassShellController: UIViewController {
     private var authenticatedSession: AuthenticatedSession?
-    private var tabController: AppTabBarController?
+    private var tabController: (UIViewController & NativeTabsHosting)?
     private var appActiveObserver: NSObjectProtocol?
 
     override func viewDidLoad() {
@@ -1329,7 +1760,7 @@ private final class LiquidGlassShellController: UIViewController {
         if session !== authenticatedSession {
             authenticatedSession = session
             if session != nil && tabController == nil {
-                let tabs = AppTabBarController(session: session!)
+                let tabs = makeNativeTabs(session: session!)
                 tabController = tabs
                 embed(tabs)
                 // 一级入口集合在 Compose 里观测（「物理在线」开关会增减一项），UIKit 收不到快照变化，
@@ -1354,16 +1785,58 @@ private final class LiquidGlassShellController: UIViewController {
 
     private func embed(_ child: UIViewController) {
         addChild(child)
+        let alreadyVisible = view.window != nil
+        if alreadyVisible { child.beginAppearanceTransition(true, animated: false) }
         child.view.frame = view.bounds
         child.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(child.view)
         child.didMove(toParent: self)
+        if alreadyVisible { child.endAppearanceTransition() }
     }
 }
+
+#if DEBUG
+/// Uses the production navigation containers with an isolated, synthetic session.
+private final class OfflineLayoutShellController: UIViewController {
+    private var bootstrap: UIViewController?
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        let bootstrap = OfflineLayoutProbeKt.OfflineLayoutBootstrap { [weak self] session in
+            DispatchQueue.main.async { self?.show(session) }
+        }
+        self.bootstrap = bootstrap
+        embed(bootstrap)
+    }
+    private func show(_ session: AuthenticatedSession) {
+        // Keep the source composition attached, as in the production login shell.
+        // Removing the first Compose host can retire its scene's render lifecycle.
+        guard children.count == 1 else { return }
+        if #available(iOS 26.0, *), UIDevice.current.userInterfaceIdiom == .phone,
+           !ProcessInfo.processInfo.arguments.contains("--fallback-shell") {
+            embed(makeNativeTabs(session: session))
+        } else {
+            embed(NativeNavigationController(offlineSession: session))
+        }
+    }
+    private func embed(_ child: UIViewController) {
+        addChild(child)
+        let alreadyVisible = view.window != nil
+        if alreadyVisible { child.beginAppearanceTransition(true, animated: false) }
+        child.view.frame = view.bounds
+        child.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(child.view)
+        child.didMove(toParent: self)
+        if alreadyVisible { child.endAppearanceTransition() }
+    }
+}
+#endif
 
 struct ComposeView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
 #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--layout-smoke") {
+            return OfflineLayoutShellController()
+        }
         if ProcessInfo.processInfo.arguments.contains("--courseware-picker-smoke") {
             return CoursewarePickerProbeViewControllerKt.CoursewarePickerProbeViewController()
         }

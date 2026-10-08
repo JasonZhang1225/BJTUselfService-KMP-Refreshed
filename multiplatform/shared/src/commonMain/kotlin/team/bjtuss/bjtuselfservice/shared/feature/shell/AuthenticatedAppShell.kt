@@ -380,9 +380,7 @@ fun AuthenticatedAppShell(
     // 紧凑端底栏挂在 NavDisplay 外层（与内容解耦）：一级 tab 切换时底栏实例保持存活，
     // 避免整页销毁把 NavigationBarItem 的按压水波纹掐断。
     // 内容区预留底栏高度：Material3 NavigationBar 80.dp + navigationBars 安全区。
-    val compactBottomBarOverlayPadding = if (windowClass == WindowClass.Expanded) {
-        0.dp
-    } else if (nativeTabBarEnabled) {
+    val compactBottomBarOverlayPadding = if (nativeTabBarEnabled) {
         // 底栏换成系统玻璃 TabBar：宿主是全出血的，UIKit 不会把 tab bar 算进 navigationBars
         // （那里只剩 home indicator），真实高度由宿主写进 session。宿主还没回报时退回安全区，
         // 最坏情况是尾部留白偏小，不会崩。
@@ -390,13 +388,15 @@ fun AuthenticatedAppShell(
             WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
             session.glassTabBarBottomInsetDp.dp,
         )
+    } else if (windowClass == WindowClass.Expanded) {
+        0.dp
     } else {
         80.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     }
     // 宽屏（平板横屏/全屏、macOS）：二级页留在壳内，侧栏固定、右侧换内容，对齐桌面分屏。
-    // 仅紧凑/中等窗口才走原生二级 Activity/UIViewController（手机式全屏 push）。
+    // 已经由原生宿主持有的页面始终继续使用宿主路由，旋转/展开不能把返回栈拆成两份。
     val useNativeSecondaryRoutes =
-        nativeNavigationEnabled && windowClass != WindowClass.Expanded
+        usesNativeSecondaryRoutes(nativeNavigationEnabled, windowClass, hostedDestination = forcedRouteId != null)
     // 本实例是「被宿主压入的页面」而不是玻璃 tab 根：两者都带 forcedRouteId，
     // 但只有压入页需要返回入口，也不该再为一条不存在的底栏预留高度。
     val isPushedHostDestination = forcedRouteId != null && !nativeTabBarEnabled
@@ -909,10 +909,8 @@ fun AuthenticatedAppShell(
         val model = session.citelModel ?: return@LaunchedEffect
         model.setEnabled(citelEnabled)
         if (citelEnabled && !model.state.value.configured) settingsModel.setCitelEnabled(false)
-        if (citelEnabled && !entryLoggingIn && shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) {
-            model.refreshForAppEntry(session.appForegroundGeneration.value)
-            session.appForegroundGeneration.collect { generation -> model.refreshForAppEntry(generation) }
-        }
+        // Restore cached CITEL state only. CitelWorkspace refreshes on feature entry;
+        // submission reads recover an expired session when it is actually needed.
     }
     LaunchedEffect(session.physicsLabModel, physicsLabEnabled, entryLoggingIn, forcedRouteId, nativeTabBarEnabled) {
         val labModel = session.physicsLabModel ?: return@LaunchedEffect
@@ -1068,7 +1066,7 @@ fun AuthenticatedAppShell(
         val effectiveRefreshAction = refreshAction ?: refresh
         // iOS 内容视口延伸到屏幕底，底部净空仅交给滚动内容末尾消费。
         // 宿主上报的是整个 tab bar frame 的高度，已经包含其底部安全区，不重复叠加。
-        val reserveBottomBarSpace = !expanded && !showBack && !isPushedHostDestination
+        val reserveBottomBarSpace = !session.systemManagedContentBounds && !expanded && !showBack && !isPushedHostDestination
         val systemBottomInset = maxOf(
             WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
             session.systemBottomInsetDp.dp,
@@ -1136,9 +1134,9 @@ fun AuthenticatedAppShell(
                     SideEffect { onNativeTitleChanged(title) }
                 }
                 val nativeSyncBusy = isRefreshing || sessionRecoveryInProgress
-                val topFadeHeight = 52.dp
-                val topFadeHeightPx = with(LocalDensity.current) { topFadeHeight.toPx() }
-                val topFadeActive = nativeTitleBarActive && !keepsComposeTopBar && !staticTopBar
+                val topBarTransitionHeight = 52.dp
+                val topBarTransitionHeightPx = with(LocalDensity.current) { topBarTransitionHeight.toPx() }
+                val topScrollTrackingActive = nativeTitleBarActive && !keepsComposeTopBar && !staticTopBar
                 // 页面上报的真实滚动偏移（像素），见 LocalReportTopScroll。直接读列表状态，
                 // fling/跳转/回顶都不会漂移；上报源只在 composition 里读它，重组开销与之前相当。
                 // lambda 用 remember 稳住实例，避免每次重组都让消费方连带重组。
@@ -1150,8 +1148,8 @@ fun AuthenticatedAppShell(
                 // 顶边距取宿主实测栏高与状态栏二者的较大值，首帧（宿主未回报前）也不错位。
                 // 非玻璃壳/未 opt-in 页面 clearance 恒 0，走原来的 Spacer/自绘顶栏，老样子。
                 // keepsTopBarInset 的不可滚页面改回布局内边距（停在栏下 + 8.dp 呼吸）。
-                val useTopUnderlap = topFadeActive && scrollUnderTopBar
-                val measuredTopInset = maxOf(
+                val useTopUnderlap = topScrollTrackingActive && scrollUnderTopBar
+                val measuredTopInset = if (session.systemManagedContentBounds) session.glassTopBarInsetDp.dp else maxOf(
                     WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
                     session.glassTopBarInsetDp.dp,
                 )
@@ -1160,16 +1158,26 @@ fun AuthenticatedAppShell(
                 } else {
                     0.dp
                 }
-                // Read the scroll state during composition so page-reported offsets reach
-                // the UIKit navigation bar. Glass intensity follows real depth (0 at top,
-                // 1 past the transition zone): it persists through the whole return journey
-                // and clears exactly when content leaves the bar — no early fade.
+                // Read the Compose scroll state during composition so page-reported offsets
+                // reach the fallback glass surface. Native-scrolling pages instead supply
+                // a consumer for actual UIKit deltas; no position estimates cross that bridge.
                 val nativeScrollProgress =
-                    if (topFadeActive && scrollUnderTopBar && topFadeHeightPx > 0f) {
-                        (topScrollOffsetPx.floatValue / topFadeHeightPx).coerceIn(0f, 1f)
+                    if (topScrollTrackingActive && scrollUnderTopBar && topBarTransitionHeightPx > 0f) {
+                        (topScrollOffsetPx.floatValue / topBarTransitionHeightPx).coerceIn(0f, 1f)
                     } else {
                         0f
                     }
+                // Single primary scrolling pages share UIKit physics, including pushed
+                // details. Static/split-panel pages retain their independent scrollers.
+                val nativeScrollingEnabled = nativeTitleBarActive && hostBarTakesOver &&
+                    platform.family == PlatformFamily.IOS && session.systemManagedContentBounds &&
+                    useTopUnderlap && !keepsTopBarInset
+                var nativeScrollController by remember(title) { mutableStateOf<NativeScrollController?>(null) }
+                val reportNativeScrollController: (NativeScrollController?) -> Unit = remember(title) {
+                    { nativeScrollController = it }
+                }
+                // Read during composition so range/end updates invalidate this host.
+                val reportedNativeScrollController = nativeScrollController.takeIf { nativeScrollingEnabled }
                 SideEffect {
                     val nativeBarAction = when {
                         !hostBarTakesOver -> null
@@ -1192,6 +1200,7 @@ fun AuthenticatedAppShell(
                                 extraLabel = topBarActionLabel,
                                 onExtraClick = onTopBarActionClick,
                                 scrollProgress = nativeScrollProgress,
+                                scrollController = reportedNativeScrollController,
                             )
                         else ->
                             // No visible bar item is needed, but UIKit still
@@ -1203,6 +1212,7 @@ fun AuthenticatedAppShell(
                                 label = "",
                                 onClick = {},
                                 scrollProgress = nativeScrollProgress,
+                                scrollController = reportedNativeScrollController,
                             )
                     }
                     onNativeActionChanged(nativeBarAction)
@@ -1213,7 +1223,7 @@ fun AuthenticatedAppShell(
                     Spacer(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .windowInsetsTopHeight(WindowInsets.statusBars),
+                            .height(measuredTopInset),
                     )
                 } else {
                     CompactAppTopBar(
@@ -1253,6 +1263,7 @@ fun AuthenticatedAppShell(
                         LocalBottomBarClearance provides if (usesBottomUnderlap) bottomContentClearance else 0.dp,
                         LocalTopBarClearance provides topBarClearance,
                         LocalReportTopScroll provides reportTopScroll,
+                        LocalNativeScrollControllerReporter provides reportNativeScrollController.takeIf { nativeScrollingEnabled },
                     ) {
                         content()
                     }
@@ -1996,7 +2007,7 @@ fun AuthenticatedAppShell(
         )
     } else if (windowClass == WindowClass.Expanded) {
         Row(
-            modifier = Modifier.fillMaxSize().padding(18.dp),
+            modifier = Modifier.fillMaxSize().statusBarsPadding().padding(18.dp),
             horizontalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             AppSidebar(

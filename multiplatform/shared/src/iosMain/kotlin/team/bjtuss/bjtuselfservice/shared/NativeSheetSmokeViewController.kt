@@ -43,7 +43,13 @@ fun NativeSheetSmokeViewController(physicsLab: Boolean = false, updateNotes: Boo
                     HomeSyncItem("作业", "正在同步作业", HomeSyncItemState.SYNCING),
                     HomeSyncItem("考试安排", "已完成", HomeSyncItemState.SUCCESS),
                     HomeSyncItem("物理在线", "等待同步", HomeSyncItemState.WAITING),
-                )
+                ) + (1..12).map { index ->
+                    HomeSyncItem(
+                        if (index == 12) "滚动验证末尾" else "离线同步验证 $index",
+                        "用于短视口、旋转和长列表滚动验收，不读取真实账号。",
+                        HomeSyncItemState.WAITING,
+                    )
+                }
             }
             LaunchedEffect(Unit) {
                 // The returned Compose controller is hosted by SwiftUI. Wait until

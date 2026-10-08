@@ -65,7 +65,7 @@ internal fun CampusAccountEntryDialog(
                         destination.message,
                         modifier = Modifier.fillMaxWidth(),
                         style = MaterialTheme.typography.bodyLarge,
-                        textAlign = TextAlign.Start,
+                        textAlign = TextAlign.Center,
                     )
                     if (destination.action == CampusCardAction.ShowQrCode) {
                         MiniProgramQrCode()
