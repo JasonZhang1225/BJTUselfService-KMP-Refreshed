@@ -28,6 +28,65 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
 class PhyVlabScreenModelTest {
+    @Test fun finalSubmissionRequiresPreparedFilesAndExplicitConfirmation() = runBlocking {
+        val course = PhyVlabCourse(72, "测试课程", "", 0, "https://phyvlab.bjtu.edu.cn/course/view.php?id=72")
+        val activity = activity(course, 7)
+        val repository = FinalizationRepository()
+        val model = PhyVlabScreenModel(repository, PhyVlabSessionProtocol(AuthenticatedTransport))
+        model.showActivityDetails(activity)
+        model.submitSelectedActivity(emptyList(), finalize = true, filesChecked = true)
+        assertEquals(0, repository.finalCalls)
+        model.submitSelectedActivity(listOf(HomeworkFileContent("report.pdf", "application/pdf", byteArrayOf(1))))
+        assertEquals(1, repository.saveCalls)
+        assertEquals(0, repository.finalCalls)
+        assertTrue(model.state.value.assignmentDetail!!.isDraft)
+        assertTrue(model.prepareFinalization())
+        assertEquals(listOf("report.pdf"), model.state.value.assignmentDetail!!.submittedFiles.map { it.fileName })
+        model.submitSelectedActivity(emptyList(), finalize = true)
+        assertEquals(0, repository.finalCalls)
+        assertTrue(model.prepareFinalization())
+        model.submitSelectedActivity(emptyList(), finalize = true, filesChecked = true)
+        assertEquals(1, repository.finalCalls)
+        assertFalse(model.state.value.assignmentDetail!!.isDraft)
+        model.submitSelectedActivity(emptyList(), finalize = true, filesChecked = true)
+        assertEquals(1, repository.finalCalls)
+    }
+
+    @Test fun changedOrEmptyFileListCannotBeFinalized() = runBlocking {
+        val course = PhyVlabCourse(72, "测试课程", "", 0, "https://phyvlab.bjtu.edu.cn/course/view.php?id=72")
+        val repository = FinalizationRepository()
+        val model = PhyVlabScreenModel(repository, PhyVlabSessionProtocol(AuthenticatedTransport))
+        model.showActivityDetails(activity(course, 7))
+        assertTrue(model.prepareFinalization())
+        repository.detail = repository.detail.copy(submittedFiles = listOf(
+            team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabSubmissionFile("changed.pdf")))
+        model.submitSelectedActivity(emptyList(), finalize = true, filesChecked = true)
+        assertEquals(0, repository.finalCalls)
+        assertTrue(model.state.value.submissionFeedback!!.contains("重新检查"))
+        repository.detail = repository.detail.copy(submittedFiles = emptyList())
+        assertFalse(model.prepareFinalization())
+        model.submitSelectedActivity(emptyList(), finalize = true, filesChecked = true)
+        assertEquals(0, repository.finalCalls)
+    }
+
+    private class FinalizationRepository : PhyVlabRepository by FailingRepository {
+        var saveCalls = 0
+        var finalCalls = 0
+        var detail = PhyVlabAssignmentDetail(submissionStatus = "草稿（未提交）", isDraft = true, canSubmit = true, canFinalize = true,
+            submittedFiles = listOf(team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabSubmissionFile("report.pdf")))
+        override suspend fun fetchAssignmentDetail(activity: PhyVlabActivity) = PhyVlabAssignmentDetailResult.Success(detail)
+        override suspend fun saveAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>, removed: Set<String>): PhyVlabSubmissionResult {
+            saveCalls++
+            return PhyVlabSubmissionResult.Success
+        }
+        override suspend fun finalizationStatement(activity: PhyVlabActivity): String? = null
+        override suspend fun finalizeAssignment(activity: PhyVlabActivity, acceptedStatement: String?): PhyVlabSubmissionResult {
+            finalCalls++
+            detail = detail.copy(submissionStatus = "已提交请评分", isDraft = false, canSubmit = false, canFinalize = false)
+            return PhyVlabSubmissionResult.Success
+        }
+    }
+
     @Test fun draftOverridesCompletionMarkAndFinalSubmissionUpdatesHomeImmediately() = runBlocking {
         val course = PhyVlabCourse(72, "测试课程", "", 0, "https://phyvlab.bjtu.edu.cn/course/view.php?id=72")
         val activity = PhyVlabActivity(7, 72, course.name, "测试报告", "作业", "https://phyvlab.bjtu.edu.cn/mod/assign/view.php?id=7", dueTimestamp = 1792339140, completed = true)

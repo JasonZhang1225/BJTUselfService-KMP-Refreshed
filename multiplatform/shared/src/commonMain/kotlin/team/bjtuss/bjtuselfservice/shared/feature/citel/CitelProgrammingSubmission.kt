@@ -1,10 +1,11 @@
 package team.bjtuss.bjtuselfservice.shared.feature.citel
 
 import com.fleeksoft.ksoup.Ksoup
+import kotlinx.coroutines.CancellationException
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.network.*
 
-data class CitelProgrammingOptions(val languages: Map<String, String>, val maxBytes: Long)
+data class CitelProgrammingOptions(val languages: Map<String, String>, val maxBytes: Long, val alreadyAccepted: Boolean = false)
 private class ProgrammingForm(val url: String, val fields: Map<String, String>, val options: CitelProgrammingOptions)
 
 class CitelProgrammingClient(
@@ -17,6 +18,9 @@ class CitelProgrammingClient(
             ?: throw CitelFailure("此编程作业没有代码提交入口。")
         if (!isCitelUrl(submitUrl)) throw CitelFailure("代码提交入口异常。")
         val doc = Ksoup.parse(read(submitUrl).bodyText(), submitUrl)
+        if (doc.selectFirst("#region-main")?.text()?.contains("You have passed this practise.", true) == true) {
+            return ProgrammingForm(submitUrl, emptyMap(), CitelProgrammingOptions(emptyMap(), 0, alreadyAccepted = true))
+        }
         val form = doc.select("#region-main form").firstOrNull { it.selectFirst("input[type=file][name=sourcefile]") != null }
             ?: throw CitelFailure("此编程作业暂不接受文件提交。")
         val action = form.absUrl("action")
@@ -28,12 +32,22 @@ class CitelProgrammingClient(
         return ProgrammingForm(action, fields, CitelProgrammingOptions(languages, fields["MAX_FILE_SIZE"]?.toLongOrNull() ?: 65536))
     }
     suspend fun options(task: CitelTask) = form(task).options
+    suspend fun status(task: CitelTask): CitelProgrammingResult {
+        val index = "$CITEL_BASE/mod/programming/index.php?id=${task.courseId}"
+        val result = parseCitelProgrammingResults(read(index).bodyText())[task.id]
+            ?: throw CitelFailure("编程评测记录缺失。")
+        val url = result.resultUrl ?: return result
+        return parseCitelProgrammingTestResult(read(url).bodyText(), result)
+    }
     suspend fun submit(task: CitelTask, file: HomeworkFileContent, language: String): CitelProgrammingResult {
         val form = form(task)
+        if (form.options.alreadyAccepted) throw CitelFailure("已通过（AC），无需再次提交。")
         if (language !in form.options.languages) throw CitelFailure("请选择平台支持的编程语言。")
         if (file.bytes.size > form.options.maxBytes || file.bytes.isEmpty()) throw CitelFailure("代码文件为空或超过平台大小限制。")
         val index = "$CITEL_BASE/mod/programming/index.php?id=${task.courseId}"
         val before = parseCitelProgrammingResults(read(index).bodyText())[task.id] ?: throw CitelFailure("编程评测记录缺失。")
+        if (before.accepted) throw CitelFailure("已通过（AC），无需再次提交。")
+        if (before.testing) throw CitelFailure("正在测试，请等待评测完成后再提交。")
         val response = write(SchoolHttpRequest(SchoolHttpMethod.POST, form.url,
             formFields = form.fields + mapOf("language" to language, "code" to "", "action" to "Submit"),
             multipartFiles = listOf(SchoolMultipartFile("sourcefile", file.fileName, file.contentType, file.bytes))))
@@ -41,6 +55,9 @@ class CitelProgrammingClient(
             throw CitelFailure("代码提交结果未确认，请刷新评测记录；不会自动重复提交。")
         val after = parseCitelProgrammingResults(read(index).bodyText())[task.id] ?: throw CitelFailure("无法核对代码提交记录。")
         if (after.submitCount <= before.submitCount) throw CitelFailure("代码提交次数尚未更新，请刷新或到网页核对。")
-        return after
+        val resultUrl = after.resultUrl ?: return after
+        return try { parseCitelProgrammingTestResult(read(resultUrl).bodyText(), after) }
+        catch (e: CancellationException) { throw e }
+        catch (_: Exception) { after } // Submission count was confirmed; missing detail must not cause a repeat POST.
     }
 }

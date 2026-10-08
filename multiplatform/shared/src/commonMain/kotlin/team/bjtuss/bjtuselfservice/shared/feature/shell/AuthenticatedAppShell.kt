@@ -908,6 +908,7 @@ fun AuthenticatedAppShell(
     LaunchedEffect(session.citelModel, citelEnabled, entryLoggingIn, forcedRouteId, nativeTabBarEnabled) {
         val model = session.citelModel ?: return@LaunchedEffect
         model.setEnabled(citelEnabled)
+        if (citelEnabled && !model.state.value.configured) settingsModel.setCitelEnabled(false)
         if (citelEnabled && !entryLoggingIn && shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) {
             model.refreshForAppEntry(session.appForegroundGeneration.value)
             session.appForegroundGeneration.collect { generation -> model.refreshForAppEntry(generation) }
@@ -916,6 +917,7 @@ fun AuthenticatedAppShell(
     LaunchedEffect(session.physicsLabModel, physicsLabEnabled, entryLoggingIn, forcedRouteId, nativeTabBarEnabled) {
         val labModel = session.physicsLabModel ?: return@LaunchedEffect
         labModel.setEnabled(physicsLabEnabled)
+        if (physicsLabEnabled && !labModel.state.value.configured) settingsModel.setPhysicsLabEnabled(false)
         if (physicsLabEnabled && !entryLoggingIn && shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) {
             labModel.refresh()
         }
@@ -1919,6 +1921,7 @@ fun AuthenticatedAppShell(
                             settingsModel.setPhysicsLabEnabled(true)
                             popBackStack()
                         },
+                        onAccountCleared = { settingsModel.setPhysicsLabEnabled(false) },
                     )
                 }
             }
@@ -1961,7 +1964,7 @@ fun AuthenticatedAppShell(
                         onSaved = {
                             settingsModel.setCitelEnabled(true)
                             popBackStack()
-                        })
+                        }, onCleared = { settingsModel.setCitelEnabled(false) })
                 }
             }
             AppSection.MORE -> DestinationPage(

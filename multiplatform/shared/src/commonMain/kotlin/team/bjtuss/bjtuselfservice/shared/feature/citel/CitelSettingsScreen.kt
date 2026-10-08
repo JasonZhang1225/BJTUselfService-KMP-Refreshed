@@ -7,7 +7,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.settings.IndependentAccountSet
 
 @Composable
 fun CitelSettingsWorkspace(model: CitelModel, modifier: Modifier = Modifier, holdNetwork: Boolean = false,
-    onSaved: () -> Unit = {}) {
+    onSaved: () -> Unit = {}, onCleared: () -> Unit = {}) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
     var username by remember(model) { mutableStateOf(state.username) }
@@ -29,14 +29,15 @@ fun CitelSettingsWorkspace(model: CitelModel, modifier: Modifier = Modifier, hol
                 finally { saving = false }
                 if (success) onSaved()
             }
-        }, message = if (state.failed) state.message else if (saved) "账号已保存" else null,
-        failed = state.failed, modifier = modifier, websiteUrl = "$CITEL_BASE/",
+        }, message = if (state.failed) state.message else if (saved) "账号已保存" else state.message?.takeIf { !state.configured },
+        failed = state.failed, modifier = modifier, websiteUrl = "$CITEL_BASE/", canClear = state.configured,
         onClear = {
             scope.launch {
-                model.clearConfiguration()
-                username = ""
+                if (!model.clearConfiguration()) return@launch
+                username = model.state.value.username
                 password = ""
                 saved = false
+                onCleared()
             }
         })
 }

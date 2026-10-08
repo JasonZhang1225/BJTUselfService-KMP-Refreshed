@@ -29,6 +29,7 @@ internal fun IndependentAccountSettings(
     message: String?, failed: Boolean = false, modifier: Modifier = Modifier,
     websiteUrl: String? = null,
     onClear: (() -> Unit)? = null,
+    canClear: Boolean = hasSavedPassword,
 ) {
     val scroll = rememberScrollState()
     val focus = LocalFocusManager.current
@@ -58,7 +59,7 @@ internal fun IndependentAccountSettings(
         if (onClear != null) {
             Button(
                 onClick = { focus.clearFocus(force = true); keyboard?.hide(); confirmClear = true },
-                enabled = ready && !saving && (hasSavedPassword || username.isNotBlank()),
+                enabled = ready && !saving && canClear,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.error,
                     contentColor = MaterialTheme.colorScheme.onError,
@@ -70,24 +71,32 @@ internal fun IndependentAccountSettings(
         else message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
     }
     if (confirmClear && onClear != null) {
-        AppleSheetOrAlert(
-            onDismissRequest = { confirmClear = false },
-            title = "清除配置信息？",
-            confirmLabel = "清除",
-            onConfirm = {
+        ClearIndependentAccountDialog(
+            onDismiss = { confirmClear = false },
+            onClear = {
                 confirmClear = false
                 onClear()
             },
-            dismissLabel = "取消",
-        ) {
-            Text("将删除已保存的账号和密码。")
-        }
+        )
     }
     if (saving) Dialog(onDismissRequest = {}, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {
         Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
             AccountSyncDialogContent()
         }
     }
+}
+
+@Composable
+internal fun ClearIndependentAccountDialog(onDismiss: () -> Unit, onClear: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("清除配置信息？") },
+        text = { Text("将清除已保存的密码并关闭此功能，账号将保留。重新配置账号和密码后才能开启。") },
+        confirmButton = {
+            TextButton(onClick = onClear) { Text("清除", color = MaterialTheme.colorScheme.error) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 @Composable

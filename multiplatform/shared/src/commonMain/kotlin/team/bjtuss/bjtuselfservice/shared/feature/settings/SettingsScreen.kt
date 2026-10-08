@@ -102,7 +102,11 @@ private fun FeatureSwitchRow(name: String, enabled: Boolean, configured: Boolean
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(name)
+            Column {
+                Text(name)
+                if (onSettings != null && !configured) Text("请先配置账号和密码", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (configured) Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.secondaryContainer,
                 contentColor = MaterialTheme.colorScheme.onSecondaryContainer) {
                 Text("已配置", Modifier.padding(horizontal = 6.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall,
@@ -111,7 +115,7 @@ private fun FeatureSwitchRow(name: String, enabled: Boolean, configured: Boolean
         }
         if (onSettings != null) TextButton(onClick = onSettings,
             modifier = Modifier.semantics { contentDescription = "${name.removePrefix("启用").trim()}账号设置" }) { Text("设置") }
-        Switch(checked = enabled, onCheckedChange = onEnabled)
+        Switch(checked = enabled, onCheckedChange = onEnabled, enabled = onSettings == null || configured || enabled)
     }
 }
 

@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Alignment
@@ -102,6 +103,7 @@ internal fun CitelTaskCard(task: CitelTask, onOpen: () -> Unit, source: Assignme
         Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             AssignmentCardHeader(task.courseName, task.title, task.submitted, source)
             CitelTaskLine("类型", if (task.programming) "编程作业" else "实验报告")
+            if (task.programming) CitelTaskLine("评测", task.submissionStatusText())
             task.openTime?.let { CitelTaskLine("开始", citelDateText(it)) }
             task.discountTime?.let { CitelTaskLine("折扣", citelDateText(it) + (task.discount?.let { factor -> " · ×$factor" } ?: "")) }
             CitelTaskLine("截止", task.dueTime?.let(::citelDateText) ?: "未提供")
@@ -133,6 +135,17 @@ fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, on
     val task = state.selectedTask ?: run { Text("未选择作业。"); return }
     var showUpload by remember(task.id) { mutableStateOf(false) }
     var now by remember { mutableStateOf(Clock.System.now().epochSeconds) }
+    val result = state.programmingResult
+    val accepted = result?.accepted ?: isCitelAccepted(task.status)
+    val testing = result?.testing ?: isCitelTesting(task.status)
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(task.id, testing, holdNetwork, windowFocused, state.programmingPollingPaused) {
+        if (holdNetwork || !windowFocused || !testing || state.programmingPollingPaused) return@LaunchedEffect
+        while (model.state.value.selectedTask?.id == task.id && model.state.value.programmingResult?.testing == true) {
+            delay(3_000)
+            if (!model.refreshProgrammingResult(task.id)) break
+        }
+    }
     LaunchedEffect(task.id, holdNetwork) { if (!holdNetwork) model.selectTask(task) }
     LaunchedEffect(Unit) { while (true) { now = Clock.System.now().epochSeconds; delay(30_000) } }
     val detailScroll = androidx.compose.foundation.rememberScrollState()
@@ -146,12 +159,16 @@ fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, on
         CitelDetailLine("开放时间", task.openTime?.let(::citelDateText) ?: "未提供")
         task.discountTime?.let { CitelDetailLine("折扣开始", citelDateText(it) + (task.discount?.let { factor -> " · ×$factor" } ?: "")) }
         CitelDetailLine("截止时间", task.dueTime?.let(::citelDateText) ?: "未提供")
-        CitelDetailLine("提交状态", state.submission?.status ?: if (task.submitted) "已提交" else task.status.ifBlank { "未提交" })
+        CitelDetailLine("提交状态", result?.displayStatus ?: state.submission?.status ?: task.submissionStatusText())
+        if (task.programming) {
+            if (result != null) ProgrammingJudgeResult(result, autoRefreshing = testing && !holdNetwork && windowFocused && !state.programmingPollingPaused)
+            else if (accepted) Text("已通过（AC），无需再次提交。", color = MaterialTheme.colorScheme.primary)
+        }
         task.grade?.let { CitelDetailLine(if (task.programming) "题目分值" else "评分", it) }
         if (!task.submitted) Text(task.deadlineStatus(now))
         state.submissionMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         if (state.submissionBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
-        if (state.programmingOptions != null) {
+        if (state.programmingOptions != null && !accepted && !testing) {
             Button(onClick = { showUpload = true }, enabled = !state.submissionBusy && fileGateway.isAvailable,
                 modifier = Modifier.fillMaxWidth()) { Text("上传代码") }
         }
@@ -168,6 +185,7 @@ fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, on
         FilledTonalButton(onClick = { onOpen(task.url) }, enabled = !state.submissionBusy, modifier = Modifier.fillMaxWidth()) { Text("在网页中打开") }
     }
     LaunchedEffect(state.submissionRevision) { showUpload = false }
+    LaunchedEffect(accepted, testing) { if (accepted || testing) showUpload = false }
     if (showUpload) AppleSheet(onDismissRequest = { if (!state.submissionBusy) showUpload = false },
         title = if (task.programming) "上传代码" else "上传作业", needsFullHeight = true, scrollableBody = true) {
         val uploadScroll = androidx.compose.foundation.rememberScrollState()
@@ -191,6 +209,40 @@ fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, on
                     onSave = { added, removed -> scope.launch { model.saveFiles(added, removed) } }, revision = state.submissionRevision)
             }
             state.submissionMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+        }
+    }
+}
+
+@Composable
+internal fun ProgrammingJudgeResult(result: CitelProgrammingResult, autoRefreshing: Boolean = false) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        when {
+            result.accepted -> Text("已通过（AC），无需再次提交。", color = MaterialTheme.colorScheme.primary)
+            result.testing -> {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(if (autoRefreshing) "正在测试，每 3 秒自动刷新评测结果。" else "正在测试，自动刷新已暂停。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        result.totalTests?.let { total ->
+            Text("测试用例：${result.passedTests ?: 0} / $total 通过" +
+                (result.failedTests?.let { " · $it 未通过" } ?: ""), fontWeight = FontWeight.SemiBold)
+        }
+        if (result.totalTests == null && result.testCases.isEmpty() && !result.testing) {
+            Text("平台尚未提供测试用例结果。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        result.testCases.forEach { test ->
+            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("测试用例 ${test.number} · ${when (test.passed) { true -> "通过"; false -> "未通过"; null -> "待判定" }}",
+                        fontWeight = FontWeight.Medium)
+                    Text(test.result.ifBlank { "暂无判题结果" }, style = MaterialTheme.typography.bodySmall)
+                    if (test.timeUsed.isNotBlank() || test.memoryUsed.isNotBlank()) Text(
+                        listOfNotNull(test.timeUsed.takeIf { it.isNotBlank() }?.let { "耗时 $it 秒" },
+                            test.memoryUsed.takeIf { it.isNotBlank() }?.let { "内存 $it" }).joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
     }
 }

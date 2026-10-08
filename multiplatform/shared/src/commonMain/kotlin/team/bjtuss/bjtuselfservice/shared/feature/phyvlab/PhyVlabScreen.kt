@@ -279,7 +279,7 @@ fun PhyVlabWorkspace(
                 fileGateway = fileGateway,
                 isSubmitting = state.isSubmitting,
                 onSaveFiles = { added, removed -> scope.launch { model.submitSelectedActivity(added, removed) } },
-                onFinalize = { scope.launch { model.submitSelectedActivity(emptyList(), finalize = true) } },
+                onFinalize = { scope.launch { model.submitSelectedActivity(emptyList(), finalize = true, filesChecked = true) } },
                 onPrepareFinalization = model::prepareFinalization,
                 finalizationStatement = state.finalizationStatement,
                 submissionRevision = state.submissionRevision,
@@ -321,8 +321,8 @@ fun PhyVlabWorkspace(
     if (showUploadConfirm) {
         AppleSheetOrAlert(
             onDismissRequest = { if (!state.isSubmitting) showUploadConfirm = false },
-            title = "确认提交物理在线作业？",
-            confirmLabel = "确认提交",
+            title = "确认保存物理在线作业文件？",
+            confirmLabel = "保存文件",
             onConfirm = {
                 showUploadConfirm = false
                 showUpload = false
@@ -331,7 +331,7 @@ fun PhyVlabWorkspace(
             confirmEnabled = uploadFiles.isNotEmpty() && !state.isSubmitting,
             dismissLabel = "取消",
         ) {
-            Text("将把已选择的 ${uploadFiles.size} 个文件提交到“${state.selectedActivity?.title.orEmpty()}”。提交后可在详情中查看最新状态。")
+            Text("将保存 ${uploadFiles.size} 个文件到“${state.selectedActivity?.title.orEmpty()}”的草稿。保存后仍可修改，核对文件后需单独点击最终提交。")
         }
     }
 }
@@ -382,7 +382,7 @@ fun PhyVlabDetailWorkspace(
                 fileGateway = fileGateway,
                 isSubmitting = state.isSubmitting,
                 onSaveFiles = { added, removed -> scope.launch { model.submitSelectedActivity(added, removed) } },
-                onFinalize = { scope.launch { model.submitSelectedActivity(emptyList(), finalize = true) } },
+                onFinalize = { scope.launch { model.submitSelectedActivity(emptyList(), finalize = true, filesChecked = true) } },
                 onPrepareFinalization = model::prepareFinalization,
                 finalizationStatement = state.finalizationStatement,
                 submissionRevision = state.submissionRevision,
@@ -425,8 +425,8 @@ fun PhyVlabDetailWorkspace(
     if (showUploadConfirm) {
         AppleSheetOrAlert(
             onDismissRequest = { if (!state.isSubmitting) showUploadConfirm = false },
-            title = "确认提交物理在线作业？",
-            confirmLabel = "确认提交",
+            title = "确认保存物理在线作业文件？",
+            confirmLabel = "保存文件",
             onConfirm = {
                 showUploadConfirm = false
                 showUpload = false
@@ -435,7 +435,7 @@ fun PhyVlabDetailWorkspace(
             confirmEnabled = uploadFiles.isNotEmpty() && !state.isSubmitting,
             dismissLabel = "取消",
         ) {
-            Text("将把已选择的 ${uploadFiles.size} 个文件提交到“${activity?.title.orEmpty()}”。提交后可在详情中查看最新状态。")
+            Text("将保存 ${uploadFiles.size} 个文件到“${activity?.title.orEmpty()}”的草稿。保存后仍可修改，核对文件后需单独点击最终提交。")
         }
     }
 }
@@ -626,7 +626,8 @@ private fun PhyVlabAssignmentDetailContent(
     submissionRevision: Long = 0,
 ) {
     var confirmFinal by remember(activity.id) { mutableStateOf(false) }
-    var acceptedStatement by remember(activity.id) { mutableStateOf(false) }
+
+
     var showFileEditor by remember(activity.id) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
@@ -758,7 +759,7 @@ private fun PhyVlabAssignmentDetailContent(
             }
             if (page.submittedFiles.isNotEmpty()) {
                 PhyVlabDetailSection(
-                    title = "已提交文件",
+                    title = if (page.isDraft || page.canFinalize) "已保存文件（草稿，尚未最终提交）" else "已提交文件",
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ) {
@@ -774,7 +775,7 @@ private fun PhyVlabAssignmentDetailContent(
                 }
             }
             if (page.canFinalize) {
-                FilledTonalButton(onClick = { scope.launch { if (onPrepareFinalization()) { acceptedStatement = false; confirmFinal = true } } }, enabled = !isSubmitting, modifier = Modifier.fillMaxWidth()) { Text("最终提交") }
+                FilledTonalButton(onClick = { scope.launch { if (onPrepareFinalization()) { confirmFinal = true } } }, enabled = !isSubmitting, modifier = Modifier.fillMaxWidth()) { Text("最终提交") }
             }
         }
         FilledTonalButton(onClick = onOpenWeb, modifier = Modifier.fillMaxWidth()) {
@@ -794,18 +795,49 @@ private fun PhyVlabAssignmentDetailContent(
             feedback?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         }
     }
-    if (confirmFinal) AppleSheetOrAlert(onDismissRequest = { confirmFinal = false }, title = "最终提交作业？",
-        confirmLabel = "确认最终提交", confirmEnabled = finalizationStatement == null || acceptedStatement,
-        onConfirm = { confirmFinal = false; onFinalize() }, dismissLabel = "取消") {
-        Text("提交后不能再修改或删除附件。请确认所有文件正确、完整。")
-        finalizationStatement?.let { statement ->
-            Text(statement)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.Checkbox(acceptedStatement, { acceptedStatement = it })
-                Text("我已阅读并同意上述声明")
+    if (confirmFinal) PhyVlabFinalizationDialog(
+        title = activity.title,
+        fileNames = detail?.submittedFiles?.map { it.fileName }.orEmpty(),
+        statement = finalizationStatement,
+        isSubmitting = isSubmitting,
+        onDismiss = { confirmFinal = false },
+        onConfirm = { confirmFinal = false; onFinalize() },
+    )
+}
+
+@Composable
+internal fun PhyVlabFinalizationDialog(title: String, fileNames: List<String>, statement: String?,
+    isSubmitting: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    var filesChecked by remember(title, fileNames) { mutableStateOf(false) }
+    var statementAccepted by remember(title, statement) { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = { if (!isSubmitting) onDismiss() },
+        title = { Text("检查文件并最终提交？") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("最终提交后不能修改、替换或删除文件。取消后仍可返回修改草稿。")
+                Text(title, fontWeight = FontWeight.SemiBold)
+                Text("将最终提交以下 ${fileNames.size} 个文件：")
+                fileNames.forEach { Text("• $it") }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(filesChecked, { filesChecked = it }, enabled = !isSubmitting)
+                    Text("我已核对全部文件，确认提交后不能再修改")
+                }
+                statement?.let {
+                    Text(it)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(statementAccepted, { statementAccepted = it }, enabled = !isSubmitting)
+                        Text("我已阅读并同意上述声明")
+                    }
+                }
             }
-        }
-    }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = !isSubmitting && fileNames.isNotEmpty() && filesChecked &&
+                (statement == null || statementAccepted)) { Text("确认最终提交") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !isSubmitting) { Text("返回检查") } },
+    )
 }
 
 @Composable

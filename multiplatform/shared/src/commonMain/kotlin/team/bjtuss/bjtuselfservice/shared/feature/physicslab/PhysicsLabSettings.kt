@@ -23,7 +23,8 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun PhysicsLabSettings(model: PhysicsLabModel, modifier: Modifier = Modifier, showTitle: Boolean = true,
-    showAccountFields: Boolean = true, showLabPreferences: Boolean = true, onAccountSaved: () -> Unit = {}) {
+    showAccountFields: Boolean = true, showLabPreferences: Boolean = true, onAccountSaved: () -> Unit = {},
+    onAccountCleared: () -> Unit = {}) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
     var username by remember { mutableStateOf("") }
@@ -46,14 +47,15 @@ fun PhysicsLabSettings(model: PhysicsLabModel, modifier: Modifier = Modifier, sh
                     finally { saving = false }
                     if (success) onAccountSaved()
                 }
-            }, message = if (state.failed) state.message else if (saved) "账号已保存" else null,
-            failed = state.failed, modifier = modifier, websiteUrl = "$PHYSICS_LAB_ORIGIN/",
+            }, message = if (state.failed) state.message else if (saved) "账号已保存" else state.message?.takeIf { !state.configured },
+            failed = state.failed, modifier = modifier, websiteUrl = "$PHYSICS_LAB_ORIGIN/", canClear = state.configured,
             onClear = {
                 scope.launch {
-                    model.clearConfiguration()
-                    username = ""
+                    if (!model.clearConfiguration()) return@launch
+                    username = model.state.value.username
                     password = ""
                     saved = false
+                    onAccountCleared()
                 }
             })
         return

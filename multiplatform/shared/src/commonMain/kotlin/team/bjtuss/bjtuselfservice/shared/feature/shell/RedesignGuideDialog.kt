@@ -82,8 +82,8 @@ internal fun CitelGuideDialog(saveFailed: Boolean, onConfirm: () -> Unit) {
 @Composable
 internal fun AssignmentAggregateGuideDialog(saveFailed: Boolean, onConfirm: () -> Unit) {
     TimedGuideDialog(
-        title = "作业已合并",
-        body = "课程平台、物理在线和 CITEL 默认合并为「作业」。可在设置中关闭。",
+        title = "各平台作业已聚合",
+        body = "课程平台、物理在线和 CITEL 的作业统一显示在「作业」中。可在设置中关闭「作业聚合」。",
         saveFailed = saveFailed,
         onConfirm = onConfirm,
     )

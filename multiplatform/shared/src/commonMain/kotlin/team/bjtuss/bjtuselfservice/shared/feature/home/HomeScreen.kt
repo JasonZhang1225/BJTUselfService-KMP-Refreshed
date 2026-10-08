@@ -1658,7 +1658,7 @@ private fun ChangeDomainRow(
 }
 
 @Composable
-private fun ChangeDetailCard(change: HomeChangeRecord, onClick: () -> Unit) {
+internal fun ChangeDetailCard(change: HomeChangeRecord, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Surface(
         onClick = onClick,
@@ -1683,7 +1683,7 @@ private fun ChangeDetailCard(change: HomeChangeRecord, onClick: () -> Unit) {
                     fontWeight = FontWeight.Medium,
                 )
             }
-            change.visibleFields().forEach { field ->
+            change.displayFields().forEach { field ->
                 ChangeFieldDiffRow(field, change.kind)
             }
         }

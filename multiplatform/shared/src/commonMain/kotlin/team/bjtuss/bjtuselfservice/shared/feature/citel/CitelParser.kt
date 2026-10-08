@@ -67,7 +67,7 @@ fun parseCitelTaskDetail(html: String, task: CitelTask): CitelTask {
     if (task.programming && main.selectFirst("h1.name") == null) throw CitelFailure("CITEL 编程作业详情格式发生变化。")
     if (!task.programming && main.selectFirst(".submissionstatustable, [data-region=activity-information]") == null) throw CitelFailure("CITEL 书面作业详情格式发生变化。")
     val text = main.text()
-    val status = row("Submission status", "提交状态") ?: task.status
+    val status = if (task.programming) task.status else row("Submission status", "提交状态") ?: task.status
     val factor = Regex("(?:Discount|折扣)\\s*[:：]\\s*(\\d+(?:\\.\\d+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.toDoubleOrNull()
     val late = Regex("(?:Allow late|允许迟交)\\s*[:：]\\s*(Yes|No|是|否)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)
     return task.copy(
@@ -77,13 +77,53 @@ fun parseCitelTaskDetail(html: String, task: CitelTask): CitelTask {
         discount = factor,
         allowLate = late?.let { it.equals("Yes", true) || it == "是" } ?: task.allowLate,
         status = status,
-        submitted = task.submitted || status.equals("Submitted for grading", true) || status.contains("已提交"),
+        submitted = if (task.programming) isCitelAccepted(status) else task.submitted || status.equals("Submitted for grading", true) || status.contains("已提交"),
         grade = row("Grade", "成绩") ?: Regex("Grade\\s*:\\s*([^/]+)\\s*/\\s*Discount", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)?.trim(),
     )
 }
 
 /** 编程练习的完成信号来自个人评测结果，题目的 Grade 是题目分值。 */
-data class CitelProgrammingResult(val status: String, val accepted: Boolean, val times: List<Long>, val allowLate: Boolean, val submitCount: Int = 0)
+data class CitelProgrammingResult(val status: String, val accepted: Boolean, val times: List<Long>, val allowLate: Boolean,
+    val submitCount: Int = 0, val resultUrl: String? = null, val totalTests: Int? = null, val passedTests: Int? = null,
+    val failedTests: Int? = null, val testCases: List<CitelProgrammingTestCase> = emptyList()) {
+    val testing: Boolean get() = !accepted && (isCitelTesting(status) || status.isBlank() && submitCount > 0)
+    val displayStatus: String get() = when {
+        accepted -> "已通过（AC）"
+        testing -> "正在测试 · ${status.ifBlank { "等待评测" }}"
+        status.isBlank() -> "未提交"
+        else -> status
+    }
+}
+
+data class CitelProgrammingTestCase(val number: Int, val passed: Boolean?, val result: String,
+    val timeUsed: String = "", val memoryUsed: String = "")
+
+fun isCitelAccepted(status: String): Boolean = Regex("^AC(?:\\s*:.*)?$", RegexOption.IGNORE_CASE).matches(status.trim())
+fun isCitelTesting(status: String): Boolean = Regex("^(RJ|WJ|CJ|PD|PENDING|RUNNING|WAITING|QUEUED|COMPILING|TESTING)(?:\\s*:.*)?$",
+    RegexOption.IGNORE_CASE).matches(status.trim())
+
+fun CitelTask.submissionStatusText(): String = if (programming) when {
+    isCitelAccepted(status) -> "已通过（AC）"
+    isCitelTesting(status) -> "正在测试 · $status"
+    else -> status.ifBlank { "未提交" }
+} else if (submitted) "已提交" else status.ifBlank { "未提交" }
+
+fun parseCitelProgrammingTestResult(html: String, indexed: CitelProgrammingResult): CitelProgrammingResult {
+    val main = Ksoup.parse(html).selectFirst("#region-main") ?: throw CitelFailure("CITEL 评测结果格式发生变化。")
+    val summary = main.clone().also { it.select("table, script").remove() }.text()
+    val counts = Regex("There are (\\d+) test cases\\. Your program has passed (\\d+) of them and failed in (\\d+) of them\\.",
+        RegexOption.IGNORE_CASE).find(summary)
+    val cases = main.select("#test-result-detail-table > tbody > tr").mapNotNull { row ->
+        val cells = row.children().filter { it.tagName() == "td" }
+        val number = cells.getOrNull(0)?.text()?.toIntOrNull() ?: return@mapNotNull null
+        val passed = when (cells.getOrNull(11)?.text()?.trim()?.lowercase()) { "yes" -> true; "no" -> false; else -> null }
+        CitelProgrammingTestCase(number, passed, cells.getOrNull(12)?.text().orEmpty(),
+            cells.getOrNull(8)?.text().orEmpty(), cells.getOrNull(9)?.text().orEmpty())
+    }
+    return indexed.copy(totalTests = counts?.groupValues?.get(1)?.toIntOrNull(),
+        passedTests = counts?.groupValues?.get(2)?.toIntOrNull(), failedTests = counts?.groupValues?.get(3)?.toIntOrNull(),
+        testCases = cases)
+}
 
 fun parseCitelProgrammingResults(html: String): Map<Int, CitelProgrammingResult> {
     val doc = Ksoup.parse(html, "$CITEL_BASE/mod/programming/index.php")
@@ -97,7 +137,8 @@ fun parseCitelProgrammingResults(html: String): Map<Int, CitelProgrammingResult>
             parseCitelTime(match.value) ?: throw CitelFailure("CITEL 编程时间无法识别。")
         }.toList()
         if (times.size != 3) throw CitelFailure("CITEL 编程时间表格式发生变化。")
-        id to CitelProgrammingResult(status, status.startsWith("AC:", true) || status == "AC", times, timeCell.text().trim().endsWith('+'),
-            row.select("td").getOrNull(5)?.text()?.toIntOrNull() ?: 0)
+        id to CitelProgrammingResult(status, isCitelAccepted(status), times, timeCell.text().trim().endsWith('+'),
+            row.select("td").getOrNull(5)?.text()?.toIntOrNull() ?: 0,
+            row.selectFirst("a[href*='result.php?']")?.absUrl("href")?.takeIf(::isCitelUrl))
     }.toMap()
 }

@@ -30,7 +30,7 @@ class PhysicsLabModel(
     private val vault: CredentialVault?,
     private val remote: PhysicsLabRemote,
 ) {
-    private val mutableState = MutableStateFlow(PhysicsLabState())
+    private val mutableState = MutableStateFlow(PhysicsLabState(username = scope))
     val state = mutableState.asStateFlow()
     private val mutex = Mutex()
     private var initialized = false
@@ -47,14 +47,16 @@ class PhysicsLabModel(
             json.decodeFromString<Map<String, Boolean>>(cache.metadata(scope, "physicslab.twoWeekOverrides").orEmpty())
         }.getOrDefault(emptyMap())
         val labs = applyWeekOverrides(runCatching { json.decodeFromString<List<PhysicsLab>>(cache.metadata(scope, "physicslab.results").orEmpty()) }.getOrDefault(emptyList()))
-        mutableState.value = PhysicsLabState(enabled, credentials?.username.orEmpty(), labs, fromCache = labs.isNotEmpty(),
+        val username = credentials?.username ?: cache.metadata(scope, "physicslab.username")?.takeIf { it.isNotBlank() } ?: scope
+        mutableState.value = PhysicsLabState(enabled && credentials?.isValid == true, username, labs, fromCache = labs.isNotEmpty(),
             configured = credentials?.isValid == true)
         initialized = true
     }
-    /** Settings owns activation; enabling may precede entering separate lab credentials. */
+    /** Separate lab credentials must be configured before activation. */
     suspend fun setEnabled(enabled: Boolean) {
         initialize()
         mutex.withLock {
+            if (enabled && !mutableState.value.configured) return@withLock
             if (mutableState.value.enabled == enabled) return@withLock
             cache.putMetadata(scope, "physicslab.enabled", enabled.toString())
             mutableState.value = mutableState.value.copy(enabled = enabled, failed = false, message = null)
@@ -79,6 +81,7 @@ class PhysicsLabModel(
                     twoWeekOverrides = emptyMap()
                 }
                 cache.putMetadata(scope, "physicslab.enabled", enabled.toString())
+                cache.putMetadata(scope, "physicslab.username", username.trim())
                 cache.putMetadata(scope, "physicslab.configured", "true")
                 mutableState.value = mutableState.value.copy(enabled = enabled, username = username.trim(),
                     labs = if (changedAccount) emptyList() else mutableState.value.labs, failed = false,
@@ -103,17 +106,25 @@ class PhysicsLabModel(
         return !state.value.failed && state.value.configured
     }
 
-    suspend fun clearConfiguration() {
+    suspend fun clearConfiguration(): Boolean {
         initialize()
-        mutex.withLock {
-            runCatching { vault?.clear() }
+        return mutex.withLock {
+            try { vault?.clear() }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                mutableState.value = mutableState.value.copy(failed = true, message = "密码清除失败，请重试。")
+                return@withLock false
+            }
+            cache.putMetadata(scope, "physicslab.username", mutableState.value.username)
+            cache.putMetadata(scope, "physicslab.enabled", "false")
             cache.putMetadata(scope, "physicslab.configured", "false")
             mutableState.value = mutableState.value.copy(
-                username = "",
+                enabled = false,
                 configured = false,
                 failed = false,
-                message = "已清除配置",
+                message = "已清除密码并关闭物理实验，账号已保留。",
             )
+            true
         }
     }
 

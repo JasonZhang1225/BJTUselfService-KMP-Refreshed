@@ -32,6 +32,8 @@ data class CitelState(
     val submissionBusy: Boolean = false,
     val submissionMessage: String? = null,
     val programmingOptions: CitelProgrammingOptions? = null,
+    val programmingResult: CitelProgrammingResult? = null,
+    val programmingPollingPaused: Boolean = false,
     val submissionRevision: Long = 0,
     val filters: AssignmentFilters = AssignmentFilters(),
     val configured: Boolean = false,
@@ -71,10 +73,10 @@ class CitelModel(
         val remember = cache.metadata(scope, "citel.remember") == "true"
         credentials = try { if (remember) vault?.load() else null }
             catch (e: CancellationException) { throw e } catch (_: Exception) { null }
-        val username = cache.metadata(scope, "citel.username") ?: scope
+        val username = cache.metadata(scope, "citel.username")?.takeIf { it.isNotBlank() } ?: scope
         val tasks = runCatching { json.decodeFromString<List<CitelTask>>(cache.metadata(scope, "citel.tasks").orEmpty()) }.getOrDefault(emptyList())
         val lastSync = cache.metadata(scope, "citel.lastSync")?.toLongOrNull()
-        mutableState.value = CitelState(cache.metadata(scope, "citel.enabled") == "true", username, remember,
+        mutableState.value = CitelState(cache.metadata(scope, "citel.enabled") == "true" && credentials?.isValid == true, username, remember,
             tasks, fromCache = lastSync != null || tasks.isNotEmpty(), lastSync = lastSync, filters = state.value.filters,
             configured = credentials?.isValid == true)
         initialized = true
@@ -89,6 +91,7 @@ class CitelModel(
     suspend fun setEnabled(enabled: Boolean) {
         initialize()
         mutex.withLock {
+            if (enabled && !state.value.configured) return@withLock
             if (state.value.enabled == enabled) return@withLock
             cache.putMetadata(scope, "citel.enabled", enabled.toString())
             mutableState.value = state.value.copy(enabled = enabled, failed = false, message = null)
@@ -109,20 +112,26 @@ class CitelModel(
         return !state.value.failed && state.value.configured
     }
 
-    suspend fun clearConfiguration() {
+    suspend fun clearConfiguration(): Boolean {
         initialize()
-        mutex.withLock {
-            runCatching { vault?.clear() }
+        return mutex.withLock {
+            try { vault?.clear() }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                mutableState.value = mutableState.value.copy(failed = true, message = "密码清除失败，请重试。")
+                return@withLock false
+            }
             credentials = null
-            cache.putMetadata(scope, "citel.username", "")
+            cache.putMetadata(scope, "citel.enabled", "false")
             cache.putMetadata(scope, "citel.remember", "false")
             mutableState.value = mutableState.value.copy(
-                username = "",
+                enabled = false,
                 remember = false,
                 configured = false,
                 failed = false,
-                message = "已清除配置",
+                message = "已清除密码并关闭 CITEL，账号已保留。",
             )
+            true
         }
     }
 
@@ -192,18 +201,60 @@ class CitelModel(
     private fun fail(message: String) {
         mutableState.value = mutableState.value.copy(fromCache = mutableState.value.lastSync != null || mutableState.value.tasks.isNotEmpty(), failed = true, message = message)
     }
-    fun dismissTask() { if (!state.value.submissionBusy) mutableState.value = state.value.copy(selectedTask = null, submission = null, submissionMessage = null) }
-    fun showTask(task: CitelTask) { mutableState.value = state.value.copy(selectedTask = task, submission = null, programmingOptions = null, submissionMessage = null) }
+    fun dismissTask() { if (!state.value.submissionBusy) mutableState.value = state.value.copy(selectedTask = null, submission = null, programmingResult = null, programmingOptions = null, submissionMessage = null) }
+    fun showTask(task: CitelTask) { mutableState.value = state.value.copy(selectedTask = task, submission = null, programmingResult = null, programmingPollingPaused = false, programmingOptions = null, submissionMessage = null) }
     suspend fun selectTask(task: CitelTask) {
         initialize()
         mutex.withLock {
-            mutableState.value = state.value.copy(selectedTask = task, submission = null, programmingOptions = null, submissionMessage = null, submissionBusy = true)
+            mutableState.value = state.value.copy(selectedTask = task, submission = null, programmingResult = null, programmingPollingPaused = false, programmingOptions = null, submissionMessage = null, submissionBusy = true)
             try {
                 if (!task.programming) mutableState.value = state.value.copy(submission = remote.submission(loginCredentials(), task))
-                else mutableState.value = state.value.copy(programmingOptions = remote.programmingOptions(loginCredentials(), task))
+                else {
+                    var result = remote.programmingStatus(loginCredentials(), task)
+                    val options = if (!result.accepted && !result.testing) remote.programmingOptions(loginCredentials(), task) else null
+                    if (state.value.selectedTask?.id != task.id) return@withLock
+                    if (options?.alreadyAccepted == true) result = result.copy(status = "AC: Accepted", accepted = true)
+                    applyProgrammingResult(task, result)
+                    mutableState.value = state.value.copy(programmingOptions = options?.takeUnless { it.alreadyAccepted })
+                }
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) { mutableState.value = state.value.copy(submissionMessage = message(e))
             } finally { mutableState.value = state.value.copy(submissionBusy = false) }
+        }
+    }
+    private fun applyProgrammingResult(task: CitelTask, result: CitelProgrammingResult) {
+        val updated = task.copy(status = if (result.testing && result.status.isBlank()) "WJ: Waiting" else result.status,
+            submitted = result.accepted)
+        val tasks = state.value.tasks.map { if (it.id == task.id) updated else it }
+        cache.putMetadata(scope, "citel.tasks", json.encodeToString(tasks))
+        val selected = state.value.selectedTask?.id == task.id
+        mutableState.value = state.value.copy(selectedTask = if (selected) updated else state.value.selectedTask, tasks = tasks,
+            programmingResult = if (selected) result else state.value.programmingResult)
+    }
+
+    /** Polls only the selected task; never sends a submission POST. False pauses automatic refresh after errors. */
+    suspend fun refreshProgrammingResult(taskId: Int): Boolean {
+        if (state.value.submissionBusy) return true
+        return mutex.withLock {
+            val task = state.value.selectedTask?.takeIf { it.id == taskId && it.programming } ?: return@withLock false
+            try {
+                val result = remote.programmingStatus(loginCredentials(), task)
+                if (state.value.selectedTask?.id != taskId) return@withLock false
+                applyProgrammingResult(task, result)
+                if (!result.accepted && !result.testing && state.value.programmingOptions == null) {
+                    val options = remote.programmingOptions(loginCredentials(), task)
+                    if (state.value.selectedTask?.id != taskId) return@withLock false
+                    if (options.alreadyAccepted) applyProgrammingResult(task, result.copy(status = "AC: Accepted", accepted = true))
+                    else mutableState.value = state.value.copy(programmingOptions = options)
+                }
+                mutableState.value = state.value.copy(submissionMessage = null, programmingPollingPaused = false)
+                true
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                if (state.value.selectedTask?.id == taskId) mutableState.value = state.value.copy(programmingPollingPaused = true,
+                    submissionMessage = "评测状态刷新失败，自动刷新已暂停，请手动刷新重试。")
+                false
+            }
         }
     }
     suspend fun saveFiles(added: List<HomeworkFileContent>, removed: Set<String>) {
@@ -229,14 +280,17 @@ class CitelModel(
         if (state.value.submissionBusy) return
         mutex.withLock {
             val task = state.value.selectedTask ?: return@withLock
+            if (!task.programming || state.value.programmingResult?.accepted == true || isCitelAccepted(task.status)) {
+                mutableState.value = state.value.copy(submissionMessage = "已通过（AC），无需再次提交。")
+                return@withLock
+            }
+            if (state.value.programmingResult?.testing == true) return@withLock
             if (files.size != 1) { mutableState.value = state.value.copy(submissionMessage = "每次请选择一个代码文件。"); return@withLock }
             mutableState.value = state.value.copy(submissionBusy = true, submissionMessage = null)
             try {
                 val result = remote.submitProgramming(loginCredentials(), task, files.single(), language)
-                val updated = task.copy(status = result.status, submitted = result.accepted)
-                val tasks = state.value.tasks.map { if (it.id == task.id) updated else it }
-                cache.putMetadata(scope, "citel.tasks", json.encodeToString(tasks))
-                mutableState.value = state.value.copy(selectedTask = updated, tasks = tasks,
+                applyProgrammingResult(task, result)
+                mutableState.value = state.value.copy(
                     submissionRevision = state.value.submissionRevision + 1,
                     submissionMessage = "代码提交记录已增加，评测结果：${result.status.ifBlank { "等待评测" }}")
             } catch (e: CancellationException) { throw e

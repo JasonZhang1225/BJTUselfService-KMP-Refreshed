@@ -92,6 +92,7 @@ class PhyVlabScreenModel(
     private val mutableState = MutableStateFlow(PhyVlabUiState(filters = filterStore?.load() ?: AssignmentFilters()))
     val state: StateFlow<PhyVlabUiState> = mutableState.asStateFlow()
     private val refreshMutex = Mutex()
+    private var preparedFinalization: Pair<Int, List<String>>? = null
     private var lastRequestedMonthSeconds: Long? = null
     private var networkAutoSyncStarted = false
     private var sessionReady = false
@@ -266,6 +267,7 @@ class PhyVlabScreenModel(
     }
 
     fun showActivityDetails(activity: PhyVlabActivity) {
+        preparedFinalization = null
         mutableState.value = mutableState.value.copy(
             selectedActivity = activity,
             // 先把上次成功读取的详情放进页面；网络请求随后只负责更新它，
@@ -278,6 +280,7 @@ class PhyVlabScreenModel(
     }
 
     fun dismissActivityDetails() {
+        preparedFinalization = null
         mutableState.value = mutableState.value.copy(
             selectedActivity = null,
             assignmentDetail = null,
@@ -351,9 +354,16 @@ class PhyVlabScreenModel(
         }
     }
 
-    suspend fun submitSelectedActivity(files: List<HomeworkFileContent>, removed: Set<String> = emptySet(), finalize: Boolean = false) {
+    suspend fun submitSelectedActivity(files: List<HomeworkFileContent>, removed: Set<String> = emptySet(), finalize: Boolean = false,
+        filesChecked: Boolean = false) {
         if (mutableState.value.isSubmitting) return
         val activity = mutableState.value.selectedActivity ?: return
+        val prepared = preparedFinalization
+        preparedFinalization = null
+        if (finalize && (!filesChecked || prepared?.first != activity.id || files.isNotEmpty() || removed.isNotEmpty())) {
+            mutableState.value = mutableState.value.copy(submissionFeedback = "请先打开最终提交确认并核对文件，再确认提交。")
+            return
+        }
         if (files.isEmpty() && removed.isEmpty() && !finalize) return
         mutableState.value = mutableState.value.copy(isSubmitting = true, submissionFeedback = null)
         try {
@@ -367,12 +377,20 @@ class PhyVlabScreenModel(
             }
             // 提交是写操作：只在提交前恢复会话，不对一个不确定的 POST 结果自动重放，
             // 避免服务端已接收文件但响应丢失时产生重复提交。
+            if (finalize) {
+                val latest = (repository.fetchAssignmentDetail(activity) as? PhyVlabAssignmentDetailResult.Success)?.detail
+                if (latest == null || mutableState.value.selectedActivity?.id != activity.id || !latest.canFinalize || latest.submittedFiles.map { it.fileName }.sorted() != prepared?.second) {
+                    mutableState.value = mutableState.value.copy(isSubmitting = false,
+                        submissionFeedback = "文件或提交状态已变化，或无法核对。请刷新后重新检查并确认提交。")
+                    return
+                }
+            }
             when (val result = if (finalize) repository.finalizeAssignment(activity, mutableState.value.finalizationStatement) else repository.saveAssignment(activity, files, removed)) {
                 PhyVlabSubmissionResult.Success -> {
                     mutableState.value = mutableState.value.copy(
                         submissionRevision = mutableState.value.submissionRevision + 1,
                         isSubmitting = false,
-                        submissionFeedback = if (finalize) "已最终提交，正在核对状态。" else "文件已保存；若显示待最终提交，请检查文件后点击最终提交。",
+                        submissionFeedback = if (finalize) "已最终提交，正在核对状态。" else "文件已保存，尚未最终提交；可以继续修改，核对后请单独点击最终提交。",
                         assignmentDetail = null,
                     )
                     loadSelectedActivityDetail(force = true)
@@ -384,7 +402,7 @@ class PhyVlabScreenModel(
                     mutableState.value = mutableState.value.copy(
                         isSubmitting = false,
                         detailFailure = result.reason,
-                        submissionFeedback = "提交未确认成功，请稍后重试。",
+                        submissionFeedback = if (finalize) "最终提交结果未确认，请先刷新核对，不要直接重复提交。" else "文件保存未确认，请先刷新核对。",
                     )
                 }
             }
@@ -395,7 +413,7 @@ class PhyVlabScreenModel(
             mutableState.value = mutableState.value.copy(
                 isSubmitting = false,
                 detailFailure = PhyVlabSyncFailure.NETWORK,
-                submissionFeedback = "提交失败，请检查网络后重试。",
+                submissionFeedback = "操作结果未确认，请先刷新核对；不会自动重复提交。",
             )
         }
     }
@@ -403,11 +421,20 @@ class PhyVlabScreenModel(
     suspend fun prepareFinalization(): Boolean {
         val activity = mutableState.value.selectedActivity ?: return false
         if (mutableState.value.isSubmitting) return false
+        preparedFinalization = null
         mutableState.value = mutableState.value.copy(isSubmitting = true, submissionFeedback = null, finalizationStatement = null)
         return try {
             if (!ensureSessionForOperation()) return false
+            val detail = (repository.fetchAssignmentDetail(activity) as? PhyVlabAssignmentDetailResult.Success)?.detail
+                ?: throw IllegalStateException("Unable to read submission files")
+            if (!detail.canFinalize || detail.submittedFiles.isEmpty()) {
+                mutableState.value = mutableState.value.copy(submissionFeedback = "请先保存文件；已有文件且处于草稿状态才能最终提交。")
+                return false
+            }
             val statement = repository.finalizationStatement(activity)
-            mutableState.value = mutableState.value.copy(finalizationStatement = statement)
+            if (mutableState.value.selectedActivity?.id != activity.id) return false
+            preparedFinalization = activity.id to detail.submittedFiles.map { it.fileName }.sorted()
+            mutableState.value = mutableState.value.copy(finalizationStatement = statement, assignmentDetail = detail)
             true
         } catch (error: CancellationException) { throw error
         } catch (_: Exception) {

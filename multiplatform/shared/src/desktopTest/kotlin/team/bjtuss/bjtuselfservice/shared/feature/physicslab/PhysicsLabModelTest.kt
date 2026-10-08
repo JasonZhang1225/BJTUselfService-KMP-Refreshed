@@ -20,7 +20,7 @@ class PhysicsLabModelTest {
             assertFalse(model.state.value.enabled)
             model.clearConfiguration()
             assertFalse(model.state.value.configured)
-            assertEquals("", model.state.value.username)
+            assertEquals("fixture", model.state.value.username)
             assertEquals("", model.savedPassword())
             assertTrue(model.saveAccountAndSync("fixture", "fixture"))
             transport.fail = true
@@ -30,15 +30,16 @@ class PhysicsLabModelTest {
             assertNotNull(model.state.value.message)
         } finally { cache.close() }
     }
-    @Test fun masterSwitchCanEnableBeforeCredentialsAndKeepsSavedAccountWhenDisabled() = runBlocking {
+    @Test fun masterSwitchRequiresCredentialsAndClearingDisablesAcrossRestart() = runBlocking {
         val cache = store()
         try {
             val vault = MemoryVault()
             val transport = TestTransport()
             val model = PhysicsLabModel("fixture-toggle", cache, vault, PhysicsLabRemote(transport))
             model.setEnabled(true)
-            assertTrue(model.state.value.enabled)
+            assertFalse(model.state.value.enabled)
             assertFalse(model.state.value.configured)
+            assertEquals("fixture-toggle", model.state.value.username)
             assertEquals(0, transport.calls)
             model.configure("fixture-lab", "fixture-password", true)
             assertTrue(model.state.value.configured)
@@ -55,6 +56,18 @@ class PhysicsLabModelTest {
             model.setEnabled(true)
             model.refresh()
             assertTrue(transport.calls > calls)
+            assertTrue(model.clearConfiguration())
+            assertFalse(model.state.value.enabled)
+            assertFalse(model.state.value.configured)
+            assertEquals("fixture-lab", model.state.value.username)
+            assertNull(vault.credentials)
+            model.setEnabled(true)
+            assertFalse(model.state.value.enabled)
+            val cleared = PhysicsLabModel("fixture-toggle", cache, vault, PhysicsLabRemote(transport))
+            cleared.initialize()
+            assertEquals("fixture-lab", cleared.state.value.username)
+            assertFalse(cleared.state.value.enabled)
+            assertFalse(cleared.state.value.configured)
         } finally { cache.close() }
     }
 
