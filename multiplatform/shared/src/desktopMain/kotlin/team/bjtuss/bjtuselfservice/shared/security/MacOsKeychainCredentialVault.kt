@@ -29,7 +29,7 @@ class MacOsKeychainCredentialVault(
     }
 }
 
-/** Generic-password Keychain item shared by credentials and the desktop cache key. */
+/** Generic-password Keychain item. Production secrets share one item via [MacOsSecretBag]. */
 internal class MacOsKeychainItem(
     private val service: String,
     private val account: String,

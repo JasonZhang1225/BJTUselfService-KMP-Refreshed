@@ -156,8 +156,8 @@ iOS 未签名 IPA 的自签与安装请参考 [iOS 自签与安装指南](docs/i
 - **Windows**：MSI 卸载会自动删除 `%LOCALAPPDATA%\BJTUselfServiceKMP`（离线缓存）和 `HKCU\Software\JavaSoft\Prefs\team\bjtuss\bjtuselfservice`（DPAPI 加密凭据）；升级安装不会清数据。
 - **macOS**：拖拽删除 `.app` 不会清除用户数据。卸载前请在应用内「设置 → 本地数据与会话 → 清除全部本地数据」执行全量清理；如已删除应用，可手动删除：
   - `~/Library/Application Support/BJTUselfServiceKMP/`（AES-256-GCM 加密离线缓存）
-  - 「钥匙串访问」中服务名为 `team.bjtuss.bjtuselfservice.kmp.credentials` 的条目（登录凭据）
-  - 「钥匙串访问」中服务名为 `team.bjtuss.bjtuselfservice.kmp.cache-key` 的条目（缓存随机密钥，本身不含个人数据）
+  - 「钥匙串访问」中服务名为 `team.bjtuss.bjtuselfservice.kmp.secrets` 的条目（登录凭据、缓存密钥、物理实验账号等合并为一条）
+  - 旧版分条名称 `team.bjtuss.bjtuselfservice.kmp.credentials`、`…cache-key`、`…physicslab` 会在新版首次成功读取后迁入上一条并删除
   - `~/Library/Preferences/` 下 `team/bjtuss/bjtuselfservice` 相关的偏好文件（记住密码标记）
 
 安全审计与修复记录见 [docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-21.md](docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-21.md)。
