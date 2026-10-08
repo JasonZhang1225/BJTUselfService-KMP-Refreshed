@@ -55,6 +55,8 @@ class SettingsScreenModel(
     private var postponedUntilMillis = initialPreferences.updatePostponedUntilMillis
 
     fun acknowledgeRedesignGuide() = updatePreferences { copy(redesignGuideAcknowledged = true) }
+    fun acknowledgeCitelGuide() = updatePreferences { copy(citelGuideAcknowledged = true) }
+    fun acknowledgeAssignmentAggregateGuide() = updatePreferences { copy(assignmentAggregateGuideAcknowledged = true) }
 
     fun setBottomNavigationItem(routeId: String, enabled: Boolean) {
         val current = mutableState.value.preferences

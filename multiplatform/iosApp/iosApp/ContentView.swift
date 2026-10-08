@@ -387,20 +387,23 @@ private final class NativeChromeBinding {
         actionButtons.removeAll()
         var items: [UIBarButtonItem] = []
         var leftItems: [UIBarButtonItem] = []
-        // Keep the same two-circle geometry while a background sync is running.
-        // Only the trailing circle changes from refresh icon to spinner, so an
-        // initial auto-sync cannot look like a second refresh or a toolbar swap.
-        let refreshItem = action.canRefresh
-            ? (action.busy
-                ? spinnerBarItem(title: action.label)
-                : iconBarItem(
-                    title: action.label,
-                    symbolName: symbolName(for: action.label, kind: .refresh),
-                    role: .refresh,
-                    onClick: action.onClick,
-                )
-                )
-            : nil
+        // Login and content sync share the same trailing spinner. Busy must
+        // still draw when canRefresh is false (silent auto-login sets it so
+        // the user cannot start another refresh mid-login).
+        let refreshItem: UIBarButtonItem?
+        if action.busy {
+            let title = action.label.isEmpty ? action.status : action.label
+            refreshItem = spinnerBarItem(title: title.isEmpty ? "加载中" : title)
+        } else if action.canRefresh {
+            refreshItem = iconBarItem(
+                title: action.label,
+                symbolName: symbolName(for: action.label, kind: .refresh),
+                role: .refresh,
+                onClick: action.onClick,
+            )
+        } else {
+            refreshItem = nil
+        }
         let statusItem = action.status.isEmpty
             ? nil
             : iconBarItem(

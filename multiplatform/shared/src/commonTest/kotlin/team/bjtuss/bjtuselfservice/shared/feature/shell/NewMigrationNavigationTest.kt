@@ -19,7 +19,7 @@ class NewMigrationNavigationTest {
         assertTrue(shouldOpenNativeSectionRoute("GRADES", true, bottomNavSections(preferences)))
     }
     @Test fun optionalPhysicsFeaturesFollowIndependentMasterSwitches() {
-        val enabled = AppPreferences(bottomNavigationItems = emptyList(), physicsLabEnabled = true)
+        val enabled = AppPreferences(bottomNavigationItems = emptyList(), physicsLabEnabled = true, aggregateAssignments = false)
         val sections = applicationSections(enabled)
         assertEquals(sections.indexOf(AppSection.PHYVLAB) + 1, sections.indexOf(AppSection.PHYSICS_LAB))
         val offline = enabled.copy(autoSyncPhyVlab = false, showPhyVlabInBottomNav = false)
@@ -33,6 +33,16 @@ class NewMigrationNavigationTest {
         assertFalse(AppSection.PHYSICS_LAB in applicationSections(pinned))
         assertFalse(shouldOpenNativeSectionRoute("PHYSICS_LAB", true, bottomNavSections(pinned)))
         assertTrue(shouldOpenNativeSectionRoute("PHYSICS_LAB", true, bottomNavSections(enabled)))
+    }
+    @Test fun newInstallPutsAggregatedAssignmentsOnTheDefaultBar() {
+        val tabs = bottomNavSections(AppPreferences())
+        assertEquals(
+            listOf(AppSection.HOME, AppSection.SCHEDULE, AppSection.GRADES, AppSection.ASSIGNMENTS, AppSection.MORE),
+            tabs,
+        )
+        assertFalse(AppSection.HOMEWORK in tabs)
+        assertFalse(AppSection.PHYVLAB in tabs)
+        assertFalse(AppSection.CITEL in tabs)
     }
     @Test fun configuredMailboxBecomesTabWhileUnpinnedScheduleBecomesSecondaryRoute() {
         val tabs = bottomNavSections(AppPreferences(bottomNavigationItems = listOf("MAILBOX")))

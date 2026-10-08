@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -89,6 +90,7 @@ import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.safeExportFileName
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
+import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetScrollContentPadding
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
@@ -246,6 +248,7 @@ fun HomeworkWorkspace(
             onDismissRequest = { showFilterSheet = false },
             title = "作业筛选",
             needsFullHeight = true,
+            scrollableBody = true,
         ) {
             HomeworkFilterSheet(state = state, model = model)
         }
@@ -683,18 +686,18 @@ private fun HomeworkDeadlineFilterChips(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun HomeworkFilterSheet(
+private fun ColumnScope.HomeworkFilterSheet(
     state: HomeworkUiState,
     model: HomeworkScreenModel,
 ) {
     val filterScrollState = rememberScrollState()
     Column(
         modifier = Modifier
+            .weight(1f)
             .fillMaxWidth()
             .verticalScroll(filterScrollState)
             .desktopTouchScroll(filterScrollState)
-            .padding(horizontal = 20.dp, vertical = 8.dp)
-            .padding(bottom = 16.dp),
+            .sheetScrollContentPadding(),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Text("筛选与排序", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)

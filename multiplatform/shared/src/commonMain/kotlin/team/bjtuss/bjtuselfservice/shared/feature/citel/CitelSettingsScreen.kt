@@ -30,5 +30,13 @@ fun CitelSettingsWorkspace(model: CitelModel, modifier: Modifier = Modifier, hol
                 if (success) onSaved()
             }
         }, message = if (state.failed) state.message else if (saved) "账号已保存" else null,
-        failed = state.failed, modifier = modifier, websiteUrl = "$CITEL_BASE/")
+        failed = state.failed, modifier = modifier, websiteUrl = "$CITEL_BASE/",
+        onClear = {
+            scope.launch {
+                model.clearConfiguration()
+                username = ""
+                password = ""
+                saved = false
+            }
+        })
 }

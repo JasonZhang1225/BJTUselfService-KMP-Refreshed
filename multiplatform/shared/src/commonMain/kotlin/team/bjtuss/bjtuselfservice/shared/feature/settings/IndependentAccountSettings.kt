@@ -4,6 +4,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
@@ -24,11 +28,13 @@ internal fun IndependentAccountSettings(
     onUsername: (String) -> Unit, onPassword: (String) -> Unit, onSave: () -> Unit,
     message: String?, failed: Boolean = false, modifier: Modifier = Modifier,
     websiteUrl: String? = null,
+    onClear: (() -> Unit)? = null,
 ) {
     val scroll = rememberScrollState()
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val uriHandler = LocalUriHandler.current
+    var confirmClear by remember { mutableStateOf(false) }
     TopScrollColumn(state = scroll, modifier = modifier.fillMaxSize().platformLoginKeyboardAvoidance(true).desktopTouchScroll(scroll),
         contentModifier = Modifier.padding(horizontal = 20.dp)
             .padding(top = 16.dp + LocalTopBarClearance.current, bottom = 24.dp + LocalBottomBarClearance.current),
@@ -49,8 +55,33 @@ internal fun IndependentAccountSettings(
         FilledTonalButton(onClick = { focus.clearFocus(force = true); keyboard?.hide(); onSave() },
             enabled = ready && !saving && username.isNotBlank() && (hasSavedPassword || password.isNotEmpty()),
             modifier = Modifier.fillMaxWidth()) { Text("保存账号") }
+        if (onClear != null) {
+            Button(
+                onClick = { focus.clearFocus(force = true); keyboard?.hide(); confirmClear = true },
+                enabled = ready && !saving && (hasSavedPassword || username.isNotBlank()),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("清除配置信息") }
+        }
         if (failed) AppErrorBanner(message ?: "请检查账号密码和网络后重试。", title = "同步失败")
         else message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+    }
+    if (confirmClear && onClear != null) {
+        AppleSheetOrAlert(
+            onDismissRequest = { confirmClear = false },
+            title = "清除配置信息？",
+            confirmLabel = "清除",
+            onConfirm = {
+                confirmClear = false
+                onClear()
+            },
+            dismissLabel = "取消",
+        ) {
+            Text("将删除已保存的账号和密码。")
+        }
     }
     if (saving) Dialog(onDismissRequest = {}, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {
         Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {

@@ -28,10 +28,12 @@ data class AppPreferences(
     val showPhyVlabInBottomNav: Boolean = true,
     val bottomNavigationItems: List<String>? = null,
     val redesignGuideAcknowledged: Boolean = false,
+    val citelGuideAcknowledged: Boolean = false,
+    val assignmentAggregateGuideAcknowledged: Boolean = false,
     /** null migrates the previous account-scoped physicslab.enabled setting on session creation. */
     val physicsLabEnabled: Boolean? = null,
     val citelEnabled: Boolean? = null,
-    val aggregateAssignments: Boolean = false,
+    val aggregateAssignments: Boolean = true,
 ) {
     val isPhysicsLabEnabled: Boolean get() = physicsLabEnabled == true
     val isCitelEnabled: Boolean get() = citelEnabled == true
@@ -375,7 +377,7 @@ class CacheStore(
         autoSyncExams = true,
         physicsLabEnabled = setting(SettingKey.PHYSICS_LAB_ENABLED)?.toBooleanStrictOrNull(),
         citelEnabled = setting(SettingKey.CITEL_ENABLED)?.toBooleanStrictOrNull(),
-        aggregateAssignments = setting(SettingKey.AGGREGATE_ASSIGNMENTS)?.toBooleanStrictOrNull() ?: false,
+        aggregateAssignments = setting(SettingKey.AGGREGATE_ASSIGNMENTS)?.toBooleanStrictOrNull() ?: true,
         autoSyncPhyVlab = booleanSetting(SettingKey.AUTO_SYNC_PHYVLAB, true),
         currentWeek = setting(SettingKey.CURRENT_WEEK)?.toIntOrNull()?.coerceIn(0, 56) ?: 0,
         checkUpdate = booleanSetting(SettingKey.CHECK_UPDATE, true),
@@ -385,6 +387,8 @@ class CacheStore(
         showPhyVlabInBottomNav = booleanSetting(SettingKey.SHOW_PHYVLAB_IN_BOTTOM_NAV, true),
         bottomNavigationItems = setting(SettingKey.BOTTOM_NAVIGATION_ITEMS)?.takeUnless { it == "*" }?.split(',')?.filter(String::isNotBlank),
         redesignGuideAcknowledged = booleanSetting(SettingKey.REDESIGN_GUIDE_ACKNOWLEDGED, false),
+        citelGuideAcknowledged = booleanSetting(SettingKey.CITEL_GUIDE_ACKNOWLEDGED, false),
+        assignmentAggregateGuideAcknowledged = booleanSetting(SettingKey.ASSIGNMENT_AGGREGATE_GUIDE_ACKNOWLEDGED, false),
     )
 
     fun savePreferences(preferences: AppPreferences) {
@@ -405,6 +409,8 @@ class CacheStore(
             putSetting(SettingKey.SHOW_PHYVLAB_IN_BOTTOM_NAV, preferences.showPhyVlabInBottomNav.toString())
             putSetting(SettingKey.BOTTOM_NAVIGATION_ITEMS, preferences.bottomNavigationItems?.joinToString(",") ?: "*")
             putSetting(SettingKey.REDESIGN_GUIDE_ACKNOWLEDGED, preferences.redesignGuideAcknowledged.toString())
+            putSetting(SettingKey.CITEL_GUIDE_ACKNOWLEDGED, preferences.citelGuideAcknowledged.toString())
+            putSetting(SettingKey.ASSIGNMENT_AGGREGATE_GUIDE_ACKNOWLEDGED, preferences.assignmentAggregateGuideAcknowledged.toString())
         }
     }
 
@@ -592,6 +598,8 @@ private object SettingKey {
     const val BOTTOM_NAVIGATION_ITEMS = "bottom_navigation_items"
     const val REDESIGN_NAVIGATION_MIGRATED = "redesign_navigation_migrated"
     const val REDESIGN_GUIDE_ACKNOWLEDGED = "redesign_guide_acknowledged"
+    const val CITEL_GUIDE_ACKNOWLEDGED = "citel_guide_acknowledged"
+    const val ASSIGNMENT_AGGREGATE_GUIDE_ACKNOWLEDGED = "assignment_aggregate_guide_acknowledged"
     const val SHOW_PHYVLAB_IN_BOTTOM_NAV = "show_phyvlab_in_bottom_nav"
 }
 

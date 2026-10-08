@@ -60,7 +60,7 @@ internal fun AggregatedAssignmentWorkspace(
         }
         items(visible, key = { it.key }) { item -> AggregatedAssignmentCard(item, now) { onOpen(item) } }
     }
-    if (showFilters) AppleSheet(onDismissRequest = { showFilters = false }, title = "作业筛选", needsFullHeight = true) {
+    if (showFilters) AppleSheet(onDismissRequest = { showFilters = false }, title = "作业筛选", needsFullHeight = true, scrollableBody = true) {
         AggregateAssignmentFilterSheet(assignments, sync.map { it.source }, filters) { next ->
             store?.save(next)
             filters = next
@@ -82,11 +82,14 @@ internal fun AggregatedAssignmentCard(item: AggregatedAssignment, now: Long, onO
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun AggregateAssignmentFilterSheet(assignments: List<AggregatedAssignment>, sources: List<AssignmentSource>,
+internal fun ColumnScope.AggregateAssignmentFilterSheet(assignments: List<AggregatedAssignment>, sources: List<AssignmentSource>,
     filters: AggregateAssignmentFilters, onChange: (AggregateAssignmentFilters) -> Unit) {
     val scroll = rememberScrollState()
-    Column(Modifier.fillMaxWidth().verticalScroll(scroll).desktopTouchScroll(scroll).padding(horizontal = 20.dp, vertical = 8.dp)
-        .padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+    Column(
+        Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).desktopTouchScroll(scroll)
+            .sheetScrollContentPadding(),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
         Text("筛选与排序", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         sources.forEach { source ->
             val courses = assignments.filter { it.source == source }.distinctBy { it.courseId }

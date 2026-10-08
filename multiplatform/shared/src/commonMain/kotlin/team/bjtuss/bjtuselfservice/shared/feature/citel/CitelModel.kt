@@ -109,6 +109,23 @@ class CitelModel(
         return !state.value.failed && state.value.configured
     }
 
+    suspend fun clearConfiguration() {
+        initialize()
+        mutex.withLock {
+            runCatching { vault?.clear() }
+            credentials = null
+            cache.putMetadata(scope, "citel.username", "")
+            cache.putMetadata(scope, "citel.remember", "false")
+            mutableState.value = mutableState.value.copy(
+                username = "",
+                remember = false,
+                configured = false,
+                failed = false,
+                message = "已清除配置",
+            )
+        }
+    }
+
     suspend fun configure(username: String, password: String, remember: Boolean, enabled: Boolean) {
         initialize()
         val saved = mutex.withLock {

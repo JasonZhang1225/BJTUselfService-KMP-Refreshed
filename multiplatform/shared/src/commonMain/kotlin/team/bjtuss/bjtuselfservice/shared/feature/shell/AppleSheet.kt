@@ -5,8 +5,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
@@ -132,7 +134,11 @@ fun AppleSheet(
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
         dragHandle = { BottomSheetDefaults.DragHandle() },
         content = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (needsFullHeight) Modifier.fillMaxHeight() else Modifier),
+            ) {
                 if (title != null || confirmLabel != null || todayLabel != null ||
                     dismissLabel != null || showDismissButton
                 ) {
@@ -170,10 +176,22 @@ fun AppleSheet(
                         }
                     }
                 }
-                Column(modifier = Modifier.fillMaxWidth(), content = content)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(if (needsFullHeight) Modifier.weight(1f) else Modifier),
+                    content = content,
+                )
             }
         },
     )
+}
+
+/** Bottom inset lives in the scrolling content so a long sheet does not leave a blank home-indicator strip. */
+@Composable
+internal fun Modifier.sheetScrollContentPadding(): Modifier {
+    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    return padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 16.dp + bottomInset)
 }
 
 /** iOS uses the host-owned system sheet; other platforms keep a Material dialog. */

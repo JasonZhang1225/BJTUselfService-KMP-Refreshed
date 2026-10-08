@@ -47,7 +47,15 @@ fun PhysicsLabSettings(model: PhysicsLabModel, modifier: Modifier = Modifier, sh
                     if (success) onAccountSaved()
                 }
             }, message = if (state.failed) state.message else if (saved) "账号已保存" else null,
-            failed = state.failed, modifier = modifier, websiteUrl = "$PHYSICS_LAB_ORIGIN/")
+            failed = state.failed, modifier = modifier, websiteUrl = "$PHYSICS_LAB_ORIGIN/",
+            onClear = {
+                scope.launch {
+                    model.clearConfiguration()
+                    username = ""
+                    password = ""
+                    saved = false
+                }
+            })
         return
     }
     PhysicsLabSettingsForm(

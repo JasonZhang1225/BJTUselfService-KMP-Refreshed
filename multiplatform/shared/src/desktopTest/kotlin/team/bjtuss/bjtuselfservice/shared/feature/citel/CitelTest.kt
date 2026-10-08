@@ -50,9 +50,15 @@ class CitelTest {
                     return emptyList()
                 }
             }
-            val model = CitelModel("fixture", cache, MemoryVault(), remote)
+            val vault = MemoryVault()
+            val model = CitelModel("fixture", cache, vault, remote)
             assertTrue(model.saveAccountAndSync("fixture", "fixture"))
             assertFalse(model.state.value.enabled)
+            model.clearConfiguration()
+            assertFalse(model.state.value.configured)
+            assertEquals("", model.state.value.username)
+            assertNull(vault.value)
+            assertTrue(model.saveAccountAndSync("fixture", "fixture"))
             fail = true
             assertFalse(model.saveAccountAndSync("fixture", ""))
             assertTrue(model.state.value.configured)

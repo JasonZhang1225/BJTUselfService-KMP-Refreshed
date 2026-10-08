@@ -86,6 +86,27 @@ class CacheStoreTest {
     }
 
     @Test
+    fun missingAggregateSettingDefaultsOnAndGuidesStayOffUntilAcknowledged() {
+        val store = inMemoryStore()
+        try {
+            assertTrue(store.preferences().aggregateAssignments)
+            assertFalse(store.preferences().citelGuideAcknowledged)
+            assertFalse(store.preferences().assignmentAggregateGuideAcknowledged)
+            store.savePreferences(AppPreferences(aggregateAssignments = false))
+            assertFalse(store.preferences().aggregateAssignments)
+            store.savePreferences(
+                store.preferences().copy(
+                    citelGuideAcknowledged = true,
+                    assignmentAggregateGuideAcknowledged = true,
+                ),
+            )
+            assertTrue(store.preferences().citelGuideAcknowledged)
+            assertTrue(store.preferences().assignmentAggregateGuideAcknowledged)
+            assertFalse(store.preferences().aggregateAssignments)
+        } finally { store.close() }
+    }
+
+    @Test
     fun navigationSelectionPreservesExplicitEmptyAndCanReturnToDefaults() {
         val store = inMemoryStore()
         try {

@@ -103,6 +103,20 @@ class PhysicsLabModel(
         return !state.value.failed && state.value.configured
     }
 
+    suspend fun clearConfiguration() {
+        initialize()
+        mutex.withLock {
+            runCatching { vault?.clear() }
+            cache.putMetadata(scope, "physicslab.configured", "false")
+            mutableState.value = mutableState.value.copy(
+                username = "",
+                configured = false,
+                failed = false,
+                message = "已清除配置",
+            )
+        }
+    }
+
     private suspend fun refresh(includeDisabled: Boolean) {
         initialize()
         mutex.withLock {

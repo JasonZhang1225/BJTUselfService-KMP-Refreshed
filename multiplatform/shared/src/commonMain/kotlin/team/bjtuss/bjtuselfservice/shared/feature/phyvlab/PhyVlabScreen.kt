@@ -258,7 +258,7 @@ fun PhyVlabWorkspace(
         }
     }
 
-    if (showFilters) AppleSheet(onDismissRequest = { showFilters = false }, title = "作业筛选", needsFullHeight = true) {
+    if (showFilters) AppleSheet(onDismissRequest = { showFilters = false }, title = "作业筛选", needsFullHeight = true, scrollableBody = true) {
         AssignmentFilterSheet(state.courses.map { it.id to it.name }, filters, model::updateFilters)
     }
 

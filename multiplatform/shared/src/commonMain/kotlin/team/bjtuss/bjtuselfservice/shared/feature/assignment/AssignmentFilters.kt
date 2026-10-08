@@ -14,6 +14,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
+import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetScrollContentPadding
 
 /** Only preferences are persisted; visible tasks are recomputed from the current snapshot and time. */
 @Serializable
@@ -37,10 +38,13 @@ class AssignmentFilterStore(private val cache: CacheStore, private val account: 
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun AssignmentFilterSheet(courses: List<Pair<Int, String>>, filters: AssignmentFilters, onChange: (AssignmentFilters) -> Unit) {
+internal fun ColumnScope.AssignmentFilterSheet(courses: List<Pair<Int, String>>, filters: AssignmentFilters, onChange: (AssignmentFilters) -> Unit) {
     val scroll = rememberScrollState()
-    Column(Modifier.fillMaxWidth().verticalScroll(scroll).desktopTouchScroll(scroll)
-        .padding(horizontal = 20.dp, vertical = 8.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+    Column(
+        Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).desktopTouchScroll(scroll)
+            .sheetScrollContentPadding(),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
         Text("筛选与排序", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("课程", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)

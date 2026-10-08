@@ -78,7 +78,7 @@ fun CitelWorkspace(model: CitelModel, holdNetwork: Boolean, onOpen: (String) -> 
             CitelDetailWorkspace(model, fileGateway, onOpen, holdNetwork)
         }
     }
-    if (showFilters) AppleSheet(onDismissRequest = { showFilters = false }, title = "作业筛选", needsFullHeight = true) {
+    if (showFilters) AppleSheet(onDismissRequest = { showFilters = false }, title = "作业筛选", needsFullHeight = true, scrollableBody = true) {
         AssignmentFilterSheet(state.tasks.distinctBy { it.courseId }.map { it.courseId to it.courseName }, filters, model::updateFilters)
     }
 

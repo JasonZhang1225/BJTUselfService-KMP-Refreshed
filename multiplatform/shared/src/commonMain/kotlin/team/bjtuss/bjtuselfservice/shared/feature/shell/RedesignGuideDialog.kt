@@ -9,29 +9,82 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.delay
+
+private const val GUIDE_WAIT_SECONDS = 3
 
 @Composable
-internal fun RedesignGuideDialog(saveFailed: Boolean, onConfirm: () -> Unit) {
+internal fun TimedGuideDialog(
+    title: String,
+    body: String,
+    saveFailed: Boolean,
+    onConfirm: () -> Unit,
+) {
+    var remaining by remember { mutableIntStateOf(GUIDE_WAIT_SECONDS) }
+    LaunchedEffect(title) {
+        remaining = GUIDE_WAIT_SECONDS
+        while (remaining > 0) {
+            delay(1_000)
+            remaining -= 1
+        }
+    }
     AlertDialog(
         onDismissRequest = {},
         properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-        title = { Text("新版使用提醒") },
+        title = { Text(title) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("本次改版已将底栏调整为“首页”和“应用”。其他功能可以从“应用”进入。")
-                Text("你可以在“应用 → 设置 → 底栏显示”中添加常用页面，并拖动调整顺序。之后更新版本会保留你的底栏设置。")
-                Text("新增物理实验功能。请在“应用 → 设置 → 功能开关”中启用“物理实验”，再从“应用”进入，也可以将它添加到底栏。")
+                Text(body)
                 if (saveFailed) {
                     Text("确认保存失败，请重试。", color = MaterialTheme.colorScheme.error)
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("确认") } },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = remaining == 0) {
+                Text(if (remaining > 0) "确认（$remaining）" else "确认")
+            }
+        },
+    )
+}
+
+@Composable
+internal fun RedesignGuideDialog(saveFailed: Boolean, onConfirm: () -> Unit) {
+    TimedGuideDialog(
+        title = "新版导航",
+        body = "底栏改为「首页」和「应用」。常用页请到「应用 → 设置 → 底栏显示」添加。",
+        saveFailed = saveFailed,
+        onConfirm = onConfirm,
+    )
+}
+
+@Composable
+internal fun CitelGuideDialog(saveFailed: Boolean, onConfirm: () -> Unit) {
+    TimedGuideDialog(
+        title = "新增 CITEL",
+        body = "CITEL 作业已接入。请到「应用 → 设置」配置账号后再使用。",
+        saveFailed = saveFailed,
+        onConfirm = onConfirm,
+    )
+}
+
+@Composable
+internal fun AssignmentAggregateGuideDialog(saveFailed: Boolean, onConfirm: () -> Unit) {
+    TimedGuideDialog(
+        title = "作业已合并",
+        body = "课程平台、物理在线和 CITEL 默认合并为「作业」。可在设置中关闭。",
+        saveFailed = saveFailed,
+        onConfirm = onConfirm,
     )
 }

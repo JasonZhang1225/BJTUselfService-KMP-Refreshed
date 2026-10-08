@@ -27,6 +27,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -116,6 +117,7 @@ import team.bjtuss.bjtuselfservice.shared.accessibleAlpha
 import team.bjtuss.bjtuselfservice.shared.data.grade.formatGradeDetailForDisplay
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
+import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetScrollContentPadding
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
 import team.bjtuss.bjtuselfservice.shared.usesLegacySmartTransportFor
@@ -328,6 +330,7 @@ internal fun GradeWorkspace(
             onDismissRequest = { showFilterSheet = false },
             title = "筛选与计算",
             needsFullHeight = true,
+            scrollableBody = true,
         ) {
             GradeFilterSheet(
                 state = state,
@@ -467,7 +470,7 @@ private fun RankBarsIcon(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun GradeFilterSheet(
+private fun ColumnScope.GradeFilterSheet(
     state: GradeUiState,
     model: GradeScreenModel,
     onSortOrderSelected: (GradeSortOrder) -> Unit,
@@ -479,11 +482,11 @@ private fun GradeFilterSheet(
 
     Column(
         modifier = Modifier
+            .weight(1f)
             .fillMaxWidth()
             .verticalScroll(filterScrollState)
             .desktopTouchScroll(filterScrollState)
-            .padding(horizontal = 20.dp, vertical = 8.dp)
-            .padding(bottom = 16.dp),
+            .sheetScrollContentPadding(),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         // —— 学期：小胶囊，默认全选 ——

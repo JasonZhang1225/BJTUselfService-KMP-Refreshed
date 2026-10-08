@@ -1,28 +1,28 @@
 # BJTUselfService KMP 实时工作记忆
 
 > 最后更新：2026-10-08。
-> 当前阶段：本机 `MacPWDFix` 已并入 `codex/CITEL`；Mac 桌面端秘密仍是一条钥匙串。
-> 当前分支：`codex/CITEL`，跟踪 `mine/codex/CITEL`。MacPWDFix 合并尚未推送。
+> 当前阶段：CITEL 线补登录转圈、作业聚合默认开、引导弹窗、独立账号清除与保存后自动启用。
+> 当前分支：`codex/CITEL`，跟踪 `mine/codex/CITEL`，本地领先（含 MacPWDFix 合并与本轮未提交改动）。
 > 应用版本仍为 1.8.2-KMP / Build 23。
 
 ## 已完成
 
-- 远端拉到 `mine/codex/CITEL`（`0f07b75`），本地检出 `codex/CITEL`。
-- 将本机 `MacPWDFix`（`d3f0301`）合并进 CITEL；冲突只在 `DesktopAccountSecurityStore.kt`。
-- 登录、缓存密钥、物理实验、CITEL 账号都进同一袋子 `team.bjtuss.bjtuselfservice.kmp.secrets`，键为 `credentials`、`cache-key`、`physicslab:<学号>`、`citel:<学号>`。
-- 旧独立条目首次成功读取后迁入袋子并删除；登出只删登录键，CITEL/实验账号和缓存密钥保留。
-- `:shared:desktopTest --tests team.bjtuss.bjtuselfservice.shared.security.*` 通过。未推送，未做覆盖安装验收。
+- MacPWDFix 已并入本地 `codex/CITEL`；CITEL 账号也进同一钥匙串袋子。
+- iOS 登录过程右上角在 `busy` 时就转圈（静默登录 `canRefresh=false` 也会画 spinner）。
+- 新安装作业聚合默认打开；CITEL、作业聚合各一次引导，未看过 Redesign 的也强制看 3 秒。
+- 物理实验 / CITEL 账号页保存按钮下增加红色「清除配置信息」；保存同步成功返回后自动打开对应功能开关。
+- 作业筛选变长后 iOS 底部白条：筛选 sheet 改为可滚内容自己吃 Home Indicator，Android 全高 sheet 同样处理。
+- 相关 desktop 测试与 iOS simulator Kotlin 编译已通过。未推送。
 
 ## 当前注意事项
 
-- 从分条旧包覆盖到袋子包：密码不会丢。第一次允许钥匙串后会搬家；点不允许则这次读不到，旧条通常还在。
-- 第一次覆盖可能按尚未迁移的旧条各弹一次（登录、缓存、实验、CITEL 最多 4 次）；再升级应只弹 1 次。
-- 迁成功后再装回不含袋子的旧包：旧版找不到分条，需重新保存密码。
-- iOS / Android / Windows 存储未改。
-- Mac DMG 仍为本地 ad-hoc 签名。未推送到 `mine/codex/CITEL`。
+- 引导只在首页宿主、登录完成之后弹出，一次一个。
+- 已保存过 `aggregate_assignments=false` 的账号不会被改回默认开。
+- 保存成功后自动打开的是设置里的功能开关；聚合开着时不会再单独露出 CITEL/作业底栏项。
+- iOS 模拟器需重新编译安装后才能看到本轮界面。未做覆盖安装钥匙串验收。
 
 ## 接下来
 
-1. 用户确认是否把合并后的 `codex/CITEL` 推到 `mine`。
-2. 覆盖安装验收：已保存登录/实验/CITEL 时，第一次允许搬家，第二次应只输一次钥匙串密码。
+1. 模拟器重装后看：登录转圈、三条引导、保存后开关、清除配置、作业筛选底部不再露白条。
+2. 用户确认是否把 `codex/CITEL` 推到 `mine`。
 3. 需要并进 main 或发布时再确认范围。

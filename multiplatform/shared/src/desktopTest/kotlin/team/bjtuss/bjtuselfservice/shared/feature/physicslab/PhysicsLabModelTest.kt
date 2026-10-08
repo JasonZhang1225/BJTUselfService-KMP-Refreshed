@@ -18,6 +18,11 @@ class PhysicsLabModelTest {
             val model = PhysicsLabModel("fixture-save", cache, MemoryVault(), PhysicsLabRemote(transport))
             assertTrue(model.saveAccountAndSync("fixture", "fixture"))
             assertFalse(model.state.value.enabled)
+            model.clearConfiguration()
+            assertFalse(model.state.value.configured)
+            assertEquals("", model.state.value.username)
+            assertEquals("", model.savedPassword())
+            assertTrue(model.saveAccountAndSync("fixture", "fixture"))
             transport.fail = true
             assertFalse(model.saveAccountAndSync("fixture", ""))
             assertTrue(model.state.value.configured)

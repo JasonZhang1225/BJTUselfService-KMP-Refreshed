@@ -11,7 +11,7 @@ import kotlin.test.assertTrue
 
 class SettingsScreenModelTest {
     @Test fun citelSwitchControlsItsEntryAndKeepsOtherFeatureSwitches() {
-        var stored = AppPreferences(physicsLabEnabled = true, citelEnabled = true, bottomNavigationItems = listOf("CITEL"))
+        var stored = AppPreferences(physicsLabEnabled = true, citelEnabled = true, bottomNavigationItems = listOf("CITEL"), aggregateAssignments = false)
         val model = model(initialPreferences = stored, persistPreferences = { stored = it; true })
         model.setCitelEnabled(false)
         assertFalse(stored.isCitelEnabled)
@@ -40,6 +40,10 @@ class SettingsScreenModelTest {
         assertEquals(listOf("MAILBOX", "EXAMS"), stored.bottomNavigationItems)
         model.setDynamicColor(false)
         assertTrue(stored.redesignGuideAcknowledged)
+        model.acknowledgeCitelGuide()
+        model.acknowledgeAssignmentAggregateGuide()
+        assertTrue(stored.citelGuideAcknowledged)
+        assertTrue(stored.assignmentAggregateGuideAcknowledged)
     }
 
     private fun model(
@@ -96,6 +100,9 @@ class SettingsScreenModelTest {
         assertTrue(preferences.autoSyncPhyVlab)
         assertTrue(preferences.showPhyVlabInBottomNav)
         assertTrue(preferences.isPhyVlabEnabled)
+        assertTrue(preferences.aggregateAssignments)
+        assertFalse(preferences.citelGuideAcknowledged)
+        assertFalse(preferences.assignmentAggregateGuideAcknowledged)
     }
 
     @Test
@@ -362,7 +369,7 @@ class SettingsScreenModelTest {
 
     @Test
     fun bottomNavigationSelectionIsLimitedAndDoesNotDisableUnpinnedPhysics() {
-        val model = model()
+        val model = model(initialPreferences = AppPreferences(aggregateAssignments = false))
         model.setBottomNavigationItem("MAILBOX", true)
         assertEquals(null, model.state.value.preferences.bottomNavigationItems)
         model.setBottomNavigationItem("SCHEDULE", false)
@@ -377,8 +384,8 @@ class SettingsScreenModelTest {
     }
     @Test
     fun reorderingPersistsOnlySelectedItemsAndKeepsBounds() {
-        var stored = AppPreferences()
-        val model = model(persistPreferences = { stored = it; true })
+        var stored = AppPreferences(aggregateAssignments = false)
+        val model = model(initialPreferences = stored, persistPreferences = { stored = it; true })
         assertTrue(model.moveBottomNavigationItem("GRADES", -1))
         assertEquals(listOf("GRADES", "SCHEDULE", "HOMEWORK", "PHYVLAB"), stored.bottomNavigationItems)
         assertFalse(model.moveBottomNavigationItem("GRADES", -1))
@@ -392,8 +399,8 @@ class SettingsScreenModelTest {
 
     @Test
     fun dragOrderAndMembershipSurviveReopeningSettings() {
-        var stored = AppPreferences()
-        val first = model(persistPreferences = { stored = it; true })
+        var stored = AppPreferences(aggregateAssignments = false)
+        val first = model(initialPreferences = stored, persistPreferences = { stored = it; true })
         first.setBottomNavigationItem("SCHEDULE", false)
         first.setBottomNavigationItem("MAILBOX", true)
         assertTrue(first.setBottomNavigationOrder(listOf("MAILBOX", "PHYVLAB", "GRADES", "HOMEWORK")))
@@ -404,7 +411,7 @@ class SettingsScreenModelTest {
     @Test
     fun dragOrderRejectsChangedMembershipAndRollsBackFailedSave() {
         var saves = 0
-        val model = model(persistPreferences = { saves++; false })
+        val model = model(initialPreferences = AppPreferences(aggregateAssignments = false), persistPreferences = { saves++; false })
         assertFalse(model.setBottomNavigationOrder(listOf("HOME", "SCHEDULE", "GRADES", "HOMEWORK")))
         assertFalse(model.setBottomNavigationOrder(listOf("SCHEDULE", "GRADES", "HOMEWORK", "HOMEWORK", "PHYVLAB")))
         assertEquals(0, saves)
