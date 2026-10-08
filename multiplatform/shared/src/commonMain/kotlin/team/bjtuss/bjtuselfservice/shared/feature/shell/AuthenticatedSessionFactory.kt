@@ -339,6 +339,7 @@ internal fun rememberAuthenticatedSession(
             phyVlabModel = phyVlabModel,
             physicsLabModel = physicsLabModel,
             citelModel = citelModel,
+            aggregateFilterStore = team.bjtuss.bjtuselfservice.shared.feature.assignment.AggregateAssignmentFilterStore(cacheStore, profile.studentId),
             homeModel = homeModel,
             homeChangeFeed = homeChangeFeed,
             homeworkFileGateway = homeworkFileGateway,

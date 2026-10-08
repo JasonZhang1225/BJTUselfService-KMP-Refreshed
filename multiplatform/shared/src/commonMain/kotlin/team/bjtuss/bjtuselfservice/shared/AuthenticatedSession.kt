@@ -62,6 +62,7 @@ class AuthenticatedSession(
     val probeSession: (suspend () -> Boolean)? = null,
     val physicsLabModel: team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabModel? = null,
     val citelModel: team.bjtuss.bjtuselfservice.shared.feature.citel.CitelModel? = null,
+    val aggregateFilterStore: team.bjtuss.bjtuselfservice.shared.feature.assignment.AggregateAssignmentFilterStore? = null,
 ) {
     private val appResumeGenerationState = MutableStateFlow(0L)
     private val appForegroundGenerationState = MutableStateFlow(0L)
@@ -87,6 +88,7 @@ class AuthenticatedSession(
      *
      * 全出血宿主里 Compose 的 `WindowInsets.navigationBars` 可能是 0。
      * 没有底栏的二级页使用这份安全区；一级页使用完整底栏 frame，不重复相加。
+     * Android 打开新 Activity 前保存当前窗口已测得的导航条边距，避免首帧为零后课表收缩。
      */
     var systemBottomInsetDp: Float by mutableStateOf(0f)
 

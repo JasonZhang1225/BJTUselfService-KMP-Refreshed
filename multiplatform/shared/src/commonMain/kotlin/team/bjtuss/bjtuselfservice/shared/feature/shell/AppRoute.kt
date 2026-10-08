@@ -194,7 +194,8 @@ internal enum class AppSection(
     GRADES("成绩"),
     SCHEDULE("课程表"),
     EXAMS("考试安排"),
-    HOMEWORK("作业"),
+    HOMEWORK("课程平台作业"),
+    ASSIGNMENTS("作业"),
     COURSEWARE("课件下载"),
     CLASSROOM_OCCUPANCY("教室查询"),
     CLASSROOMS("教室人数估计"),
@@ -218,24 +219,31 @@ internal fun bottomNavSections(showPhyVlab: Boolean): List<AppSection> = buildLi
     add(AppSection.MORE)
 }
 
-internal fun bottomNavigationCandidates(showPhyVlab: Boolean, showPhysicsLab: Boolean = false, showCitel: Boolean = false): List<AppSection> =
+internal fun bottomNavigationCandidates(showPhyVlab: Boolean, showPhysicsLab: Boolean = false, showCitel: Boolean = false, aggregate: Boolean = false): List<AppSection> =
     AppSection.entries.filter {
         it !in setOf(AppSection.HOME, AppSection.MORE, AppSection.CLASSROOMS) &&
             (showPhyVlab || it != AppSection.PHYVLAB) &&
             (showPhysicsLab || it != AppSection.PHYSICS_LAB) &&
-            (showCitel || it != AppSection.CITEL)
+            (showCitel || it != AppSection.CITEL) &&
+            (aggregate || it != AppSection.ASSIGNMENTS) &&
+            (!aggregate || it !in setOf(AppSection.HOMEWORK, AppSection.PHYVLAB, AppSection.CITEL))
     }
 
 internal fun bottomNavSections(preferences: team.bjtuss.bjtuselfservice.shared.cache.AppPreferences): List<AppSection> {
-    val candidates = bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled, preferences.isCitelEnabled)
-    val selected = preferences.bottomNavigationItems?.mapNotNull { id -> candidates.firstOrNull { it.name == id } }
+    val candidates = bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled, preferences.isCitelEnabled, preferences.aggregateAssignments)
+    fun mapped(id: String): String = when {
+        preferences.aggregateAssignments && id in setOf("HOMEWORK", "PHYVLAB", "CITEL") -> "ASSIGNMENTS"
+        !preferences.aggregateAssignments && id == "ASSIGNMENTS" -> "HOMEWORK"
+        else -> id
+    }
+    val selected = preferences.bottomNavigationItems?.mapNotNull { id -> candidates.firstOrNull { it.name == mapped(id) } }
         ?.distinct()?.take(4)
-        ?: bottomNavSections(preferences.isPhyVlabEnabled).filter { it in candidates }
+        ?: bottomNavSections(preferences.isPhyVlabEnabled).mapNotNull { entry -> candidates.firstOrNull { it.name == mapped(entry.name) } }.distinct()
     return listOf(AppSection.HOME) + selected + AppSection.MORE
 }
 
 internal fun applicationSections(preferences: team.bjtuss.bjtuselfservice.shared.cache.AppPreferences): List<AppSection> =
-    bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled, preferences.isCitelEnabled).filter { it !in bottomNavSections(preferences) }
+    bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled, preferences.isCitelEnabled, preferences.aggregateAssignments).filter { it !in bottomNavSections(preferences) }
 
 /** 在底部导航中归属“更多”高亮的入口。 */
 internal val MoreGroupSections = setOf(
@@ -246,6 +254,7 @@ internal val MoreGroupSections = setOf(
     AppSection.MAILBOX,
     AppSection.PHYSICS_LAB,
     AppSection.CITEL,
+    AppSection.ASSIGNMENTS,
     AppSection.CALENDAR,
     AppSection.REPORT_CARD_DOWNLOAD,
     AppSection.SETTINGS,

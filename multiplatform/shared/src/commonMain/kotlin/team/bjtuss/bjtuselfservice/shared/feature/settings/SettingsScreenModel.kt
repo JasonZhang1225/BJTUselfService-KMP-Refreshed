@@ -58,7 +58,7 @@ class SettingsScreenModel(
 
     fun setBottomNavigationItem(routeId: String, enabled: Boolean) {
         val current = mutableState.value.preferences
-        val candidates = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavigationCandidates(current.isPhyVlabEnabled, current.isPhysicsLabEnabled, current.isCitelEnabled)
+        val candidates = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavigationCandidates(current.isPhyVlabEnabled, current.isPhysicsLabEnabled, current.isCitelEnabled, current.aggregateAssignments)
         if (candidates.none { it.name == routeId }) return
         val selected = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavSections(current)
             .filter { it in candidates }.map { it.name }
@@ -70,7 +70,7 @@ class SettingsScreenModel(
 
     fun setBottomNavigationOrder(routeIds: List<String>): Boolean {
         val current = mutableState.value.preferences
-        val candidates = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavigationCandidates(current.isPhyVlabEnabled, current.isPhysicsLabEnabled, current.isCitelEnabled)
+        val candidates = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavigationCandidates(current.isPhyVlabEnabled, current.isPhysicsLabEnabled, current.isCitelEnabled, current.aggregateAssignments)
         val selected = team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavSections(current)
             .filter { it in candidates }.map { it.name }
         // Reordering cannot add, remove, duplicate, or move the fixed entries.
@@ -101,6 +101,7 @@ class SettingsScreenModel(
     }
 
     fun setPhysicsLabEnabled(enabled: Boolean) = updatePreferences { copy(physicsLabEnabled = enabled) }
+    fun setAggregateAssignments(enabled: Boolean) = updatePreferences { copy(aggregateAssignments = enabled) }
     fun setCitelEnabled(enabled: Boolean) = updatePreferences { copy(citelEnabled = enabled) }
 
     fun setPhyVlabEnabled(enabled: Boolean) = updatePreferences {

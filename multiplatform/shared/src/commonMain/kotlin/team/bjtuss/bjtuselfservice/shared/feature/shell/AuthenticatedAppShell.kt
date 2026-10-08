@@ -146,6 +146,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.exam.ExamScheduleWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkContentSource
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkDetailWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkScreenModel
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.*
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.CoursewareContentSource
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.CoursewareScreenModel
@@ -287,6 +288,22 @@ fun AuthenticatedAppShell(
     )
     val homeState by homeModel.state.collectAsState()
     val phyVlabEnabled = settingsState.preferences.isPhyVlabEnabled
+    val aggregatedAssignments = aggregateAssignments(homeworkState.homework,
+        if (phyVlabEnabled) phyVlabModel.allActivities() else emptyList(),
+        if (citelEnabled) citelState.tasks else emptyList(), homeworkState.timeZone)
+    val assignmentSync = buildList {
+        add(AssignmentSourceSync(AssignmentSource.COURSE_PLATFORM, homeworkState.isLoading || homeworkState.isRefreshing,
+            homeworkState.failure != null, homeworkState.source == HomeworkContentSource.NETWORK,
+            homeworkState.source == HomeworkContentSource.CACHE,
+            if (homeworkState.failure != null) "课程平台作业同步失败，请检查网络或登录状态。" else null))
+        if (phyVlabEnabled) add(AssignmentSourceSync(AssignmentSource.PHYVLAB, phyVlabState.isLoading,
+            phyVlabState.failure != null || phyVlabState.casLoginRequired, phyVlabState.contentSource == PhyVlabContentSource.NETWORK,
+            phyVlabState.contentSource == PhyVlabContentSource.CACHE,
+            phyVlabState.failureDetail ?: if (phyVlabState.failure != null || phyVlabState.casLoginRequired) "请检查校园网或重新登录物理在线。" else null))
+        if (citelEnabled) add(AssignmentSourceSync(AssignmentSource.CITEL, citelState.refreshing, citelState.failed,
+            citelState.lastSync != null && !citelState.fromCache, citelState.fromCache, citelState.message))
+    }
+    var aggregateSyncDialogVisible by remember { mutableStateOf(false) }
     val compactBottomNavSections = remember(settingsState.preferences) {
         bottomNavSections(settingsState.preferences)
     }
@@ -452,7 +469,11 @@ fun AuthenticatedAppShell(
         scope.launch { mailboxModel.startCompose() }
     }
     fun navigateToSection(requested: AppSection) {
-        val target = if (requested == AppSection.CLASSROOMS) AppSection.CLASSROOM_OCCUPANCY else requested
+        val target = when {
+            requested == AppSection.CLASSROOMS -> AppSection.CLASSROOM_OCCUPANCY
+            settingsState.preferences.aggregateAssignments && requested in setOf(AppSection.HOMEWORK, AppSection.PHYVLAB, AppSection.CITEL) -> AppSection.ASSIGNMENTS
+            else -> requested
+        }
         if (target == AppSection.PHYVLAB && !phyVlabEnabled) return
         if (target == AppSection.PHYSICS_LAB && !physicsLabEnabled) return
         if (target == AppSection.CITEL && !citelEnabled) return
@@ -487,6 +508,15 @@ fun AuthenticatedAppShell(
                     backStack.add(target)
                 }
             }
+        }
+    }
+    suspend fun refreshAssignmentSource(source: AssignmentSource) {
+        when (source) {
+            AssignmentSource.COURSE_PLATFORM -> SessionRefreshCoordinator(reauthenticate = reauthenticateSession,
+                probeSession = session.probeSession, onRecoveryStateChanged = { sessionRecoveryInProgress = it })
+                .run(homeworkModel::refresh, { homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED })
+            AssignmentSource.PHYVLAB -> if (phyVlabEnabled) phyVlabModel.refresh()
+            AssignmentSource.CITEL -> if (citelEnabled) session.citelModel?.refresh()
         }
     }
     val refresh: () -> Unit = {
@@ -619,6 +649,7 @@ fun AuthenticatedAppShell(
                 AppSection.PHYVLAB -> if (phyVlabEnabled) phyVlabModel.refresh()
                 AppSection.PHYSICS_LAB -> if (physicsLabEnabled) session.physicsLabModel?.refresh()
                 AppSection.CITEL -> if (currentRoute == CitelDetailRoute) citelState.selectedTask?.let { session.citelModel?.selectTask(it) } else if (currentRoute != CitelSettingsRoute && citelEnabled) session.citelModel?.refresh()
+                AppSection.ASSIGNMENTS -> coroutineScope { assignmentSync.forEach { status -> launch { refreshAssignmentSource(status.source) } } }
                 AppSection.CALENDAR -> Unit
                 AppSection.REPORT_CARD_DOWNLOAD -> Unit
                 AppSection.SETTINGS -> Unit
@@ -1177,7 +1208,7 @@ fun AuthenticatedAppShell(
                         isRefreshing = isRefreshing || sessionRecoveryInProgress,
                         isLoggingIn = entryLoggingIn,
                         idleStatusText = idleStatusText,
-                        statusAsText = title == AppSection.CITEL.title,
+                        statusAsText = title == AppSection.CITEL.title || title == AppSection.ASSIGNMENTS.title,
                         dense = denseTopBar,
                         action = composeAction.takeUnless { declarativeActionLabel == "今" },
                         leadingAction = composeAction.takeIf { declarativeActionLabel == "今" && platform.family == PlatformFamily.IOS },
@@ -1459,6 +1490,41 @@ fun AuthenticatedAppShell(
                     model = examScheduleModel,
                     modifier = Modifier.fillMaxSize(),
                 )
+            }
+            AppSection.ASSIGNMENTS -> DestinationPage(
+                title = "作业", expanded = expanded, refreshable = true,
+                refreshAction = { aggregateSyncDialogVisible = true; refresh() },
+                isRefreshing = assignmentSync.any { it.busy }, idleStatusText = aggregateAssignmentSyncStatus(assignmentSync),
+                onStatusClick = { aggregateSyncDialogVisible = true },
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
+                modifier = modifier, scrollUnderTopBar = true,
+            ) {
+                AggregatedAssignmentWorkspace(aggregatedAssignments, assignmentSync, session.aggregateFilterStore,
+                    onInitialize = {
+                        homeworkModel.initialize(refreshFromNetwork = false)
+                        if (phyVlabEnabled) phyVlabModel.initialize(refreshFromNetwork = false)
+                        if (citelEnabled) session.citelModel?.initialize()
+                    }, onOpen = { item ->
+                        val detailRoute = when (item.source) {
+                            AssignmentSource.COURSE_PLATFORM -> {
+                                item.homework?.let { homework ->
+                                    homeworkModel.selectHomework(homework.stableKey())
+                                    scope.launch { homeworkModel.showDetails(homework.stableKey()) }
+                                }
+                                HomeworkDetailRoute
+                            }
+                            AssignmentSource.PHYVLAB -> { item.physical?.let(phyVlabModel::showActivityDetails); PhyVlabDetailRoute }
+                            AssignmentSource.CITEL -> { item.citel?.let { session.citelModel?.showTask(it) }; CitelDetailRoute }
+                        }
+                        val routeId = when (detailRoute) {
+                            HomeworkDetailRoute -> HOMEWORK_DETAIL_ROUTE_ID
+                            PhyVlabDetailRoute -> PHYVLAB_DETAIL_ROUTE_ID
+                            else -> CITEL_DETAIL_ROUTE_ID
+                        }
+                        if (useNativeSecondaryRoutes) onOpenNativeRoute(routeId) else backStack.add(detailRoute)
+                    }, onRefreshSource = { source -> scope.launch { refreshAssignmentSource(source) } },
+                    showSyncDetails = aggregateSyncDialogVisible, onDismissSyncDetails = { aggregateSyncDialogVisible = false },
+                    modifier = Modifier.fillMaxSize())
             }
             AppSection.HOMEWORK -> DestinationPage(
                 title = AppSection.HOMEWORK.title,

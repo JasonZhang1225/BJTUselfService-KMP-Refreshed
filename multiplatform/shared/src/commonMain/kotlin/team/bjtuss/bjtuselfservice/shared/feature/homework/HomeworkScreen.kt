@@ -882,6 +882,7 @@ internal fun HomeworkCard(
     item: Homework,
     selected: Boolean,
     onOpen: (String) -> Unit,
+    source: team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentSource? = null,
 ) {
     val key = item.stableKey()
     ElevatedCard(
@@ -901,7 +902,7 @@ internal fun HomeworkCard(
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCardHeader(
-                item.courseName, item.title, team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkSubmitted(item))
+                item.courseName, item.title, team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkSubmitted(item), source)
             HomeworkCardLine("类型", item.typeLabel())
             HomeworkCardLine("截止", item.endTime.ifBlank { "未提供" })
             HomeworkCardLine("提交人数", "${item.submitCount} / ${item.allCount}")

@@ -26,7 +26,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.*
 
 @Composable
 internal fun BottomNavigationSettings(preferences: AppPreferences, model: SettingsScreenModel) {
-    val candidates = bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled, preferences.isCitelEnabled)
+    val candidates = bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled, preferences.isCitelEnabled, preferences.aggregateAssignments)
     val selected = bottomNavSections(preferences).filter { it in candidates }
     // Preview locally while dragging; save the final order on release.
     var order by remember(selected) { mutableStateOf(selected) }

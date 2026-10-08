@@ -76,6 +76,7 @@ class NativeDetailActivity : ComponentActivity() {
 
     private fun openRoute(routeId: String) {
         if (!isNativeDetailRoute(routeId)) return
+        rememberSystemBottomInset()
         startActivity(intentFor(this, routeId))
     }
 

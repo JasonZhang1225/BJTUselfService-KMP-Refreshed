@@ -266,7 +266,7 @@ internal fun buildHomeSyncItems(
     )
     add(
         homeSyncItem(
-            title = "作业",
+            title = "课程平台作业",
             busy = homeworkBusy,
             failed = homeworkFailed,
             ready = homeworkReady,

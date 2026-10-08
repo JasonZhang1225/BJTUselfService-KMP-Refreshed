@@ -61,10 +61,12 @@ internal fun FeatureSwitchesCard(
     physicsLabConfigured: Boolean, citelConfigured: Boolean,
     onPhyVlabEnabled: (Boolean) -> Unit, onPhysicsLabEnabled: (Boolean) -> Unit, onCitelEnabled: (Boolean) -> Unit,
     onPhysicsLabSettings: () -> Unit, onCitelSettings: () -> Unit,
+    aggregateAssignments: Boolean = false, onAggregateAssignments: (Boolean) -> Unit = {},
 ) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("功能开关", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            FeatureSwitchRow("作业聚合", aggregateAssignments, false, onAggregateAssignments)
             FeatureSwitchRow("启用物理在线", phyVlabEnabled, false, onPhyVlabEnabled)
             FeatureSwitchRow("启用物理实验", physicsLabEnabled, physicsLabConfigured, onPhysicsLabEnabled, onPhysicsLabSettings)
             FeatureSwitchRow("启用 CITEL", citelEnabled, citelConfigured, onCitelEnabled, onCitelSettings)
@@ -164,7 +166,7 @@ fun SettingsWorkspace(
         FeatureSwitchesCard(state.preferences.isPhyVlabEnabled, state.preferences.isPhysicsLabEnabled,
             state.preferences.isCitelEnabled, physicsLabConfigured, citelConfigured,
             model::setPhyVlabEnabled, model::setPhysicsLabEnabled, model::setCitelEnabled,
-            onPhysicsLabSettings, onCitelSettings)
+            onPhysicsLabSettings, onCitelSettings, state.preferences.aggregateAssignments, model::setAggregateAssignments)
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("底栏显示", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

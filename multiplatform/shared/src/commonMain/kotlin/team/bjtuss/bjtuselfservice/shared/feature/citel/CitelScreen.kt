@@ -96,11 +96,11 @@ internal fun filteredCitelTasks(tasks: List<CitelTask>, pendingOnly: Boolean, hi
 }
 
 @Composable
-internal fun CitelTaskCard(task: CitelTask, onOpen: () -> Unit) {
+internal fun CitelTaskCard(task: CitelTask, onOpen: () -> Unit, source: AssignmentSource? = null) {
     ElevatedCard(onClick = onOpen, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            AssignmentCardHeader(task.courseName, task.title, task.submitted)
+            AssignmentCardHeader(task.courseName, task.title, task.submitted, source)
             CitelTaskLine("类型", if (task.programming) "编程作业" else "实验报告")
             task.openTime?.let { CitelTaskLine("开始", citelDateText(it)) }
             task.discountTime?.let { CitelTaskLine("折扣", citelDateText(it) + (task.discount?.let { factor -> " · ×$factor" } ?: "")) }
@@ -165,7 +165,7 @@ fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, on
             else Text("当前作业不允许修改。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         OutlinedButton(onClick = { scope.launch { model.selectTask(task) } }, enabled = !state.submissionBusy) { Text("刷新提交状态") }
-        TextButton(onClick = { onOpen(task.url) }, enabled = !state.submissionBusy) { Text("在 CITEL 网页查看") }
+        FilledTonalButton(onClick = { onOpen(task.url) }, enabled = !state.submissionBusy, modifier = Modifier.fillMaxWidth()) { Text("在网页中打开") }
     }
     LaunchedEffect(state.submissionRevision) { showUpload = false }
     if (showUpload) AppleSheet(onDismissRequest = { if (!state.submissionBusy) showUpload = false },

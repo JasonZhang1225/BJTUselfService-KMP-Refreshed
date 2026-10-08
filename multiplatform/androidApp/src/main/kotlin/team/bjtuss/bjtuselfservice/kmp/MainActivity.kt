@@ -36,6 +36,7 @@ class MainActivity : ComponentActivity() {
                 nativeNavigationEnabled = true,
                 onOpenExternalUrl = ::openExternalUrl,
                 onOpenNativeRoute = { routeId ->
+                    rememberSystemBottomInset()
                     startActivity(NativeDetailActivity.intentFor(this, routeId))
                 },
                 onAuthenticatedSessionChanged = AndroidAuthenticatedSessionRegistry::update,

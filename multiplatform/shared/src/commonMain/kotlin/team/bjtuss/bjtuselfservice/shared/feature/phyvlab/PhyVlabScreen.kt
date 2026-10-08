@@ -473,11 +473,11 @@ internal fun filterPhyVlabActivities(activities: List<PhyVlabActivity>, filters:
 }
 
 @Composable
-internal fun PhyVlabActivityRow(activity: PhyVlabActivity, nowEpochSeconds: Long, onOpen: () -> Unit) {
+internal fun PhyVlabActivityRow(activity: PhyVlabActivity, nowEpochSeconds: Long, onOpen: () -> Unit, source: AssignmentSource? = null) {
     ElevatedCard(onClick = onOpen, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            AssignmentCardHeader(activity.courseName, activity.title, activity.completed)
+            AssignmentCardHeader(activity.courseName, activity.title, activity.completed, source)
             Text("类型 · ${activity.activityType}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             activity.openText?.let { Text("开始 · ${formatPhyVlabDateTime(it)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             activity.dueText?.let { Text("截止 · ${formatPhyVlabDateTime(it)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }

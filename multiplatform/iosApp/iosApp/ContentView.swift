@@ -937,6 +937,7 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate {
         "SCHEDULE": "calendar",
         "GRADES": "list.bullet.rectangle",
         "HOMEWORK": "folder",
+        "ASSIGNMENTS": "folder",
         "PHYVLAB": "atom",
         "CITEL": "curlybraces",
         "PHYSICS_LAB": "flask",
