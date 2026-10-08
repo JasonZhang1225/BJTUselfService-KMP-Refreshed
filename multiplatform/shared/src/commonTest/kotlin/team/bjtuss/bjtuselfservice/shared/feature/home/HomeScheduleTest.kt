@@ -56,4 +56,12 @@ class HomeScheduleTest {
         assertEquals(listOf(ordinary), homeCoursesOnDate(schedule, date))
         assertEquals(listOf(lab), homePhysicsLabsOnDate(schedule, date))
     }
+
+    @Test fun placeSplitsIntoWrappingSegmentsInsteadOfOneCrammedLine() {
+        assertEquals(
+            "SX501 · 思源西楼 · 海淀西校区",
+            wrapFriendlyPlace("海淀西校区,思源西楼,SX501"),
+        )
+        assertEquals("实验楼", wrapFriendlyPlace("实验楼"))
+    }
 }

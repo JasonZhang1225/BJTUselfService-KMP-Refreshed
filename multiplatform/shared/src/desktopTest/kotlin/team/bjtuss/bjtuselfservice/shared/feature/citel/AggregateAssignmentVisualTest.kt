@@ -16,6 +16,7 @@ import team.bjtuss.bjtuselfservice.shared.PlatformAppTheme
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.*
+import team.bjtuss.bjtuselfservice.shared.feature.settings.AssignmentAggregationCard
 import team.bjtuss.bjtuselfservice.shared.feature.settings.FeatureSwitchesCard
 
 class AggregateAssignmentVisualTest {
@@ -43,7 +44,8 @@ class AggregateAssignmentVisualTest {
                                 AggregateAssignmentFilters().withSource(AssignmentSource.PHYVLAB, AggregateCourseFilter(false)), {})
                         }
                         Panel("设置与独立同步状态", Modifier.weight(1f)) {
-                            FeatureSwitchesCard(true, true, true, true, true, {}, {}, {}, {}, {}, true, {})
+                            AssignmentAggregationCard(true, {})
+                            FeatureSwitchesCard(true, true, true, true, true, {}, {}, {}, {}, {})
                             AssignmentSyncDetails(sync, {})
                             FilledTonalButton({}, Modifier.fillMaxWidth()) { Text("在网页中打开") }
                         }

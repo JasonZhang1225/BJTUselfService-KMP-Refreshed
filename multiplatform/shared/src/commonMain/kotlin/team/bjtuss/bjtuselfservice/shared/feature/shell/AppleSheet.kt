@@ -85,7 +85,8 @@ fun AppleSheet(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .then(if (needsFullHeight) Modifier.fillMaxHeight() else Modifier)
+                            // 半屏 detent 也要吃满宿主高度，内部 verticalScroll 才有视口。
+                            .then(if (needsFullHeight || scrollableBody) Modifier.fillMaxHeight() else Modifier)
                             // Scrollable bodies use UIKit's title-bar clearance and
                             // own their bottom inset inside the scrolling content.
                             .padding(top = if (scrollableBody) 0.dp else 44.dp)

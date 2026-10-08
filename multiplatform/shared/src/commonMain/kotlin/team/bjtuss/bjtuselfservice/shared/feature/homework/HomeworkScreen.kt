@@ -66,8 +66,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -533,6 +536,17 @@ private fun HomeworkSummary(
     HomeworkSummaryBanner(state.visibleHomework.size, subtitle, onOpenFilter)
 }
 
+internal fun subtitleWithBoldFilterMarker(text: String): AnnotatedString {
+    val marker = "已筛选"
+    val index = text.lastIndexOf(marker)
+    if (index < 0) return AnnotatedString(text)
+    return buildAnnotatedString {
+        append(text.substring(0, index))
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(marker) }
+        append(text.substring(index + marker.length))
+    }
+}
+
 @Composable
 internal fun HomeworkSummaryBanner(count: Int, subtitle: String, onOpenFilter: (() -> Unit)? = null) {
     // 与成绩/课表 Banner 对齐：摘要 + 右侧筛选 pill；同步态在顶栏右上。
@@ -567,7 +581,7 @@ internal fun HomeworkSummaryBanner(count: Int, subtitle: String, onOpenFilter: (
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    subtitle,
+                    subtitleWithBoldFilterMarker(subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.accessibleAlpha(0.78f),
                 )

@@ -56,17 +56,39 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
 
 @Composable
+internal fun AssignmentAggregationCard(
+    enabled: Boolean,
+    onEnabled: (Boolean) -> Unit,
+) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("作业聚合", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "聚合课程平台、CITEL和物理在线作业",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = enabled, onCheckedChange = onEnabled)
+        }
+    }
+}
+
+@Composable
 internal fun FeatureSwitchesCard(
     phyVlabEnabled: Boolean, physicsLabEnabled: Boolean, citelEnabled: Boolean,
     physicsLabConfigured: Boolean, citelConfigured: Boolean,
     onPhyVlabEnabled: (Boolean) -> Unit, onPhysicsLabEnabled: (Boolean) -> Unit, onCitelEnabled: (Boolean) -> Unit,
     onPhysicsLabSettings: () -> Unit, onCitelSettings: () -> Unit,
-    aggregateAssignments: Boolean = false, onAggregateAssignments: (Boolean) -> Unit = {},
 ) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("功能开关", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            FeatureSwitchRow("作业聚合", aggregateAssignments, false, onAggregateAssignments)
             FeatureSwitchRow("启用物理在线", phyVlabEnabled, false, onPhyVlabEnabled)
             FeatureSwitchRow("启用物理实验", physicsLabEnabled, physicsLabConfigured, onPhysicsLabEnabled, onPhysicsLabSettings)
             FeatureSwitchRow("启用 CITEL", citelEnabled, citelConfigured, onCitelEnabled, onCitelSettings)
@@ -163,10 +185,11 @@ fun SettingsWorkspace(
     ) {
         SettingCard("账户", accountName.ifBlank { "未登录" })
 
+        AssignmentAggregationCard(state.preferences.aggregateAssignments, model::setAggregateAssignments)
         FeatureSwitchesCard(state.preferences.isPhyVlabEnabled, state.preferences.isPhysicsLabEnabled,
             state.preferences.isCitelEnabled, physicsLabConfigured, citelConfigured,
             model::setPhyVlabEnabled, model::setPhysicsLabEnabled, model::setCitelEnabled,
-            onPhysicsLabSettings, onCitelSettings, state.preferences.aggregateAssignments, model::setAggregateAssignments)
+            onPhysicsLabSettings, onCitelSettings)
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("底栏显示", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

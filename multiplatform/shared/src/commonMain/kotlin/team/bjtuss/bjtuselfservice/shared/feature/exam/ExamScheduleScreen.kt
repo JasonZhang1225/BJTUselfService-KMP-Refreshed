@@ -68,6 +68,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
+import team.bjtuss.bjtuselfservice.shared.feature.homework.subtitleWithBoldFilterMarker
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 
@@ -304,7 +305,7 @@ private fun ExamSummary(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    subtitle,
+                    subtitleWithBoldFilterMarker(subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.accessibleAlpha(0.78f),
                 )

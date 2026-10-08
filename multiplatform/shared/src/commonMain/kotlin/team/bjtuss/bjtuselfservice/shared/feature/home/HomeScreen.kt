@@ -3,7 +3,7 @@ package team.bjtuss.bjtuselfservice.shared.feature.home
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
-import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
+import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetScrollContentPadding
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import androidx.compose.animation.AnimatedContent
@@ -18,6 +18,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
@@ -30,11 +31,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -92,7 +94,7 @@ import kotlinx.coroutines.flow.collect
 import kotlin.time.Instant
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.PlatformInfo
-import team.bjtuss.bjtuselfservice.shared.accessibleAlpha
+import team.bjtuss.bjtuselfservice.shared.currentPlatform
 import team.bjtuss.bjtuselfservice.shared.data.home.HomeStatusFailure
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxUnreadSummary
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeKind
@@ -105,6 +107,8 @@ import team.bjtuss.bjtuselfservice.shared.domain.home.agendaWeekMarks
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeAgendaDay
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeDomain
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeRecord
+import team.bjtuss.bjtuselfservice.shared.domain.home.matchExamChange
+import team.bjtuss.bjtuselfservice.shared.domain.home.matchHomeworkChange
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeStatus
 import team.bjtuss.bjtuselfservice.shared.domain.home.buildHomeAgenda
 import team.bjtuss.bjtuselfservice.shared.domain.home.isHomeAgendaDayFullySubmitted
@@ -156,22 +160,43 @@ fun HomeWorkspace(
         if (todayRequest > 0) pageListState.scrollToItem(0)
     }
     var selectedChangeDomain by remember { mutableStateOf<HomeChangeDomain?>(null) }
+    var selectedChangeCourse by remember { mutableStateOf<Course?>(null) }
+    val homeSchedule = LocalHomeSchedule.current
     LaunchedEffect(model, holdNetwork) { if (!holdNetwork) model.initialize() }
     selectedChangeDomain?.let { domain ->
         HomeChangeDialog(
             domain = domain,
             changes = changes.filter { it.domain == domain },
-            isIos = platform.family == PlatformFamily.IOS,
             onDismiss = { selectedChangeDomain = null },
             onMarkRead = {
                 selectedChangeDomain = null
                 onClearChangeDomain(domain)
             },
-            onOpen = {
+            onOpenRecord = { record ->
                 selectedChangeDomain = null
-                onOpenChangeDomain(domain)
+                openHomeChangeRecord(
+                    record = record,
+                    homework = homework,
+                    exams = exams,
+                    phyVlabEvents = phyVlabEvents,
+                    courses = homeSchedule.courses + homeSchedule.supplementalCourses,
+                    onOpenHomeworkDetail = onOpenHomeworkDetail,
+                    onOpenExams = onOpenExams,
+                    onOpenPhyVlab = onOpenPhyVlab,
+                    onOpenCourse = { selectedChangeCourse = it },
+                )
             },
         )
+    }
+    selectedChangeCourse?.let { course ->
+        AppleSheet(onDismissRequest = { selectedChangeCourse = null }, title = "课程详情") {
+            val detailScroll = rememberScrollState()
+            CourseDetailContent(
+                course,
+                Modifier.fillMaxWidth().verticalScroll(detailScroll).desktopTouchScroll(detailScroll)
+                    .padding(horizontal = 24.dp, vertical = 8.dp).padding(bottom = 20.dp),
+            )
+        }
     }
 
     val status = state.status
@@ -198,6 +223,9 @@ fun HomeWorkspace(
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
+            }
+            item(key = "home-now") {
+                HomeNowSection(timeZone = timeZone)
             }
             if (expanded) {
                 item(key = "home-agenda") {
@@ -1499,68 +1527,97 @@ private fun HomeChangeFeedSection(
 private fun HomeChangeDialog(
     domain: HomeChangeDomain,
     changes: List<HomeChangeRecord>,
-    isIos: Boolean,
     onDismiss: () -> Unit,
     onMarkRead: () -> Unit,
-    onOpen: () -> Unit,
+    onOpenRecord: (HomeChangeRecord) -> Unit,
 ) {
+    val isIos = currentPlatform().family == PlatformFamily.IOS
     val changeScrollState = rememberScrollState()
     val visible = changes.filterNot {
-        it.kind == DataChangeKind.MODIFIED && it.beforeDetail == it.afterDetail
+        it.kind == DataChangeKind.MODIFIED && it.beforeDetail == it.afterDetail && it.fields.isEmpty()
     }
-    AppleSheetOrAlert(
+    AppleSheet(
         onDismissRequest = onDismiss,
-        title = "${domain.title}变动",
-        confirmLabel = "前往页面",
-        onConfirm = onOpen,
-        // iOS keeps the native X in the sheet header; the Material fallback
-        // still needs an explicit secondary close action.
+        title = "${domain.title}有更新",
+        confirmLabel = if (isIos) "标记已读" else null,
+        onConfirm = if (isIos) onMarkRead else null,
         dismissLabel = if (isIos) null else "关闭",
-        needsFullHeight = true,
+        needsFullHeight = false,
+        scrollableBody = true,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(if (isIos) Modifier.fillMaxHeight() else Modifier.heightIn(max = 560.dp))
-                .verticalScroll(changeScrollState)
-                .desktopTouchScroll(changeScrollState),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(
-                "同步后发现 ${visible.size} 项变化",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
-            )
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.accessibleAlpha(0.84f),
-                contentColor = MaterialTheme.colorScheme.onSurface,
+        if (isIos) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(changeScrollState)
+                    .desktopTouchScroll(changeScrollState)
+                    .padding(top = 44.dp)
+                    .sheetScrollContentPadding(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Column {
-                    // One inset group reads like an iOS list section. Individual
-                    // floating cards made the same content feel like a desktop
-                    // dashboard inside a sheet.
-                    visible.forEachIndexed { index, change ->
-                        ChangeDetailRow(change)
-                        if (index != visible.lastIndex) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(start = 68.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.accessibleAlpha(0.7f),
-                            )
-                        }
-                    }
+                HomeChangeDialogCards(visible, onOpenRecord)
+            }
+        } else {
+            Column(modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 480.dp)
+                        .verticalScroll(changeScrollState)
+                        .desktopTouchScroll(changeScrollState)
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    HomeChangeDialogCards(visible, onOpenRecord)
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    Button(onClick = onMarkRead) { Text("标记已读") }
                 }
             }
-            TextButton(
-                onClick = onMarkRead,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-            ) {
-                Text("标记已读")
-            }
-            Spacer(Modifier.height(if (isIos) 18.dp else 4.dp))
         }
+    }
+}
+
+@Composable
+private fun HomeChangeDialogCards(
+    visible: List<HomeChangeRecord>,
+    onOpenRecord: (HomeChangeRecord) -> Unit,
+) {
+    if (visible.isEmpty()) {
+        Text("检测到数量变化，点条目可打开详情。")
+    } else {
+        visible.forEach { change ->
+            ChangeDetailCard(change, onClick = { onOpenRecord(change) })
+        }
+    }
+}
+
+private fun openHomeChangeRecord(
+    record: HomeChangeRecord,
+    homework: List<Homework>,
+    exams: List<ExamSchedule>,
+    phyVlabEvents: List<PhyVlabEvent>,
+    courses: List<Course>,
+    onOpenHomeworkDetail: (Homework) -> Unit,
+    onOpenExams: (ExamSchedule) -> Unit,
+    onOpenPhyVlab: (PhyVlabEvent) -> Unit,
+    onOpenCourse: (Course) -> Unit,
+) {
+    when (record.domain) {
+        HomeChangeDomain.HOMEWORK -> matchHomeworkChange(record, homework)?.let(onOpenHomeworkDetail)
+        HomeChangeDomain.EXAMS -> matchExamChange(record, exams)?.let(onOpenExams)
+        HomeChangeDomain.PHYVLAB ->
+            phyVlabEvents.firstOrNull { it.title == record.title }?.let(onOpenPhyVlab)
+        HomeChangeDomain.COURSES ->
+            courses.firstOrNull { it.courseName == record.title }?.let(onOpenCourse)
+        HomeChangeDomain.GRADES -> Unit
     }
 }
 
@@ -1570,82 +1627,154 @@ private fun ChangeDomainRow(
     changes: List<HomeChangeRecord>,
     onSelectDomain: (HomeChangeDomain) -> Unit,
 ) {
+    val scheme = MaterialTheme.colorScheme
     Surface(
         onClick = { onSelectDomain(domain) },
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = scheme.secondaryContainer,
+        contentColor = scheme.onSecondaryContainer,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(domain.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-            Text(
-                changeCountSummary(changes),
-                modifier = Modifier.weight(1f),
-                textAlign = TextAlign.End,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    "${domain.title}：${changeCountSummary(changes)}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "点开条目看详情",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSecondaryContainer.copy(alpha = 0.8f),
+                )
+            }
+            Text("›", style = MaterialTheme.typography.titleLarge, color = scheme.onSecondaryContainer)
         }
     }
 }
 
 @Composable
-private fun ChangeDetailRow(change: HomeChangeRecord) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+private fun ChangeDetailCard(change: HomeChangeRecord, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = scheme.surface,
+        border = BorderStroke(1.dp, scheme.outlineVariant),
     ) {
         Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    change.kind.label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = when (change.kind) {
-                        DataChangeKind.ADDED -> MaterialTheme.colorScheme.primary
-                        DataChangeKind.MODIFIED -> MaterialTheme.colorScheme.tertiary
-                        DataChangeKind.DELETED -> MaterialTheme.colorScheme.error
-                    },
-                    fontWeight = FontWeight.SemiBold,
-                )
+                ChangeKindBadge(change.kind)
                 Text(
                     change.title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
                 )
             }
-            if (change.beforeDetail.isNotBlank()) {
-                Text(
-                    "原：${change.beforeDetail}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (change.afterDetail.isNotBlank()) {
-                Text(
-                    "现：${change.afterDetail}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            change.visibleFields().forEach { field ->
+                ChangeFieldDiffRow(field, change.kind)
             }
         }
+    }
+}
+
+@Composable
+private fun ChangeKindBadge(kind: DataChangeKind) {
+    val scheme = MaterialTheme.colorScheme
+    val (label, container, content) = when (kind) {
+        DataChangeKind.ADDED -> Triple("新增", scheme.primary, scheme.onPrimary)
+        DataChangeKind.MODIFIED -> Triple("变更", scheme.tertiary, scheme.onTertiary)
+        DataChangeKind.DELETED -> Triple("删除", scheme.error, scheme.onError)
+    }
+    Surface(shape = RoundedCornerShape(6.dp), color = container, contentColor = content) {
+        Text(
+            label,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun ChangeFieldDiffRow(field: team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeField, kind: DataChangeKind) {
+    val scheme = MaterialTheme.colorScheme
+    val changed = field.before != field.after
+    val pair = kind == DataChangeKind.MODIFIED
+    val emphasize = when (kind) {
+        DataChangeKind.MODIFIED -> changed
+        DataChangeKind.ADDED, DataChangeKind.DELETED -> true
+    }
+    val background = when {
+        kind == DataChangeKind.ADDED -> scheme.primaryContainer
+        kind == DataChangeKind.DELETED -> scheme.errorContainer
+        emphasize -> scheme.tertiaryContainer
+        else -> Color.Transparent
+    }
+    val valueColor = when {
+        kind == DataChangeKind.ADDED -> scheme.onPrimaryContainer
+        kind == DataChangeKind.DELETED -> scheme.onErrorContainer
+        emphasize -> scheme.onTertiaryContainer
+        else -> scheme.onSurface
+    }
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = background,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                field.label,
+                modifier = Modifier.width(72.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (emphasize) valueColor else scheme.onSurfaceVariant,
+            )
+            Text(
+                fieldValueText(field, kind, pair, changed),
+                modifier = Modifier.weight(1f),
+                style = if (emphasize) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall,
+                fontWeight = if (emphasize && pair) FontWeight.SemiBold else FontWeight.Normal,
+                color = valueColor,
+            )
+        }
+    }
+}
+
+private fun fieldValueText(
+    field: team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeField,
+    kind: DataChangeKind,
+    pair: Boolean,
+    changed: Boolean,
+): String {
+    fun shown(value: String) = value.ifBlank { "未填写" }
+    return when {
+        pair && changed -> "${shown(field.before)}  →  ${shown(field.after)}"
+        kind == DataChangeKind.DELETED -> shown(field.before)
+        else -> shown(field.after)
     }
 }
 
 private val DataChangeKind.label: String
     get() = when (this) {
         DataChangeKind.ADDED -> "新增"
-        DataChangeKind.MODIFIED -> "修改"
+        DataChangeKind.MODIFIED -> "变更"
         DataChangeKind.DELETED -> "删除"
     }
 

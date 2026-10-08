@@ -15,6 +15,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
 import team.bjtuss.bjtuselfservice.shared.domain.grade.Grade
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeDomain
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeFeedSnapshot
+import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeField
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeRecord
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
@@ -100,6 +101,7 @@ fun gradeChangeRecords(before: List<Grade>, after: List<Grade>): List<HomeChange
             title = displayItem.courseName.ifBlank { HomeChangeDomain.GRADES.title },
             beforeDetail = change.before?.let(::gradeChangeDetail).orEmpty(),
             afterDetail = change.after?.let(::gradeChangeDetail).orEmpty(),
+            fields = gradeChangeFields(change.before, change.after),
         )
     }.filterNot { record ->
         record.kind == DataChangeKind.MODIFIED && record.beforeDetail == record.afterDetail
@@ -150,6 +152,26 @@ internal fun gradesSemanticallyEqual(old: Grade, new: Grade): Boolean =
         old.semester == new.semester &&
         gradeComponentScores(old.detail) == gradeComponentScores(new.detail)
 
+internal fun gradeChangeFields(before: Grade?, after: Grade?): List<HomeChangeField> = buildList {
+    add(HomeChangeField("成绩", before?.courseScore.orEmpty(), after?.courseScore.orEmpty()))
+    add(HomeChangeField("学分", before?.courseCredits.orEmpty(), after?.courseCredits.orEmpty()))
+    add(HomeChangeField("教师", before?.courseTeacher.orEmpty(), after?.courseTeacher.orEmpty()))
+    add(HomeChangeField("学期", before?.semester.orEmpty(), after?.semester.orEmpty()))
+    val labels = gradeComponentLabels.filter { label ->
+        gradeComponentScores(before?.detail.orEmpty()).containsKey(label) ||
+            gradeComponentScores(after?.detail.orEmpty()).containsKey(label)
+    }
+    for (label in labels) {
+        add(
+            HomeChangeField(
+                label,
+                gradeComponentScores(before?.detail.orEmpty())[label].orEmpty(),
+                gradeComponentScores(after?.detail.orEmpty())[label].orEmpty(),
+            ),
+        )
+    }
+}
+
 fun courseChangeRecorder(feed: HomeChangeFeedRepository): DataChangeRecorder<Course> =
     changeRecorder(
         feed = feed,
@@ -158,6 +180,13 @@ fun courseChangeRecorder(feed: HomeChangeFeedRepository): DataChangeRecorder<Cou
         equivalent = { old, new -> old.copy(id = 0) == new.copy(id = 0) },
         title = Course::courseName,
         detail = { "${it.courseTeacher} · ${it.courseTime} · ${displayCoursePlace(it.coursePlace)}" },
+        fields = { before, after ->
+            listOf(
+                HomeChangeField("教师", before?.courseTeacher.orEmpty(), after?.courseTeacher.orEmpty()),
+                HomeChangeField("时间", before?.courseTime.orEmpty(), after?.courseTime.orEmpty()),
+                HomeChangeField("地点", before?.let { displayCoursePlace(it.coursePlace) }.orEmpty(), after?.let { displayCoursePlace(it.coursePlace) }.orEmpty()),
+            )
+        },
     )
 
 fun examChangeRecorder(feed: HomeChangeFeedRepository): DataChangeRecorder<ExamSchedule> =
@@ -168,6 +197,13 @@ fun examChangeRecorder(feed: HomeChangeFeedRepository): DataChangeRecorder<ExamS
         equivalent = { old, new -> old.copy(id = 0) == new.copy(id = 0) },
         title = ExamSchedule::courseName,
         detail = { "${it.examType} · ${it.examTimeAndPlace} · ${it.examStatus}" },
+        fields = { before, after ->
+            listOf(
+                HomeChangeField("类型", before?.examType.orEmpty(), after?.examType.orEmpty()),
+                HomeChangeField("时间地点", before?.examTimeAndPlace.orEmpty(), after?.examTimeAndPlace.orEmpty()),
+                HomeChangeField("状态", before?.examStatus.orEmpty(), after?.examStatus.orEmpty()),
+            )
+        },
     )
 
 fun homeworkChangeRecorder(feed: HomeChangeFeedRepository): DataChangeRecorder<Homework> =
@@ -180,6 +216,14 @@ fun homeworkChangeRecorder(feed: HomeChangeFeedRepository): DataChangeRecorder<H
         },
         title = Homework::title,
         detail = { "${it.courseName} · ${it.endTime} · ${it.subStatus}" },
+        fields = { before, after ->
+            listOf(
+                HomeChangeField("课程", before?.courseName.orEmpty(), after?.courseName.orEmpty()),
+                HomeChangeField("分数", homeworkScoreLabel(before?.score), homeworkScoreLabel(after?.score)),
+                HomeChangeField("状态", before?.subStatus.orEmpty(), after?.subStatus.orEmpty()),
+                HomeChangeField("截止时间", before?.endTime.orEmpty(), after?.endTime.orEmpty()),
+            )
+        },
     )
 
 fun phyvlabChangeRecorder(feed: HomeChangeFeedRepository): DataChangeRecorder<PhyVlabActivity> =
@@ -196,7 +240,17 @@ fun phyvlabChangeRecorder(feed: HomeChangeFeedRepository): DataChangeRecorder<Ph
                 append(" · ").append(if (activity.completed) "已完成" else "未完成")
             }
         },
+        fields = { before, after ->
+            listOf(
+                HomeChangeField("课程", before?.courseName.orEmpty(), after?.courseName.orEmpty()),
+                HomeChangeField("截止时间", before?.dueText.orEmpty(), after?.dueText.orEmpty()),
+                HomeChangeField("状态", before?.let { if (it.completed) "已完成" else "未完成" }.orEmpty(), after?.let { if (it.completed) "已完成" else "未完成" }.orEmpty()),
+            )
+        },
     )
+
+private fun homeworkScoreLabel(score: String?): String =
+    score?.trim()?.takeIf { it.isNotEmpty() } ?: "未公布成绩"
 
 private fun <T, K> changeRecorder(
     feed: HomeChangeFeedRepository,
@@ -205,6 +259,7 @@ private fun <T, K> changeRecorder(
     equivalent: (T, T) -> Boolean,
     title: (T) -> String,
     detail: (T) -> String,
+    fields: (T?, T?) -> List<HomeChangeField>,
 ): DataChangeRecorder<T> = DataChangeRecorder { before, after ->
     val records = detectDataChanges(before, after, identity, equivalent).map { change ->
         val displayItem = change.after ?: change.before ?: error("change has no item")
@@ -214,6 +269,7 @@ private fun <T, K> changeRecorder(
             title = title(displayItem).ifBlank { domain.title },
             beforeDetail = change.before?.let(detail).orEmpty(),
             afterDetail = change.after?.let(detail).orEmpty(),
+            fields = fields(change.before, change.after),
         )
     }
         // 二次保险：展示文案完全一致的「修改」不进信息流（避免解析抖动误报）。
@@ -225,7 +281,7 @@ private fun <T, K> changeRecorder(
 }
 
 internal fun encodeHomeChangeFeed(snapshot: HomeChangeFeedSnapshot): String = buildString {
-    writePart("1")
+    writePart("2")
     writePart(snapshot.baselineDomains.joinToString(",", transform = HomeChangeDomain::name))
     writePart(snapshot.records.size.toString())
     snapshot.records.forEach { record ->
@@ -234,24 +290,45 @@ internal fun encodeHomeChangeFeed(snapshot: HomeChangeFeedSnapshot): String = bu
         writePart(record.title)
         writePart(record.beforeDetail)
         writePart(record.afterDetail)
+        writePart(record.fields.size.toString())
+        record.fields.forEach { field ->
+            writePart(field.label)
+            writePart(field.before)
+            writePart(field.after)
+        }
     }
 }
 
 internal fun decodeHomeChangeFeed(encoded: String): HomeChangeFeedSnapshot? = try {
     val reader = LengthPrefixedReader(encoded)
-    if (reader.read() != "1") return null
+    val version = reader.read()
+    if (version != "1" && version != "2") return null
     val baselines = reader.read().takeIf(String::isNotEmpty)?.split(',').orEmpty()
         .map { HomeChangeDomain.valueOf(it) }.toSet()
     val count = reader.read().toInt().takeIf { it in 0..MAX_RECORDS } ?: return null
     val records = buildList {
         repeat(count) {
+            val domain = HomeChangeDomain.valueOf(reader.read())
+            val kind = DataChangeKind.valueOf(reader.read())
+            val title = reader.read()
+            val beforeDetail = reader.read()
+            val afterDetail = reader.read()
+            val fields = if (version == "2") {
+                val fieldCount = reader.read().toInt().takeIf { it in 0..32 } ?: return null
+                List(fieldCount) {
+                    HomeChangeField(reader.read(), reader.read(), reader.read())
+                }
+            } else {
+                emptyList()
+            }
             add(
                 HomeChangeRecord(
-                    domain = HomeChangeDomain.valueOf(reader.read()),
-                    kind = DataChangeKind.valueOf(reader.read()),
-                    title = reader.read(),
-                    beforeDetail = reader.read(),
-                    afterDetail = reader.read(),
+                    domain = domain,
+                    kind = kind,
+                    title = title,
+                    beforeDetail = beforeDetail,
+                    afterDetail = afterDetail,
+                    fields = fields,
                 ),
             )
         }
