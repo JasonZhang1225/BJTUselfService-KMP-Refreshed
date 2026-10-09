@@ -125,7 +125,9 @@ fun main(args: Array<String>) {
                             authenticatedSession.value?.notifyAppBecameActive()
                         }
 
-                        override fun windowLostFocus(event: WindowEvent) = Unit
+                        override fun windowLostFocus(event: WindowEvent) {
+                            authenticatedSession.value?.notifyAppBecameInactive()
+                        }
                     }
                 }
                 DisposableEffect(window, focusListener) {

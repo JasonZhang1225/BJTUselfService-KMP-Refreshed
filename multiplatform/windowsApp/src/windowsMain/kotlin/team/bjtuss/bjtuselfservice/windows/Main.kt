@@ -17,8 +17,10 @@ import com.sun.jna.Native
 import java.awt.Dimension
 import java.awt.Image
 import java.awt.Toolkit
-import java.awt.event.WindowEvent
-import java.awt.event.WindowFocusListener
+import java.awt.AWTEvent
+import java.awt.event.AWTEventListener
+import java.awt.event.MouseEvent
+import javax.swing.SwingUtilities
 import java.io.File
 import javax.imageio.ImageIO
 import kotlinx.coroutines.runBlocking
@@ -83,18 +85,21 @@ fun main(args: Array<String>) {
                         window.iconImages = images
                     }
                 }
-                val focusListener = remember(window) {
-                    object : WindowFocusListener {
-                        override fun windowGainedFocus(event: WindowEvent) {
-                            authenticatedSession.value?.notifyAppBecameActive()
+                // Count completed content clicks only. Focus, mouse movement, wheel
+                // scrolling and closing the native window never request a refresh.
+                val clickListener = remember(window) {
+                    AWTEventListener { event ->
+                        val mouse = event as? MouseEvent
+                        if (mouse?.id == MouseEvent.MOUSE_CLICKED &&
+                            SwingUtilities.getWindowAncestor(mouse.component) === window) {
+                            authenticatedSession.value?.notifyFunctionClicked()
                         }
-
-                        override fun windowLostFocus(event: WindowEvent) = Unit
                     }
                 }
-                DisposableEffect(window, focusListener) {
-                    window.addWindowFocusListener(focusListener)
-                    onDispose { window.removeWindowFocusListener(focusListener) }
+                DisposableEffect(window, clickListener) {
+                    val toolkit = Toolkit.getDefaultToolkit()
+                    toolkit.addAWTEventListener(clickListener, AWTEvent.MOUSE_EVENT_MASK)
+                    onDispose { toolkit.removeAWTEventListener(clickListener) }
                 }
                 val homeworkFileGateway = remember { WindowsHomeworkFileGateway() }
                 App(

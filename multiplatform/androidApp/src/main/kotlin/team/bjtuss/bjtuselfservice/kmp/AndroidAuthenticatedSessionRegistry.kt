@@ -21,7 +21,10 @@ object AndroidAuthenticatedSessionRegistry {
             override fun onActivityStarted(activity: Activity) {
                 if (startedActivities++ == 0) session?.notifyAppBecameActive()
             }
-            override fun onActivityStopped(activity: Activity) { startedActivities = (startedActivities - 1).coerceAtLeast(0) }
+            override fun onActivityStopped(activity: Activity) {
+                startedActivities = (startedActivities - 1).coerceAtLeast(0)
+                if (startedActivities == 0 && !activity.isChangingConfigurations) session?.notifyAppBecameInactive()
+            }
             override fun onActivityCreated(activity: Activity, state: Bundle?) {}
             override fun onActivityResumed(activity: Activity) {}
             override fun onActivityPaused(activity: Activity) {}
@@ -48,7 +51,7 @@ object AndroidAuthenticatedSessionRegistry {
     }
 
     fun notifyAppBecameActive() {
-        session?.notifyPageBecameActive()
+        session?.notifyAppBecameActive()
     }
 }
 

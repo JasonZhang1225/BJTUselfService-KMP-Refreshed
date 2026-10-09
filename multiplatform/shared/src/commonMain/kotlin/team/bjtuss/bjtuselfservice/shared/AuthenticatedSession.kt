@@ -68,6 +68,11 @@ class AuthenticatedSession(
     private val appForegroundGenerationState = MutableStateFlow(0L)
     private val appResumeMutex = Mutex()
     private var claimedAppResumeGeneration = 0L
+    private var claimedAppForegroundGeneration = 0L
+    private val foregroundRefreshPolicy = AppForegroundRefreshPolicy()
+    private val idleClickRefreshPolicy = AppIdleClickRefreshPolicy()
+    private val appIdleClickGenerationState = MutableStateFlow(0L)
+    private var claimedAppIdleClickGeneration = 0L
 
     /**
      * M17：一级入口集合变化时通知宿主原生 tab 容器（例如「物理在线」开关会增减底栏项）。
@@ -107,12 +112,33 @@ class AuthenticatedSession(
 
     /** 平台回到前台时递增；应用壳会针对当前页面的失效请求自动重试一次。 */
     val appResumeGeneration: StateFlow<Long> = appResumeGenerationState.asStateFlow()
+    /** iOS／桌面后台满阈值的全局刷新事件；不是每次聚焦事件。 */
     val appForegroundGeneration: StateFlow<Long> = appForegroundGenerationState.asStateFlow()
 
-    /** Android/iOS 宿主调用；同一前台事件只允许一个 Compose 壳消费。 */
+    /** 短暂切换窗口不访问网络；后台满 15 分钟后，回前台全局刷新一次。 */
     fun notifyAppBecameActive() {
-        appForegroundGenerationState.update { it + 1L }
-        notifyPageBecameActive()
+        if (foregroundRefreshPolicy.foreground()) appForegroundGenerationState.update { it + 1L }
+    }
+
+    val appIdleClickGeneration: StateFlow<Long> = appIdleClickGenerationState.asStateFlow()
+
+    /** Windows: no work happens until the next content click after 15 idle minutes. */
+    fun notifyFunctionClicked() {
+        if (idleClickRefreshPolicy.clicked()) appIdleClickGenerationState.update { it + 1L }
+    }
+
+    internal suspend fun claimAppIdleClickRefresh(generation: Long): Boolean = appResumeMutex.withLock {
+        if (generation <= claimedAppIdleClickGeneration) false
+        else { claimedAppIdleClickGeneration = generation; true }
+    }
+
+    fun notifyAppBecameInactive() {
+        foregroundRefreshPolicy.background()
+    }
+
+    internal suspend fun claimAppForegroundRefresh(generation: Long): Boolean = appResumeMutex.withLock {
+        if (generation <= claimedAppForegroundGeneration) false
+        else { claimedAppForegroundGeneration = generation; true }
     }
 
     /** Page navigation may recover expired school requests without triggering a full CITEL sync. */

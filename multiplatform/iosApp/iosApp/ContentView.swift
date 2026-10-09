@@ -69,6 +69,7 @@ private func installInteractivePopGesture(
 private final class NativeNavigationController: UINavigationController, UINavigationControllerDelegate, UIGestureRecognizerDelegate {
     private var authenticatedSession: AuthenticatedSession?
     private var appActiveObserver: NSObjectProtocol?
+    private var appInactiveObserver: NSObjectProtocol?
 
     private func updateInteractivePopEnabled() {
         interactivePopGestureRecognizer?.isEnabled = viewControllers.count > 1
@@ -80,6 +81,11 @@ private final class NativeNavigationController: UINavigationController, UINaviga
         view.backgroundColor = appBackgroundUIColor
         setNavigationBarHidden(true, animated: false)
         installInteractivePopGesture(on: self)
+        appInactiveObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.authenticatedSession?.notifyAppBecameInactive()
+        }
         appActiveObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification,
             object: nil,
@@ -119,6 +125,7 @@ private final class NativeNavigationController: UINavigationController, UINaviga
     }
 
     deinit {
+        if let appInactiveObserver { NotificationCenter.default.removeObserver(appInactiveObserver) }
         if let appActiveObserver {
             NotificationCenter.default.removeObserver(appActiveObserver)
         }
@@ -493,7 +500,8 @@ private final class NativeChromeBinding {
             // In a horizontal bar, export has its own leading placement so the
             // status/refresh group leaves a readable gap around the centered title.
             // Duo's vertical layout keeps all three in the same side group.
-            let leadingExport = !vertical && action.extraLabel?.contains("导出") == true
+            let leadingExport = !vertical && (action.extraLabel?.contains("导出") == true ||
+                action.extraLabel?.contains("添加到日历") == true)
             if !leadingExport {
                 items.append(contentsOf: leftItems)
                 leftItems.removeAll()
@@ -754,6 +762,15 @@ private func nativeBarIsVertical(in traits: UITraitCollection) -> Bool {
 
 /// One physical vertical scroller. Compose's own vertical gesture/physics is disabled.
 private final class NativePageScrollView: UIScrollView, UIGestureRecognizerDelegate {
+    override func touchesShouldCancel(in view: UIView) -> Bool { true }
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        // A touch that stops UIKit inertia belongs to the scroller, not a card
+        // in the fixed Compose canvas underneath it.
+        return isDecelerating && hit != nil ? self : hit
+    }
+
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard gestureRecognizer === panGestureRecognizer else { return true }
         let velocity = panGestureRecognizer.velocity(in: self)
@@ -761,8 +778,9 @@ private final class NativePageScrollView: UIScrollView, UIGestureRecognizerDeleg
     }
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        // Preserve horizontal week paging and the native interactive back gesture.
-        true
+        // Compose clicks must be cancelled when UIKit claims a vertical drag.
+        // Horizontal paging still wins when our vertical pan declines to begin.
+        otherGestureRecognizer is UIScreenEdgePanGestureRecognizer
     }
 }
 
@@ -800,6 +818,9 @@ private final class SafeAreaComposeHost: UIViewController, UIScrollViewDelegate 
         scroller.contentInsetAdjustmentBehavior = .never
         scroller.showsVerticalScrollIndicator = false
         scroller.isDirectionalLockEnabled = true
+        scroller.delaysContentTouches = true
+        scroller.canCancelContentTouches = true
+        scroller.panGestureRecognizer.cancelsTouchesInView = true
         scroller.alwaysBounceVertical = true
         scroller.isScrollEnabled = false
         scroller.delegate = self
@@ -1768,6 +1789,7 @@ private final class LiquidGlassShellController: UIViewController {
     private var authenticatedSession: AuthenticatedSession?
     private var tabController: (UIViewController & NativeTabsHosting)?
     private var appActiveObserver: NSObjectProtocol?
+    private var appInactiveObserver: NSObjectProtocol?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -1781,6 +1803,11 @@ private final class LiquidGlassShellController: UIViewController {
         )
         configureComposeHost(root)
         embed(root)
+        appInactiveObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.authenticatedSession?.notifyAppBecameInactive()
+        }
         appActiveObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didBecomeActiveNotification,
             object: nil,
@@ -1791,6 +1818,7 @@ private final class LiquidGlassShellController: UIViewController {
     }
 
     deinit {
+        if let appInactiveObserver { NotificationCenter.default.removeObserver(appInactiveObserver) }
         if let appActiveObserver {
             NotificationCenter.default.removeObserver(appActiveObserver)
         }

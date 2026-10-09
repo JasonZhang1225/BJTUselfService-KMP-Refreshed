@@ -26,6 +26,13 @@ internal class SessionRefreshCoordinator(
     private var recoverySucceeded = false
     private var preflightResult: Boolean? = if (sessionVerifiedAtStart) true else null
 
+    /** Explicit Windows idle-click policy requires login before the refresh batch. */
+    suspend fun recoverBeforeRefresh(): Boolean {
+        if (!attemptRecovery()) return false
+        mutex.withLock { preflightResult = true }
+        return true
+    }
+
     suspend fun run(
         operation: suspend () -> Unit,
         sessionExpired: () -> Boolean,

@@ -8,6 +8,25 @@ import kotlin.test.assertEquals
 
 class SessionRefreshCoordinatorTest {
     @Test
+    fun explicitIdleRecoveryLogsInOnceBeforeParallelBatchOperations() = runSuspend {
+        val events = mutableListOf<String>()
+        val coordinator = SessionRefreshCoordinator(
+            reauthenticate = { events += "login"; true },
+            probeSession = { events += "probe"; true },
+        )
+        assertEquals(true, coordinator.recoverBeforeRefresh())
+        coordinator.run({ events += "grades" }, { false })
+        coordinator.run({ events += "homework" }, { false })
+        assertEquals(listOf("login", "grades", "homework"), events)
+    }
+
+    @Test
+    fun failedIdleRecoveryDoesNotStartARefreshBatch() = runSuspend {
+        val coordinator = SessionRefreshCoordinator(reauthenticate = { false })
+        assertEquals(false, coordinator.recoverBeforeRefresh())
+    }
+
+    @Test
     fun reauthenticatesAndRetriesOnlyAfterSessionFailure() = runSuspend {
         var operationCount = 0
         var authenticationCount = 0

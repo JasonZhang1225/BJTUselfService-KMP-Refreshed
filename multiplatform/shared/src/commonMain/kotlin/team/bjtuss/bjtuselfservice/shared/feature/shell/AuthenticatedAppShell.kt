@@ -521,6 +521,80 @@ fun AuthenticatedAppShell(
             AssignmentSource.CITEL -> if (citelEnabled) session.citelModel?.refresh()
         }
     }
+    val refreshGlobal: suspend (Boolean) -> Unit = globalRefresh@ { forceReauthenticate ->
+        val sessionRefresh = SessionRefreshCoordinator(reauthenticate = reauthenticateSession,
+            probeSession = session.probeSession, onRecoveryStateChanged = { sessionRecoveryInProgress = it })
+        if (forceReauthenticate && !sessionRefresh.recoverBeforeRefresh()) return@globalRefresh
+        suspend fun refreshModule(operation: suspend () -> Unit, sessionExpired: () -> Boolean) {
+            sessionRefresh.run(operation, sessionExpired)
+        }
+        coroutineScope {
+            launch {
+                refreshModule(
+                    operation = homeModel::refresh,
+                    sessionExpired = { homeModel.state.value.failure == HomeStatusFailure.SESSION_EXPIRED },
+                )
+            }
+            launch {
+                sessionRefresh.run(
+                    operation = { mailboxModel.refreshUnreadInboxCount() },
+                    sessionExpired = {
+                        when (val current = mailboxModel.state.value) {
+                            MailboxUiState.SessionUnavailable -> true
+                            is MailboxUiState.Ready -> current.failure == MailboxFailure.SESSION_EXPIRED
+                            else -> false
+                        }
+                    },
+                )
+            }
+            launch {
+                refreshModule(
+                    operation = homeworkModel::refresh,
+                    sessionExpired = { homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED },
+                )
+            }
+            launch {
+                refreshModule(
+                    operation = examScheduleModel::refresh,
+                    sessionExpired = { examScheduleModel.state.value.failure == ExamScheduleSyncFailure.SESSION_EXPIRED },
+                )
+            }
+            launch {
+                refreshModule(
+                    operation = courseScheduleModel::refresh,
+                    sessionExpired = { courseScheduleModel.state.value.failure == CourseScheduleSyncFailure.SESSION_EXPIRED },
+                )
+            }
+            if (physicsLabEnabled) launch { session.physicsLabModel?.refresh() }
+            if (citelEnabled) launch { session.citelModel?.refresh() }
+            // 用户主动刷新或后台超过阈值后的全局刷新；关闭的模块不访问网络。
+            if (phyVlabEnabled) {
+                launch { phyVlabModel.refresh() }
+            }
+            launch {
+                refreshModule(
+                    operation = gradeModel::refresh,
+                    sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
+                )
+                if (gradeModel.state.value.courseTypesByCode == null) {
+                    gradeModel.ensureProgramCourseTypes()
+                }
+            }
+        }
+    }
+    val latestGlobalRefresh = rememberUpdatedState(refreshGlobal)
+    LaunchedEffect(session, forcedRouteId, nativeTabBarEnabled) {
+        if (!shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) return@LaunchedEffect
+        session.appForegroundGeneration.collect { generation ->
+            if (!session.entryLoggingIn && session.claimAppForegroundRefresh(generation)) latestGlobalRefresh.value(false)
+        }
+    }
+    LaunchedEffect(session, forcedRouteId, nativeTabBarEnabled) {
+        if (!shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) return@LaunchedEffect
+        session.appIdleClickGeneration.collect { generation ->
+            if (!session.entryLoggingIn && session.claimAppIdleClickRefresh(generation)) latestGlobalRefresh.value(true)
+        }
+    }
     val refresh: () -> Unit = {
         scope.launch {
             // 静默自动登录期间会话未就绪，忽略刷新；登录完成后各模块会按自动同步设置初始化。
@@ -543,59 +617,7 @@ fun AuthenticatedAppShell(
                 sessionRefresh.run(operation, sessionExpired)
             }
             when (section) {
-                AppSection.HOME -> coroutineScope {
-                    launch {
-                        refreshModule(
-                            operation = homeModel::refresh,
-                            sessionExpired = { homeModel.state.value.failure == HomeStatusFailure.SESSION_EXPIRED },
-                        )
-                    }
-                    launch {
-                        sessionRefresh.run(
-                            operation = { mailboxModel.refreshUnreadInboxCount() },
-                            sessionExpired = {
-                                when (val current = mailboxModel.state.value) {
-                                    MailboxUiState.SessionUnavailable -> true
-                                    is MailboxUiState.Ready -> current.failure == MailboxFailure.SESSION_EXPIRED
-                                    else -> false
-                                }
-                            },
-                        )
-                    }
-                    launch {
-                        refreshModule(
-                            operation = homeworkModel::refresh,
-                            sessionExpired = { homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED },
-                        )
-                    }
-                    launch {
-                        refreshModule(
-                            operation = examScheduleModel::refresh,
-                            sessionExpired = { examScheduleModel.state.value.failure == ExamScheduleSyncFailure.SESSION_EXPIRED },
-                        )
-                    }
-                    launch {
-                        refreshModule(
-                            operation = courseScheduleModel::refresh,
-                            sessionExpired = { courseScheduleModel.state.value.failure == CourseScheduleSyncFailure.SESSION_EXPIRED },
-                        )
-                    }
-                    launch { session.physicsLabModel?.refresh() }
-                    if (citelEnabled) launch { session.citelModel?.refresh() }
-                    // 这是用户明确点下首页刷新/失败胶囊后的主动重试；功能关闭时不访问物理在线。
-                    if (phyVlabEnabled) {
-                        launch { phyVlabModel.refresh() }
-                    }
-                    launch {
-                        refreshModule(
-                            operation = gradeModel::refresh,
-                            sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
-                        )
-                        if (gradeModel.state.value.courseTypesByCode == null) {
-                            gradeModel.ensureProgramCourseTypes()
-                        }
-                    }
-                }
+                AppSection.HOME -> refreshGlobal(false)
                 AppSection.GRADES -> refreshModule(
                     operation = gradeModel::refresh,
                     sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },

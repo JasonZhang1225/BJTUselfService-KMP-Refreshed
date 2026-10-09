@@ -124,3 +124,19 @@ Mac 解锁后继续完成原先受阻的交互检查，未重复运行已通过�
 - UIKit 回到零点时，若 Compose 因尺寸变化保留了旧列表锚点，仅在无手势、无惯性滚动的空闲状态校正到第一项。正常滑动和惯性仍由原生 UIScrollView 驱动。
 - LazyColumn 与 ScrollState 两种消费者的回顶测试通过；iOS 模拟器构建通过。验证使用独立 layoutprobe 应用，不覆盖正式包、不使用真实账号重新登录。
 - 最终视觉检查：外屏横屏作业顶部的同步失败卡、作业摘要和第一条作业完整可见；内屏竖屏首页的 MIS 错误提示与下一节课程完整显示在导航栏下方。展开后再折回外屏切换标签页，顶部净空正确恢复。截图合并为 `.artifacts/duo-top-origin-fix/visual-review.png`，未补录视频，也不以静态截图代替动画逐帧验收。
+
+## 真机滑动误点与前台同步（10 月 9 日）
+
+- 用户在真机 IPA 反馈作业、成绩、应用页拖动松手容易触发卡片点击。原生滚动器原先对所有手势返回同时识别，导致 Compose 点击序列仍可完成。现在仅对屏幕边缘返回保留同时识别，纵向滚动接管后让 Compose 取消触摸；横向翻周仍在纵向 pan 的方向判定中放行。显式开启 UIScrollView 的内容触摸延迟、取消与 pan 触摸取消；惯性期间落下的第一触点由滚动器自身接收，用于停止滚动，不传给底下卡片。不自定义滑动阈值／惯性。
+- 文档依据：[Apple touchesShouldCancel](https://developer.apple.com/documentation/uikit/uiscrollview/touchesshouldcancel(in:))、[cancelsTouchesInView](https://developer.apple.com/documentation/uikit/uigesturerecognizer/cancelstouchesinview)。核对项目实际 Compose 1.12.0-beta03 发布源码 `InputViews.ios.kt`：TouchesGestureRecognizer 被正在识别的父级手势接管时调用 cancelAllTrackedTouches；不再用全局同时识别绕开该流程。
+- iOS 非活动／Mac 窗口失焦记录后台起点，重复通知不重置计时。短暂返回不触发页面恢复，后台满 10 分钟后通过共享会话去重，调用与首页主动刷新共用的全局并行批次。初次进入 App 的 CITEL 同步不变；关闭的独立模块不参与批次。Android 保留原先的前台页面恢复事件。
+- 课表真机原生动作名称为“添加到日历”，先前仅匹配“导出”，现在两者均使用普通横向导航栏的左侧动作位置。
+- 后台时间阈值／短暂聚焦／重复通知检查共 2 项通过，桌面应用编译与 iOS 模拟器构建通过。模拟器合成拖动缺少中间触点，不能据此宣称真机拖动与惯性停止手感已验收。
+- 用户因电脑负载要求结束任务：已停止本任务 Xcode／Kotlin 编译进程，不继续模拟器安装或测试。最终后台实际时间版本的 2 项测试与 Mac 编译通过；最终 iOS 编译被主动终止，交由 CI Debug 构建和真机验收。普通 iPhone 模拟器安装服务卡住，未取得本轮最终视觉截图。
+
+## 四平台最终刷新策略（15 分钟，交由 CI 验证）
+
+- 用户将 iOS／Mac／Android 的后台返回阈值统一为 15 分钟。共享策略只在前台通知到达时检查差值，没有后台轮询或定时刷新；不返回前台不刷新。Android 最后一个 Activity 停止才记录后台，配置重建不记录；首次启动／onResume 重复通知不重复刷新。
+- Windows 移除窗口聚焦恢复监听，以当前应用内容区完成的鼠标点击记录使用时间；闲置满 15 分钟后的下一次点击发布共享会话事件。移动／滚轮／原生窗口关闭不属于该事件。点击监听用 AWT 的 MouseEvent.MOUSE_CLICKED，仅接受当前窗口组件：[Oracle Toolkit API](https://docs.oracle.com/en/java/javase/25/docs/api/java.desktop/java/awt/Toolkit.html)。
+- Windows 超时批次先显式恢复统一身份会话；成功后同一协调器发布并行全局刷新，已验证会话不再重复探测登录。失败则保留页面，不继续该批次。CITEL 的正常读取仍只在确认自身登录失效时恢复自身会话。
+- 已补 15 分钟边界／重复通知／Windows 连续点击与闲置／先重登再批次读取的测试源码。本轮不启动本地编译、模拟器或测试；最终构建与测试结果由 CI Debug 确认。
