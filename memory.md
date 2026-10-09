@@ -11,11 +11,11 @@
 
 - 已合并上游两提交：`c5418d2` 作业上传改 `homeworkUpload.shtml?noteId=`，`7d94f74` 版本 `v1.7.1`。
 - 冻结工程作业上传与版本已对齐上游；本机 `compileSdk/targetSdk 36`、阿里云镜像与 versionName 空安全保留。
-- KMP 学生上传端点此前已是 `homeworkUpload.shtml`，本轮未改 `multiplatform/`。
+- 已删除的 GitHub Release 说明回收到 `docs/releases/`。1.7.4–1.7.6 来自当时 CI `body`；1.7.1–1.7.3 只能按归档整理，不是原网页逐字稿。没有重新创建 GitHub Release。
 
 ## 当前注意事项
 
-- README.md 仍有未提交的本地编辑，未纳入本次合并。
+- README.md 仍有未提交的本地编辑。
 - `debug-*` / alpha / beta 标签只上传 Actions 产物，不发 GitHub Release。
 - 未推 `origin`，未做正式发布。
 
@@ -23,4 +23,5 @@
 
 1. 等 `debug-1.8.3-beta-ci` 的 KMP package 和 security checks 跑完。
 2. 需要正式发布时再定 `1.8.3-KMP` 版本号、说明和四端包。
+
 
