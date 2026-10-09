@@ -11,8 +11,16 @@ import android.webkit.WebStorage
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
+
+/**
+ * CookieManager / WebStorage 会拉起 Chromium。HyperOS 一旦发现进程里有
+ * WebView 内核，就会把应用标成「跟随应用内设置」并锁 60Hz。
+ * 因此退出登录时，如果本进程从未创建过 WebView，不要去碰这些 API。
+ */
+private val webViewRuntimeStarted = AtomicBoolean(false)
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -25,6 +33,7 @@ actual fun SchoolWebView(
     AndroidView(
         modifier = modifier,
         factory = { context ->
+            webViewRuntimeStarted.set(true)
             WebView(context).apply {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
@@ -70,6 +79,10 @@ actual fun openExternalUrl(url: String) {
 }
 
 actual suspend fun clearSchoolWebViewData(): Boolean = suspendCancellableCoroutine { continuation ->
+    if (!webViewRuntimeStarted.get()) {
+        continuation.resume(true)
+        return@suspendCancellableCoroutine
+    }
     try {
         val cookieManager = CookieManager.getInstance()
         WebStorage.getInstance().deleteAllData()

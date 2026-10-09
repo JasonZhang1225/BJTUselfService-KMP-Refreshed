@@ -79,6 +79,30 @@ class SecurityReleaseConfigTest {
         assertTrue(clearAt >= 0)
         assertTrue(setCookieAt > clearAt)
         assertTrue(loadUrlAt > setCookieAt)
+        assertTrue("webViewRuntimeStarted.set(true)" in factory)
+        val clearFn = source.substringAfter("actual suspend fun clearSchoolWebViewData()")
+        assertTrue("if (!webViewRuntimeStarted.get())" in clearFn)
+        assertTrue(
+            clearFn.indexOf("if (!webViewRuntimeStarted.get())") <
+                clearFn.indexOf("CookieManager.getInstance()"),
+        )
+    }
+
+    @Test
+    fun androidDoesNotPrewarmWebViewAndSuppressesComposeFrameRateVotes() {
+        val main = root.resolve(
+            "multiplatform/androidApp/src/main/kotlin/team/bjtuss/bjtuselfservice/kmp/MainActivity.kt",
+        ).readText()
+        assertFalse("WebView(" in main)
+        assertTrue("不要在此处预热 WebView" in main)
+
+        val refresh = root.resolve(
+            "multiplatform/androidApp/src/main/kotlin/team/bjtuss/bjtuselfservice/kmp/AndroidRefreshRate.kt",
+        ).readText()
+        assertTrue("Choreographer" in refresh)
+        assertTrue("setRequestedFrameRate(View.REQUESTED_FRAME_RATE_CATEGORY_NO_PREFERENCE)" in refresh)
+        assertTrue("preferredRefreshRate != 0f" in refresh)
+        assertFalse("removeView(" in refresh)
     }
 
     @Test
