@@ -16,6 +16,14 @@ class PackagingCiAsciiConfigTest {
     }
 
     @Test
+    fun iosJobUsesXcode27SdkForDuoApis() {
+        val workflow = File(findRepoRoot(), ".github/workflows/kmp-package.yml").readText()
+        assertTrue("runs-on: xcode-27" in workflow)
+        assertTrue("Xcode_27.1.app" in workflow)
+        assertTrue("Need iPhoneOS SDK >= 27.1" in workflow)
+    }
+
+    @Test
     fun debugTagsPackageWithoutGitHubRelease() {
         val workflow = File(findRepoRoot(), ".github/workflows/kmp-package.yml").readText()
         assertTrue("\"debug-*\"" in workflow)

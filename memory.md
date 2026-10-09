@@ -18,6 +18,7 @@
 - 本包是 CI 调试产物，从 Actions artifacts 下载，不是 Release 附件。
 - iOS IPA 仍未签名，需自签；macOS DMG 为 CI 打包。
 - 比较器里 `1.8.3-alpha-ci` 数字段高于 `1.8.2-KMP`，所以不能给这个标签发 GitHub Release。
+- 第一次 `debug-1.8.3-alpha-ci` 的 iOS job 在 macos-26 / Xcode 26.6 上失败：`ContentView.swift` 的 iOS 27.1 API（`axisBehavior`、`verticalBarEdge`、`navigationBarMinimization`、`sidebar.preferredPlacement`）编译不过。iOS 任务已改到 `xcode-27` 并强制 iPhoneOS ≥ 27.1。
 
 ## 接下来
 

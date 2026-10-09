@@ -230,9 +230,11 @@ jobs:
 
   ios:
     name: iOS unsigned IPA
-    # Compose 1.12 链接 UIViewLayoutRegion，需要 iOS 26 SDK / Xcode 26。
+    # Duo / 系统栏用了 iOS 27.1 API（axisBehavior、verticalBarEdge、
+    # navigationBarMinimization）。macos-26 默认 Xcode 26.6 / iPhoneOS 26.5，
+    # `#available` 挡不住编译。必须用 xcode-27 镜像并选 27.1+ SDK。
     if: ${{ github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0' }}
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 90
     defaults:
       run:
@@ -252,11 +254,40 @@ jobs:
           java-version: "21"
           cache: gradle
 
-      - name: Select Xcode 26
+      - name: Select Xcode 27.1+
         run: |
-          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          ls /Applications | grep -i xcode || true
+          SELECTED=""
+          for path in \
+            /Applications/Xcode_27.1.app \
+            /Applications/Xcode_27.1_beta.app \
+            /Applications/Xcode_27.2.app \
+            /Applications/Xcode_27.2_beta.app
+          do
+            if [ -d "$path/Contents/Developer" ]; then
+              SELECTED="$path"
+              break
+            fi
+          done
+          if [ -z "$SELECTED" ]; then
+            echo "Need Xcode 27.1+ with iPhoneOS 27.1 SDK"
+            exit 1
+          fi
+          sudo xcode-select -s "$SELECTED/Contents/Developer"
           xcodebuild -version
-          xcrun --sdk iphoneos --show-sdk-version
+          SDK="$(xcrun --sdk iphoneos --show-sdk-version)"
+          echo "iphoneos SDK=$SDK"
+          python3 - <<'PY'
+          import subprocess, sys
+          sdk = subprocess.check_output(
+              ["xcrun", "--sdk", "iphoneos", "--show-sdk-version"],
+              text=True,
+          ).strip()
+          parts = [int(p) for p in sdk.split(".")[:2]]
+          if parts < [27, 1]:
+              print(f"Need iPhoneOS SDK >= 27.1, got {sdk}", file=sys.stderr)
+              sys.exit(1)
+          PY
 
       - name: Build unsigned iOS app
         env:
