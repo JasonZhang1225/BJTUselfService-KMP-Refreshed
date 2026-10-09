@@ -619,3 +619,19 @@
 用户提供的选课弹窗截图显示列表在中部截断、底下留白。移除选课列表的 72% 高度限制，以原生 sheet 可用空间为滚动视口，文件详情采用同一高度策略；iPhone 17 Pro / iOS 27 模拟器用 20 门合成课程实际滚动至最后的“验收标记”。底栏设置将已勾选项置顶，使用右侧拖动手柄保存顺序，保留 2–6 项限制；同一模拟器把“成绩”拖到“课程表”前，列表和底栏同步换序。设置与 README 新增 optsimauth 的 AIO 社区版仓库和贡献说明。正常 iPhone iOS 26+ 路径仍为 UIKit Liquid Glass 导航壳。
 
 最终 Android Release APK、Mac DMG 与真机 arm64 iOS unsigned IPA 均成功构建并复制到 Downloads，旧文件保留。共享 611 测试全过，iOS Debug/Release xcodebuild 成功；APK v2 签名及原 KMP 证书指纹、DMG 校验和和包内签名、IPA CRC 与无签名结构均验证。详细文件名、字节数、SHA-256 和边界见 `docs/migration/new-migration-followup-2026-10-05.md`。之后源码已做本地初步提交，未推送或发布，版本保持 1.8.1 / Build 22。测试源码桌面和模拟器 app 已退出，用户原安装版未关闭。
+
+
+## 2026-10-09：CITEL / Duo / MacPWDFix 合入 main
+
+用户授权将近期开发分支整理并合入 `main`。本地 `main` 自 `100d795` 快进到 `codex/Duo` 尖端 `6663117`（16 个提交），随后记录清理并推送 `mine/main`。未推 `origin`，未打正式 `v*` 标签，未发 GitHub Release。
+
+合入范围：
+
+- NewMigration 此前已在 `main@100d795`。
+- MacPWDFix：macOS 钥匙串合并为单一 `MacOsSecretBag` 条目。
+- CITEL：作业接入、作业聚合、独立账号设置、首页正在上课、数据变动弹窗、编程作业 AC 判定。
+- Duo：横屏/宽屏适配、并行同步、回顶遮挡、iOS 滑动误点、四平台闲置刷新（前台 15 分钟）、顶栏玻璃待滚动后再显示。
+- 版本保持调试号 `1.8.3-alpha-ci` / Build 25；`debug-*` 标签只走 Actions 打包。
+
+分支清理：删除本地/远端 `codex/CITEL`、`codex/Duo`，以及本地已合入的 `NewMigration`。备份分支 `backup/readme-before-squash-20261007` 与 `codex/Duo-before-cleanup-20261009` 含未进主线的独立提交，予以保留。
+
