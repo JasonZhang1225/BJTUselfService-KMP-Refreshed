@@ -37,6 +37,10 @@ private const val CAPTCHA_VERIFICATION_ARGUMENT = "--verify-captcha-model="
 private const val SYNC_STATUS_SMOKE_ARGUMENT = "--sync-status-smoke"
 
 fun main(args: Array<String>) {
+    if ("--sync-timing" in args) {
+        // Enable only sanitized timing events; general business/debug logs stay off.
+        team.bjtuss.bjtuselfservice.shared.logging.SyncTiming.sink = { println(it) }
+    }
     if (SYNC_STATUS_SMOKE_ARGUMENT in args || "--schedule-events-smoke" in args || "--new-migration-smoke" in args) {
         application {
             Window(

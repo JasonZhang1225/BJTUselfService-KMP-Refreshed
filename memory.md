@@ -25,3 +25,10 @@
 
 1. 用本轮 CITEL 安装包在 iOS（自签）和 Mac 上看聚合开关、正在上课卡、变动弹窗。
 2. 需要并进 main 或发布时再确认范围。
+
+## 2026-10-09 同步策略澄清
+
+- CITEL 进入 App 与其他模块并行同步一次；模型按会话 generation 0 去重，不因窗口聚焦或再点作业页重复同步。
+- CITEL／课程平台仅在提交或读取确认登录失效后恢复；网络超时不作为重新登录依据。
+- Ktor 3.5.1 Cookie 存储已有内部锁。请求改为按主机并发 2 条、CAS 1 条；CITEL 只读页 2 路，失效恢复合并，写入保留既有锁。
+- 本地 Debug 可用 `--sync-timing` 记录脱敏耗时；最终记录与对比在 `.artifacts/desktop-debug-final-parallel-timing.log`、`.artifacts/parallel-sync-comparison.md`。

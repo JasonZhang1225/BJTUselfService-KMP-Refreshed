@@ -193,7 +193,7 @@ fun HomeworkWorkspace(
                                 sortOrder = state.sortOrder,
                                 onOpen = { key ->
                                     transfer.fileFeedback = null
-                                    scope.launch { model.showDetails(key) }
+                                    scope.launch { loadHomeworkDetailsWithRecovery(model, key, onReauthenticate) }
                                 },
                                 modifier = Modifier.weight(0.4f).fillMaxHeight(),
                             )
@@ -236,7 +236,7 @@ fun HomeworkWorkspace(
                             // 必须先同步写完选中再 push，否则详情页打开时 selectedHomework 仍为空；
                             // 详情的网络加载异步进行，不阻塞 push。
                             model.selectHomework(key)
-                            scope.launch { model.showDetails(key) }
+                            scope.launch { loadHomeworkDetailsWithRecovery(model, key, onReauthenticate) }
                             onOpenDetail()
                         },
                         modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -1449,4 +1449,13 @@ private fun HomeworkFileSaveResult.saveFeedback(): String? = when (this) {
     HomeworkFileSaveResult.Saved -> "附件已保存到你选择的位置。"
     HomeworkFileSaveResult.Cancelled -> null
     is HomeworkFileSaveResult.Failed -> "系统保存失败，请重新选择位置。"
+}
+
+/** A failed read must confirm expiry before attempting authentication recovery. */
+internal suspend fun loadHomeworkDetailsWithRecovery(model: HomeworkScreenModel, key: String,
+    reauthenticate: (suspend () -> Boolean)?) {
+    val recovery = SessionRefreshCoordinator(reauthenticate = reauthenticate, sessionVerifiedAtStart = true)
+    recovery.run(operation = { model.showDetails(key) }, sessionExpired = {
+        model.state.value.selectedHomeworkKey == key && model.state.value.detailFailure == HomeworkSyncFailure.SESSION_EXPIRED
+    })
 }

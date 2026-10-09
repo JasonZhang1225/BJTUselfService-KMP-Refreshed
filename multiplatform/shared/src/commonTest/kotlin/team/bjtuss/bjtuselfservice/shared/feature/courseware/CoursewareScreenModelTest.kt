@@ -1,5 +1,6 @@
 package team.bjtuss.bjtuselfservice.shared.feature.courseware
 
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
@@ -26,6 +27,34 @@ import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryWriteSession
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
 
 class CoursewareScreenModelTest {
+    @Test
+    fun cachedCourseAndNodeCanBeSelectedDuringRootPrefetch() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val second = snapshot().courses.single().copy(id = 18, name = "第二门课",
+            children = listOf(resource().copy(courseId = 18)))
+        val both = CoursewareSnapshot(snapshot().courses + second)
+        val repository = object : CoursewareRepository by FakeRepository(both, both) {
+            override suspend fun loadCoursesConcurrently(snapshot: CoursewareSnapshot, courseIds: List<Int>, concurrency: Int): CoursewareOperationResult<CoursewareSnapshot> {
+                started.complete(Unit)
+                release.await()
+                return CoursewareOperationResult.Success(both)
+            }
+        }
+        val model = CoursewareScreenModel(repository)
+        val initializing = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { model.initialize() }
+        started.await()
+        val switching = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { model.selectCourse(18) }
+        assertEquals(18, model.state.value.selectedCourseId)
+        model.selectNode(second.children.single().stableKey)
+        assertEquals(second.children.single().stableKey, model.state.value.selectedNodeKey)
+        release.complete(Unit)
+        initializing.join()
+        switching.join()
+        assertEquals(18, model.state.value.selectedCourseId)
+        assertEquals(second.children.single().stableKey, model.state.value.selectedNodeKey)
+    }
+
     @Test
     fun initializationAndCompactNavigationPreserveFolderPath() = runBlocking {
         val repository = FakeRepository(snapshot(), snapshot())

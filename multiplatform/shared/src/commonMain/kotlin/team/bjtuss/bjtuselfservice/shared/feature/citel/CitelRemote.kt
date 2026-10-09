@@ -2,6 +2,11 @@ package team.bjtuss.bjtuselfservice.shared.feature.citel
 
 import com.fleeksoft.ksoup.Ksoup
 import io.ktor.http.Url
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.*
@@ -28,6 +33,9 @@ interface CitelDataSource {
 /** 串行快照读取。每个 GET 遇到掉线时重新取 logintoken 登录，并只重放该 GET 一次。 */
 class CitelRemote(private val transport: SchoolHttpTransport) : CitelDataSource {
     private val mutex = Mutex()
+    private val readRequests = Semaphore(2)
+    private val recoveryMutex = Mutex()
+    private var recoveryGeneration = 0L
     private fun assignmentClient(credentials: Credentials) = MoodleAssignmentClient(CITEL_BASE,
         read = { page(it, credentials) }, write = { request(it) })
     private fun programmingClient(credentials: Credentials) = CitelProgrammingClient(read = { page(it, credentials) }, write = { request(it) })
@@ -46,20 +54,22 @@ class CitelRemote(private val transport: SchoolHttpTransport) : CitelDataSource 
     }
     override suspend fun fetch(credentials: Credentials): List<CitelTask> = mutex.withLock {
         val courses = courses(credentials)
-        val tasks = mutableListOf<CitelTask>()
-        for (course in courses) {
-            val courseTasks = parseCitelTasks(page("$CITEL_BASE/course/view.php?id=${course.id}", credentials).bodyText(), course)
-            val results = if (courseTasks.any { it.programming }) {
-                parseCitelProgrammingResults(page("$CITEL_BASE/mod/programming/index.php?id=${course.id}", credentials).bodyText())
-            } else emptyMap()
-            for (task in courseTasks) {
-                val result = results[task.id]
-                val indexed = if (result != null) task.copy(status = result.status, submitted = result.accepted,
-                    openTime = result.times[0], discountTime = result.times[1], dueTime = result.times[2], allowLate = result.allowLate) else task
-                tasks += parseCitelTaskDetail(page(task.url, credentials).bodyText(), indexed)
-            }
+        coroutineScope {
+            courses.map { course -> async {
+                val courseTasks = parseCitelTasks(page("$CITEL_BASE/course/view.php?id=${course.id}", credentials).bodyText(), course)
+                val results = if (courseTasks.any { it.programming }) {
+                    parseCitelProgrammingResults(page("$CITEL_BASE/mod/programming/index.php?id=${course.id}", credentials).bodyText())
+                } else emptyMap()
+                coroutineScope {
+                    courseTasks.map { task -> async {
+                        val result = results[task.id]
+                        val indexed = if (result != null) task.copy(status = result.status, submitted = result.accepted,
+                            openTime = result.times[0], discountTime = result.times[1], dueTime = result.times[2], allowLate = result.allowLate) else task
+                        parseCitelTaskDetail(page(task.url, credentials).bodyText(), indexed)
+                    } }.awaitAll()
+                }
+            } }.awaitAll().flatten().distinctBy { it.id }
         }
-        tasks.distinctBy { it.id }
     }
 
     /** 侧栏会省略历史课程；使用网站自己的只读课程 AJAX，并处理分页。 */
@@ -115,15 +125,23 @@ class CitelRemote(private val transport: SchoolHttpTransport) : CitelDataSource 
         } catch (_: Exception) { throw CitelFailure("CITEL 课程数据格式发生变化。") }
     }
 
-    private suspend fun page(url: String, credentials: Credentials): SchoolHttpResponse {
+    private suspend fun page(url: String, credentials: Credentials): SchoolHttpResponse = readRequests.withPermit {
+        val generation = recoveryMutex.withLock { recoveryGeneration }
         var response = request(SchoolHttpRequest(SchoolHttpMethod.GET, url))
         if (response.looksLikeSessionExpired()) {
-            login(credentials)
-            response = request(SchoolHttpRequest(SchoolHttpMethod.GET, url))
+            recoveryMutex.withLock {
+                // A failed read can share another read's confirmed recovery. Keep
+                // login sequential and retry this read once with the resulting cookie.
+                if (generation == recoveryGeneration) {
+                    login(credentials)
+                    recoveryGeneration++
+                }
+                response = request(SchoolHttpRequest(SchoolHttpMethod.GET, url))
+            }
         }
         if (response.looksLikeSessionExpired()) throw CitelFailure("CITEL 登录已失效，请检查账号密码后重试。", true)
         validate(response)
-        return response
+        response
     }
 
     private suspend fun login(credentials: Credentials) {

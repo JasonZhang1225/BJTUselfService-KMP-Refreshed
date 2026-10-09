@@ -84,6 +84,7 @@ class CoursewareScreenModel(
     private val prefetchMutex = Mutex()
     private val freshCourseIds = mutableSetOf<Int>()
     private var initialized = false
+    private var navigationGeneration = 0L
 
     suspend fun initialize() {
         if (initialized) return
@@ -165,26 +166,29 @@ class CoursewareScreenModel(
     }
 
     suspend fun selectCourse(courseId: Int) {
+        if (mutableState.value.courses.none { it.id == courseId }) return
+        navigationGeneration++
+        // Navigation is local and must not queue behind a network/download operation.
+        mutableState.value = mutableState.value.copy(
+            selectedCourseId = courseId, compactFolderPath = emptyList(),
+            expandedFolderKeys = emptySet(), selectedNodeKey = null, fileFailure = null,
+        )
         operationMutex.withLock {
-            if (mutableState.value.courses.none { it.id == courseId }) return@withLock
-            mutableState.value = mutableState.value.copy(
-                selectedCourseId = courseId,
-                compactFolderPath = emptyList(),
-                expandedFolderKeys = emptySet(),
-                selectedNodeKey = null,
-                fileFailure = null,
-            )
+            if (mutableState.value.selectedCourseId != courseId) return@withLock
             loadCourseLocked(courseId)
         }
         prefetchUnloadedFolders()
     }
 
     suspend fun openCompactNode(stableKey: String) {
+        val generation = ++navigationGeneration
         var state = mutableState.value
+        val courseId = state.selectedCourseId
         if (state.selectedCourse?.childrenLoaded != true) return
         val node = state.compactNodes.firstOrNull { it.stableKey == stableKey } ?: return
         if (node.isFolder && !node.childrenLoaded && !loadFolder(stableKey)) return
         state = mutableState.value
+        if (generation != navigationGeneration || state.selectedCourseId != courseId) return
         mutableState.value = if (node.isFolder) {
             state.copy(
                 compactFolderPath = state.compactFolderPath + node.stableKey,
@@ -199,6 +203,7 @@ class CoursewareScreenModel(
     fun navigateCompactBack(): Boolean {
         val state = mutableState.value
         if (state.compactFolderPath.isEmpty()) return false
+        navigationGeneration++
         mutableState.value = state.copy(
             compactFolderPath = state.compactFolderPath.dropLast(1),
             selectedNodeKey = null,
@@ -208,12 +213,14 @@ class CoursewareScreenModel(
     }
 
     suspend fun toggleExpanded(stableKey: String) {
+        val generation = ++navigationGeneration
         var state = mutableState.value
         val course = state.selectedCourse ?: return
         val node = findCoursewareNode(course.children, stableKey) ?: return
         if (!node.isFolder) return
         if (stableKey !in state.expandedFolderKeys && !node.childrenLoaded && !loadFolder(stableKey)) return
         state = mutableState.value
+        if (generation != navigationGeneration || state.selectedCourseId != course.id) return
         val expanded = state.expandedFolderKeys.toMutableSet().apply {
             if (!add(stableKey)) remove(stableKey)
         }
@@ -226,7 +233,8 @@ class CoursewareScreenModel(
 
     fun selectNode(stableKey: String) {
         val course = mutableState.value.selectedCourse ?: return
-        if (!course.childrenLoaded || course.id in mutableState.value.loadingCourseIds) return
+        if (!course.childrenLoaded) return
+        navigationGeneration++
         if (stableKey.isBlank()) {
             mutableState.value = mutableState.value.copy(selectedNodeKey = null, fileFailure = null)
             return
@@ -266,44 +274,49 @@ class CoursewareScreenModel(
         stableKey: String?,
         directoryName: String,
         gateway: CoursewareDirectoryGateway,
-    ): CoursewareOperationResult<HomeworkFileSaveResult> = operationMutex.withLock {
-        val hydrationFailure = hydrateExportTree(stableKey)
-        if (hydrationFailure != null) return@withLock CoursewareOperationResult.Failure(hydrationFailure)
-        val course = mutableState.value.selectedCourse
-            ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
-        val resources = course.resourcesWithFolders(stableKey)
-        if (resources.isEmpty()) {
-            return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
-        }
-        mutableState.value = mutableState.value.copy(
-            isDownloading = true,
-            directoryDownloadCompleted = 0,
-            directoryDownloadTotal = resources.size,
-            fileFailure = null,
-        )
-        try {
-            val opened = try {
-                gateway.openDirectory(directoryName)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.IO)
+    ): CoursewareOperationResult<HomeworkFileSaveResult> {
+        val courseId = mutableState.value.selectedCourseId
+            ?: return CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
+        return operationMutex.withLock {
+            val hydrationFailure = hydrateExportTree(stableKey, courseId)
+            if (hydrationFailure != null) return@withLock CoursewareOperationResult.Failure(hydrationFailure)
+            val course = mutableState.value.courses.firstOrNull { it.id == courseId }
+                ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
+            val resources = course.resourcesWithFolders(stableKey)
+            if (resources.isEmpty()) {
+                return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
             }
-            when (opened) {
-                CoursewareDirectoryOpenResult.Cancelled ->
-                    CoursewareOperationResult.Success(HomeworkFileSaveResult.Cancelled)
-                is CoursewareDirectoryOpenResult.Failed ->
-                    CoursewareOperationResult.Success(HomeworkFileSaveResult.Failed(opened.reason))
-                is CoursewareDirectoryOpenResult.Opened ->
-                    exportResources(resources, opened.session)
-            }
-        } finally {
             mutableState.value = mutableState.value.copy(
-                isDownloading = false,
+                isDownloading = true,
                 directoryDownloadCompleted = 0,
-                directoryDownloadTotal = 0,
+                directoryDownloadTotal = resources.size,
+                fileFailure = null,
             )
+            try {
+                val opened = try {
+                    gateway.openDirectory(directoryName)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.IO)
+                }
+                when (opened) {
+                    CoursewareDirectoryOpenResult.Cancelled ->
+                        CoursewareOperationResult.Success(HomeworkFileSaveResult.Cancelled)
+                    is CoursewareDirectoryOpenResult.Failed ->
+                        CoursewareOperationResult.Success(HomeworkFileSaveResult.Failed(opened.reason))
+                    is CoursewareDirectoryOpenResult.Opened ->
+                        exportResources(resources, opened.session)
+                }
+            } finally {
+                mutableState.value = mutableState.value.copy(
+                    isDownloading = false,
+                    directoryDownloadCompleted = 0,
+                    directoryDownloadTotal = 0,
+                )
+            }
         }
+
     }
 
     private suspend fun exportResources(
@@ -411,17 +424,21 @@ class CoursewareScreenModel(
         return result
     }
 
-    private suspend fun loadFolder(stableKey: String): Boolean = operationMutex.withLock {
-        loadFolderLocked(stableKey)
+    private suspend fun loadFolder(stableKey: String): Boolean {
+        val courseId = mutableState.value.selectedCourseId ?: return false
+        return operationMutex.withLock {
+            if (mutableState.value.selectedCourseId != courseId) return@withLock false
+            loadFolderLocked(stableKey, courseId)
+        }
     }
 
-    private suspend fun loadFolderLocked(stableKey: String): Boolean {
+    private suspend fun loadFolderLocked(stableKey: String, courseId: Int): Boolean {
         var before = mutableState.value
-        var course = before.selectedCourse ?: return false
+        var course = before.courses.firstOrNull { it.id == courseId } ?: return false
         if (!course.childrenLoaded) {
             if (!loadCourseLocked(course.id)) return false
             before = mutableState.value
-            course = before.selectedCourse ?: return false
+            course = before.courses.firstOrNull { it.id == courseId } ?: return false
         }
         val folder = findCoursewareNode(course.children, stableKey)
             ?.takeIf(CoursewareNode::isFolder)
@@ -455,15 +472,13 @@ class CoursewareScreenModel(
         }
     }
 
-    private suspend fun hydrateExportTree(stableKey: String?): CoursewareSyncFailure? {
-        val selectedCourseId = mutableState.value.selectedCourseId
-            ?: return CoursewareSyncFailure.MALFORMED_RESPONSE
+    private suspend fun hydrateExportTree(stableKey: String?, selectedCourseId: Int): CoursewareSyncFailure? {
         if (!loadCourseLocked(selectedCourseId)) {
             return mutableState.value.fileFailure ?: CoursewareSyncFailure.NETWORK
         }
         val visited = mutableSetOf<String>()
         while (true) {
-            val course = mutableState.value.selectedCourse
+            val course = mutableState.value.courses.firstOrNull { it.id == selectedCourseId }
                 ?: return CoursewareSyncFailure.MALFORMED_RESPONSE
             val roots = if (stableKey == null) {
                 course.children
@@ -474,7 +489,7 @@ class CoursewareScreenModel(
             }
             val unloaded = roots.firstUnloadedFolder() ?: return null
             if (!visited.add(unloaded.stableKey)) return CoursewareSyncFailure.MALFORMED_RESPONSE
-            if (!loadFolderLocked(unloaded.stableKey)) {
+            if (!loadFolderLocked(unloaded.stableKey, selectedCourseId)) {
                 return mutableState.value.fileFailure ?: CoursewareSyncFailure.NETWORK
             }
         }

@@ -26,6 +26,25 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.stableKey
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeRecorder
 
 class HomeworkScreenModelTest {
+    @Test fun detailRecoveryRequiresConfirmedSessionExpiry() = runBlocking {
+        for (reason in listOf(HomeworkSyncFailure.NETWORK, HomeworkSyncFailure.SESSION_EXPIRED)) {
+            val item = homework(1, "fixture", "2099-01-01 00:00")
+            val snapshot = HomeworkSnapshot(listOf(item))
+            var reads = 0
+            var recoveries = 0
+            val repository = object : HomeworkRepository by FakeRepository(snapshot, snapshot) {
+                override suspend fun loadDetail(homework: Homework): HomeworkDetailResult =
+                    if (++reads == 1) HomeworkDetailResult.Failure(reason)
+                    else HomeworkDetailResult.Success(HomeworkDetail("已恢复", emptyList()))
+            }
+            val model = HomeworkScreenModel(repository)
+            model.initialize(refreshFromNetwork = false)
+            loadHomeworkDetailsWithRecovery(model, item.stableKey()) { recoveries++; true }
+            assertEquals(if (reason == HomeworkSyncFailure.SESSION_EXPIRED) 1 else 0, recoveries)
+            assertEquals(if (reason == HomeworkSyncFailure.SESSION_EXPIRED) 2 else 1, reads)
+        }
+    }
+
     private val now = LocalDateTime(2026, 7, 30, 8, 0)
 
     @Test

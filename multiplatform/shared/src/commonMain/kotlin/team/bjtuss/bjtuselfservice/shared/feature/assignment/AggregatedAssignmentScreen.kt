@@ -1,6 +1,12 @@
 package team.bjtuss.bjtuselfservice.shared.feature.assignment
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import kotlinx.coroutines.launch
+import team.bjtuss.bjtuselfservice.shared.files.*
+import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -28,11 +34,16 @@ internal fun AggregatedAssignmentWorkspace(
     store: AggregateAssignmentFilterStore?, onInitialize: suspend () -> Unit,
     onOpen: (AggregatedAssignment) -> Unit, onRefreshSource: (AssignmentSource) -> Unit,
     showSyncDetails: Boolean, onDismissSyncDetails: () -> Unit, modifier: Modifier = Modifier,
+    expanded: Boolean = false,
+    fileGateway: HomeworkFileGateway,
+    markdown: (AggregatedAssignment) -> String,
+    detailContent: @Composable (AggregatedAssignment) -> Unit,
 ) {
     var filters by remember(store) { mutableStateOf(store?.load() ?: AggregateAssignmentFilters()) }
     var showFilters by remember { mutableStateOf(false) }
     var now by remember { mutableStateOf(Clock.System.now().epochSeconds) }
     val list = rememberLazyListState()
+    var selectedKey by remember { mutableStateOf<String?>(null) }
     val visible = filterAggregateAssignments(assignments, filters, now)
     LaunchedEffect(Unit) { onInitialize() }
     LaunchedEffect(Unit) { while (true) { now = Clock.System.now().epochSeconds; delay(30_000) } }
@@ -42,24 +53,41 @@ internal fun AggregatedAssignmentWorkspace(
         if (filters.active) " · 已筛选" else ""
     val top = LocalTopBarClearance.current
     val bottom = LocalBottomBarClearance.current
-    TopScrollLazyColumn(state = list, modifier = modifier.fillMaxSize().desktopTouchScroll(list),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp + top, bottom = 24.dp + bottom),
-        verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        sync.filter { it.failed }.forEach { status ->
-            item("failure:${status.source}") {
-                AppErrorBanner(title = "${status.source.label} · ${status.status}",
-                    message = status.message ?: "请检查网络或登录状态后重试。", onRetry = { onRefreshSource(status.source) })
+    val renderList: @Composable (Modifier) -> Unit = { listModifier ->
+        TopScrollLazyColumn(state = list, modifier = listModifier.desktopTouchScroll(list),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp + top, bottom = 24.dp + bottom),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            sync.filter { it.failed }.forEach { status ->
+                item("failure:${status.source}") {
+                    AppErrorBanner(title = "${status.source.label} · ${status.status}",
+                        message = status.message ?: "请检查网络或登录状态后重试。", onRetry = { onRefreshSource(status.source) })
+                }
             }
-        }
-        item("summary") { HomeworkSummaryBanner(visible.size, subtitle, onOpenFilter = { showFilters = true }) }
-        if (visible.isEmpty()) item("empty") {
-            Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(if (assignments.isEmpty()) "暂无作业" else "当前筛选下没有作业", style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = { showFilters = true }) { Text("调整筛选") }
+            item("summary") { HomeworkSummaryBanner(visible.size, subtitle, onOpenFilter = { showFilters = true }) }
+            if (visible.isEmpty()) item("empty") {
+                Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(if (assignments.isEmpty()) "暂无作业" else "当前筛选下没有作业", style = MaterialTheme.typography.titleMedium)
+                    TextButton(onClick = { showFilters = true }) { Text("调整筛选") }
+                }
             }
+            items(visible, key = { it.key }) { item -> AggregatedAssignmentCard(item, now, expanded && item.key == selectedKey) {
+                if (expanded) selectedKey = item.key
+                onOpen(item)
+            } }
         }
-        items(visible, key = { it.key }) { item -> AggregatedAssignmentCard(item, now) { onOpen(item) } }
     }
+    if (expanded) {
+        // Both panes scroll independently; neither may become an iOS primary scroller.
+        CompositionLocalProvider(LocalNativeScrollControllerReporter provides null) {
+            Row(modifier.fillMaxSize().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                renderList(Modifier.weight(0.4f).fillMaxHeight())
+                val selected = visible.firstOrNull { it.key == selectedKey }
+                AssignmentDetailPane(selected, fileGateway, selected?.let(markdown), Modifier.weight(0.6f).fillMaxHeight()) {
+                    selected?.let { item -> key(item.key) { detailContent(item) } }
+                }
+            }
+        }
+    } else renderList(modifier.fillMaxSize())
     if (showFilters) AppleSheet(onDismissRequest = { showFilters = false }, title = "作业筛选", needsFullHeight = true, scrollableBody = true) {
         AggregateAssignmentFilterSheet(assignments, sync.map { it.source }, filters) { next ->
             store?.save(next)
@@ -72,11 +100,13 @@ internal fun AggregatedAssignmentWorkspace(
 }
 
 @Composable
-internal fun AggregatedAssignmentCard(item: AggregatedAssignment, now: Long, onOpen: () -> Unit) {
-    when (item.source) {
-        AssignmentSource.COURSE_PLATFORM -> item.homework?.let { HomeworkCard(it, false, { onOpen() }, source = item.source) }
-        AssignmentSource.PHYVLAB -> item.physical?.let { PhyVlabActivityRow(it, now, onOpen, source = item.source) }
-        AssignmentSource.CITEL -> item.citel?.let { CitelTaskCard(it, onOpen, source = item.source) }
+internal fun AggregatedAssignmentCard(item: AggregatedAssignment, now: Long, selected: Boolean = false, onOpen: () -> Unit) {
+    Box(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(17.dp)) else Modifier) {
+        when (item.source) {
+            AssignmentSource.COURSE_PLATFORM -> item.homework?.let { HomeworkCard(it, false, { onOpen() }, source = item.source) }
+            AssignmentSource.PHYVLAB -> item.physical?.let { PhyVlabActivityRow(it, now, onOpen, source = item.source) }
+            AssignmentSource.CITEL -> item.citel?.let { CitelTaskCard(it, onOpen, source = item.source) }
+        }
     }
 }
 
@@ -144,4 +174,43 @@ internal fun AssignmentSyncDetails(sync: List<AssignmentSourceSync>, onRefreshSo
                 }
             }
         }
+}
+
+/** Shared desktop detail frame and export actions for all three assignment sources. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AssignmentDetailPane(item: AggregatedAssignment?, gateway: HomeworkFileGateway,
+    markdown: String?, modifier: Modifier, content: @Composable () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
+    var feedback by remember(item?.key) { mutableStateOf<String?>(null) }
+    var saving by remember(item?.key) { mutableStateOf(false) }
+    Surface(modifier, shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+        if (item == null) Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+            Text("选择一项作业查看要求和附件", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else Column(Modifier.fillMaxSize()) {
+            FlowRow(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("作业详情", style = MaterialTheme.typography.titleLarge, modifier = Modifier.align(Alignment.CenterVertically))
+                TextButton(onClick = { clipboard.setText(AnnotatedString(markdown.orEmpty())); feedback = "已复制为 Markdown" }) { Text("复制为 Markdown") }
+                OutlinedButton(enabled = gateway.isAvailable && !saving, onClick = {
+                    scope.launch {
+                        saving = true
+                        try {
+                            val title = item.homework?.title ?: item.physical?.title ?: item.citel?.title.orEmpty()
+                            val result = gateway.saveFile(HomeworkFileContent(safeExportFileName("${item.courseName}-$title.md"),
+                                "text/markdown", markdown.orEmpty().encodeToByteArray()))
+                            feedback = when (result) {
+                                HomeworkFileSaveResult.Saved -> "Markdown 已保存"
+                                HomeworkFileSaveResult.Cancelled -> null
+                                is HomeworkFileSaveResult.Failed -> "无法保存 Markdown，请重试。"
+                            }
+                        } finally { saving = false }
+                    }
+                }) { Text("保存为 Markdown") }
+            }
+            feedback?.let { Text(it, Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.primary) }
+            Box(Modifier.weight(1f).fillMaxWidth()) { content() }
+        }
+    }
 }

@@ -44,7 +44,7 @@ fun CitelWorkspace(model: CitelModel, holdNetwork: Boolean, onOpen: (String) -> 
     var now by remember { mutableStateOf(Clock.System.now().epochSeconds) }
     LaunchedEffect(model, holdNetwork) {
         model.initialize()
-        if (!holdNetwork && model.state.value.enabled) model.refresh()
+        if (!holdNetwork && model.state.value.enabled) model.refreshForAppEntry(0)
     }
     LaunchedEffect(Unit) { while (true) { now = Clock.System.now().epochSeconds; delay(30_000) } }
     val scroll = rememberLazyListState()

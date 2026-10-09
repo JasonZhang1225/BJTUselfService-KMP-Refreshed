@@ -147,6 +147,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkContentSource
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkDetailWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.*
+import team.bjtuss.bjtuselfservice.shared.logging.SyncTiming
+import team.bjtuss.bjtuselfservice.shared.feature.citel.CitelDetailWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.CoursewareContentSource
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.CoursewareScreenModel
@@ -826,7 +828,7 @@ fun AuthenticatedAppShell(
             onRecoveryStateChanged = { sessionRecoveryInProgress = it },
         )
         sessionRefresh.run(
-            operation = { gradeModel.initialize(refreshFromNetwork = true) },
+            operation = { SyncTiming.measure("startup.grades") { gradeModel.initialize(refreshFromNetwork = true) } },
             sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
         )
         if (gradeModel.state.value.failure != null) {
@@ -859,7 +861,7 @@ fun AuthenticatedAppShell(
             launch {
                 // 作业自动同步的失败重试在 ScreenModel 内（最多 3 次），与课表一致。
                 sessionRefresh.run(
-                    operation = { homeworkModel.initialize(refreshFromNetwork = true) },
+                    operation = { SyncTiming.measure("startup.homework") { homeworkModel.initialize(refreshFromNetwork = true) } },
                     sessionExpired = {
                         homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED
                     },
@@ -867,7 +869,7 @@ fun AuthenticatedAppShell(
             }
             launch {
                 sessionRefresh.run(
-                    operation = { examScheduleModel.initialize(refreshFromNetwork = true) },
+                    operation = { SyncTiming.measure("startup.exams") { examScheduleModel.initialize(refreshFromNetwork = true) } },
                     sessionExpired = {
                         examScheduleModel.state.value.failure == ExamScheduleSyncFailure.SESSION_EXPIRED
                     },
@@ -887,7 +889,7 @@ fun AuthenticatedAppShell(
                 // 先灌入缓存，课表与校历随后由模型并行同步；周数仍只由校历确认。
                 courseScheduleModel.initialize(refreshFromNetwork = false)
                 sessionRefresh.run(
-                    operation = { courseScheduleModel.initialize(refreshFromNetwork = true) },
+                    operation = { SyncTiming.measure("startup.schedule") { courseScheduleModel.initialize(refreshFromNetwork = true) } },
                     sessionExpired = {
                         courseScheduleModel.state.value.failure ==
                             CourseScheduleSyncFailure.SESSION_EXPIRED
@@ -901,7 +903,7 @@ fun AuthenticatedAppShell(
     // 之后由首页刷新和读信动作维护；探测失败时首页回退 MIS 聚合值。
     LaunchedEffect(mailboxModel, entryLoggingIn) {
         if (entryLoggingIn) return@LaunchedEffect
-        mailboxModel.refreshUnreadInboxCount()
+        SyncTiming.measure("startup.mail-unread") { mailboxModel.refreshUnreadInboxCount() }
     }
 
     // 独立校园网数据源由稳定首页宿主启动，原生二级页面仅共享状态。
@@ -909,15 +911,18 @@ fun AuthenticatedAppShell(
         val model = session.citelModel ?: return@LaunchedEffect
         model.setEnabled(citelEnabled)
         if (citelEnabled && !model.state.value.configured) settingsModel.setCitelEnabled(false)
-        // Restore cached CITEL state only. CitelWorkspace refreshes on feature entry;
-        // submission reads recover an expired session when it is actually needed.
+        if (citelEnabled && !entryLoggingIn && shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) {
+            SyncTiming.measure("startup.citel") { model.refreshForAppEntry(0) }
+        }
+        // Only initial App entry triggers this; foreground/focus changes are not keys.
+        // Reads/submissions recover the session only after confirmed expiry.
     }
     LaunchedEffect(session.physicsLabModel, physicsLabEnabled, entryLoggingIn, forcedRouteId, nativeTabBarEnabled) {
         val labModel = session.physicsLabModel ?: return@LaunchedEffect
         labModel.setEnabled(physicsLabEnabled)
         if (physicsLabEnabled && !labModel.state.value.configured) settingsModel.setPhysicsLabEnabled(false)
         if (physicsLabEnabled && !entryLoggingIn && shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) {
-            labModel.refresh()
+            SyncTiming.measure("startup.physics-lab") { labModel.refresh() }
         }
     }
 
@@ -934,7 +939,7 @@ fun AuthenticatedAppShell(
             )
         ) return@LaunchedEffect
         phyVlabModel.initialize(refreshFromNetwork = false)
-        phyVlabModel.refresh()
+        SyncTiming.measure("startup.physical-online") { phyVlabModel.refresh() }
     }
 
     // 进入主界面后静默检查一次更新（对齐原安卓启动时自动检测）：
@@ -1369,7 +1374,7 @@ fun AuthenticatedAppShell(
                         onOpenHomeworkDetail = { homework ->
                             val key = homework.stableKey()
                             homeworkModel.selectHomework(key)
-                            scope.launch { homeworkModel.showDetails(key) }
+                            scope.launch { team.bjtuss.bjtuselfservice.shared.feature.homework.loadHomeworkDetailsWithRecovery(homeworkModel, key, reauthenticateSession) }
                             if (useNativeSecondaryRoutes) {
                                 onOpenNativeRoute(HOMEWORK_DETAIL_ROUTE_ID)
                             } else if (backStack.lastOrNull() != HomeworkDetailRoute) {
@@ -1527,13 +1532,16 @@ fun AuthenticatedAppShell(
                     onInitialize = {
                         homeworkModel.initialize(refreshFromNetwork = false)
                         if (phyVlabEnabled) phyVlabModel.initialize(refreshFromNetwork = false)
-                        if (citelEnabled) session.citelModel?.initialize()
+                        if (citelEnabled) session.citelModel?.let { model ->
+                            model.setEnabled(true)
+                            SyncTiming.measure("feature.citel") { model.refreshForAppEntry(0) }
+                        }
                     }, onOpen = { item ->
                         val detailRoute = when (item.source) {
                             AssignmentSource.COURSE_PLATFORM -> {
                                 item.homework?.let { homework ->
                                     homeworkModel.selectHomework(homework.stableKey())
-                                    scope.launch { homeworkModel.showDetails(homework.stableKey()) }
+                                    scope.launch { team.bjtuss.bjtuselfservice.shared.feature.homework.loadHomeworkDetailsWithRecovery(homeworkModel, homework.stableKey(), reauthenticateSession) }
                                 }
                                 HomeworkDetailRoute
                             }
@@ -1545,10 +1553,24 @@ fun AuthenticatedAppShell(
                             PhyVlabDetailRoute -> PHYVLAB_DETAIL_ROUTE_ID
                             else -> CITEL_DETAIL_ROUTE_ID
                         }
-                        if (useNativeSecondaryRoutes) onOpenNativeRoute(routeId) else backStack.add(detailRoute)
+                        if (!expanded) {
+                            if (useNativeSecondaryRoutes) onOpenNativeRoute(routeId) else backStack.add(detailRoute)
+                        }
                     }, onRefreshSource = { source -> scope.launch { refreshAssignmentSource(source) } },
                     showSyncDetails = aggregateSyncDialogVisible, onDismissSyncDetails = { aggregateSyncDialogVisible = false },
-                    modifier = Modifier.fillMaxSize())
+                    modifier = Modifier.fillMaxSize(), expanded = expanded, fileGateway = homeworkFileGateway,
+                    markdown = { item -> aggregateAssignmentMarkdown(item, homeworkState, phyVlabState, citelState) },
+                    detailContent = { item ->
+                        when (item.source) {
+                            AssignmentSource.COURSE_PLATFORM -> HomeworkDetailWorkspace(homeworkModel, homeworkFileGateway,
+                                reauthenticateSession, Modifier.fillMaxSize())
+                            AssignmentSource.PHYVLAB -> PhyVlabDetailWorkspace(phyVlabModel, homeworkFileGateway,
+                                onOpenExternalUrl, modifier = Modifier.fillMaxSize())
+                            AssignmentSource.CITEL -> session.citelModel?.let { model ->
+                                CitelDetailWorkspace(model, homeworkFileGateway, onOpenExternalUrl, modifier = Modifier.fillMaxSize())
+                            }
+                        }
+                    })
             }
             AppSection.HOMEWORK -> DestinationPage(
                 title = AppSection.HOMEWORK.title,

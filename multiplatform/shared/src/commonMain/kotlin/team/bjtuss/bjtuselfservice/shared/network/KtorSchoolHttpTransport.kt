@@ -3,6 +3,10 @@ package team.bjtuss.bjtuselfservice.shared.network
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngineFactory
 import io.ktor.client.plugins.HttpTimeout
+import team.bjtuss.bjtuselfservice.shared.logging.SyncTiming
+import kotlin.time.TimeSource
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.CoroutineName
 import io.ktor.client.plugins.cookies.AcceptAllCookiesStorage
 import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.client.plugins.UserAgent
@@ -21,8 +25,10 @@ import io.ktor.http.Parameters
 import io.ktor.http.Url
 import io.ktor.http.content.ByteArrayContent
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import team.bjtuss.bjtuselfservice.shared.logging.AppLog
 
 expect fun schoolHttpEngineFactory(): HttpClientEngineFactory<*>
@@ -38,19 +44,22 @@ class KtorSchoolHttpTransport(
     private var client = newClient(cookieStorage, sessionScoped = true)
     private var rawClient = newClient(cookieStorage, sessionScoped = true, followRedirects = false)
     /**
-     * 公开页旁路：无 Cookie、不进 [requestMutex]、更短超时。
+     * 公开页旁路：无 Cookie、不进 network gates、更短超时。
      * 仅用于 bksy 校历等不依赖登录的页面；切勿用它拉 aa/CAS。
      */
     private val publicClient = newClient(AcceptAllCookiesStorage(), sessionScoped = false)
-    /**
-     * 登录后课表/作业/考试/首页会并行刷新，共享同一 Cookie jar。
-     * Ktor AcceptAllCookiesStorage 非线程安全：并发 execute 会偶发 NETWORK 失败
-     *（单独拉课表稳定成功，并发则大量失败——已用 LiveCourseScheduleProbe 复现）。
-     * 串行化会话请求，换正确性；模块仍可并行编排，只是底层排队。
-     */
-    private val requestMutex = Mutex()
-    // 物理实验是独立登录系统。独立 Cookie/请求锁，校园网断连不能阻塞教务同步。
-    private val physicsLabMutex = Mutex()
+    // Ktor 3.5.1 protects its Cookie storage with an internal mutex. Bound network
+    // concurrency per service instead of holding one lock across every HTTP request.
+    // CAS authentication remains sequential; slow independent hosts cannot block AA.
+    private val gateRegistry = Mutex()
+    private val serviceGates = mutableMapOf<String, Semaphore>()
+    private val physicsLabRequests = Semaphore(2)
+    private suspend fun gateFor(request: SchoolHttpRequest): Semaphore {
+        val host = Url(request.url).host
+        return gateRegistry.withLock {
+            serviceGates.getOrPut(host) { Semaphore(if (host == "cas.bjtu.edu.cn") 1 else 2) }
+        }
+    }
     private var physicsLabClient = newClient(AcceptAllCookiesStorage(), sessionScoped = true, followRedirects = false)
 
     companion object {
@@ -63,23 +72,45 @@ class KtorSchoolHttpTransport(
                 "(KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0"
     }
 
-    override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse = requestMutex.withLock {
-        executeOn(client, request)
-    }
+    override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse =
+        executeTimed(request, "school", gateFor(request)) { client }
 
     override suspend fun executeWithoutRedirects(request: SchoolHttpRequest): SchoolHttpResponse =
         if (Url(request.url).host == "wlsy.bjtu.edu.cn") {
             require(request.url in setOf(
                 "http://wlsy.bjtu.edu.cn/", "http://wlsy.bjtu.edu.cn/Student/Teach/Course/CourseResult.aspx",
             ))
-            physicsLabMutex.withLock { executeOn(physicsLabClient, request) }
-        } else requestMutex.withLock {
-            executeOn(rawClient, request)
-        }
+            executeTimed(request, "physics-lab", physicsLabRequests) { physicsLabClient }
+        } else executeTimed(request, "school-no-redirect", gateFor(request)) { rawClient }
 
     override suspend fun executePublic(request: SchoolHttpRequest): SchoolHttpResponse =
-        // 故意不拿 requestMutex：公开页挂起不得堵住 aa 会话查询。
-        executeOn(publicClient, request)
+        // Public pages remain outside authenticated service gates.
+        executeTimed(request, "public", null) { publicClient }
+
+    private suspend fun executeTimed(request: SchoolHttpRequest, lane: String, gate: Semaphore?, httpClient: () -> HttpClient): SchoolHttpResponse {
+        if (SyncTiming.sink == null) {
+            return if (gate == null) executeOn(httpClient(), request)
+            else gate.withPermit { executeOn(httpClient(), request) }
+        }
+        val id = SyncTiming.nextId()
+        val queued = TimeSource.Monotonic.markNow()
+        val module = currentCoroutineContext()[CoroutineName]?.name ?: "unscoped"
+        val label = "id=$id module=$module lane=$lane host=${Url(request.url).host} method=${request.method}"
+        SyncTiming.record("request-queued $label")
+        val operation: suspend () -> SchoolHttpResponse = {
+            val wait = queued.elapsedNow().inWholeMilliseconds
+            val start = TimeSource.Monotonic.markNow()
+            SyncTiming.record("request-start $label wait_ms=$wait")
+            var result = "failed"
+            try {
+                executeOn(httpClient(), request).also { result = "http-${it.statusCode}" }
+            } catch (error: CancellationException) { result = "cancelled"; throw error }
+            finally {
+                SyncTiming.record("request-end $label wait_ms=$wait request_ms=${start.elapsedNow().inWholeMilliseconds} outcome=$result")
+            }
+        }
+        return if (gate == null) operation() else gate.withPermit { operation() }
+    }
 
     fun close() {
         client.close()
@@ -181,8 +212,7 @@ class KtorSchoolHttpTransport(
     }
 
     override suspend fun sessionCookiesFor(url: String): List<SchoolSessionCookie> =
-        requestMutex.withLock {
-            cookieStorage.get(Url(url)).map { cookie ->
+        cookieStorage.get(Url(url)).map { cookie ->
                 SchoolSessionCookie(
                     name = cookie.name,
                     value = cookie.value,
@@ -190,7 +220,6 @@ class KtorSchoolHttpTransport(
                     secure = cookie.secure,
                 )
             }
-        }
 
     private fun newClient(
         storage: AcceptAllCookiesStorage,

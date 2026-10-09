@@ -162,7 +162,7 @@ fun HomeWorkspace(
     var selectedChangeDomain by remember { mutableStateOf<HomeChangeDomain?>(null) }
     var selectedChangeCourse by remember { mutableStateOf<Course?>(null) }
     val homeSchedule = LocalHomeSchedule.current
-    LaunchedEffect(model, holdNetwork) { if (!holdNetwork) model.initialize() }
+    LaunchedEffect(model, holdNetwork) { if (!holdNetwork) team.bjtuss.bjtuselfservice.shared.logging.SyncTiming.measure("startup.home-status") { model.initialize() } }
     selectedChangeDomain?.let { domain ->
         HomeChangeDialog(
             domain = domain,
