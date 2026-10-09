@@ -16,6 +16,15 @@ class PackagingCiAsciiConfigTest {
     }
 
     @Test
+    fun debugTagsPackageWithoutGitHubRelease() {
+        val workflow = File(findRepoRoot(), ".github/workflows/kmp-package.yml").readText()
+        assertTrue("\"debug-*\"" in workflow)
+        assertTrue("startsWith(github.ref, 'refs/tags/v')" in workflow)
+        assertTrue("!startsWith(github.ref_name, 'debug-')" in workflow)
+        assertTrue("!contains(github.ref_name, 'alpha')" in workflow)
+    }
+
+    @Test
     fun windowsGradleUsesChineseInstallerStrings() {
         val gradle = File(findRepoRoot(), "multiplatform/windowsApp/build.gradle.kts").readText()
         // 本地构建没有代码页问题，默认值保留中文显示名，只由上面两个环境变量在 CI 覆盖。

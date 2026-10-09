@@ -8,6 +8,9 @@ on:
       # 1.7.9 起应用版本不再带 KMP/Liquid 后缀。v1.7.0 仍是冻结根 Android 标签，
       # 由各打包任务跳过，避免和 release.yml 一起打出两套包。
       - "v*"
+      # debug-* 只打包并上传 Actions 产物，不创建 GitHub Release / pre-release，
+      # 因此应用内更新检查不会把它当成全量更新。
+      - "debug-*"
   workflow_dispatch:
 
 concurrency:
@@ -300,7 +303,9 @@ jobs:
   release:
     name: GitHub Release
     needs: [android, windows, macos, ios]
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.android.result == 'success' && needs.windows.result == 'success' && needs.macos.result == 'success' && needs.ios.result == 'success' }}
+    # 只给正式 v* 标签发 GitHub Release。debug-* / alpha 标签只保留 Actions 产物，
+    # 避免应用内更新检查把调试包当成全量更新或 pre-release。
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && !startsWith(github.ref_name, 'debug-') && !contains(github.ref_name, 'alpha') && needs.android.result == 'success' && needs.windows.result == 'success' && needs.macos.result == 'success' && needs.ios.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout release notes

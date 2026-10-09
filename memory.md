@@ -1,39 +1,25 @@
 # BJTUselfService KMP 实时工作记忆
 
-> 最后更新：2026-10-08。
-> 当前阶段：CITEL 线 UI 已提交并推到 `mine/codex/CITEL`。
-> 当前分支：`codex/CITEL`，跟踪 `mine/codex/CITEL`。
-> 应用版本仍为 1.8.2-KMP / Build 23。
-> `MacPWDFix` 已并入 CITEL，本地与 `mine` 上的该分支已删除。
+> 最后更新：2026-10-09。
+> 当前阶段：Duo 线调试包 `1.8.3-alpha-ci`（Build 25）。
+> 当前分支：`codex/Duo`，跟踪 `mine/codex/Duo`。
+> 应用版本：`1.8.3-alpha-ci` / Build 25。
+> 调试标签：`debug-1.8.3-alpha-ci`（只走 Actions 打包，不发 GitHub Release / pre-release）。
+> 正式 Latest 仍是 `v1.8.2-KMP`。
 
 ## 已完成
 
-- 作业聚合独立成卡并加描述，与三个功能开关分开。
-- 首页增加正在上课/进行中卡：地点、老师、完整时段分行。
-- 数据变动：只显示真变化字段；iOS 半屏原生 sheet，标记已读在左上角；点卡片进详情，不跳一级页。
-- 摘要「已筛选」加粗。
-- 本轮已推到 `mine/codex/CITEL`。未并 `main`。
-- 本地安装包已放到 Downloads（未覆盖旧包）：`BJTUSelfService-KMP-1.8.2-CITEL-20261008-iOS-unsigned.ipa`、`BJTUSelfService-KMP-1.8.2-CITEL-20261008-macOS-arm64.dmg`。IPA 未签名需自签；DMG 为 ad-hoc。
+- Duo / 横屏适配、并行同步、回顶遮挡、CITEL 编程 AC 判定已在 `codex/Duo`。
+- 版本改为 `1.8.3-alpha-ci`，构建号 25；`debug-*` 标签可触发 `kmp-package.yml`，但跳过 GitHub Release，应用内不会当全量更新。
+- 未并 `main`，未推 `origin`。
 
 ## 当前注意事项
 
-- 正在上课卡用系统时钟每 30 秒刷新；今天课上完则不占位置。
-- 变动记录 codec 升到 v2；旧 v1 缓存仍能读。点「标记已读」后同类差异不会再弹。
-- iOS 模拟器需重新编译安装后才能看到本轮界面。
+- 本包是 CI 调试产物，从 Actions artifacts 下载，不是 Release 附件。
+- iOS IPA 仍未签名，需自签；macOS DMG 为 CI 打包。
+- 比较器里 `1.8.3-alpha-ci` 数字段高于 `1.8.2-KMP`，所以不能给这个标签发 GitHub Release。
 
 ## 接下来
 
-1. 用本轮 CITEL 安装包在 iOS（自签）和 Mac 上看聚合开关、正在上课卡、变动弹窗。
-2. 需要并进 main 或发布时再确认范围。
-
-## 2026-10-09 同步策略澄清
-
-- CITEL 进入 App 与其他模块并行同步一次；模型按会话 generation 0 去重，不因窗口聚焦或再点作业页重复同步。
-- CITEL／课程平台仅在提交或读取确认登录失效后恢复；网络超时不作为重新登录依据。
-- Ktor 3.5.1 Cookie 存储已有内部锁。请求改为按主机并发 2 条、CAS 1 条；CITEL 只读页 2 路，失效恢复合并，写入保留既有锁。
-- 本地 Debug 可用 `--sync-timing` 记录脱敏耗时；最终记录与对比在 `.artifacts/desktop-debug-final-parallel-timing.log`、`.artifacts/parallel-sync-comparison.md`。
-
-## 2026-10-09 Duo 回顶与 CITEL 编程完成状态
-
-- Duo 回顶遮挡修复已提交 `8ae3d31`：顶栏净空使用实际导航栏位置与完整高度，防止后台标签页覆盖；空闲时校正 UIKit 与 Compose 回顶零点。视觉检查图 `.artifacts/duo-top-origin-fix/visual-review.png`。
-- CITEL 编程题完成状态统一以个人评测 AC 为准；右上角完成标签显示 `AC`。独立 CITEL／聚合作业的隐藏已提交筛选与日程完成标记使用同一规则，WA、评测中、仅有提交记录均不算完成；普通报告仍按提交状态。
+1. 等 `debug-1.8.3-alpha-ci` 的 KMP package 跑完，从 Actions 取四端产物。
+2. 需要并进 main 或正式发布时再确认范围。
