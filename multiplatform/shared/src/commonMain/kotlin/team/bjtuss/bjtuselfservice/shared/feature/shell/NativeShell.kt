@@ -87,6 +87,9 @@ data class NativeScrollController(
     val canScrollBackward: Boolean,
     val canScrollForward: Boolean,
     private val consume: (Float) -> Float,
+    private val alignStart: () -> Unit,
 ) {
     fun consumeScroll(deltaPx: Float): Float = consume(deltaPx)
+    /** Repair a layout/restoration anchor when UIKit is already at its origin. */
+    fun alignToStart() = alignStart()
 }

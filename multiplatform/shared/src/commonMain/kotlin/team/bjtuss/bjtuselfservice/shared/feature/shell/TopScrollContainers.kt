@@ -44,7 +44,8 @@ internal fun TopScrollLazyColumn(
     val nativeReporter = LocalNativeScrollControllerReporter.current
     val consumeNativeScroll = remember(state) { { delta: Float -> state.dispatchRawDelta(delta) } }
     if (nativeReporter != null) {
-        val controller = NativeScrollController(-1f, state.canScrollBackward, state.canScrollForward, consumeNativeScroll)
+        val controller = NativeScrollController(-1f, state.canScrollBackward, state.canScrollForward, consumeNativeScroll,
+            remember(state) { { state.requestScrollToItem(0) } })
         SideEffect { nativeReporter(controller) }
         DisposableEffect(nativeReporter, state) { onDispose { nativeReporter(null) } }
     }
@@ -96,7 +97,8 @@ internal fun TopScrollColumn(
     val consumeNativeScroll = remember(state) { { delta: Float -> state.dispatchRawDelta(delta) } }
     if (nativeReporter != null) {
         val range = state.maxValue.takeUnless { it == Int.MAX_VALUE }?.toFloat() ?: -1f
-        val controller = NativeScrollController(range, state.canScrollBackward, state.canScrollForward, consumeNativeScroll)
+        val controller = NativeScrollController(range, state.canScrollBackward, state.canScrollForward, consumeNativeScroll,
+            remember(state) { { state.dispatchRawDelta(-state.value.toFloat()); Unit } })
         SideEffect { nativeReporter(controller) }
         DisposableEffect(nativeReporter, state) { onDispose { nativeReporter(null) } }
     }

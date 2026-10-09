@@ -777,6 +777,7 @@ private final class SafeAreaComposeHost: UIViewController, UIScrollViewDelegate 
     private var renderedOffset: CGFloat = 0
     private var nativeRange: CGFloat = 0
     private var updatingRange = false
+    private var aligningToStart = false
     var hasNativeScroller: Bool { scrollController != nil }
 
     init(content: UIViewController, session: AuthenticatedSession) {
@@ -843,6 +844,20 @@ private final class SafeAreaComposeHost: UIViewController, UIScrollViewDelegate 
             content.view.transform = .identity
         }
         updateNativeRange()
+        alignNativeOriginIfNeeded()
+    }
+
+    private func alignNativeOriginIfNeeded() {
+        guard let controller = scrollController, let scroller = nativeScrollView else { return }
+        if !controller.canScrollBackward || renderedOffset > 0.5 { aligningToStart = false }
+        guard !aligningToStart, controller.canScrollBackward,
+              renderedOffset <= 0.5, abs(scroller.contentOffset.y) <= 0.5,
+              !scroller.isTracking, !scroller.isDecelerating else { return }
+        // A resized LazyColumn can preserve an old physical anchor while UIKit is
+        // at zero. Fix only this idle origin mismatch, never a live native gesture.
+        aligningToStart = true
+        controller.alignToStart()
+        content.view.transform = .identity
     }
 
     override func viewWillLayoutSubviews() {
@@ -939,6 +954,11 @@ private final class TabRootNavigationController: UINavigationController, UINavig
     /// 原生导航栏实际占掉的顶部高度（栏底 maxY，含状态栏），推给 Compose 做滚动内容顶边距；
     /// 内容经过横向玻璃，滚动方向驱动 iOS 27 原生栏划出。栏隐藏时推 0。
     private var pushedTopInset: CGFloat = -1
+    private var headerGeometry: CGSize = .zero
+    private var headerVertical: Bool?
+    private var expandedHeaderHeight: CGFloat = 0
+    private var expandedHeaderTop: CGFloat = 0
+    private var headerTextCategory: UIContentSizeCategory?
     private var navigationBarGlassView: NativeNavigationBarGlassView?
     private var systemTitleVertical: Bool?
     private let glassState = NativeNavigationGlassState<ObjectIdentifier>()
@@ -1156,8 +1176,24 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         }
         // Every system-bar host uses the same full-height viewport, including its
         // first frame. Compose consumes the header inset inside its list or spacer.
+        // Duo can expose a top title while its reserved safe-area edge is on the
+        // side. The safe-area top alone then misses the title's actual footprint.
+        // Use UIKit's full bar fitting height, stable throughout minimization.
+        let statusTop = currentOwner?.view.window?.safeAreaInsets.top ?? view.safeAreaInsets.top
+        if !navigationBar.isHidden && (headerGeometry != view.bounds.size || headerVertical != vertical ||
+            headerTextCategory != traitCollection.preferredContentSizeCategory || expandedHeaderHeight == 0) {
+            headerGeometry = view.bounds.size
+            headerVertical = vertical
+            headerTextCategory = traitCollection.preferredContentSizeCategory
+            expandedHeaderHeight = navigationBar.sizeThatFits(CGSize(width: view.bounds.width, height: 0)).height
+            if let owner = currentOwner {
+                let barRect = navigationBar.convert(navigationBar.bounds, to: owner.view)
+                expandedHeaderTop = max(0, barRect.minY)
+            }
+        }
+        let headerHeight = navigationBar.isHidden ? 0 : expandedHeaderHeight
         let topInset: CGFloat = usesSystemBars
-            ? (currentOwner?.view.safeAreaInsets.top ?? 0)
+            ? max(currentOwner?.view.safeAreaInsets.top ?? 0, expandedHeaderTop + headerHeight)
             : (navigationBar.isHidden ? 0 : navigationBar.frame.maxY)
         if let glassView = navigationBarGlassView {
             let glassBounds = CGRect(
@@ -1172,9 +1208,16 @@ private final class TabRootNavigationController: UINavigationController, UINavig
             view.bringSubviewToFront(navigationBar)
         }
         if let centeredTitleLabel { navigationBar.bringSubviewToFront(centeredTitleLabel) }
-        if view.window != nil, abs(topInset - pushedTopInset) > 0.5 {
+        let ownsVisiblePage = !usesSystemBars || tabBarController?.selectedViewController === self
+        if view.window != nil, ownsVisiblePage,
+           abs(topInset - pushedTopInset) > 0.5 || abs(Float(topInset) - session.glassTopBarInsetDp) > 0.5 {
             pushedTopInset = topInset
             session.glassTopBarInsetDp = Float(topInset)
+#if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--layout-metrics") {
+                print("[LayoutMetrics] top=\(topInset) safe=\(currentOwner?.view.safeAreaInsets.top ?? 0) status=\(statusTop) header=\(headerHeight) bar=\(navigationBar.frame) viewport=\(currentOwner?.view.bounds ?? .zero)")
+            }
+#endif
         }
     }
 
