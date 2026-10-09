@@ -1,7 +1,7 @@
 # 🚄 交大自由行KMP (BJTU Self Service KMP Refreshed)
 
-> 北京交通大学校园服务客户端 —— 让校园生活触手可及  
-> 本仓库为 **Kotlin Multiplatform 多端刷新版**（Android / iOS / macOS / Windows），在原安卓项目功能基线 `v1.7.0` 上迁移与增强。
+> 北京交通大学校园服务客户端 —— 让校园生活触手可及  ↩
+> 本仓库为 **Kotlin Multiplatform重构版**（Android / iOS / macOS / Windows），在原安卓项目功能基线 `v1.7.1` 上迁移与增强，。
 
 [![KMP Release](https://img.shields.io/github/v/release/JasonZhang1225/BJTUselfService-KMP-Refreshed?include_prereleases&style=flat-square&label=KMP%20版本)](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases)
 [![Upstream](https://img.shields.io/github/v/release/HFDLYS/BJTUselfService?style=flat-square&label=原作者安卓)](https://github.com/HFDLYS/BJTUselfService/releases/latest)
@@ -17,51 +17,86 @@
 
 所有数据解析（包括验证码识别）均在**本地完成**，无需上传至第三方服务器，充分保障用户隐私安全。
 
-本 fork（[BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed)）在原作者 [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService) 安卓版基础上，用 **KMP + Compose Multiplatform** 做多端共享实现；根目录冻结原 Android 工程，**新实现在 `multiplatform/`**。当前应用版本 **1.8.2-KMP**。
+本 fork（[BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed)）在原作者 [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService) 安卓版基础上，用 **KMP + Compose Multiplatform** 做多端共享实现。
 
-相对原版新增/增强（节选）：
-- **教室占用查询**（教务系统入口功能）
-- **成绩按课程性质筛选**（必修 / 限选 / 任选 / 体育）
-- **物理在线作业和物理实验查询**
-- **邮箱原生前端**
-- **Windows 桌面端**
+_**相对原版新增/增强的功能（节选）：**_
 
-## ✨ 功能特性
+- _**教室占用查询**（教务系统入口功能）_
+- _**成绩按课程性质筛选**（必修 / 限选 / 任选 / 体育）_
+- _**物理在线作业和物理实验查询**_
+- _**邮箱简单的前端壳子**_
+- **_iOS（现已支持iPhone Duo） + Mac OS + Windows 端_**
+
+## 📱 支持平台
+
+- **Android**：arm64-v8a .`apk`（包名 `team.bjtuss.bjtuselfservice.kmp`与原版包名不同，可共存）
+- **iOS**：unsigned `.ipa`（开发/侧载构建，需自行签名安装，可使用 SideStore ，参考 [iOS 自签与安装指南](docs/iOS-sign-guide.md)）
+- **macOS**：Arm64`.dmg`（仅支持 Apple Silicon 芯片 Mac，ad-hoc 签名，未公证，首次打开可能需要在终端执行 `sudo xattr -r -d com.apple.quarantine /Applications/交大自由行 KMP.app`）
+- **Windows**：x64 `.msi` 安装包
+- 对于其他系统平台或架构，可以使用源码自行打包对应平台版本
 
 ### 🔐 智能登录
+
 - 免验证码自动登录 MIS 系统
 - Android 本地 ONNX / Apple Core ML 验证码识别，无需第三方服务参与
 - 登录状态持久化，打开即用
+- 物理实验和CITEL需要单独配置账号密码，支持记住密码和自动登录
 
 ### 📚 学业管理
-- **成绩查询** — 按学年筛选、排序，查看成绩详情，自动计算 GPA/均分
+
+- **成绩查询** — 查看成绩详情，按学年、课程类型（选修/必修等）筛选、排序、计算均分
 - **课程表** — 直观的课程表预览界面，支持本科生与研究生
 - **考试日程** — 考试安排一览，变动自动提醒
-- **作业管理** — 查看、筛选、排序作业，支持作业上传与下载
-- **物理在线** — 查看课程、作业安排、批改信息和评语；保存作业文件并最终提交，明确区分草稿与已提交；校园网不可达时显示按账号隔离的本地缓存
-- **CITEL 作业** — 同步书面作业与编程练习，支持报告文件增删替换和代码文件提交；查看折扣倍率及开始/折扣/截止节点，会话失效后自动重新登录
-- **作业界面** — 可在设置开启作业聚合，将课程平台、物理在线和 CITEL 合为“作业”入口；卡片区分平台与提交状态，课程按平台分组筛选，三个平台独立同步和提示错误，条件保存并在重启后恢复，首页呈现开始、折扣和截止安排
+- **物理实验（需单独配置账号密码）** — 获取物理实验选课系统的选课信息，并显示在首页和课程表提醒
+- **智慧课程平台作业管理** — 查看、筛选、排序作业，支持作业上传与下载
+- **物理在线作业管理（需校园网环境）** — 查看课程、作业安排、批改信息和评语；保存作业文件并最终提交
+- **CITEL 作业（需单独配置账号密码）** — 同步书面作业与编程练习，支持报告文件增删替换和代码文件提交；查看折扣倍率及开始/折扣/截止节点
+- **以上三个来源作业可聚合展示** — 可在设置开启作业聚合，将课程平台、物理在线和 CITEL 合为“作业”入口
 
 ### 📬 信息服务
-- **校内邮箱** — 复用 MIS 会话查看文件夹、邮件列表和详情，支持 HTML 表格与写信/回复
-- **校园卡余额** — 实时查看一卡通余额
-- **校园网余额** — 网络使用情况一目了然
+
+- **校内邮箱** — 首页显示未读邮件数量，邮件展示支持 HTML 表格与写信/回复和在浏览器打开（暂不支持附件）
+- **手机版一键跳转完美校园小程序** — 便于一卡通管理
+- **校园网余额充值二维码** — 微信扫描进入校园网充值入口
 
 ### 📅 日历与提醒
-- 日历视图整合作业截止日期与考试时间
-- 邮箱订阅功能，自动抓取智慧课程平台作业/课程报告/实验
-- 剩余时间不足阈值时自动发送邮件提醒
+
+- 按照校历获取教学周安排，可正确处理国庆等长假导致的教学周变动
+- 课程表页面支持将课程表和物理实验导入手机日历（直接导入仅支持iOS，安卓支持导出为.ics文件）
+- 支持首页展示正在进行的课程、即将进行的课程和即将到期的作业
 
 ### 🏫 校园工具
-- **教室人数估计** — 查看教室人数侦测结果（第三方接口）
-- **教室占用查询** — 按教学楼 / 教学周查看排课与占用（KMP 新增）
+
+- **教室占用查询与人数估计** — 查看教务系统的教室占用和第三方接口的教室人数侦测结果
 - **校历** — 打开公众号文章查看学校最新校历
 - **成绩单下载** — 支持中英文成绩单快捷下载
-- **应用内更新** — 原安卓版启动时自动检测新版本；KMP 正式分发后以各平台商店或本仓库 Release 为准
+- **应用内更新** — 获取本仓库发布的Release和Pre-release版本
+
+## 🔒 隐私与安全
+
+- ✅ 验证码通过本地 ONNX/Core ML 模型识别，**不上传任何数据到第三方服务器**
+- ✅ 账号密码仅存储在本地设备
+- ✅ Android Keystore、Apple Keychain、Windows DPAPI 保存登录凭据
+- ✅ macOS/Windows 离线缓存字段使用系统密钥支持的 AES-256-GCM 加密
+
+### 🗑️ 卸载与本地数据清理
+
+- **Android / iOS**：卸载即清除应用私有数据；缓存数据库已设置不随 iCloud/iTunes 备份上云。
+
+- **Windows**：MSI 卸载会自动删除 `%LOCALAPPDATA%\BJTUselfServiceKMP`（离线缓存）和 `HKCU\Software\JavaSoft\Prefs\team\bjtuss\bjtuselfservice`（DPAPI 加密凭据）；升级安装不会清除数据。
+
+- **macOS**：拖拽删除 `.app` **不会清除用户数据**。卸载前请在应用内「设置 → 本地数据与会话 → 清除全部本地数据」执行全量清理；如已删除应用，可手动删除：
+
+  - `~/Library/Application Support/BJTUselfServiceKMP/`（AES-256-GCM 加密离线缓存）
+  - 「钥匙串访问」中服务名为 `team.bjtuss.bjtuselfservice.kmp.secrets` 的条目（登录凭据、缓存密钥、物理实验账号等合并为一条）
+  - 旧版分条名称 `team.bjtuss.bjtuselfservice.kmp.credentials`、`…cache-key`、`…physicslab` 会在新版首次成功读取后迁入上一条并删除
+  - `~/Library/Preferences/` 下 `team/bjtuss/bjtuselfservice` 相关的偏好文件（记住密码标记）
+
+本项目经过了多轮专门的安全审计与修复，使用不低于 GLM5.3 和 GPT Sol 5.6 的前沿模型。安全审查和修复文档记录见 [安全文档](docs/security)。
 
 ## 🏗️ 技术架构
 
-**原安卓工程（冻结）** 仍为 Jetpack Compose + Hilt + Room + OkHttp/Jsoup + PyTorch 验证码。
+**原安卓工程（冻结不再修改）** 仍为 Jetpack Compose + Hilt + Room + OkHttp/Jsoup + PyTorch 验证码。
 
 **KMP 刷新版（`multiplatform/`）** 共享业务与大部分 UI：
 
@@ -80,16 +115,16 @@
 
 ### 主要依赖（KMP）
 
-| 类别 | 技术 |
-|------|------|
-| UI | Compose Multiplatform + Material 3 |
-| 网络 | Ktor |
-| 本地缓存 | SQLDelight |
-| 凭据 | Android Keystore / Apple Keychain |
-| 验证码 | Android TorchScript、Apple Core ML |
-| 宿主 | androidApp · iosApp · desktopApp · windowsApp |
+| 类别   | 技术                                            |
+| ---- | --------------------------------------------- |
+| UI   | Compose Multiplatform + Material 3            |
+| 网络   | Ktor                                          |
+| 本地缓存 | SQLDelight                                    |
+| 凭据   | Android Keystore / Apple Keychain             |
+| 验证码  | Android TorchScript、Apple Core ML             |
+| 宿主   | androidApp · iosApp · desktopApp · windowsApp |
 
-## 🚀 快速开始
+## 🚀 从源码快速开始
 
 ### 环境要求
 
@@ -119,52 +154,19 @@ chmod +x gradlew
 # 或本地打未签名 IPA 后侧载。
 ```
 
-iOS 未签名 IPA 的自签与安装请参考 [iOS 自签与安装指南](docs/iOS-sign-guide.md)。
-
-原作者纯安卓工程仍在仓库根目录，可对照构建：
-
-```bash
-./gradlew :app:assembleDebug
-```
-
 ### 仓库与发布
 
-| 仓库 | 说明 |
-|------|------|
-| [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService) | 原作者安卓版与正式 Release |
-| [JasonZhang1225/BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed) | 本 KMP 多端 fork 与正式 Release |
-
-本 fork 的正式发布包见 [GitHub Release](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases)。1.8.1 四平台正式包已发布，源码标签为 `v1.8.1`。
-
-## 📱 支持平台
-
-- **Android**：minSdk 28+，KMP 包名 `team.bjtuss.bjtuselfservice.kmp`（与原版包名不同）
-- **iOS**：开发/侧载构建（未签名 IPA 需自行重签名，参考 [iOS 自签与安装指南](docs/iOS-sign-guide.md)）
-- **macOS**：Apple Silicon 自包含 `.app` / `.dmg`（开发 ad-hoc 签名，未公证）
-- **Windows**：x64 系统级 `.msi` 安装包，支持触摸滚动和同数值版本覆盖升级
-
-## 🔒 隐私与安全
-
-- ✅ 验证码通过本地 ONNX/Core ML 模型识别，**不上传任何数据到第三方服务器**
-- ✅ 账号密码仅存储在本地设备
-- ✅ Android Keystore、Apple Keychain、Windows DPAPI 保存登录凭据
-- ✅ macOS/Windows 离线缓存字段使用系统密钥支持的 AES-256-GCM 加密
-
-### 🗑️ 卸载与本地数据清理
-
-- **Android / iOS**：卸载即清除应用私有数据。iOS 重装后因安装内“记住密码”标记缺失，会删除残留 Keychain 凭据而不会静默恢复；缓存数据库已设置不随 iCloud/iTunes 备份上云。
-- **Windows**：MSI 卸载会自动删除 `%LOCALAPPDATA%\BJTUselfServiceKMP`（离线缓存）和 `HKCU\Software\JavaSoft\Prefs\team\bjtuss\bjtuselfservice`（DPAPI 加密凭据）；升级安装不会清数据。
-- **macOS**：拖拽删除 `.app` 不会清除用户数据。卸载前请在应用内「设置 → 本地数据与会话 → 清除全部本地数据」执行全量清理；如已删除应用，可手动删除：
-  - `~/Library/Application Support/BJTUselfServiceKMP/`（AES-256-GCM 加密离线缓存）
-  - 「钥匙串访问」中服务名为 `team.bjtuss.bjtuselfservice.kmp.secrets` 的条目（登录凭据、缓存密钥、物理实验账号等合并为一条）
-  - 旧版分条名称 `team.bjtuss.bjtuselfservice.kmp.credentials`、`…cache-key`、`…physicslab` 会在新版首次成功读取后迁入上一条并删除
-  - `~/Library/Preferences/` 下 `team/bjtuss/bjtuselfservice` 相关的偏好文件（记住密码标记）
-
-安全审计与修复记录见 [docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-21.md](docs/security/BJTU-KMP-Security-Audit-GLM-2026-09-21.md)。
+| 仓库                                                                                                              | 说明      |
+| --------------------------------------------------------------------------------------------------------------- | ------- |
+| [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService)                                             | 原作者安卓版  |
+| [JasonZhang1225/BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed) | 本仓库KMP版 |
 
 ## 🤝 贡献者
 
 感谢以下所有为本项目做出贡献的朋友们：
+
+- [HFDLYS](https://github.com/HFDLYS)
+  - 原版开发者，项目起源
 - [optsimauth](https://github.com/optsimauth): 
   - 重构了整个项目的架构，优化了代码结构
   - 以及后续若干跟进
@@ -180,4 +182,4 @@ iOS 未签名 IPA 的自签与安装请参考 [iOS 自签与安装指南](docs/i
 - [wangxiaobo1747](https://github.com/wangxiaobo1747) 
   - 提供了自定义壁纸和桌面课程表小组件
 - [JasonZhang1225](https://github.com/JasonZhang1225)
-  - KMP 多端迁移（Android / iOS / macOS / Windows）、物理在线与邮箱前端重写，以及后续壳层、教室占用等增强
+  - KMP 多端迁移（Android / iOS / macOS / Windows）、物理在线、邮箱前端，教室占用、CITEL等
