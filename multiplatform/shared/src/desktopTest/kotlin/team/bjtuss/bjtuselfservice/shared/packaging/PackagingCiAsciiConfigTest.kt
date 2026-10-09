@@ -30,6 +30,7 @@ class PackagingCiAsciiConfigTest {
         assertTrue("startsWith(github.ref, 'refs/tags/v')" in workflow)
         assertTrue("!startsWith(github.ref_name, 'debug-')" in workflow)
         assertTrue("!contains(github.ref_name, 'alpha')" in workflow)
+        assertTrue("!contains(github.ref_name, 'beta')" in workflow)
     }
 
     @Test

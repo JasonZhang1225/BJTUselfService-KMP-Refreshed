@@ -198,7 +198,7 @@ class CitelTest {
     }
     @Test fun agendaPreservesDistinctNodesAndCoalescesSameInstant() {
         assertEquals(1, citelAgendaEvents(listOf(task.copy(dueTime = due, discountTime = due))).size)
-        val events = citelAgendaEvents(listOf(task.copy(dueTime = due, discountTime = due - 3600, submitted = true)))
+        val events = citelAgendaEvents(listOf(task.copy(dueTime = due, discountTime = due - 3600, status = "AC: Accepted")))
         assertEquals(2, events.size)
         assertTrue(events.all { it.submitted && it.id.startsWith("citel-") })
     }

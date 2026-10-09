@@ -334,9 +334,9 @@ jobs:
   release:
     name: GitHub Release
     needs: [android, windows, macos, ios]
-    # 只给正式 v* 标签发 GitHub Release。debug-* / alpha 标签只保留 Actions 产物，
+    # 只给正式 v* 标签发 GitHub Release。debug-* / alpha / beta 标签只保留 Actions 产物，
     # 避免应用内更新检查把调试包当成全量更新或 pre-release。
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && !startsWith(github.ref_name, 'debug-') && !contains(github.ref_name, 'alpha') && needs.android.result == 'success' && needs.windows.result == 'success' && needs.macos.result == 'success' && needs.ios.result == 'success' }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && !startsWith(github.ref_name, 'debug-') && !contains(github.ref_name, 'alpha') && !contains(github.ref_name, 'beta') && needs.android.result == 'success' && needs.windows.result == 'success' && needs.macos.result == 'success' && needs.ios.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout release notes
