@@ -34,13 +34,10 @@ localDevVPN（需使用外区商店下载）：https://apps.apple.com/ph/app/loc
 重启手机后，点进设置，进入“通用”，下拉找到“VPN 与设备管理”，点进去找到“开发者 App”。点进去信任。  
 <img width="1501" height="1334" alt="IMG_0550" src="https://github.com/user-attachments/assets/8e471690-139b-405b-9249-3e1b600c129f" />
 
-5.打开梯子全局模式，打开 LiveContainer，左上角紫色图标进入 SideStore。然后进入“Settings”，点击 Sign in with Apple ID 登录你的账号   
+5.打开**梯子全局模式**，打开 LiveContainer，左上角紫色图标进入 SideStore。然后进入“Settings”，点击 Sign in with Apple ID 登录你的账号   
+<img width="1364" height="1334" alt="IMG_2014" src="https://github.com/user-attachments/assets/44bd7d03-c8d2-4c5f-90b4-b49f69fa47e6" />
 
-<img width="1501" height="1334" alt="IMG_0551" src="https://github.com/user-attachments/assets/e84450f8-3c0b-4c6d-8ef6-9dcfce6958d6" />
-
-6.登录完成后，关闭翻墙工具，打开 LocalDevVPN 连接。再打开 SideStore，选择第四项“MyApps”，在左上角点击加号，选择保存到本地的 ipa 文件安装   
+6.登录完成后,**关闭翻墙工具**，打开 LocalDevVPN 连接。再打开 SideStore，选择第四项“MyApps”，在左上角点击加号，选择保存到本地的 ipa 文件安装   
 <img width="375" height="667" alt="IMG_0108" src="https://github.com/user-attachments/assets/7da17490-0fc0-433b-88c7-be777aa5c274" />
 
 7.进入快捷指令，确认自动化配置（iOS27 略有区别，需要在快捷指令本身配置。26 系统应该是独立的“自动化标签页配置）
-<img width="375" height="667" alt="截屏 2026-08-28 15 52 26" src="https://github.com/user-attachments/assets/6aae25a4-d103-4e3c-ba9d-fa3e3cd79caa" />
-
