@@ -4,7 +4,7 @@
 > 当前阶段：Duo 线调试包 `1.8.3-alpha-ci`（Build 25）。
 > 当前分支：`codex/Duo`，跟踪 `mine/codex/Duo`。
 > 应用版本：`1.8.3-alpha-ci` / Build 25。
-> 调试标签：`debug-1.8.3-alpha-ci`（只走 Actions 打包，不发 GitHub Release / pre-release）。
+> 调试标签：`debug-1.8.3-alpha-ci.2`（只走 Actions 打包，不发 GitHub Release / pre-release）。上一枚 `debug-1.8.3-alpha-ci` 仍指向 Xcode 27.1 修复那次成功包。
 > 正式 Latest 仍是 `v1.8.2-KMP`。
 
 ## 已完成
@@ -22,7 +22,7 @@
 
 ## 接下来
 
-1. 等 `debug-1.8.3-alpha-ci` 的 KMP package 跑完，从 Actions 取四端产物。
+1. 等 `debug-1.8.3-alpha-ci.2` 的 KMP package 跑完，从 Actions 取四端产物。
 2. 需要并进 main 或正式发布时再确认范围。
 
 ## 2026-10-09 真机触摸与前台刷新修正
