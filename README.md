@@ -37,6 +37,7 @@ _**相对原版新增/增强的功能（节选）：**_
 
 ### 🔐 智能登录
 
+- iOS和Mac可以调用系统密码App，Select password，选择mis系统网页密码填充登录
 - 免验证码自动登录 MIS 系统
 - Android 本地 ONNX / Apple Core ML 验证码识别，无需第三方服务参与
 - 登录状态持久化，打开即用
