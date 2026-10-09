@@ -15,7 +15,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 @Composable
-internal fun AssignmentCardHeader(course: String, title: String, submitted: Boolean, source: AssignmentSource? = null) {
+internal fun AssignmentCardHeader(course: String, title: String, submitted: Boolean, source: AssignmentSource? = null,
+    statusLabel: String = if (submitted) "已提交" else "未提交") {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(course, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -26,7 +27,7 @@ internal fun AssignmentCardHeader(course: String, title: String, submitted: Bool
                 else { if (dark) Color(0xFF5B4500) else Color(0xFFFFEFC2) },
             contentColor = if (submitted) { if (dark) Color(0xFF9BE7AA) else Color(0xFF1C6B35) }
                 else { if (dark) Color(0xFFFFD66B) else Color(0xFF7A4F00) }) {
-            Text(if (submitted) "已提交" else "未提交", Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+            Text(statusLabel, Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
                 style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
         }
     }

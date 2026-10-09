@@ -32,3 +32,8 @@
 - CITEL／课程平台仅在提交或读取确认登录失效后恢复；网络超时不作为重新登录依据。
 - Ktor 3.5.1 Cookie 存储已有内部锁。请求改为按主机并发 2 条、CAS 1 条；CITEL 只读页 2 路，失效恢复合并，写入保留既有锁。
 - 本地 Debug 可用 `--sync-timing` 记录脱敏耗时；最终记录与对比在 `.artifacts/desktop-debug-final-parallel-timing.log`、`.artifacts/parallel-sync-comparison.md`。
+
+## 2026-10-09 Duo 回顶与 CITEL 编程完成状态
+
+- Duo 回顶遮挡修复已提交 `8ae3d31`：顶栏净空使用实际导航栏位置与完整高度，防止后台标签页覆盖；空闲时校正 UIKit 与 Compose 回顶零点。视觉检查图 `.artifacts/duo-top-origin-fix/visual-review.png`。
+- CITEL 编程题完成状态统一以个人评测 AC 为准；右上角完成标签显示 `AC`。独立 CITEL／聚合作业的隐藏已提交筛选与日程完成标记使用同一规则，WA、评测中、仅有提交记录均不算完成；普通报告仍按提交状态。

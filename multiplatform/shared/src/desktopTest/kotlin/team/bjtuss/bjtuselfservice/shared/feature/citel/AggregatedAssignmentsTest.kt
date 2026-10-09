@@ -68,6 +68,25 @@ class AggregatedAssignmentsTest {
         assertEquals("同步中", aggregateAssignmentSyncStatus(listOf(complete, failure.copy(busy = true))))
     }
 
+    @Test fun programmingCompletionAndBothFiltersRequireAcEvenWithStaleCachedFlags() {
+        val template = CitelTask(1, 1, "课程", "编程题", "", true, dueTime = 150)
+        val tasks = listOf(
+            template.copy(id = 1, status = "AC: Accepted", submitted = false),
+            template.copy(id = 2, status = "WA: Wrong Answer", submitted = true),
+            template.copy(id = 3, status = "RJ: Running", submitted = true),
+            template.copy(id = 4, status = "已提交", submitted = true),
+            template.copy(id = 5, status = "", submitted = true),
+            template.copy(id = 6, programming = false, status = "Submitted for grading", submitted = true),
+        )
+        assertEquals(listOf(true, false, false, false, false, true), tasks.map { it.completed })
+        assertEquals(listOf("AC", "未提交", "未提交", "未提交", "未提交", "已提交"), tasks.map { it.cardStatusText })
+        assertEquals(listOf(2, 3, 4, 5), filteredCitelTasks(tasks, true, false, null, 0, 100).map { it.id })
+        val aggregate = aggregateAssignments(emptyList(), emptyList(), tasks)
+        assertEquals(listOf(2, 3, 4, 5), filterAggregateAssignments(aggregate,
+            AggregateAssignmentFilters(hideSubmitted = true, sortOrder = 0), 100).map { it.citel!!.id })
+        assertEquals(listOf(true, false, false, false, false, true), citelAgendaEvents(tasks).map { it.submitted })
+    }
+
     @Test fun sameIdsOnDifferentPlatformsDoNotCollide() {
         val physical = PhyVlabActivity(1, 1, "课程", "作业", "作业", "", dueTimestamp = 150)
         val citel = CitelTask(1, 1, "课程", "作业", "", false, dueTime = 150)

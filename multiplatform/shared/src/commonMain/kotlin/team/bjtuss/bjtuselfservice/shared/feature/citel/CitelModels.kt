@@ -32,6 +32,12 @@ data class CitelTask(
     val grade: String? = null,
 )
 
+/** 编程作业只有个人评测 AC 才算完成，不以提交记录或旧缓存布尔值判断。 */
+val CitelTask.completed: Boolean get() = if (programming) isCitelAccepted(status) else submitted
+
+internal val CitelTask.cardStatusText: String
+    get() = if (completed) { if (programming) "AC" else "已提交" } else "未提交"
+
 fun citelDateText(seconds: Long): String =
     Instant.fromEpochSeconds(seconds).toLocalDateTime(citelTimeZone).toString().replace('T', ' ').take(16)
 
@@ -53,16 +59,16 @@ fun citelAgendaEvents(tasks: List<CitelTask>): List<PhyVlabEvent> = tasks.flatMa
     buildList {
         task.openTime?.let { time ->
             add(PhyVlabEvent("citel-start-${task.id}", "CITEL · ${task.title} · 开始",
-                citelDateText(time), time, task.url, kind = PhyVlabEventKind.START, submitted = task.submitted))
+                citelDateText(time), time, task.url, kind = PhyVlabEventKind.START, submitted = task.completed))
         }
         task.discountTime?.takeIf { it != task.dueTime }?.let { time ->
             add(PhyVlabEvent("citel-discount-${task.id}", "CITEL · ${task.title} · 开始折扣",
-                citelDateText(time), time, task.url, kind = PhyVlabEventKind.DISCOUNT, submitted = task.submitted))
+                citelDateText(time), time, task.url, kind = PhyVlabEventKind.DISCOUNT, submitted = task.completed))
         }
         task.dueTime?.let { time ->
             add(PhyVlabEvent("citel-due-${task.id}", "CITEL · ${task.title} · 截止" +
                 if (time == task.discountTime) " / 开始折扣" else "",
-                citelDateText(time), time, task.url, submitted = task.submitted))
+                citelDateText(time), time, task.url, submitted = task.completed))
         }
     }
 }

@@ -8,6 +8,7 @@ import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.domain.homework.*
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.feature.citel.CitelTask
+import team.bjtuss.bjtuselfservice.shared.feature.citel.completed
 
 @Serializable
 enum class AssignmentSource(val label: String) { COURSE_PLATFORM("课程平台"), PHYVLAB("物理在线"), CITEL("CITEL") }
@@ -25,7 +26,7 @@ fun aggregateAssignments(homework: List<Homework>, physical: List<PhyVlabActivit
     physical.map { AggregatedAssignment(AssignmentSource.PHYVLAB, "phy:${it.courseId}:${it.id}", it.courseId, it.courseName,
         it.dueTimestamp, it.completed, physical = it) } +
     citel.map { AggregatedAssignment(AssignmentSource.CITEL, "citel:${it.courseId}:${it.id}", it.courseId, it.courseName,
-        it.dueTime, it.submitted, citel = it) }
+        it.dueTime, it.completed, citel = it) }
 
 @Serializable
 data class AggregateCourseFilter(val allCourses: Boolean = true, val courses: Set<Int> = emptySet()) {

@@ -51,7 +51,7 @@ fun CitelWorkspace(model: CitelModel, holdNetwork: Boolean, onOpen: (String) -> 
     val tasks = filteredCitelTasks(state.tasks.filter { selectedCourses.isEmpty() || it.courseId in selectedCourses }, pendingOnly, hideExpired, null, sortOrder, now)
     val topClearance = LocalTopBarClearance.current
     val bottomClearance = LocalBottomBarClearance.current
-    val dueSoon = tasks.count { !it.submitted && it.dueTime?.let { due -> due in now..(now + 48 * 3600) } == true }
+    val dueSoon = tasks.count { !it.completed && it.dueTime?.let { due -> due in now..(now + 48 * 3600) } == true }
     val subtitle = (if (dueSoon > 0) "未来 48 小时内有 $dueSoon 项未提交" else "未来 48 小时内暂无临近截止项") +
         if (filters.active) " · 已筛选" else ""
     LaunchedEffect(filters) { scroll.scrollToItem(0) }
@@ -90,7 +90,7 @@ fun CitelWorkspace(model: CitelModel, holdNetwork: Boolean, onOpen: (String) -> 
 
 internal fun filteredCitelTasks(tasks: List<CitelTask>, pendingOnly: Boolean, hideExpired: Boolean,
     courseId: Int?, sortOrder: Int, now: Long): List<CitelTask> {
-    val filtered = tasks.filter { (!pendingOnly || !it.submitted) &&
+    val filtered = tasks.filter { (!pendingOnly || !it.completed) &&
         (!hideExpired || it.dueTime?.let { due -> due > now } != false) && (courseId == null || it.courseId == courseId) }
     return when (sortOrder) {
         1 -> filtered.sortedBy { it.dueTime ?: Long.MAX_VALUE }
@@ -104,7 +104,7 @@ internal fun CitelTaskCard(task: CitelTask, onOpen: () -> Unit, source: Assignme
     ElevatedCard(onClick = onOpen, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            AssignmentCardHeader(task.courseName, task.title, task.submitted, source)
+            AssignmentCardHeader(task.courseName, task.title, task.completed, source, statusLabel = task.cardStatusText)
             CitelTaskLine("类型", if (task.programming) "编程作业" else "实验报告")
             if (task.programming) CitelTaskLine("评测", task.submissionStatusText())
             task.openTime?.let { CitelTaskLine("开始", citelDateText(it)) }
@@ -168,7 +168,7 @@ fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, on
             else if (accepted) Text("已通过（AC），无需再次提交。", color = MaterialTheme.colorScheme.primary)
         }
         task.grade?.let { CitelDetailLine(if (task.programming) "题目分值" else "评分", it) }
-        if (!task.submitted) Text(task.deadlineStatus(now))
+        if (!task.completed) Text(task.deadlineStatus(now))
         state.submissionMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         if (state.submissionBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (state.programmingOptions != null && !accepted && !testing) {
