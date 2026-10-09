@@ -544,6 +544,10 @@ private final class NativeChromeBinding {
     private func ensureTransparentBar() {
         guard !usesSystemBars, let controller, let navigationController = controller.navigationController else { return }
         let appearance = UINavigationBarAppearance()
+        appearance.configureWithTransparentBackground()
+        // Explicitly remove the default material too: a clear tint alone still
+        // leaves UIKit's background effect visible at the unscrolled edge.
+        appearance.backgroundEffect = nil
         appearance.backgroundColor = .clear
         appearance.shadowColor = .clear
         appearance.titleTextAttributes = [
@@ -560,6 +564,8 @@ private final class NativeChromeBinding {
         UIView.performWithoutAnimation {
             navigationController.navigationBar.standardAppearance = appearance
             navigationController.navigationBar.scrollEdgeAppearance = appearance
+            navigationController.navigationBar.compactAppearance = appearance
+            navigationController.navigationBar.compactScrollEdgeAppearance = appearance
         }
     }
 
@@ -826,6 +832,7 @@ private final class SafeAreaComposeHost: UIViewController, UIScrollViewDelegate 
         scroller.delegate = self
         scroller.panGestureRecognizer.delegate = scroller
         scroller.backgroundColor = appBackgroundUIColor
+        if #available(iOS 26.0, *) { scroller.topEdgeEffect.isHidden = true }
         nativeScrollView = scroller
         view.addSubview(scroller)
         scroller.addSubview(content.view)
@@ -866,6 +873,18 @@ private final class SafeAreaComposeHost: UIViewController, UIScrollViewDelegate 
         }
         updateNativeRange()
         alignNativeOriginIfNeeded()
+        updateTopEdgeEffect()
+    }
+
+    private func updateTopEdgeEffect() {
+        // Compose reserves the title clearance inside its content; UIKit's
+        // scroll view starts behind the bar even when the page is at its top.
+        // Gate only the top edge, leaving the Duo sidebar and its native
+        // minimization under UIKit's control. Negative rubber-band offsets
+        // must remain clear as well.
+        if #available(iOS 26.0, *), let scroller = nativeScrollView {
+            scroller.topEdgeEffect.isHidden = !hasNativeScroller || renderedOffset <= 0.5 || scroller.contentOffset.y <= 0
+        }
     }
 
     private func alignNativeOriginIfNeeded() {
@@ -952,6 +971,7 @@ private final class SafeAreaComposeHost: UIViewController, UIScrollViewDelegate 
         // The displacement comes directly from UIKit's rubber band, with no app timer,
         // easing curve, accumulated gesture translation or independent animation.
         content.view.transform = CGAffineTransform(translationX: 0, y: -(scrollView.contentOffset.y - renderedOffset))
+        updateTopEdgeEffect()
         if controller.maxOffsetPx < 0 && controller.canScrollForward && renderedOffset > nativeRange - scrollView.bounds.height {
             updateNativeRange()
         }
@@ -1038,20 +1058,27 @@ private final class TabRootNavigationController: UINavigationController, UINavig
         view.backgroundColor = appBackgroundUIColor
         guard viewControllers.isEmpty else { return }
         navigationBar.clipsToBounds = false
-        // Don't set navigationBar.backgroundColor here. Horizontal scroll-underlap
-        // uses NativeNavigationBarGlassView; Duo's vertical system bar keeps Apple's
-        // default side-bar material and moves as a complete native bar on scroll.
+        // Horizontal scroll-underlap uses NativeNavigationBarGlassView or the
+        // native scroller's top edge. Keep the bar itself clear from its first
+        // frame; Duo's sidebar material/minimization remains owned by UIKit.
         let glassView = NativeNavigationBarGlassView()
         navigationBarGlassView = glassView
         view.insertSubview(glassView, belowSubview: navigationBar)
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithTransparentBackground()
         if usesSystemBars {
-            let appearance = UINavigationBarAppearance()
-            appearance.configureWithTransparentBackground()
+            // Preserve UIKit's native side-bar material and scroll behavior.
             appearance.titleTextAttributes = [.font: UIFontMetrics(forTextStyle: .headline).scaledFont(for: UIFont.systemFont(ofSize: 20, weight: .semibold))]
-            navigationBar.standardAppearance = appearance
-            navigationBar.scrollEdgeAppearance = appearance
-            navigationBar.compactAppearance = appearance
+        } else {
+            // A clear color alone can retain the default material at rest.
+            appearance.backgroundEffect = nil
+            appearance.backgroundColor = .clear
+            appearance.shadowColor = .clear
         }
+        navigationBar.standardAppearance = appearance
+        navigationBar.scrollEdgeAppearance = appearance
+        navigationBar.compactAppearance = appearance
+        navigationBar.compactScrollEdgeAppearance = appearance
         let binding = NativeChromeBinding()
         let composeRoot = MainViewControllerKt.NativeTabRootViewController(
             session: session,
@@ -1185,6 +1212,7 @@ private final class TabRootNavigationController: UINavigationController, UINavig
             navigationBar.standardAppearance = appearance
             navigationBar.scrollEdgeAppearance = appearance
             navigationBar.compactAppearance = appearance
+            navigationBar.compactScrollEdgeAppearance = appearance
             setNativeTitle(topViewController?.navigationItem.title ?? "")
             if let topViewController {
                 configureScrollMinimization(for: topViewController, enabled: (topViewController as? SafeAreaComposeHost)?.hasNativeScroller == true)
