@@ -1,34 +1,30 @@
 # BJTUselfService KMP 实时工作记忆
 
 > 最后更新：2026-10-10。
-> 当前阶段：`1.8.3-Beta-ci` / Build 28 已推 debug 标签；CI 打包进行中。
+> 当前阶段：正式 `1.8.3-KMP` / Build 29，准备推 `v1.8.3-KMP` 做 CI 打包与 GitHub Release。
 > 当前分支：`main`。
-> KMP 应用版本：`1.8.3-Beta-ci` / Build 28。
+> KMP 应用版本：`1.8.3-KMP` / Build 29。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
-> 正式 Latest 仍是 `v1.8.2-KMP`。
+> 正式 Latest 即将变为 `v1.8.3-KMP`（此前 `v1.8.2-KMP`）。
 
 ## 已完成
 
-- 版本改为 `1.8.3-Beta-ci`（Build 28）。大写 `Beta` 字典序低于 `KMP`、高于 `Alpha`，正式 `1.8.3-KMP` 可被应用内更新检出。
-- 本构建包含教务限流修复与邮箱附件下载/预览（`4dffbab`）。
-- 已推 `mine/main` 与标签 `debug-1.8.3-Beta-ci`（`01cfac2`）。CI run `38026283379`。不发 GitHub Release。
+- 版本改为 `1.8.3-KMP`（Build 29）。
+- 本构建包含：教务限流与邮箱附件、安卓附件打开方式、完美校园微信跳转、登录失败弹窗文案。
+- 发布说明使用仓库内已有 `docs/releases/v1.8.3-KMP.md`，本轮未再改正文。
 
 ## 当前注意事项
 
-- 全小写 `1.8.3-alpha-ci` / `1.8.3-beta-ci` 字典序高于 `1.8.3-KMP`，应用内收不到正式版。本包用大写 `Beta` 才能升到 `1.8.3-KMP`。
+- 校历公众号文章不能由第三方 App 直接在微信内打开（invalid source），仍走系统浏览器。
 - 小米「跟随应用内设置」覆盖安装清不掉。装新包后卸载重装，或在「使用高刷新率的应用」里打开交大自由行 KMP。
-- 本机 APFS 大小写不敏感，本地删了 `debug-1.8.3-beta-ci` 标签文件才写出 `debug-1.8.3-Beta-ci`；GitHub 上两个标签可以并存。
 - 未推 `origin`。
 
 ## 当前痛点
 
-- 附件预览/保存尚未在 Android 真机和 macOS 窗口中实际点验；iOS 保存面板未点验；Windows 目标在 macOS 上只部分编译。
-- Windows CI 安装器中文名：`debug-1.8.3-Beta-ci.2`（`79ae826`）Windows MSI 已打包成功，light 311 未再出现；装完后的开始菜单/快捷方式中文名待实机确认。
-- 宽屏邮箱详情窗格滚轮失效已修（`TopScrollColumn` 的 `enabled` 不再关闭 `verticalScroll`），用户 macOS 实测通过；Windows 滚轮待下个包确认，未提交。
+- macOS 附件默认应用打开、iOS 保存面板未点验。
 - `HomeworkFileGateway` 已被邮箱复用，后续可改名为通用文件网关。
 
 ## 接下来
 
-1. 等 CI 四端产物：Android APK、Windows MSI、macOS DMG、iOS unsigned IPA。
-2. 实机点验：Android 打开方式、macOS 默认应用打开；首登成绩/课表同步复测。
-3. 需要正式发布时再定 `v1.8.3-KMP` 标签、说明和四端包。
+1. 等 CI 四端产物并发布 GitHub Release。
+2. 需要热修时再开 `1.8.3-KMP-A` 或下一版本。
