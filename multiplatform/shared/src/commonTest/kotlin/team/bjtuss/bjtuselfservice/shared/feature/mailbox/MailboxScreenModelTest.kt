@@ -4,6 +4,10 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import team.bjtuss.bjtuselfservice.shared.data.mailbox.MailboxRemoteDataSource
+import team.bjtuss.bjtuselfservice.shared.data.mailbox.MailboxRemoteException
+import team.bjtuss.bjtuselfservice.shared.data.mailbox.MailboxRemoteFailure
+import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailAttachment
+import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailAttachmentContent
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailComposeDraft
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailMessage
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailboxPage
@@ -20,6 +24,51 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class MailboxScreenModelTest {
+    private fun attachmentModel(block: suspend (String, String) -> MailAttachmentContent): MailboxScreenModel {
+        val summary = sampleSummary("m-1", "附件")
+        return MailboxScreenModel(
+            transport = CookieTransport(listOf(SchoolSessionCookie("session", "secret"))),
+            remote = FakeMailboxRemote(
+                page = MailboxPage(totalCount = 1, messages = listOf(summary)),
+                detail = summary.toDetail(),
+                attachmentBlock = block,
+            ),
+        )
+    }
+
+    @Test
+    fun downloadAttachmentPassesMessageAndPartIds() = runBlocking {
+        var requested: Pair<String, String>? = null
+        val model = attachmentModel { mid, part ->
+            requested = mid to part
+            MailAttachmentContent(byteArrayOf(7), "application/pdf")
+        }
+        val result = model.downloadAttachment("m-1", MailAttachment("3", "a.pdf", 1, "application/pdf"))
+        assertEquals("m-1" to "3", requested)
+        assertEquals(1, assertIs<MailAttachmentDownloadResult.Success>(result).content.bytes.size)
+    }
+
+    @Test
+    fun downloadAttachmentRejectsOversizedAndMissingIdsWithoutNetwork() = runBlocking {
+        var calls = 0
+        val model = attachmentModel { _, _ -> calls++; MailAttachmentContent(ByteArray(0), null) }
+        val oversized = model.downloadAttachment("m-1", MailAttachment("3", "big.zip", MAIL_ATTACHMENT_MAX_BYTES + 1, null))
+        val missing = model.downloadAttachment("m-1", MailAttachment(null, "x.pdf", 10, null))
+        assertEquals(MailAttachmentFailure.TOO_LARGE, assertIs<MailAttachmentDownloadResult.Failed>(oversized).reason)
+        assertEquals(MailAttachmentFailure.UNAVAILABLE, assertIs<MailAttachmentDownloadResult.Failed>(missing).reason)
+        assertEquals(0, calls)
+    }
+
+    @Test
+    fun downloadAttachmentMapsSessionExpiryAndNetworkFailures() = runBlocking {
+        val expired = attachmentModel { _, _ -> throw MailboxRemoteException(MailboxRemoteFailure.SESSION_EXPIRED) }
+            .downloadAttachment("m-1", MailAttachment("3", "a.pdf", 1, null))
+        val network = attachmentModel { _, _ -> throw MailboxRemoteException(MailboxRemoteFailure.NETWORK) }
+            .downloadAttachment("m-1", MailAttachment("3", "a.pdf", 1, null))
+        assertEquals(MailAttachmentFailure.SESSION_EXPIRED, assertIs<MailAttachmentDownloadResult.Failed>(expired).reason)
+        assertEquals(MailAttachmentFailure.NETWORK, assertIs<MailAttachmentDownloadResult.Failed>(network).reason)
+    }
+
     @Test
     fun preparesMailboxWithNarrowedMisCookies() {
         runBlocking {
@@ -503,6 +552,9 @@ private class FakeMailboxRemote(
     private val nextPage: MailboxPage? = null,
     private val details: Map<String, MailMessage> = emptyMap(),
     private val readBlock: suspend (String) -> Unit = {},
+    private val attachmentBlock: suspend (String, String) -> MailAttachmentContent = { _, _ ->
+        MailAttachmentContent(byteArrayOf(1, 2, 3), "application/pdf")
+    },
 ) : MailboxRemoteDataSource {
     val requestedFolderIds = mutableListOf<Int>()
     var sentDraft: MailComposeDraft? = null
@@ -534,6 +586,9 @@ private class FakeMailboxRemote(
     }
 
     override suspend fun cancelCompose(composeId: String) = Unit
+
+    override suspend fun downloadAttachment(messageId: String, attachmentId: String): MailAttachmentContent =
+        attachmentBlock(messageId, attachmentId)
 }
 
 private fun sampleSummary(id: String, subject: String) = MailSummary(

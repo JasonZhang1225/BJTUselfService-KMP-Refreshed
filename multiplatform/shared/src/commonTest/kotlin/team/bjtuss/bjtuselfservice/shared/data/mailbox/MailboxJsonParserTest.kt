@@ -108,6 +108,34 @@ class MailboxJsonParserTest {
     }
 
     @Test
+    fun parsesCoremailXt5AttachmentFields() {
+        // 字段形状取自真实 readMessage 响应（文件名、正文已替换为虚构值）。
+        val result = parseMailboxMessage(
+            """
+            {"code":"S_OK","var":{"mail":{"from":["office@example.test"],"to":["student@example.test"],
+              "subject":"申请通知","mainPartData":{"content":"<p>见附件</p>"},
+              "attachments":[
+                {"id":"3","filename":"申请表.docx","contentType":"application/vnd.openxmlformats-officedocument.wordprocessingml.document; name=x","contentLength":21474,"encoding":"base64","contentOffset":45908,"estimateSize":15693},
+                {"id":"4","filename":"名单.xlsx","contentType":"application/octet-stream","contentLength":14502,"encoding":"base64"}
+              ],
+              "inlineAttachments":[]},
+              "mailInfo":{"id":"message-2","fid":1,"sentDate":"2026-10-09 10:32:05"}}}
+            """.trimIndent(),
+            fallbackMessageId = "fallback-id",
+        )
+
+        val attachments = assertIs<MailboxJsonParseResult.Success<MailMessage>>(result).value.attachments
+        assertEquals(listOf("3", "4"), attachments.map { it.id })
+        assertEquals(listOf("申请表.docx", "名单.xlsx"), attachments.map { it.name })
+        assertEquals(15693, attachments[0].sizeBytes)
+        assertEquals(14502 / 4 * 3, attachments[1].sizeBytes)
+        assertEquals(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            attachments[0].contentType,
+        )
+    }
+
+    @Test
     fun usesRecipientsWhenSentFolderOmitsSender() {
         val result = parseMailboxMessageList(
             """

@@ -27,7 +27,7 @@ data class MailboxPage(
     val messages: List<MailSummary>,
 )
 
-/** 详情中的附件元数据；首个只读切片不下载附件本体。 */
+/** 详情中的附件元数据；[id] 即 Coremail 的 part，用于下载。 */
 data class MailAttachment(
     val id: String?,
     val name: String,
@@ -60,3 +60,11 @@ data class MailComposeDraft(
     val replyToMessageId: String? = null,
     val isReply: Boolean = false,
 )
+
+/** 已下载到内存的附件本体；只在预览/保存流程中短暂持有，不写入缓存或日志。 */
+class MailAttachmentContent(
+    val bytes: ByteArray,
+    val contentType: String?,
+) {
+    override fun toString(): String = "MailAttachmentContent(bytes=${bytes.size}, contentType=$contentType)"
+}

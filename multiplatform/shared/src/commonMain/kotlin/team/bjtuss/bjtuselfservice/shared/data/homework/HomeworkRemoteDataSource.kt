@@ -46,7 +46,8 @@ private const val SUBMITTED_ATTACHMENT_PATH = "/ve//downloadZyFj.shtml"
  *   这正是移植版此前一直失败的原因。
  */
 private const val UPLOAD_PATH = "/ve/back/rp/common/homeworkUpload.shtml"
-private const val MAX_CONCURRENT_HOMEWORK_REQUESTS = 3
+// 与传输层智慧教学主机闸门（5）一致；真正的主机上限由 HostRequestGate 保证。
+private const val MAX_CONCURRENT_HOMEWORK_REQUESTS = 5
 
 enum class HomeworkRemoteFailure {
     NETWORK,

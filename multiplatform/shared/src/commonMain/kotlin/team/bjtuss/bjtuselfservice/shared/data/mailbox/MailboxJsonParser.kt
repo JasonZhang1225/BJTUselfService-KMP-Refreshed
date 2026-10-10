@@ -166,14 +166,21 @@ private fun parseSummary(item: JsonObject?): MailSummary? {
 
 private fun parseAttachments(items: JsonArray?): List<MailAttachment> = items?.mapNotNull { item ->
     val objectValue = item as? JsonObject ?: return@mapNotNull null
-    val name = objectValue.string("name")
+    // Coremail XT5 readMessage 实际字段：id、filename、contentType、contentLength（base64 长度）、
+    // estimateSize（解码后大小）。保留 name/fileName/size 兼容旧夹具。
+    val name = objectValue.string("filename")
+        ?: objectValue.string("name")
         ?: objectValue.string("fileName")
         ?: return@mapNotNull null
     MailAttachment(
         id = objectValue.string("id") ?: objectValue.string("attachmentId"),
         name = name,
-        sizeBytes = objectValue.int("size") ?: objectValue.int("sizeBytes"),
-        contentType = objectValue.string("contentType") ?: objectValue.string("type"),
+        sizeBytes = objectValue.int("estimateSize")
+            ?: objectValue.int("size")
+            ?: objectValue.int("sizeBytes")
+            ?: objectValue.int("contentLength")?.let { it / 4 * 3 },
+        contentType = (objectValue.string("contentType") ?: objectValue.string("type"))
+            ?.substringBefore(';')?.trim()?.ifBlank { null },
     )
 }.orEmpty()
 

@@ -25,10 +25,8 @@ import io.ktor.http.Parameters
 import io.ktor.http.Url
 import io.ktor.http.content.ByteArrayContent
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.sync.withPermit
 import team.bjtuss.bjtuselfservice.shared.logging.AppLog
 
 expect fun schoolHttpEngineFactory(): HttpClientEngineFactory<*>
@@ -39,6 +37,7 @@ fun createSchoolHttpTransport(): SchoolHttpTransport = KtorSchoolHttpTransport(
 
 class KtorSchoolHttpTransport(
     private val engineFactory: HttpClientEngineFactory<*>,
+    private val hostPolicy: (String) -> HostRequestPolicy = ::defaultHostRequestPolicy,
 ) : SchoolHttpTransport {
     private var cookieStorage = AcceptAllCookiesStorage()
     private var client = newClient(cookieStorage, sessionScoped = true)
@@ -50,14 +49,14 @@ class KtorSchoolHttpTransport(
     private val publicClient = newClient(AcceptAllCookiesStorage(), sessionScoped = false)
     // Ktor 3.5.1 protects its Cookie storage with an internal mutex. Bound network
     // concurrency per service instead of holding one lock across every HTTP request.
-    // CAS authentication remains sequential; slow independent hosts cannot block AA.
+    // 各主机策略见 [defaultHostRequestPolicy]：aa 限流必须串行并退避，CAS 串行，智慧教学放宽。
     private val gateRegistry = Mutex()
-    private val serviceGates = mutableMapOf<String, Semaphore>()
-    private val physicsLabRequests = Semaphore(2)
-    private suspend fun gateFor(request: SchoolHttpRequest): Semaphore {
+    private val serviceGates = mutableMapOf<String, HostRequestGate>()
+    private val physicsLabRequests = HostRequestGate(HostRequestPolicy(maxConcurrent = 2))
+    private suspend fun gateFor(request: SchoolHttpRequest): HostRequestGate {
         val host = Url(request.url).host
         return gateRegistry.withLock {
-            serviceGates.getOrPut(host) { Semaphore(if (host == "cas.bjtu.edu.cn") 1 else 2) }
+            serviceGates.getOrPut(host) { HostRequestGate(hostPolicy(host)) }
         }
     }
     private var physicsLabClient = newClient(AcceptAllCookiesStorage(), sessionScoped = true, followRedirects = false)
@@ -87,10 +86,10 @@ class KtorSchoolHttpTransport(
         // Public pages remain outside authenticated service gates.
         executeTimed(request, "public", null) { publicClient }
 
-    private suspend fun executeTimed(request: SchoolHttpRequest, lane: String, gate: Semaphore?, httpClient: () -> HttpClient): SchoolHttpResponse {
+    private suspend fun executeTimed(request: SchoolHttpRequest, lane: String, gate: HostRequestGate?, httpClient: () -> HttpClient): SchoolHttpResponse {
         if (SyncTiming.sink == null) {
             return if (gate == null) executeOn(httpClient(), request)
-            else gate.withPermit { executeOn(httpClient(), request) }
+            else gate.run(request) { executeOn(httpClient(), request) }
         }
         val id = SyncTiming.nextId()
         val queued = TimeSource.Monotonic.markNow()
@@ -109,7 +108,7 @@ class KtorSchoolHttpTransport(
                 SyncTiming.record("request-end $label wait_ms=$wait request_ms=${start.elapsedNow().inWholeMilliseconds} outcome=$result")
             }
         }
-        return if (gate == null) operation() else gate.withPermit { operation() }
+        return if (gate == null) operation() else gate.run(request, operation)
     }
 
     fun close() {

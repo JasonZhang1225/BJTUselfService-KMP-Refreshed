@@ -853,13 +853,7 @@ fun AuthenticatedAppShell(
             operation = { SyncTiming.measure("startup.grades") { gradeModel.initialize(refreshFromNetwork = true) } },
             sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
         )
-        if (gradeModel.state.value.failure != null) {
-            delay(LOGIN_SYNC_RETRY_DELAY_MILLIS)
-            sessionRefresh.run(
-                operation = { gradeModel.refresh() },
-                sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
-            )
-        }
+        // 网络失败的重试已在 GradeScreenModel.initialize 内（最多 3 次）。
         if (gradeModel.state.value.courseTypesByCode == null) {
             gradeModel.ensureProgramCourseTypes()
         }
@@ -1846,6 +1840,7 @@ fun AuthenticatedAppShell(
                     expanded = expanded,
                     onRefresh = refresh,
                     onReauthenticate = reauthenticateSession,
+                    fileGateway = homeworkFileGateway,
                     onOpenNativeDetail = if (useNativeSecondaryRoutes) {
                         { onOpenNativeRoute(MAILBOX_DETAIL_ROUTE_ID) }
                     } else {
@@ -1874,6 +1869,7 @@ fun AuthenticatedAppShell(
                     nativeDetail = true,
                     onRefresh = refresh,
                     onReauthenticate = reauthenticateSession,
+                    fileGateway = homeworkFileGateway,
                     onOpenNativeCompose = { onOpenNativeRoute(MAILBOX_COMPOSE_ROUTE_ID) },
                     modifier = Modifier.fillMaxSize(),
                 )

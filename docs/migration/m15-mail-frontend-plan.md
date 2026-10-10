@@ -55,3 +55,10 @@
 - Mac 窗口验证至少覆盖窄窗口、宽窗口和调整列宽；iOS 模拟器验证列表—详情导航、返回、旋转/尺寸变化和动态字体。
 - 真实账号只读验收前不执行发送、删除、移动或上传；截图与日志不得包含真实邮件正文、地址、电话、Cookie 或 URL 会话参数。共享层邮箱/导航/CAS 恢复回归测试、Android x86_64 debug 构建及 Windows/Android 邮箱主页与详情视觉回归已通过；两封真实 HTML 表格邮件的 Android 详情回归、写信页、回复预填和发送确认回归已通过，未实际发送邮件。Windows 写信页视觉回归已通过；最终一次 Xcode Simulator 构建被用户中断，因此 iOS 新 UI 的真实登录视觉验收仍待补做。
 - 若 Coremail 私有协议不稳定，保留现有 WebView/系统浏览器作为回退，不为了“原生化”而绕过学校权限或 TLS 安全。
+
+
+## 2026-10-10 附件下载与预览
+
+- 协议（Chrome 只读取证）：`GET /coremail/mbox-data?mode=download&sid&mid&part=<附件 id>`，302 到 `/coremail/mbox-data/<文件名>?…`，200 带 `Content-Disposition: attachment`。readMessage 的附件字段为 `id`、`filename`、`contentType`、`contentLength`（base64 长度）、`estimateSize`。超大附件走 `viewDownloadFile.jsp?key&code`，未接入。服务端 `mode=preview` 是需要 Cookie 的 JS 页面，未采用。
+- 实现：附件行点按预览、右侧“保存”；图片/纯文本应用内预览，其余交系统预览器；会话失效时先恢复再重下一次；单附件 50MB 上限。
+- 上传：用户决定本轮不做。

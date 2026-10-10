@@ -326,6 +326,40 @@ class GradeScreenModelTest {
     }
 
     @Test
+    fun refreshWithRetryRetriesNetworkFailuresUntilSuccess() = runBlocking {
+        val empty = GradeSnapshot(emptyList(), emptySet())
+        val repository = FakeRepository(
+            loaded = empty,
+            refreshed = GradeRefreshResult.Success(GradeSnapshot(listOf(grade(1)), emptySet())),
+            refreshedBefore = List(2) { GradeRefreshResult.Failure(empty, GradeSyncFailure.NETWORK) },
+        )
+        val model = GradeScreenModel(repository)
+        model.initialize(refreshFromNetwork = false)
+
+        model.refreshWithRetry(delayMillis = 0)
+
+        assertEquals(3, repository.refreshCalls)
+        assertEquals(null, model.state.value.failure)
+        assertEquals(listOf(1), model.state.value.grades.map(Grade::id))
+    }
+
+    @Test
+    fun refreshWithRetryLeavesSessionExpiryToShellRecovery() = runBlocking {
+        val empty = GradeSnapshot(emptyList(), emptySet())
+        val repository = FakeRepository(
+            loaded = empty,
+            refreshed = GradeRefreshResult.Failure(empty, GradeSyncFailure.SESSION_EXPIRED),
+        )
+        val model = GradeScreenModel(repository)
+        model.initialize(refreshFromNetwork = false)
+
+        model.refreshWithRetry(delayMillis = 0)
+
+        assertEquals(1, repository.refreshCalls)
+        assertEquals(GradeSyncFailure.SESSION_EXPIRED, model.state.value.failure)
+    }
+
+    @Test
     fun ensureProgramCourseTypesRetriesThenUpdatesMappingOnly() = runBlocking {
         val cached = GradeSnapshot(listOf(grade(1)), emptySet(), courseTypesByCode = null)
         val repository = FakeRepository(
@@ -405,14 +439,18 @@ class GradeScreenModelTest {
         private val refreshed: GradeRefreshResult,
         private val programTypes: Map<String, CourseType>? = null,
         private val programFailuresBeforeSuccess: Int = 0,
+        private val refreshedBefore: List<GradeRefreshResult> = emptyList(),
     ) : GradeRepository {
         private var snapshot = loaded
         var programAttempts = 0
             private set
+        var refreshCalls = 0
+            private set
 
         override fun load(): GradeSnapshot = loaded
 
-        override suspend fun refresh(): GradeRefreshResult = refreshed.also { result ->
+        override suspend fun refresh(): GradeRefreshResult =
+            (refreshedBefore.getOrNull(refreshCalls++) ?: refreshed).also { result ->
             snapshot = when (result) {
                 is GradeRefreshResult.Success -> result.snapshot
                 is GradeRefreshResult.Failure -> result.snapshot

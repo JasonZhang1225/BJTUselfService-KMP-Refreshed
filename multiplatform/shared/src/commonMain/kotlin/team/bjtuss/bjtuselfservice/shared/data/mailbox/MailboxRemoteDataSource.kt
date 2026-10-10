@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.JsonPrimitive
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailboxPage
+import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailAttachmentContent
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailComposeDraft
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailMessage
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
@@ -23,6 +24,8 @@ private const val COREMAIL_JSON_PATH = "/coremail/s/json"
 private const val COREMAIL_READ_MESSAGE_URL = "$COREMAIL_ORIGIN/coremail/XT/jsp/readMessage.jsp"
 private const val COREMAIL_COMPOSE_URL = "$COREMAIL_ORIGIN/coremail/XT/jsp/compose.jsp"
 private const val COREMAIL_INDEX_URL = "$COREMAIL_ORIGIN/coremail/XT/index.jsp"
+/** 附件下载：GET 后 302 到 `/coremail/mbox-data/<文件名>?…`，200 返回 Content-Disposition: attachment。 */
+private const val COREMAIL_ATTACHMENT_PATH = "/coremail/mbox-data"
 
 enum class MailboxRemoteFailure {
     NETWORK,
@@ -40,6 +43,7 @@ interface MailboxRemoteDataSource {
     suspend fun beginCompose(replyToMessageId: String? = null): MailComposeDraft
     suspend fun sendMessage(draft: MailComposeDraft)
     suspend fun cancelCompose(composeId: String)
+    suspend fun downloadAttachment(messageId: String, attachmentId: String): MailAttachmentContent
 }
 
 /**
@@ -203,6 +207,29 @@ class SchoolMailboxRemoteDataSource(
                 parse(parsed.field)
             }
         }
+    }
+
+    override suspend fun downloadAttachment(messageId: String, attachmentId: String): MailAttachmentContent {
+        require(messageId.isNotBlank()) { "messageId must not be blank" }
+        require(attachmentId.isNotBlank()) { "attachmentId must not be blank" }
+        val sid = ensureCoremailSession()
+        val response = execute(
+            SchoolHttpRequest(
+                method = SchoolHttpMethod.GET,
+                url = "$COREMAIL_ORIGIN$COREMAIL_ATTACHMENT_PATH?mode=download" +
+                    "&sid=${sid.encodeURLParameter()}" +
+                    "&mid=${messageId.encodeURLParameter()}" +
+                    "&part=${attachmentId.encodeURLParameter()}",
+                headers = mapOf("Referer" to COREMAIL_INDEX_URL),
+            ),
+        )
+        // sid 失效时 Coremail 会落到登录/错误页而不是 mbox-data 下的文件地址。
+        val path = runCatching { Url(response.finalUrl).encodedPath }.getOrNull().orEmpty()
+        if (!path.startsWith(COREMAIL_ATTACHMENT_PATH)) sessionExpired()
+        val contentType = response.header("Content-Type")?.substringBefore(';')?.trim()?.ifBlank { null }
+        val disposition = response.header("Content-Disposition").orEmpty()
+        if (contentType == "text/html" && !disposition.contains("attachment", ignoreCase = true)) sessionExpired()
+        return MailAttachmentContent(bytes = response.body, contentType = contentType)
     }
 
     private suspend fun ensureCoremailSession(): String {

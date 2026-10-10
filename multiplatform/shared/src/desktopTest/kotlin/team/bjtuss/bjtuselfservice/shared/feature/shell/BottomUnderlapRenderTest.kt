@@ -112,6 +112,7 @@ class BottomUnderlapRenderTest {
             override suspend fun beginCompose(replyToMessageId: String?): MailComposeDraft = error("Unused")
             override suspend fun sendMessage(draft: MailComposeDraft) = error("Unused")
             override suspend fun cancelCompose(composeId: String) = Unit
+            override suspend fun downloadAttachment(messageId: String, attachmentId: String) = error("Unused")
         })
         runBlocking { mailbox.initialize() }
         val classrooms = ClassroomScreenModel(object : ClassroomRepository {

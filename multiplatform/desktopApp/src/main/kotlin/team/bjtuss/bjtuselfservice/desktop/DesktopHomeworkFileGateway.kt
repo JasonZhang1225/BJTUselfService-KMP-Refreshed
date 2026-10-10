@@ -1,5 +1,6 @@
 package team.bjtuss.bjtuselfservice.desktop
 
+import java.awt.Desktop
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
@@ -19,6 +20,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
+import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePreviewResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryFile
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
@@ -101,6 +103,36 @@ class DesktopHomeworkFileGateway(
             }
         } finally {
             requestMutex.unlock()
+        }
+    }
+
+    override val isPreviewAvailable: Boolean =
+        Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)
+
+    /**
+     * 预览文件只写入当前用户的系统临时目录（macOS 为私有的 /var/folders/…），每次预览前清掉上一批，
+     * 进程退出时再删一次；不碰用户的下载/文稿目录。
+     */
+    override suspend fun previewFile(file: HomeworkFileContent): HomeworkFilePreviewResult {
+        if (!isPreviewAvailable) return HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        return withContext(Dispatchers.IO) {
+            try {
+                val root = File(System.getProperty("java.io.tmpdir"), "BJTUselfService-preview")
+                root.listFiles()?.forEach { it.deleteRecursively() }
+                val directory = Files.createTempDirectory(root.apply { mkdirs() }.toPath(), "p").toFile()
+                val target = File(directory, safeExportFileName(file.fileName))
+                target.writeBytes(file.bytes)
+                directory.deleteOnExit()
+                target.deleteOnExit()
+                Desktop.getDesktop().open(target)
+                HomeworkFilePreviewResult.Opened
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: SecurityException) {
+                HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+            } catch (_: Exception) {
+                HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.IO)
+            }
         }
     }
 

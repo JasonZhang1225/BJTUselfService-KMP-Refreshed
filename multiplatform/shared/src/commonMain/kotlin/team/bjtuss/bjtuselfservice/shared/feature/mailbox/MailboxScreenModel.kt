@@ -11,6 +11,7 @@ import team.bjtuss.bjtuselfservice.shared.data.mailbox.MailboxRemoteDataSource
 import team.bjtuss.bjtuselfservice.shared.data.mailbox.MailboxRemoteFailure
 import team.bjtuss.bjtuselfservice.shared.data.mailbox.MailboxRemoteException
 import team.bjtuss.bjtuselfservice.shared.data.mailbox.SchoolMailboxRemoteDataSource
+import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailComposeDraft
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailMessage
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailSummary
@@ -413,6 +414,41 @@ class MailboxScreenModel(
      * @param openedGeneration 原生详情页打开时的代次。迟到的上一页 dispose 不得清掉正在看的下一封。
      * 壳内返回不传代次，总是清当前选中。
      */
+    /**
+     * 下载单个附件本体。不进入 [operationMutex]：附件可能较大，不能挡住列表刷新和读信。
+     * 结果只交给预览/保存流程，不写入状态或缓存。
+     */
+    suspend fun downloadAttachment(
+        messageId: String,
+        attachment: MailAttachment,
+    ): MailAttachmentDownloadResult {
+        val attachmentId = attachment.id?.takeIf(String::isNotBlank)
+            ?: return MailAttachmentDownloadResult.Failed(MailAttachmentFailure.UNAVAILABLE)
+        if ((attachment.sizeBytes ?: 0) > MAIL_ATTACHMENT_MAX_BYTES) {
+            return MailAttachmentDownloadResult.Failed(MailAttachmentFailure.TOO_LARGE)
+        }
+        return try {
+            val content = remote.downloadAttachment(messageId, attachmentId)
+            if (content.bytes.size > MAIL_ATTACHMENT_MAX_BYTES) {
+                MailAttachmentDownloadResult.Failed(MailAttachmentFailure.TOO_LARGE)
+            } else {
+                MailAttachmentDownloadResult.Success(content)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: MailboxRemoteException) {
+            MailAttachmentDownloadResult.Failed(
+                if (error.reason == MailboxRemoteFailure.SESSION_EXPIRED) {
+                    MailAttachmentFailure.SESSION_EXPIRED
+                } else {
+                    MailAttachmentFailure.NETWORK
+                },
+            )
+        } catch (_: Exception) {
+            MailAttachmentDownloadResult.Failed(MailAttachmentFailure.NETWORK)
+        }
+    }
+
     fun clearSelectedMessage(openedGeneration: Int? = null) {
         val current = mutableState.value as? MailboxUiState.Ready ?: return
         if (openedGeneration != null && openedGeneration != messageGeneration) return

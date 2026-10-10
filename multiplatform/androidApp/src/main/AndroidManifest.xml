@@ -29,5 +29,15 @@
             android:enableOnBackInvokedCallback="true"
             android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|uiMode" />
+        <!-- 附件预览：只暴露 cacheDir/previews/，以临时只读授权交给“打开方式”中的应用。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.previews"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_previews" />
+        </provider>
     </application>
 </manifest>

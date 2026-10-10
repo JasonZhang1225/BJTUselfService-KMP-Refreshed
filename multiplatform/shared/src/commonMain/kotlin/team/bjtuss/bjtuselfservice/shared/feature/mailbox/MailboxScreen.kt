@@ -44,6 +44,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -71,7 +72,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailAttachment
+import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailComposeDraft
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailMessage
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailSummary
@@ -101,6 +102,8 @@ fun MailboxWorkspace(
     onRefresh: (() -> Unit)? = null,
     onOpenNativeDetail: (() -> Unit)? = null,
     onOpenNativeCompose: (() -> Unit)? = null,
+    /** 附件预览/保存所用的系统文件能力；未提供时附件只显示元数据。 */
+    fileGateway: HomeworkFileGateway? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by model.state.collectAsState()
@@ -151,6 +154,16 @@ fun MailboxWorkspace(
         model.initialize()
     }
 
+    val attachmentActions = remember(model, fileGateway, onReauthenticate) {
+        fileGateway?.let { gateway ->
+            MailAttachmentActions(
+                download = model::downloadAttachment,
+                fileGateway = gateway,
+                reauthenticate = onReauthenticate,
+            )
+        }
+    }
+    CompositionLocalProvider(LocalMailAttachmentActions provides attachmentActions) {
     when (val current = state) {
         MailboxUiState.Idle,
         MailboxUiState.Preparing,
@@ -186,6 +199,7 @@ fun MailboxWorkspace(
             onOpenWeb = { uriHandler.openUri(current.request.url) },
             modifier = modifier,
         )
+    }
     }
 }
 
@@ -1229,11 +1243,7 @@ private fun MailboxMessageDetail(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                message.attachments.forEach { attachment ->
-                    MailboxAttachmentRow(attachment)
-                }
-            }
+            MailboxAttachmentSection(messageId = message.id, attachments = message.attachments)
         }
 
         Surface(
@@ -1344,38 +1354,6 @@ private fun MailboxMessageTable(rows: List<List<String>>) {
 }
 
 @Composable
-private fun MailboxAttachmentRow(attachment: MailAttachment) {
-    Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        shape = RoundedCornerShape(11.dp),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            MailboxAttachmentMark(modifier = Modifier.size(17.dp))
-            Text(
-                attachment.name.ifBlank { "未命名附件" },
-                modifier = Modifier.weight(1f).padding(start = 9.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            attachment.sizeBytes?.let { bytes ->
-                Text(
-                    formatMailboxSize(bytes),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.76f),
-                    modifier = Modifier.padding(start = 8.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun MailboxMetaRow(label: String, value: String) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         Text(
@@ -1471,7 +1449,7 @@ private fun formatMailboxDate(value: String): String {
     }
 }
 
-private fun formatMailboxSize(bytes: Int): String = when {
+internal fun formatMailboxSize(bytes: Int): String = when {
     bytes < 1024 -> "$bytes B"
     bytes < 1024 * 1024 -> "${bytes / 1024} KB"
     else -> "${bytes / (1024 * 1024)} MB"
@@ -1543,7 +1521,7 @@ private fun MailboxEnvelopeMark(
 }
 
 @Composable
-private fun MailboxAttachmentMark(
+internal fun MailboxAttachmentMark(
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     modifier: Modifier = Modifier,
 ) {

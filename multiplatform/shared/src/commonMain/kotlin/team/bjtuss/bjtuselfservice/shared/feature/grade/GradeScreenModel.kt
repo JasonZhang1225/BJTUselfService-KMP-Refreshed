@@ -146,6 +146,8 @@ enum class CourseTypeSelectionState {
 }
 
 internal const val PROGRAM_ENSURE_MAX_ATTEMPTS = 3
+internal const val GRADE_AUTO_SYNC_MAX_ATTEMPTS = 3
+internal const val GRADE_AUTO_SYNC_RETRY_DELAY_MILLIS = 1_000L
 internal const val PROGRAM_ENSURE_RETRY_DELAY_MILLIS = 700L
 
 class GradeScreenModel(
@@ -190,7 +192,24 @@ class GradeScreenModel(
         }
         if (refreshFromNetwork && !networkAutoSyncStarted) {
             networkAutoSyncStarted = true
+            // 登录后自动同步：网络失败（含教务限流 503）再试，与课表/作业一致。
+            refreshWithRetry()
+        }
+    }
+
+    /**
+     * 连续刷新最多 [maxAttempts] 次；只对 NETWORK 失败重试。会话失效交给应用壳恢复，
+     * 解析失败重试也不会变好。
+     */
+    suspend fun refreshWithRetry(
+        maxAttempts: Int = GRADE_AUTO_SYNC_MAX_ATTEMPTS,
+        delayMillis: Long = GRADE_AUTO_SYNC_RETRY_DELAY_MILLIS,
+    ) {
+        require(maxAttempts >= 1)
+        repeat(maxAttempts) { index ->
             refresh()
+            if (mutableState.value.failure != GradeSyncFailure.NETWORK) return
+            if (index < maxAttempts - 1) delay(delayMillis)
         }
     }
 

@@ -17,7 +17,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 
 class HomeworkRemoteDataSourceTest {
     @Test
-    fun boundsListAndScoreConcurrencyAtThreeWithoutChangingResultOrder() = runBlocking {
+    fun boundsListAndScoreConcurrencyAtFiveWithoutChangingResultOrder() = runBlocking {
         val transport = ConcurrentHomeworkTransport()
         val remote = SchoolHomeworkRemoteDataSource(transport, requestDelayMillis = 0)
 
@@ -30,8 +30,8 @@ class HomeworkRemoteDataSourceTest {
             ),
             homework.map(Homework::title),
         )
-        assertEquals(3, transport.maxActiveListRequests)
-        assertEquals(3, transport.maxActiveScoreRequests)
+        assertEquals(5, transport.maxActiveListRequests)
+        assertEquals(5, transport.maxActiveScoreRequests)
     }
 
     @Test

@@ -1,6 +1,11 @@
 package team.bjtuss.bjtuselfservice.kmp
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.net.Uri
+import android.webkit.MimeTypeMap
+import androidx.core.content.FileProvider
+import java.io.File
 import android.provider.OpenableColumns
 import android.provider.DocumentsContract
 import androidx.activity.ComponentActivity
@@ -28,6 +33,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
+import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePreviewResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryFile
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
@@ -149,6 +155,44 @@ class AndroidHomeworkFileGateway(
                 if (pickContinuation === continuation) pickContinuation = null
             }
             pickLauncher.launch(arrayOf("*/*"))
+        }
+    }
+
+    override val isPreviewAvailable: Boolean = true
+
+    /**
+     * 写入 cacheDir/previews/ 后用 FileProvider 只读授权交给系统“打开方式”。
+     * 每次预览前清掉上一批；缓存目录也会被系统按需回收。
+     */
+    override suspend fun previewFile(file: HomeworkFileContent): HomeworkFilePreviewResult {
+        val uri = try {
+            withContext(Dispatchers.IO) {
+                val root = File(activity.cacheDir, "previews")
+                root.listFiles()?.forEach { it.deleteRecursively() }
+                val directory = File(root, System.nanoTime().toString()).apply { mkdirs() }
+                val target = File(directory, safeExportFileName(file.fileName))
+                target.writeBytes(file.bytes)
+                FileProvider.getUriForFile(activity, "${activity.packageName}.previews", target)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: SecurityException) {
+            return HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+        } catch (_: Exception) {
+            return HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.IO)
+        }
+        val extension = file.fileName.substringAfterLast('.', "").lowercase()
+        val mimeType = file.contentType.takeUnless { it == "application/octet-stream" }
+            ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
+            ?: "application/octet-stream"
+        val view = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, mimeType)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        return try {
+            activity.startActivity(Intent.createChooser(view, null))
+            HomeworkFilePreviewResult.Opened
+        } catch (_: ActivityNotFoundException) {
+            HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
         }
     }
 

@@ -30,6 +30,11 @@ import platform.Foundation.NSUUID
 import platform.Foundation.dataWithContentsOfURL
 import platform.Foundation.create
 import platform.Foundation.writeToURL
+import platform.QuickLook.QLPreviewController
+import platform.QuickLook.QLPreviewControllerDataSourceProtocol
+import platform.QuickLook.QLPreviewControllerDelegateProtocol
+import platform.QuickLook.QLPreviewItemProtocol
+import platform.darwin.NSInteger
 import platform.UIKit.UIDocumentPickerDelegateProtocol
 import platform.UIKit.UIDocumentPickerViewController
 import platform.UIKit.UIViewController
@@ -45,8 +50,34 @@ class IosHomeworkFileGateway(
     private var activeDelegate: IosDocumentPickerDelegate? = null
     private var activePicker: UIDocumentPickerViewController? = null
 
+    private var activePreview: IosQuickLookSource? = null
+
     override val isAvailable: Boolean = true
     override val isDirectoryExportAvailable: Boolean = true
+    override val isPreviewAvailable: Boolean = true
+
+    /** 系统快速查看：文件只放在应用临时目录，预览关闭时删除。 */
+    override suspend fun previewFile(file: HomeworkFileContent): HomeworkFilePreviewResult {
+        if (activePreview != null || activeDelegate != null) {
+            return HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        }
+        // 预览目录单独加前缀：进程在预览中途退出时来不及删，下次预览前统一清掉。
+        removeStalePreviewDirectories()
+        val temporary = file.writeTemporaryExport(PREVIEW_DIRECTORY_PREFIX)
+            ?: return HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.IO)
+        lateinit var source: IosQuickLookSource
+        source = IosQuickLookSource(temporary.fileUrl) {
+            removeTemporary(temporary.directoryUrl)
+            if (activePreview === source) activePreview = null
+        }
+        val controller = QLPreviewController().apply {
+            dataSource = source
+            delegate = source
+        }
+        activePreview = source
+        owner().presentViewController(controller, animated = true, completion = null)
+        return HomeworkFilePreviewResult.Opened
+    }
 
     override suspend fun pickFiles(): HomeworkFilePickResult {
         if (activeDelegate != null) {
@@ -229,16 +260,57 @@ private class IosDocumentPickerDelegate(
     }
 }
 
+/**
+ * NSURL 通过 Objective-C 分类遵循 QLPreviewItem，Kotlin/Native 看不到这层遵循，
+ * 直接 `as QLPreviewItemProtocol` 会抛 TypeCastException；因此自己实现预览项。
+ */
+@OptIn(ExperimentalForeignApi::class)
+private class IosQuickLookItem(private val fileUrl: NSURL) : NSObject(), QLPreviewItemProtocol {
+    override fun previewItemURL(): NSURL? = fileUrl
+}
+
+/** QLPreviewController 只弱引用数据源；网关持有本对象直到预览关闭。 */
+@OptIn(ExperimentalForeignApi::class)
+private class IosQuickLookSource(
+    fileUrl: NSURL,
+    private val onDismissed: () -> Unit,
+) : NSObject(), QLPreviewControllerDataSourceProtocol, QLPreviewControllerDelegateProtocol {
+    private val item = IosQuickLookItem(fileUrl)
+
+    override fun numberOfPreviewItemsInPreviewController(controller: QLPreviewController): NSInteger = 1
+
+    override fun previewController(
+        controller: QLPreviewController,
+        previewItemAtIndex: NSInteger,
+    ): QLPreviewItemProtocol = item
+
+    override fun previewControllerDidDismiss(controller: QLPreviewController) {
+        onDismissed()
+    }
+}
+
 @OptIn(ExperimentalForeignApi::class)
 private data class TemporaryExport(
     val fileUrl: NSURL,
     val directoryUrl: NSURL,
 )
 
+private const val PREVIEW_DIRECTORY_PREFIX = "bjtu-preview-"
+
 @OptIn(ExperimentalForeignApi::class)
-private fun HomeworkFileContent.writeTemporaryExport(): TemporaryExport? {
+private fun removeStalePreviewDirectories() {
+    val root = NSTemporaryDirectory().trimEnd('/')
+    val manager = NSFileManager.defaultManager
+    manager.contentsOfDirectoryAtPath(root, error = null)
+        ?.filterIsInstance<String>()
+        ?.filter { it.startsWith(PREVIEW_DIRECTORY_PREFIX) }
+        ?.forEach { manager.removeItemAtPath("$root/$it", error = null) }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun HomeworkFileContent.writeTemporaryExport(prefix: String = "bjtu-homework-"): TemporaryExport? {
     val safeName = safeExportFileName(fileName)
-    val directoryPath = NSTemporaryDirectory().trimEnd('/') + "/bjtu-homework-" + NSUUID().UUIDString
+    val directoryPath = NSTemporaryDirectory().trimEnd('/') + "/" + prefix + NSUUID().UUIDString
     val manager = NSFileManager.defaultManager
     if (!manager.createDirectoryAtPath(
             path = directoryPath,

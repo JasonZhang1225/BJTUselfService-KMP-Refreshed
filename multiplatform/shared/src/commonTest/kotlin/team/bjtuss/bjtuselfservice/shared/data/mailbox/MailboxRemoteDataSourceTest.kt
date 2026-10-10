@@ -48,6 +48,46 @@ class MailboxRemoteDataSourceTest {
     }
 
     @Test
+    fun downloadsAttachmentFromMboxDataWithMessageAndPart() = runBlocking {
+        val transport = QueueTransport(
+            SchoolHttpResponse(statusCode = 200, finalUrl = "https://mail.bjtu.edu.cn/coremail/XT/index.jsp?sid=fixture-sid"),
+            SchoolHttpResponse(
+                statusCode = 200,
+                finalUrl = "https://mail.bjtu.edu.cn/coremail/mbox-data/%E9%99%84%E4%BB%B6.docx?mode=download&mid=m%3A1&part=3",
+                headers = mapOf(
+                    "Content-Type" to listOf("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+                    "Content-Disposition" to listOf("attachment; filename=x.docx"),
+                ),
+                body = byteArrayOf(0x50, 0x4B, 3, 4),
+            ),
+        )
+        val content = SchoolMailboxRemoteDataSource(transport).downloadAttachment("m:1", "3")
+
+        assertEquals(4, content.bytes.size)
+        assertEquals("application/vnd.openxmlformats-officedocument.wordprocessingml.document", content.contentType)
+        val url = transport.requests[1].url
+        assertTrue(url.startsWith("https://mail.bjtu.edu.cn/coremail/mbox-data?mode=download&sid=fixture-sid"))
+        assertTrue(url.contains("&mid=m%3A1&part=3"))
+    }
+
+    @Test
+    fun attachmentDownloadLandingOutsideMboxDataIsExpiredSession() = runBlocking {
+        val transport = QueueTransport(
+            SchoolHttpResponse(statusCode = 200, finalUrl = "https://mail.bjtu.edu.cn/coremail/XT/index.jsp?sid=fixture-sid"),
+            SchoolHttpResponse(
+                statusCode = 200,
+                finalUrl = "https://mail.bjtu.edu.cn/coremail/index.jsp?cus=1",
+                headers = mapOf("Content-Type" to listOf("text/html;charset=UTF-8")),
+                body = "<html>login</html>".encodeToByteArray(),
+            ),
+        )
+        val error = assertFailsWith<MailboxRemoteException> {
+            SchoolMailboxRemoteDataSource(transport).downloadAttachment("m-1", "3")
+        }
+        assertEquals(MailboxRemoteFailure.SESSION_EXPIRED, error.reason)
+    }
+
+    @Test
     fun rejectsRedirectToNonCoremailHostAsExpiredSession() = runBlocking {
         val transport = QueueTransport(
             SchoolHttpResponse(
