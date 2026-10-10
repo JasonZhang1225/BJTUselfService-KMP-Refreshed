@@ -140,9 +140,10 @@ jobs:
       - name: Build MSI
         env:
           WINDOWS_PACKAGE_JAVA_HOME: ${{ env.JAVA_HOME }}
-          WINDOWS_PACKAGE_NAME: BJTUselfServiceKMP
-          WINDOWS_PACKAGE_DESCRIPTION: BJTU Self Service KMP
-          JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8
+          # jpackage 按 JVM 默认语言挑 WiX 本地化文件：英文 runner 用 en（代码页 1252），
+          # 中文名会被打成 ??? 并报 LGHT0311。强制 zh_CN 让它改用代码页 936 的中文 .wxl，
+          # 这样安装器、开始菜单和快捷方式都能用中文名「交大自由行 KMP」。
+          JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Duser.language=zh -Duser.country=CN
         run: |
           chcp 65001 | Out-Null
           .\gradlew.bat :windowsApp:packageMsi --stacktrace

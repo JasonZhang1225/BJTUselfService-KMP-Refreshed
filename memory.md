@@ -23,6 +23,7 @@
 ## 当前痛点
 
 - 附件预览/保存尚未在 Android 真机和 macOS 窗口中实际点验；iOS 保存面板未点验；Windows 目标在 macOS 上只部分编译。
+- Windows CI 安装器中文名：工作流已改为 `-Duser.language=zh -Duser.country=CN` 让 jpackage 用代码页 936 的中文 .wxl，替代 ASCII 兜底；未提交、未跑 CI 验证。
 - `HomeworkFileGateway` 已被邮箱复用，后续可改名为通用文件网关。
 
 ## 接下来
