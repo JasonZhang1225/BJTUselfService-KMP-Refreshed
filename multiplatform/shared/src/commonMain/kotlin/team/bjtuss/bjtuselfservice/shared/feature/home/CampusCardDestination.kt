@@ -4,6 +4,26 @@ import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 
 internal const val WECHAT_MINI_PROGRAM_URL = "https://wxaurl.cn/RLEw5IMZRKl"
 
+/**
+ * URL Link `https://wxaurl.cn/{ticket}` 对应的微信 URL Scheme。
+ * iOS 走 Universal Link；Android 不能把 HTTPS 直接交给微信（微信不接这个 VIEW），
+ * 要用 `weixin://dl/business/?t=` 才能唤起小程序。校历等 mp.weixin.qq.com 不是 URL Link。
+ */
+fun weChatUrlLinkScheme(url: String): String? {
+    val ticket = weChatUrlLinkTicket(url) ?: return null
+    return "weixin://dl/business/?t=$ticket"
+}
+
+internal fun weChatUrlLinkTicket(url: String): String? {
+    if (!url.startsWith("https://", ignoreCase = true)) return null
+    val hostAndPath = url.substringAfter("://").substringBefore('?').substringBefore('#')
+    val host = hostAndPath.substringBefore('/').lowercase()
+    if (host != "wxaurl.cn" && host != "wxmpurl.cn" && host != "wxa.wxs.qq.com") return null
+    val ticket = hostAndPath.substringAfter('/', "").substringBefore('/').trim()
+    if (ticket.isEmpty() || ticket.any { !it.isLetterOrDigit() }) return null
+    return ticket
+}
+
 internal enum class CampusCardAction {
     OpenUrl,
     ShowQrCode,
@@ -20,7 +40,7 @@ internal fun campusCardDestination(family: PlatformFamily): CampusCardDestinatio
     PlatformFamily.Android -> CampusCardDestination(
         action = CampusCardAction.OpenUrl,
         url = WECHAT_MINI_PROGRAM_URL,
-        message = "校园卡充值由完美校园提供。将使用系统默认浏览器打开完美校园微信小程序链接，本应用不会代填金额或发起支付。",
+        message = "校园卡充值由完美校园提供。将唤起微信打开完美校园小程序，本应用不会代填金额或发起支付。",
         confirmLabel = "打开完美校园",
     )
     PlatformFamily.IOS -> CampusCardDestination(

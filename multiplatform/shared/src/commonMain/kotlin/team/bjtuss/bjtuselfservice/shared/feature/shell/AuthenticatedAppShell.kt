@@ -2033,6 +2033,7 @@ fun AuthenticatedAppShell(
                     onOpenSection = { target -> navigateToSection(target) },
                     modifier = Modifier.fillMaxSize(),
                     platformFamily = platform.family,
+                    onOpenExternalUrl = onOpenExternalUrl,
                 )
             }
         }

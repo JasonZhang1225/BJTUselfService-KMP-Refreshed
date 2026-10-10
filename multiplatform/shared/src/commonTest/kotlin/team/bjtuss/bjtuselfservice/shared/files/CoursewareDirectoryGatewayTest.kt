@@ -37,6 +37,27 @@ class CoursewareDirectoryGatewayTest {
     }
 
     @Test
+    fun previewContentTypePrefersDeclaredTypeAndMapsOfficeExtensions() {
+        assertEquals(
+            "application/pdf",
+            previewContentType("通知.pdf", "application/octet-stream"),
+        )
+        assertEquals(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            previewContentType("申请表.docx", "application/octet-stream"),
+        )
+        assertEquals(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            previewContentType("名单.xlsx", null),
+        )
+        assertEquals(
+            "application/pdf",
+            previewContentType("a.bin", "application/pdf"),
+        )
+        assertEquals("application/octet-stream", previewContentType("unknown", null))
+    }
+
+    @Test
     fun exportNamesReplaceInvisibleControlsAndPreserveShortExtensionWhenTruncated() {
         val controlled = safeExportFileName("成绩\u0000\u202E.pdf")
         val longName = safeExportFileName("课".repeat(120) + ".pdf")

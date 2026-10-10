@@ -528,14 +528,20 @@ fun LoginRoute(
             confirmLabel = "返回登录页",
             onConfirm = ::returnToLoginAfterAutomaticFailure,
         ) {
-            Text(
-                if (failureAttempts > 0) {
-                    "已自动尝试登录 $failureAttempts 次仍未成功。密码可能已修改，或验证码识别连续失败。" +
-                        "请回到登录页确认账号和密码后重新登录。"
-                } else {
-                    "自动登录时网络连接失败。请回到登录页检查网络后重新登录。"
-                },
-            )
+            if (failureAttempts > 0) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "已自动尝试登录 $failureAttempts 次仍未成功。密码可能已修改，或验证码识别连续失败。" +
+                            "请回到登录页确认账号和密码后重新登录。",
+                    )
+                    Text(
+                        "如果你最近更新过版本，别担心，这是安全保护机制，请返回登录页，重新点击一次登录即可。",
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            } else {
+                Text("自动登录时网络连接失败。请回到登录页检查网络后重新登录。")
+            }
         }
     }
 
@@ -651,7 +657,8 @@ fun LoginRoute(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     "自动登录已尝试 ${manualDialogAttempts.coerceAtLeast(1)} 次，仍未成功。" +
-                        "请根据图片输入本次验证码。",
+                        "请根据图片输入本次验证码。这大概率是因为你的账号密码输入有误。请返回检查。" +
+                        "如果你认为无误，可以手动输入验证码尝试登录。",
                 )
                 manualDialogMessage?.let { message ->
                     Text(

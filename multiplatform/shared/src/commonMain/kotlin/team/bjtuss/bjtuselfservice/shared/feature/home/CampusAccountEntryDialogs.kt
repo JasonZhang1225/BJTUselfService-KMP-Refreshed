@@ -36,6 +36,7 @@ internal fun CampusAccountEntryDialog(
     family: PlatformFamily,
     onDismiss: () -> Unit,
     onError: (String) -> Unit,
+    onOpenUrl: ((String) -> Unit)? = null,
 ) {
     when (entry) {
         CampusAccountEntry.CAMPUS_CARD -> {
@@ -50,9 +51,10 @@ internal fun CampusAccountEntryDialog(
                     onDismiss()
                     if (destination.action == CampusCardAction.OpenUrl) {
                         val target = destination.url
-                        if (target == null || runCatching { uriHandler.openUri(target) }.isFailure) {
-                            onError("当前无法打开完美校园链接。")
-                        }
+                        val opened = target != null && runCatching {
+                            if (onOpenUrl != null) onOpenUrl(target) else uriHandler.openUri(target)
+                        }.isSuccess
+                        if (!opened) onError("当前无法打开完美校园链接。")
                     }
                 },
             ) {

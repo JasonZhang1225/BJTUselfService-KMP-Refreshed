@@ -3,6 +3,8 @@ package team.bjtuss.bjtuselfservice.shared.feature.home
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CampusCardDestinationTest {
@@ -25,13 +27,26 @@ class CampusCardDestinationTest {
     }
 
     @Test
-    fun androidUsesTheSameMiniProgramLinkInTheDefaultBrowser() {
+    fun androidOpensTheMiniProgramLinkInWeChat() {
         val destination = campusCardDestination(PlatformFamily.Android)
 
         assertEquals(CampusCardAction.OpenUrl, destination.action)
         assertEquals("https://wxaurl.cn/RLEw5IMZRKl", destination.url)
         assertEquals("打开完美校园", destination.confirmLabel)
-        assertTrue(destination.message.contains("系统默认浏览器"))
+        assertTrue(destination.message.contains("唤起微信"))
+        assertFalse(destination.message.contains("系统默认浏览器"))
+    }
+
+    @Test
+    fun urlLinkConvertsToWeChatSchemeAndLeavesCalendarHttpsAlone() {
+        assertEquals(
+            "weixin://dl/business/?t=RLEw5IMZRKl",
+            weChatUrlLinkScheme(WECHAT_MINI_PROGRAM_URL),
+        )
+        assertEquals("RLEw5IMZRKl", weChatUrlLinkTicket(WECHAT_MINI_PROGRAM_URL))
+        assertNull(weChatUrlLinkScheme("https://mp.weixin.qq.com/s/_O3Jwni5D2ZB93fmczCYmQ"))
+        assertNull(weChatUrlLinkScheme("https://weixin.bjtu.edu.cn/pay/wap/network/recharge.html"))
+        assertNull(weChatUrlLinkScheme("https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed"))
     }
 
     @Test

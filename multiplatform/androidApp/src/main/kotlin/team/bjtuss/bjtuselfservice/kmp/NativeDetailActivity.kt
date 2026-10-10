@@ -1,7 +1,6 @@
 package team.bjtuss.bjtuselfservice.kmp
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -81,8 +80,7 @@ class NativeDetailActivity : ComponentActivity() {
     }
 
     private fun openExternalUrl(url: String) {
-        if (!url.startsWith("https://")) return
-        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        openHttpsUrl(this, url)
     }
 
     companion object {

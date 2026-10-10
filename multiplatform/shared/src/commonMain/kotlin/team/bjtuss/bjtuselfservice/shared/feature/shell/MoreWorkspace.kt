@@ -39,6 +39,7 @@ internal fun MoreWorkspace(
     physicsLabModel: PhysicsLabModel? = null,
     showPhysicsLabTile: Boolean = physicsLabModel != null,
     platformFamily: PlatformFamily = currentPlatform().family,
+    onOpenExternalUrl: ((String) -> Unit)? = null,
 ) {
     val scroll = rememberLazyListState()
     val topClearance = LocalTopBarClearance.current
@@ -74,6 +75,7 @@ internal fun MoreWorkspace(
             family = platformFamily,
             onDismiss = { activeAccountEntry = null },
             onError = { actionError = it },
+            onOpenUrl = onOpenExternalUrl,
         )
     }
     BoxWithConstraints(modifier.fillMaxSize()) {

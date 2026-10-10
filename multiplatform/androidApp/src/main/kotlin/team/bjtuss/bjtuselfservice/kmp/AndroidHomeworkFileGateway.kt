@@ -1,9 +1,10 @@
 package team.bjtuss.bjtuselfservice.kmp
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
-import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import java.io.File
 import android.provider.OpenableColumns
@@ -39,6 +40,7 @@ import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryFile
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryOpenResult
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryWriteSession
+import team.bjtuss.bjtuselfservice.shared.files.previewContentType
 import team.bjtuss.bjtuselfservice.shared.files.safeExportFileName
 import team.bjtuss.bjtuselfservice.shared.files.safeExportPathSegment
 
@@ -163,6 +165,9 @@ class AndroidHomeworkFileGateway(
     /**
      * 写入 cacheDir/previews/ 后用 FileProvider 只读授权交给系统“打开方式”。
      * 每次预览前清掉上一批；缓存目录也会被系统按需回收。
+     *
+     * createChooser 默认只把 FLAG_GRANT 给选择器自己，目标应用读不到 content URI。
+     * 必须把同一 URI 放进 ClipData，并显式 grant 给能处理该 MIME 的应用。
      */
     override suspend fun previewFile(file: HomeworkFileContent): HomeworkFilePreviewResult {
         val uri = try {
@@ -181,15 +186,21 @@ class AndroidHomeworkFileGateway(
         } catch (_: Exception) {
             return HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.IO)
         }
-        val extension = file.fileName.substringAfterLast('.', "").lowercase()
-        val mimeType = file.contentType.takeUnless { it == "application/octet-stream" }
-            ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-            ?: "application/octet-stream"
+        val mimeType = previewContentType(file.fileName, file.contentType)
+        val grantFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
         val view = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uri, mimeType)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            .addFlags(grantFlags)
+        view.clipData = ClipData.newRawUri(safeExportFileName(file.fileName), uri)
+        activity.packageManager.queryIntentActivities(view, PackageManager.MATCH_DEFAULT_ONLY).forEach { resolve ->
+            activity.grantUriPermission(resolve.activityInfo.packageName, uri, grantFlags)
+        }
+        val chooser = Intent.createChooser(view, "打开方式").apply {
+            clipData = view.clipData
+            addFlags(grantFlags)
+        }
         return try {
-            activity.startActivity(Intent.createChooser(view, null))
+            activity.startActivity(chooser)
             HomeworkFilePreviewResult.Opened
         } catch (_: ActivityNotFoundException) {
             HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)

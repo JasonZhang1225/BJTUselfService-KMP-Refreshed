@@ -89,6 +89,37 @@ class SecurityReleaseConfigTest {
     }
 
     @Test
+    fun androidFilePreviewGrantsChooserTargetsAndWeChatUrlsPreferWeChat() {
+        val gateway = root.resolve(
+            "multiplatform/androidApp/src/main/kotlin/team/bjtuss/bjtuselfservice/kmp/AndroidHomeworkFileGateway.kt",
+        ).readText()
+        assertTrue("ClipData.newRawUri" in gateway)
+        assertTrue("grantUriPermission" in gateway)
+        assertTrue("previewContentType" in gateway)
+        assertTrue("Intent.createChooser(view, \"打开方式\")" in gateway)
+
+        val urls = root.resolve(
+            "multiplatform/androidApp/src/main/kotlin/team/bjtuss/bjtuselfservice/kmp/AndroidExternalUrls.kt",
+        ).readText()
+        assertTrue("com.tencent.mm" in urls)
+        assertTrue("weixin://dl/business/?t=" in urls)
+        assertTrue("weChatUrlLinkScheme" in urls)
+        assertTrue("setPackage(WECHAT_PACKAGE)" in urls)
+        assertFalse("isWeChatOfficialAccountArticle" in urls)
+
+        val ios = root.resolve(
+            "multiplatform/shared/src/iosMain/kotlin/team/bjtuss/bjtuselfservice/shared/webview/SchoolWebView.ios.kt",
+        ).readText()
+        assertFalse("isWeChatOfficialAccountArticle" in ios)
+        assertFalse("weChatOfficialAccountArticleScheme" in ios)
+
+        val manifest = root.resolve("multiplatform/androidApp/src/main/AndroidManifest.xml").readText()
+        assertTrue("com.tencent.mm" in manifest)
+        assertTrue("android:scheme=\"weixin\"" in manifest)
+        assertTrue("<data android:mimeType=\"*/*\" />" in manifest)
+    }
+
+    @Test
     fun androidDoesNotPrewarmWebViewAndSuppressesComposeFrameRateVotes() {
         val main = root.resolve(
             "multiplatform/androidApp/src/main/kotlin/team/bjtuss/bjtuselfservice/kmp/MainActivity.kt",
