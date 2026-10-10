@@ -29,7 +29,7 @@ _**相对原版新增/增强的功能（节选）：**_
 - _**邮箱简单的前端壳子**_
 - **_iOS（现已支持iPhone Duo） + Mac OS + Windows 端_**
 
-<p align="center"><img src="docs/images/promo-features.jpg" alt="功能一览：作业聚合、应用中心、教室查询、按需定制、成绩分析、校内邮箱" width="100%"></p>
+<p align="center"><img src="docs/images/promo-features.jpg" alt="功能一览：作业聚合、应用中心、教室查询、按需定制、成绩分析、校内邮箱，更多功能不止于此" width="100%"></p>
 
 ## 📱 支持平台
 
