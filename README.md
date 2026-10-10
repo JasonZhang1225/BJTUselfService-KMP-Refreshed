@@ -11,6 +11,8 @@
 [![Kotlin](https://img.shields.io/badge/Kotlin-Multiplatform%20%2B%20Compose-7F52FF?style=flat-square&logo=kotlin)](https://kotlinlang.org)
 [![License](https://img.shields.io/github/license/HFDLYS/BJTUselfService?style=flat-square)](LICENSE)
 
+<p align="center"><img src="docs/images/promo-hero.jpg" alt="交大自由行 KMP：北京交通大学校园服务，一个 App 多端同步" width="100%"></p>
+
 ## 📖 项目简介
 
 **交大自由行** 是一款专为北京交通大学师生打造的校园服务应用。通过自动登录 MIS 系统，将成绩查询、课程表、考试安排、作业管理、邮件查看等常用校园功能整合到一个简洁直观的界面中。
@@ -26,6 +28,8 @@ _**相对原版新增/增强的功能（节选）：**_
 - _**物理在线作业和物理实验查询**_
 - _**邮箱简单的前端壳子**_
 - **_iOS（现已支持iPhone Duo） + Mac OS + Windows 端_**
+
+<p align="center"><img src="docs/images/promo-features.jpg" alt="功能一览：作业聚合、应用中心、教室查询、按需定制、成绩分析、校内邮箱，更多功能不止于此" width="100%"></p>
 
 ## 📱 支持平台
 
