@@ -105,7 +105,9 @@ internal fun TopScrollColumn(
     VisualTopScrollContainer(modifier, { state.value.toFloat() }, enabled) { viewportModifier, effect ->
         CompositionLocalProvider(LocalNativeScrollControllerReporter provides null) {
             Column(
-                modifier = viewportModifier.verticalScroll(state, enabled = enabled && nativeReporter == null, overscrollEffect = effect).then(contentModifier),
+                // enabled 只控制是否向壳层上报顶栏浓度；内嵌（宽屏详情窗格）时仍须响应滚轮/触控板，
+                // 与 TopScrollLazyColumn 的 userScrollEnabled 一致，只在原生代理接管时关闭。
+                modifier = viewportModifier.verticalScroll(state, enabled = nativeReporter == null, overscrollEffect = effect).then(contentModifier),
                 verticalArrangement = verticalArrangement,
                 horizontalAlignment = horizontalAlignment,
                 content = content,

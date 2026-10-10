@@ -23,7 +23,8 @@
 ## 当前痛点
 
 - 附件预览/保存尚未在 Android 真机和 macOS 窗口中实际点验；iOS 保存面板未点验；Windows 目标在 macOS 上只部分编译。
-- Windows CI 安装器中文名：工作流已改为 `-Duser.language=zh -Duser.country=CN` 让 jpackage 用代码页 936 的中文 .wxl，替代 ASCII 兜底；未提交、未跑 CI 验证。
+- Windows CI 安装器中文名：`debug-1.8.3-Beta-ci.2`（`79ae826`）Windows MSI 已打包成功，light 311 未再出现；装完后的开始菜单/快捷方式中文名待实机确认。
+- 宽屏邮箱详情窗格滚轮失效已修（`TopScrollColumn` 的 `enabled` 不再关闭 `verticalScroll`），用户 macOS 实测通过；Windows 滚轮待下个包确认，未提交。
 - `HomeworkFileGateway` 已被邮箱复用，后续可改名为通用文件网关。
 
 ## 接下来

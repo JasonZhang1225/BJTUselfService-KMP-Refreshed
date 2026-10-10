@@ -14,6 +14,7 @@ import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.node.LayoutModifierNode
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.MeasureResult
@@ -149,6 +150,29 @@ class TopScrollContainersTest {
                     assertEquals(false, controller!!.canScrollBackward)
                 } finally { scene.close() }
             }
+        }
+    }
+
+    // 宽屏邮箱/物理在线详情窗格传 enabled=false 只表示「不向壳层上报顶栏浓度」，
+    // 鼠标滚轮/触控板仍必须能滚动内容。
+    @Test fun embeddedColumnStillScrollsWithMouseWheel() {
+        SwingUtilities.invokeAndWait {
+            var logicalOffset = 0
+            val scene = ImageComposeScene(width = 390, height = 844, density = Density(1f), coroutineContext = Dispatchers.Unconfined) {
+                val state = rememberScrollState()
+                logicalOffset = state.value
+                TopScrollColumn(state, Modifier.fillMaxSize(), enabled = false) {
+                    repeat(40) { Box(Modifier.height(100.dp)) }
+                }
+            }
+            try {
+                var frame = 0L
+                fun settle() = repeat(20) { scene.render(++frame * 16_000_000L).close() }
+                settle()
+                scene.sendPointerEvent(PointerEventType.Scroll, Offset(195f, 400f), scrollDelta = Offset(0f, 3f))
+                settle()
+                assertTrue(logicalOffset > 0, "Mouse wheel must scroll an embedded detail pane")
+            } finally { scene.close() }
         }
     }
 

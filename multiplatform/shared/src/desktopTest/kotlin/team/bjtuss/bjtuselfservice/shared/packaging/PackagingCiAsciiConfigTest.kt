@@ -2,17 +2,20 @@ package team.bjtuss.bjtuselfservice.shared.packaging
 
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PackagingCiAsciiConfigTest {
     @Test
-    fun ciWorkflowOverridesInstallerMetadataWithAsciiForWix() {
+    fun ciWorkflowPackagesChineseNameWithChineseWixLocalization() {
         val workflow = File(findRepoRoot(), ".github/workflows/kmp-package.yml").readText()
         assertTrue("chcp 65001" in workflow)
-        // 英文代码页下 WiX light 会把中文打成 `?????` 并报 311，所以 CI 必须传 ASCII 元数据。
-        // 把这两行改回中文会让 windows 打包再次失败。
-        assertTrue("WINDOWS_PACKAGE_NAME: BJTUselfServiceKMP" in workflow)
-        assertTrue("WINDOWS_PACKAGE_DESCRIPTION: BJTU Self Service KMP" in workflow)
+        // jpackage 按 JVM 默认语言选 WiX .wxl：英文 runner 用 en（代码页 1252）会把中文名打成
+        // `?????` 并报 light 311。CI 强制 zh_CN 让它改用代码页 936 的中文 .wxl。
+        assertTrue("-Duser.language=zh -Duser.country=CN" in workflow)
+        // 不再用 ASCII 兜底覆盖安装器名称，否则装完又变成英文名。
+        assertFalse("WINDOWS_PACKAGE_NAME:" in workflow)
+        assertFalse("WINDOWS_PACKAGE_DESCRIPTION:" in workflow)
     }
 
     @Test
@@ -36,7 +39,7 @@ class PackagingCiAsciiConfigTest {
     @Test
     fun windowsGradleUsesChineseInstallerStrings() {
         val gradle = File(findRepoRoot(), "multiplatform/windowsApp/build.gradle.kts").readText()
-        // 本地构建没有代码页问题，默认值保留中文显示名，只由上面两个环境变量在 CI 覆盖。
+        // 本地与 CI 都用中文显示名；环境变量覆盖只留作手动兜底。
         assertTrue("packageName = windowsPackageDisplayName" in gradle)
         assertTrue("menuGroup = windowsPackageDisplayName" in gradle)
         assertTrue("\"交大自由行 KMP\"" in gradle)
