@@ -51,6 +51,8 @@ python3 scripts/validate-android-widgets.py
 
 Android 构建需要仓库既有的签名配置；PR CI 使用独立 compile-only fixture，不改现有签名策略。新增 Robolectric 4.17 仅用于 Android 单元测试，不进入 APK。
 
+PR #15 的验证记录：代码提交 `f24bb11` 的 Android 编译、Debug APK 与 Robolectric 测试通过（9项、0失败、0跳过，[CI run 65](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/38434261813)）；`3fc0c2f` 的 iOS 模拟器测试及 macOS `desktopTest` 通过（[CI run 64](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/38432784294)），两次代码提交之间没有 shared 改动。后续只补充验证记录的提交不改变产品代码。本地静态校验通过；完整 Gradle 构建因环境缺 javac/Android SDK无法完成。
+
 共享测试覆盖上下课边界、次日/跨周、空周/过期、异常 JSON。Android 测试实际执行 `RemoteViews.apply`，覆盖全部 provider 的资源、浅/深色、放大字体、旧/新 API 和剩余计数；文件读取测试覆盖重新写入、损坏、删除。这些测试不证明 OEM 桌面中心收录、真机进程内存或桌面 UI 成色。
 
 真机验收至少包括：三种组件/五种尺寸、浅深色、字体1.0/1.5、4×6/5×6网格、横竖屏与折叠展开、同时添加多个实例、冷启动点击、账号退出、清应用数据、午夜/上下课/改时区、超过快照覆盖期、未审核原生回退。用 `adb shell dumpsys meminfo team.bjtuss.bjtuselfservice.kmp:widgetProvider` 记录厂商进程内存；截图使用脱敏课表。

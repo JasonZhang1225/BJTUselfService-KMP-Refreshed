@@ -10,7 +10,7 @@
 
 - Android 课表小组件：复用 iOS 快照，实现临近/今日/本周原生 RemoteViews、Google 回退、小米曝光刷新与固定尺寸、vivo 原子组件标识与12小时被动周期、荣耀原生卡片标识。华为已按用户要求移出范围。
   - OPPO 完成标准 Android 回退；已核实公开 SDK AAR，专有 Seedling/UPK 卡片尚缺官方示例/打包工具与接入参数，已向用户询问材料，未宣称完成。
-  - 静态 XML/13 provider/厂商契约/配色检查通过，`git diff --check` 通过。PR #15 首轮 CI 的 Android `:shared:compileAndroidMain :androidApp:assembleDebug :androidApp:testDebugUnitTest` 已通过，iOS/macOS 测试仍在运行；Android 15 预览和触控区域收尾后需再验最新提交。本地 Gradle 被环境缺完整 JDK（javac）/Android SDK阻塞；厂商真机中心收录、内存与 UI 未验。
+  - 静态 XML/13 provider/厂商契约/配色检查与 `git diff --check` 通过。PR #15 的代码提交 `f24bb11`：Android `:shared:compileAndroidMain :androidApp:assembleDebug :androidApp:testDebugUnitTest` 通过，9项测试、0失败、0跳过；提交 `3fc0c2f` 的 `:shared:iosSimulatorArm64Test :shared:desktopTest` 通过，后续提交未改变 shared 代码。本地 Gradle 因缺 javac/Android SDK无法完成，以上为 CI 证据。厂商真机中心收录、内存与 UI 未验。
   - 技术规范、文档来源、刷新限制和真机验收清单：`docs/migration/android-course-widgets.md`。
 
 ## 当前痛点
