@@ -74,7 +74,17 @@ internal object CourseWidgetRenderer {
             return views
         }
         val day = if (provider.kind == WidgetKind.WEEK || model.isRestPeriod) model.today else model.displayDay
-        views.setTextViewText(R.id.widget_date, dateLabel(context, day.date))
+        val small = width < 200
+        val largeText = context.resources.configuration.fontScale > 1.2f
+        views.setTextViewText(R.id.widget_date, if (small)
+            LocalDate.parse(day.date).format(DateTimeFormatter.ofPattern("MM.dd", Locale.ROOT)) else dateLabel(context, day.date))
+        if (small) {
+            views.setTextViewTextSize(R.id.widget_date, TypedValue.COMPLEX_UNIT_SP, if (width < 140) 11f else 13f)
+            views.setTextViewTextSize(R.id.widget_week, TypedValue.COMPLEX_UNIT_SP, 9f)
+            val padding = (4 * context.resources.displayMetrics.density).toInt()
+            views.setViewPadding(R.id.widget_week, padding, padding, padding, padding)
+            if (largeText || width < 140) views.setViewVisibility(R.id.widget_week, View.GONE)
+        }
         views.setTextViewText(R.id.widget_week, day.week?.let { context.getString(R.string.widget_week_number, it) } ?: context.getString(R.string.widget_non_teaching))
         val status = when {
             model.isRestPeriod -> context.getString(R.string.widget_rest)
@@ -92,7 +102,7 @@ internal object CourseWidgetRenderer {
         }
         // 时间边界使用系统非精确刷新，内容明确展示生成日期，不能暗示已联网同步。
         val old = now.toEpochSecond() - snapshot!!.generatedAt > 24 * 3600
-        if (old && provider.kind == WidgetKind.NEXT) {
+        if (old && provider.kind == WidgetKind.NEXT && wide) {
             views.setTextViewText(R.id.widget_footer, context.getString(R.string.widget_cached))
             views.setViewVisibility(R.id.widget_footer, View.VISIBLE)
         }
@@ -120,6 +130,7 @@ internal object CourseWidgetRenderer {
             row.setTextViewText(R.id.widget_course_label, label)
             row.setViewVisibility(R.id.widget_course_label, if (height < 150 || !wide && height < 170) View.GONE else View.VISIBLE)
             if (!wide && index > 0) row.setViewVisibility(R.id.widget_course_time, View.GONE)
+            if (!wide && height < 140) row.setViewVisibility(R.id.widget_course_time, View.GONE)
             views.addView(R.id.widget_content, row)
         }
         if (sessions.size == 1 && upcoming.sessions.size > 1 && !wide) {
@@ -138,7 +149,7 @@ internal object CourseWidgetRenderer {
         val fontScale = context.resources.configuration.fontScale.coerceAtLeast(1f)
         val detailed = height >= 240 && width >= 240
         val rowHeight = (if (detailed) 54 else 28) * fontScale
-        val capacity = max(1, ((height - 78) / rowHeight).toInt()).coerceAtMost(8)
+        val capacity = max(1, ((height - 90) / rowHeight).toInt()).coerceAtMost(8)
         for (session in day.sessions.take(capacity)) views.addView(R.id.widget_content, course(context, session, detailed))
         val omitted = day.sessions.size - capacity
         if (omitted > 0) {

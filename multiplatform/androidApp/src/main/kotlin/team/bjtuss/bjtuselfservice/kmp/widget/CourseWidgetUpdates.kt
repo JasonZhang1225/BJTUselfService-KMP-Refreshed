@@ -49,6 +49,7 @@ object CourseWidgetUpdates {
             appContext.sendBroadcast(Intent(appContext, CourseWidgetRefreshReceiver::class.java).setAction(SNAPSHOT_CHANGED))
         }
         appContext.sendBroadcast(Intent(appContext, CourseWidgetRefreshReceiver::class.java).setAction(SNAPSHOT_CHANGED))
+        executor.execute { CourseWidgetPreviews.refresh(appContext) }
     }
 
     fun enqueue(receiver: BroadcastReceiver, context: Context, block: () -> Unit) {

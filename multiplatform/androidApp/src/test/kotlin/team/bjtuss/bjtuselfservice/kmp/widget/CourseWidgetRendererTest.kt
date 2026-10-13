@@ -3,6 +3,8 @@ package team.bjtuss.bjtuselfservice.kmp.widget
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Bundle
+import android.util.SizeF
+import android.appwidget.AppWidgetManager
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -97,5 +99,17 @@ class CourseWidgetRendererTest {
         assertNull(AndroidCourseWidgetStore.read(context))
         file.delete()
         assertNull(AndroidCourseWidgetStore.read(context))
+    }
+
+    @Test @Config(sdk = [35]) fun Android12SizeMapAppliesBothCompactAndExpandedLayouts() {
+        val context = context()
+        for (provider in listOf(NextCourseWidget(), TodayCourseWidget(), WeekCourseWidget())) {
+            val options = Bundle().apply {
+                putParcelableArrayList(AppWidgetManager.OPTION_APPWIDGET_SIZES, arrayListOf(SizeF(150f, 150f), SizeF(320f, 320f)))
+            }
+            val view = CourseWidgetRenderer.render(context, provider, 42, options, snapshot, now).apply(context, FrameLayout(context))
+            assertEquals(View.GONE, view.findViewById<View>(R.id.widget_message).visibility)
+            assertTrue(view.findViewById<LinearLayout>(R.id.widget_content).childCount > 0)
+        }
     }
 }

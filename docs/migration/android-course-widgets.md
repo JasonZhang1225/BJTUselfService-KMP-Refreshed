@@ -16,11 +16,11 @@
 
 | 平台 | 本次代码接入 | 上线/验证边界 |
 | --- | --- | --- |
-| Google / Pixel / 原生 Android | 三个可缩放 AppWidget provider；Android 12+ 按宿主给出的 `OPTION_APPWIDGET_SIZES` 提供多尺寸 RemoteViews，旧系统提供横竖屏两套；预览图、`previewLayout`、系统圆角 | Android 9+；OEM 桌面仍需真机验证 |
+| Google / Pixel / 原生 Android | 三个可缩放 AppWidget provider；Android 12+ 按宿主给出的 `OPTION_APPWIDGET_SIZES` 提供多尺寸 RemoteViews，旧系统提供横竖屏两套；预览图、`previewLayout`、Android 15+ 脱敏示例数据生成预览、系统圆角 | Android 9+；OEM 桌面仍需真机验证 |
 | 小米 HyperOS / MIUI | 2×2 临近、4×2 临近、4×2 今日、4×4 今日、4×4 本周；`miuiWidget`、应用级 `miuiWidgetVersion`、独立进程、曝光广播、静态夜间资源、ID 迁移完成确认；根节点 `@android:id/background` | 小部件中心收录仍需小米开发者平台申请和审核；本 PR 不表示已获审核。需真机确认 <35MB 内存、4×6/5×6 网格和曝光刷新 |
 | vivo OriginOS | 相同五种固定尺寸；`vivo_widget`、每 provider 的 `vivoWidgetVersion`/`vivo.widget.description`，`targetCellWidth/Height`、禁用 resize、被动更新间隔12小时；不传 bitmap、不使用滚动容器 | 原子组件库收录与一键添加须平台审核；需真机确认桌面内存限制、不同网格与组件库的浅/深色预览 |
 | 荣耀 MagicOS | 通用 provider 添加 `com.hihonor.widget.type=honorcard`，保留标准 `android.appwidget.provider` 以兼容旧系统和其他厂商；响应式宽度与横竖屏 | 原生卡片接入标识已实现；快服务推荐/审核及折叠屏行为需平台和真机验证 |
-| OPPO ColorOS | 本次完成标准 Android Widget 回退，布局响应式、支持浅/深色和本地刷新 | **专有泛在卡片尚未接入**。官方提供 SeedlingSupportSDK、UPK 卡片包与卡片开发工具体系；当前未取得可验证的 SDK/官方示例/打包工具和项目接入参数。取得这些材料后可沿用快照继续接入，不以虚构 metadata、反射私有接口或把 Android Widget 改名冒充泛在卡片 |
+| OPPO ColorOS | 本次完成标准 Android Widget 回退，布局响应式、支持浅/深色和本地刷新 | **专有泛在卡片尚未接入**。已下载核实 OPPO-OpenPlatform 发布的 `com.oplus.pantanal.card:seedling-support-external:3.0.7` AAR，包含 Seedling SDK 的 provider/API；仍缺可验证的官方 UPK 示例/打包工具和项目接入参数。单独引入 SDK 不会产生可用卡片，暂不向 APK 增加未使用的依赖与权限。取得这些材料后可沿用快照继续接入 |
 
 专用小米/vivo provider 默认关闭，主 App 在对应品牌第一次启动时开启。通用组件始终保留，旧系统、未审核、非厂商桌面可选择 Android 小部件回退。其他品牌不会出现额外十个 OEM 组件。
 
@@ -38,7 +38,7 @@
 - 小米：[技术规范与系统能力](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1584)、[HyperOS 设计规范](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1664)、[适配示例](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1585)、[提交审核流程](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1588)、[常见问题](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1591)。
 - vivo：[设计理念](https://dev.vivo.com.cn/documentCenter/doc/834)、[产品规范](https://dev.vivo.com.cn/documentCenter/doc/841)、[原子组件适配技术规范](https://dev.vivo.com.cn/documentCenter/doc/845)。技术规范的完整示例经官方公开文档接口读取核实。
 - 荣耀：[安卓卡片接入开发指南](https://developer.honor.com/en/doc/guides/100171)。遵循官方标识、主题、响应式布局约定；Google 回退保留系统字体缩放，不采用荣耀文档中将所有字号改为 dp 的建议。
-- OPPO：[Seedling API / 泛在服务文档](https://open.oppomobile.com/new/developmentDoc/info?id=13330)、[官方文档检索中的版本与 SDK 说明](https://open.oppomobile.com/documentation/page/search?keyword=ColorOS%20Watch)。页面依赖 JavaScript；本次取得公开索引的 API 和版本信息，未取得实际 SDK/UPK 工具包。不能据此宣称专有卡片可构建。
+- OPPO：[Seedling API / 泛在服务文档](https://open.oppomobile.com/new/developmentDoc/info?id=13330)、[SDK 接入指南](https://open.oppomobile.com/new/developmentDoc/info?id=12719)、[官方潘塔纳尔系统介绍（服务开发/打包流程）](https://www.oppo.com/content/dam/oppo/event-page-asset/coloroshack-2023/cn/home/v1/static/Introduction_of_Pantanal_cn.pdf)、[官方文档检索中的版本与 SDK 说明](https://open.oppomobile.com/documentation/page/search?keyword=ColorOS%20Watch)、[OPPO-OpenPlatform 发布的 SDK](https://central.sonatype.com/artifact/com.oplus.pantanal.card/seedling-support-external/3.0.7)。网页依赖 JavaScript；本次取得公开索引的 API/版本信息与实际 SDK AAR，未取得官方 UPK 示例/打包工具。不能据此宣称专有卡片可构建。
 
 ## 验证方式
 
