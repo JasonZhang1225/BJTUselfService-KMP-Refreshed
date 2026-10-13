@@ -1,0 +1,31 @@
+<resources>
+<string name="widget_month">%1$d</string>
+<string name="widget_next_title">Upcoming classes</string>
+<string name="widget_today_title">Daily classes</string>
+<string name="widget_week_title">Weekly timetable</string>
+<string name="widget_next_description">Shows the current class and the next class.</string>
+<string name="widget_today_description">Shows today’s classes, then the next day with classes.</string>
+<string name="widget_week_description">Monday to Sunday timetable using the same course colors.</string>
+<string name="widget_no_snapshot">No timetable\nOpen the app to sign in and sync</string>
+<string name="widget_stale">Timetable needs updating\nOpen the app to refresh</string>
+<string name="widget_refresh_description">Refresh class time status</string>
+<string name="widget_week_number">Week %1$d</string>
+<string name="widget_non_teaching">No teaching week</string>
+<string name="widget_rest">No classes left today. Take a break.</string>
+<string name="widget_today_empty">No classes today</string>
+<string name="widget_today_finished">Today’s classes are finished</string>
+<string name="widget_week_empty">No classes this week</string>
+<string name="widget_no_more">No more classes</string>
+<string name="widget_ongoing">In progress</string>
+<string name="widget_next">Next</string>
+<string name="widget_after_next">After that</string>
+<string name="widget_more_count">%1$d more · Tap for the timetable</string>
+<string name="widget_session_count">%1$d classes</string>
+<string name="widget_next_day_hint">%1$s · %2$d classes</string>
+<string name="widget_cached">Offline timetable · Open app to update</string>
+<string name="widget_preview_date">10.14 Wed</string>
+<string name="widget_preview_week">Week 5</string>
+<string name="widget_preview_course">Academic exchange</string>
+<string name="widget_preview_place">Teaching Building 8 · 8202</string>
+<string-array name="widget_weekdays"><item>Mon</item><item>Tue</item><item>Wed</item><item>Thu</item><item>Fri</item><item>Sat</item><item>Sun</item></string-array>
+</resources>

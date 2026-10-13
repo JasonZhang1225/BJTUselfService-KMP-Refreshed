@@ -37,13 +37,19 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Validate Android widget resources and vendor contracts
+        run: python3 scripts/validate-android-widgets.py
+
       - name: Create isolated compile-only signing fixture
         run: |
           keytool -genkeypair -noprompt -keystore "$RUNNER_TEMP/compile-only.keystore" \
             -storepass ci-compile-only -keypass ci-compile-only -alias ci-compile \
             -dname "CN=CI Compile Only" -keyalg RSA -keysize 2048 -validity 1
 
-      - name: Compile Android without packaging
+      - name: Build Android and test native widget RemoteViews
         env:
           BJTU_ANDROID_KEYSTORE: ${{ runner.temp }}/compile-only.keystore
           BJTU_ANDROID_STORE_PASSWORD: ci-compile-only
@@ -51,7 +57,15 @@ jobs:
           BJTU_ANDROID_KEY_PASSWORD: ci-compile-only
         run: |
           chmod +x ./gradlew
-          ./gradlew :shared:compileAndroidMain :androidApp:compileDebugKotlin --stacktrace
+          ./gradlew :shared:compileAndroidMain :androidApp:assembleDebug :androidApp:testDebugUnitTest --stacktrace
+
+      - name: Upload Android widget test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-widget-test-reports
+          path: multiplatform/androidApp/build/reports/tests/
+          if-no-files-found: warn
 
   apple:
     name: iOS compile and macOS security tests

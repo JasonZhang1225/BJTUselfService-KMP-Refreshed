@@ -22,7 +22,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.home.homePhysicsLabsOnDate
 import team.bjtuss.bjtuselfservice.shared.feature.home.homeTeachingWeekOn
 
 /**
- * iOS 课程小组件读取的本地快照（App Group 内的 JSON）。
+ * iOS / Android 课程小组件读取的本地快照（私有容器内的 JSON）。
  *
  * 小组件进程不能登录、也不跑 KMP 代码，所以主应用把“未来若干天每天上什么、几点到几点”
  * 预先展开成纯数据；小组件只负责按当前时间挑出正在上/下一节并排版。
@@ -103,6 +103,22 @@ internal fun buildCourseWidgetSnapshot(
 private val widgetJson = Json { encodeDefaults = true }
 
 fun CourseWidgetSnapshot.encode(): String = widgetJson.encodeToString(CourseWidgetSnapshot.serializer(), this)
+
+/** 未知版本或损坏内容不继续显示旧课程，也不把异常/个人数据写入日志。 */
+fun decodeCourseWidgetSnapshot(json: String): CourseWidgetSnapshot? = runCatching {
+    Json { ignoreUnknownKeys = true }.decodeFromString(CourseWidgetSnapshot.serializer(), json)
+        .takeIf { snapshot ->
+            snapshot.version == CourseWidgetSnapshot.VERSION &&
+                snapshot.days.size <= 31 &&
+                snapshot.days.map { it.date }.distinct().size == snapshot.days.size &&
+                snapshot.days.all { day ->
+                    runCatching { LocalDate.parse(day.date) }.isSuccess &&
+                        day.sessions.size <= 100 && day.sessions.all {
+                            it.startMinute in 0..1439 && it.endMinute in 1..1440 && it.startMinute < it.endMinute
+                        }
+                }
+        }
+}.getOrNull()
 
 /** 考试与实验一样按实际日期出现；网格片段共用 id，只取一条。 */
 private fun homeExamsOnDate(schedule: HomeSchedulePresentation, date: LocalDate): List<Course> =

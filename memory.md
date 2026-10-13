@@ -1,14 +1,17 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-13。
-> 当前分支：`main` = `mine/main`（PR #11 与文档整理 `f0c997f` 已推送）。本地与远端都只剩 `main`。
+> 当前工作分支：`feat/android-course-widgets`，基于 `mine/main@9dff5e6`；安卓小组件改动尚未合入。
 > KMP 应用版本：`1.8.4-Beta3` / Build 35（macOS/Windows 安装包数值版本 1.8.4）。正式 Latest 仍为 `v1.8.3-KMP`。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
 
 ## 进行中
 
-- 无。
+- Android 课表小组件：复用 iOS 快照，实现临近/今日/本周原生 RemoteViews、Google 回退、小米曝光刷新与固定尺寸、vivo 原子组件标识与12小时被动周期、荣耀原生卡片标识。华为已按用户要求移出范围。
+  - OPPO 完成标准 Android 回退；专有 Seedling/UPK 卡片尚缺可验证的 SDK、官方示例/工具包与接入参数，已向用户询问材料，未宣称完成。
+  - 静态 XML/13 provider/厂商契约/配色检查通过，`git diff --check` 通过。新增共享业务测试与 Android Robolectric RemoteViews 测试；本地 Gradle 验证被环境缺少完整 JDK（javac）/Android SDK阻塞，交 PR CI 继续构建和测试；厂商真机中心收录、内存与 UI 未验。
+  - 技术规范、文档来源、刷新限制和真机验收清单：`docs/migration/android-course-widgets.md`。
 
 ## 当前痛点
 

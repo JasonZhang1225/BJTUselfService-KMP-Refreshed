@@ -1,0 +1,31 @@
+<resources>
+<string name="widget_month">%1$d月</string>
+<string name="widget_next_title">临近课程</string>
+<string name="widget_today_title">今日课程</string>
+<string name="widget_week_title">本周课表</string>
+<string name="widget_next_description">显示正在上的课和下一节课。</string>
+<string name="widget_today_description">按时间显示今日课程，上完后显示下一个有课日。</string>
+<string name="widget_week_description">按大节显示周一到周日的课程，配色与课表一致。</string>
+<string name="widget_no_snapshot">暂无课表\n打开 App 登录并同步课表</string>
+<string name="widget_stale">课表需要更新\n打开 App 刷新课表</string>
+<string name="widget_refresh_description">刷新小组件中的课程时间状态</string>
+<string name="widget_week_number">第 %1$d 周</string>
+<string name="widget_non_teaching">非教学周</string>
+<string name="widget_rest">今天没有待上的课，好好休息</string>
+<string name="widget_today_empty">今天没有课</string>
+<string name="widget_today_finished">今天已上完</string>
+<string name="widget_week_empty">本周没有课，好好休息</string>
+<string name="widget_no_more">没有更多课程了</string>
+<string name="widget_ongoing">正在上</string>
+<string name="widget_next">下一节</string>
+<string name="widget_after_next">接下来</string>
+<string name="widget_more_count">还有 %1$d 节 · 点按查看完整课表</string>
+<string name="widget_session_count">共 %1$d 节</string>
+<string name="widget_next_day_hint">%1$s · 共 %2$d 节</string>
+<string name="widget_cached">离线课表 · 打开 App 可更新</string>
+<string name="widget_preview_date">10.14 周三</string>
+<string name="widget_preview_week">第 5 周</string>
+<string name="widget_preview_course">国际学术交流</string>
+<string name="widget_preview_place">第八教学楼 8202 丁研</string>
+<string-array name="widget_weekdays"><item>一</item><item>二</item><item>三</item><item>四</item><item>五</item><item>六</item><item>日</item></string-array>
+</resources>

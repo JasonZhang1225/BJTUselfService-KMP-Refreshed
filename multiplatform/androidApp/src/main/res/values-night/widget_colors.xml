@@ -1,0 +1,22 @@
+<!-- CourseCategoryPalette 的平台资源镜像；验证脚本检查一致性。 -->
+<resources>
+<color name="widget_background">#29292D</color>
+<color name="widget_text">#F4F4F6</color>
+<color name="widget_secondary">#B8B8C0</color>
+<color name="widget_border">#24FFFFFF</color>
+<color name="widget_pill">#18FFFFFF</color>
+<color name="widget_container_required">#4A1F1D</color>
+<color name="widget_accent_required">#D9574E</color>
+<color name="widget_container_limited">#48243A</color>
+<color name="widget_accent_limited">#C9558A</color>
+<color name="widget_container_elective">#223065</color>
+<color name="widget_accent_elective">#4F6FD8</color>
+<color name="widget_container_pe">#163B3B</color>
+<color name="widget_accent_pe">#16A4A4</color>
+<color name="widget_container_unknown">#333438</color>
+<color name="widget_accent_unknown">#7D828A</color>
+<color name="widget_container_lab">#3B2858</color>
+<color name="widget_accent_lab">#9B6BCF</color>
+<color name="widget_container_exam">#3D2A12</color>
+<color name="widget_accent_exam">#E0952F</color>
+</resources>
