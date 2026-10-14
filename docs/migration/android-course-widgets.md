@@ -39,7 +39,7 @@
 cd multiplatform
 python3 scripts/validate-android-widgets.py
 ./gradlew :shared:desktopTest
-./gradlew :shared:compileAndroidMain :androidApp:assembleDebug :androidApp:testDebugUnitTest
+./gradlew :shared:compileAndroidMain :androidApp:assembleDebug :androidApp:lintVitalRelease :androidApp:testDebugUnitTest
 ```
 
 Android 构建需要仓库既有的签名配置；PR CI 使用独立 compile-only fixture，不改现有签名策略。新增 Robolectric 4.17 仅用于 Android 单元测试，不进入 APK。

@@ -49,7 +49,7 @@ jobs:
             -storepass ci-compile-only -keypass ci-compile-only -alias ci-compile \
             -dname "CN=CI Compile Only" -keyalg RSA -keysize 2048 -validity 1
 
-      - name: Build Android and test native widget RemoteViews
+      - name: Build Android, check release lint and test native widget RemoteViews
         env:
           BJTU_ANDROID_KEYSTORE: ${{ runner.temp }}/compile-only.keystore
           BJTU_ANDROID_STORE_PASSWORD: ci-compile-only
@@ -57,7 +57,7 @@ jobs:
           BJTU_ANDROID_KEY_PASSWORD: ci-compile-only
         run: |
           chmod +x ./gradlew
-          ./gradlew :shared:compileAndroidMain :androidApp:assembleDebug :androidApp:testDebugUnitTest --stacktrace
+          ./gradlew :shared:compileAndroidMain :androidApp:assembleDebug :androidApp:lintVitalRelease :androidApp:testDebugUnitTest --stacktrace
 
       - name: Upload Android widget test reports
         if: always()
