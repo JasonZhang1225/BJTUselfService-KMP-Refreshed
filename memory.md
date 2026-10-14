@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-14。
-> 当前工作分支：`feat/android-course-widgets`，已同步 `mine/main@4dcb378`（PR #14 打包时间修复）；已推送并开草稿 PR #15，安卓小组件改动尚未合入。
+> 当前工作分支：`feat/android-course-widgets`，已同步 `mine/main@4dcb378`（PR #14 打包时间修复）；已推送并将 PR #15 转为可评审，安卓小组件改动尚未合入。
 > KMP 应用版本：`1.8.4-Beta3` / Build 35（macOS/Windows 安装包数值版本 1.8.4）。正式 Latest 仍为 `v1.8.3-KMP`。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
@@ -9,7 +9,7 @@
 ## 进行中
 
 - Android 课表小组件（PR #15）：复用 iOS 快照，实现临近/今日/本周原生 RemoteViews。按最新要求仅保留荣耀官方卡片标识，小米、OPPO、vivo、Pixel 等统一使用三个可缩放标准 Android provider；移除小米/vivo 专用 provider、广播、品牌开关和刷新策略。不引入 OPPO Seedling SDK；华为专有适配不在范围内。
-  - 本轮静态 XML/三个 provider/荣耀标识/配色检查和 Android CI 待最终复核；本地缺 javac/Android SDK，完整构建交给 PR CI。此前 shared 代码的 `:shared:iosSimulatorArm64Test :shared:desktopTest` 在提交 `3fc0c2f` 通过，本轮未改 shared。荣耀系统卡片识别、平台推荐/审核、真机内存与桌面 UI 未验。
+  - 本轮静态 XML/三个 provider/荣耀标识/配色检查与 `git diff --check` 通过；提交 `8a9d386` 的 Android 编译、Debug APK、Robolectric 测试在 CI run 68 通过（9项、0失败、0跳过）。本地缺 javac/Android SDK，完整构建与运行测试仅经 CI 验证。此前 shared 代码的 `:shared:iosSimulatorArm64Test :shared:desktopTest` 在提交 `3fc0c2f` 通过，本轮未改 shared。荣耀系统卡片识别、平台推荐/审核、真机内存与桌面 UI 未验。
   - 技术规范、文档来源、刷新限制和真机验收清单：`docs/migration/android-course-widgets.md`。
 
 - PR #14 打包产物待验收（代码已合入 main）：`kmp-package.yml` 全局设置 `TZ=Asia/Shanghai` 与 JVM 时区；Windows 原生工具设置 `China Standard Time`，保留原中文编码参数。iOS 签名后统一暂存目录 mtime、复验签名，以 `zip -X` 去掉 UTC 扩展时间；APK/MSI/DMG 仅刷新输出文件 mtime，不重写签名包内容。打包日志显式打印北京时间与偏移量。

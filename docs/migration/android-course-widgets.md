@@ -32,6 +32,7 @@
 
 - Google：[创建 AppWidget](https://developer.android.com/develop/ui/views/appwidgets/overview)、[灵活布局](https://developer.android.com/develop/ui/views/appwidgets/layouts)、[组件预览](https://developer.android.com/develop/ui/views/appwidgets/previews)、[设计规范](https://developer.android.com/design/ui/widget)。
 - 荣耀：[安卓卡片接入开发指南](https://developer.honor.com/en/doc/guides/100171)。遵循官方标识、主题、响应式布局约定；Google 回退保留系统字体缩放，不采用荣耀文档中将所有字号改为 dp 的建议。
+
 ## 验证方式
 
 ```bash
@@ -43,7 +44,7 @@ python3 scripts/validate-android-widgets.py
 
 Android 构建需要仓库既有的签名配置；PR CI 使用独立 compile-only fixture，不改现有签名策略。新增 Robolectric 4.17 仅用于 Android 单元测试，不进入 APK。
 
-本轮收敛范围后，本地静态检查验证三个标准 provider、荣耀标识、预览、主题与配色；Android 编译、Debug APK 和 Robolectric 测试交由 PR #15 CI 执行。本地环境缺 javac/Android SDK，不能完成完整 Gradle 构建。
+本轮收敛范围后，提交 `8a9d386` 的 `:shared:compileAndroidMain :androidApp:assembleDebug :androidApp:testDebugUnitTest` 通过（9项、0失败、0跳过，[CI run 68](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/38491090683/job/115616182672)）。本地静态检查验证三个标准 provider、荣耀标识、预览、主题与配色，`git diff --check` 通过。完整构建和运行测试仅经 CI 验证，本地环境缺 javac/Android SDK。后续仅补充验证记录的提交不改变产品代码。
 
 共享代码本轮未改动；此前提交 `3fc0c2f` 的 iOS 模拟器测试及 macOS `desktopTest` 已通过（[CI run 64](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/38432784294)）。
 
