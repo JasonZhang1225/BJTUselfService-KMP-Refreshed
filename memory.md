@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-14。
-> 当前工作分支：`feat/android-course-widgets`，基于 `mine/main@9dff5e6`；已推送并开草稿 PR #15，安卓小组件改动尚未合入。
+> 当前工作分支：`feat/android-course-widgets`，已同步 `mine/main@4dcb378`（PR #14 打包时间修复）；已推送并开草稿 PR #15，安卓小组件改动尚未合入。
 > KMP 应用版本：`1.8.4-Beta3` / Build 35（macOS/Windows 安装包数值版本 1.8.4）。正式 Latest 仍为 `v1.8.3-KMP`。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
@@ -11,6 +11,12 @@
 - Android 课表小组件（PR #15）：复用 iOS 快照，实现临近/今日/本周原生 RemoteViews。按最新要求仅保留荣耀官方卡片标识，小米、OPPO、vivo、Pixel 等统一使用三个可缩放标准 Android provider；移除小米/vivo 专用 provider、广播、品牌开关和刷新策略。不引入 OPPO Seedling SDK；华为专有适配不在范围内。
   - 本轮静态 XML/三个 provider/荣耀标识/配色检查和 Android CI 待最终复核；本地缺 javac/Android SDK，完整构建交给 PR CI。此前 shared 代码的 `:shared:iosSimulatorArm64Test :shared:desktopTest` 在提交 `3fc0c2f` 通过，本轮未改 shared。荣耀系统卡片识别、平台推荐/审核、真机内存与桌面 UI 未验。
   - 技术规范、文档来源、刷新限制和真机验收清单：`docs/migration/android-course-widgets.md`。
+
+- PR #14 打包产物待验收（代码已合入 main）：`kmp-package.yml` 全局设置 `TZ=Asia/Shanghai` 与 JVM 时区；Windows 原生工具设置 `China Standard Time`，保留原中文编码参数。iOS 签名后统一暂存目录 mtime、复验签名，以 `zip -X` 去掉 UTC 扩展时间；APK/MSI/DMG 仅刷新输出文件 mtime，不重写签名包内容。打包日志显式打印北京时间与偏移量。
+  - 本地验证：YAML 解析、9 个 Bash 步骤 `bash -n`、JVM 时区、模拟 IPA 的北京时间跨日/真实 epoch/ZIP 时间/无 UTC 扩展字段/符号链接/内容哈希均通过，`git diff --check` 通过。
+  - 首轮 CI：`38429777141` 成功；下载实际 IPA 验证 30 个条目的时间全部为北京时间 `2026-10-14 00:29:52`，压缩包 CRC 与签名复验通过。发现 `upload-artifact@v4` 的外层 ZIP 仍把 IPA 文件时间序列化为 UTC `2026-10-13 16:29:52`，单设 TZ 不足以修复。
+  - 外层 ZIP 修复：四端通过 `scripts/stage-actions-artifact.py` 创建上传副本，仅该副本 mtime 加 8 小时，适配 upload-artifact 的 UTC DOS 时间编码；原包保留真实 epoch，内容与签名不变。四种扩展名的内容哈希、原 epoch、跨日时间与重复暂存验证通过，等待第二轮 CI 实际产物验证。
+  - 未验证：Windows/MSI、Android/APK、macOS/DMG 需后续四端打包验证（当前 PR 只打 iOS）。仅修复后续产物，既有 Actions 产物与 GitHub 自身 UTC 运行时间不变。
 
 ## 当前痛点
 
