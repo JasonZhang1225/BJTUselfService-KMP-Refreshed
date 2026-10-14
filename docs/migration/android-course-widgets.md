@@ -44,7 +44,9 @@ python3 scripts/validate-android-widgets.py
 
 Android 构建需要仓库既有的签名配置；PR CI 使用独立 compile-only fixture，不改现有签名策略。新增 Robolectric 4.17 仅用于 Android 单元测试，不进入 APK。
 
-本轮收敛范围后，提交 `8a9d386` 的 `:shared:compileAndroidMain :androidApp:assembleDebug :androidApp:testDebugUnitTest` 通过（9项、0失败、0跳过，[CI run 68](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/38491090683/job/115616182672)）。本地静态检查验证三个标准 provider、荣耀标识、预览、主题与配色，`git diff --check` 通过。完整构建和运行测试仅经 CI 验证，本地环境缺 javac/Android SDK。后续仅补充验证记录的提交不改变产品代码。
+修复提交 `cc23ffe` 的 `:shared:compileAndroidMain :androidApp:assembleDebug :androidApp:lintVitalRelease :androidApp:testDebugUnitTest` 已通过（[CI](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/38493609032/job/115624254634)）。首轮实际 APK 打包发现周课表静态预览28个单元格共用一个未使用的 View ID，触发 Release Lint 的 `DuplicateIds`；已移除该 ID，并把 `lintVitalRelease` 加入 PR 检查。修复后的四端安装包由 [KMP package](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/38493630211) 构建。
+
+本地组件资源校验与 `git diff --check` 通过。完整构建和运行测试仅经 CI 验证，本地环境缺 javac/Android SDK。
 
 共享代码本轮未改动；此前提交 `3fc0c2f` 的 iOS 模拟器测试及 macOS `desktopTest` 已通过（[CI run 64](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/38432784294)）。
 
