@@ -59,10 +59,17 @@ class CourseWidgetRendererTest {
         for (dark in listOf(false, true)) for (scale in listOf(1f, 1.5f)) {
             val context = context(dark, scale)
             for (provider in CourseWidgetUpdates.providers) {
-                val view = apply(context, provider, snapshot, provider.defaultWidth.toInt(), provider.defaultHeight.toInt())
-                assertEquals(View.GONE, view.findViewById<View>(R.id.widget_message).visibility)
-                assertTrue(view.findViewById<LinearLayout>(R.id.widget_content).childCount > 0)
-                assertTrue(view.findViewById<View>(R.id.widget_refresh).hasOnClickListeners())
+                val sizes = when (provider.kind) {
+                    WidgetKind.NEXT -> listOf(150 to 150, 300 to 150)
+                    WidgetKind.TODAY -> listOf(300 to 150, 300 to 320)
+                    WidgetKind.WEEK -> listOf(300 to 320)
+                }
+                for ((width, height) in sizes) {
+                    val view = apply(context, provider, snapshot, width, height)
+                    assertEquals(View.GONE, view.findViewById<View>(R.id.widget_message).visibility)
+                    assertTrue(view.findViewById<LinearLayout>(R.id.widget_content).childCount > 0)
+                    assertTrue(view.findViewById<View>(R.id.widget_refresh).hasOnClickListeners())
+                }
             }
         }
     }

@@ -4,7 +4,6 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProviderInfo
 import android.content.ComponentName
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import team.bjtuss.bjtuselfservice.shared.feature.widget.CourseWidgetDay
@@ -31,7 +30,6 @@ internal object CourseWidgetPreviews {
         })
         for (provider in CourseWidgetUpdates.providers) {
             val component = ComponentName(context, provider.javaClass)
-            if (context.packageManager.getComponentEnabledSetting(component) == PackageManager.COMPONENT_ENABLED_STATE_DISABLED) continue
             val options = Bundle().apply {
                 putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, provider.defaultWidth.toInt())
                 putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, provider.defaultWidth.toInt())

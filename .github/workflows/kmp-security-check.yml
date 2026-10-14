@@ -40,7 +40,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Validate Android widget resources and vendor contracts
+      - name: Validate Android widgets and HONOR metadata
         run: python3 scripts/validate-android-widgets.py
 
       - name: Create isolated compile-only signing fixture

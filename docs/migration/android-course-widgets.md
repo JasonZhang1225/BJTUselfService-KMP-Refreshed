@@ -1,6 +1,6 @@
 # Android 课表小组件
 
-本次范围为 Google 标准 Android、小米、OPPO、vivo、荣耀。用户已取消华为适配。
+仅保留荣耀 MagicOS 卡片适配；小米、OPPO、vivo、Google Pixel 等设备统一使用标准 Android 小组件。华为专有卡片不在范围内。
 
 ## 功能与数据
 
@@ -12,34 +12,26 @@
 - Widget 在 `:widgetProvider` 进程运行，只读取快照和渲染；不初始化 Compose、WebView 或验证码模型。读取不缓存，并校验版本、日期、时段、文件大小。损坏/缺失/过期快照显示打开应用更新的提示。
 - 点击卡片使用不可变 `PendingIntent.getActivity`；冷启动或登录恢复后进入课程表。刷新按钮只重算本地课程时间状态，不代表重新从学校同步数据。
 
-## 厂商接入与实际交付边界
+## 平台接入与实际交付边界
 
-| 平台 | 本次代码接入 | 上线/验证边界 |
+| 平台 | 本次代码接入 | 验证边界 |
 | --- | --- | --- |
-| Google / Pixel / 原生 Android | 三个可缩放 AppWidget provider；Android 12+ 按宿主给出的 `OPTION_APPWIDGET_SIZES` 提供多尺寸 RemoteViews，旧系统提供横竖屏两套；预览图、`previewLayout`、Android 15+ 脱敏示例数据生成预览、系统圆角 | Android 9+；OEM 桌面仍需真机验证 |
-| 小米 HyperOS / MIUI | 2×2 临近、4×2 临近、4×2 今日、4×4 今日、4×4 本周；`miuiWidget`、应用级 `miuiWidgetVersion`、独立进程、曝光广播、静态夜间资源、ID 迁移完成确认；根节点 `@android:id/background` | 小部件中心收录仍需小米开发者平台申请和审核；本 PR 不表示已获审核。需真机确认 <35MB 内存、4×6/5×6 网格和曝光刷新 |
-| vivo OriginOS | 相同五种固定尺寸；`vivo_widget`、每 provider 的 `vivoWidgetVersion`/`vivo.widget.description`，`targetCellWidth/Height`、禁用 resize、被动更新间隔12小时；不传 bitmap、不使用滚动容器 | 原子组件库收录与一键添加须平台审核；需真机确认桌面内存限制、不同网格与组件库的浅/深色预览 |
-| 荣耀 MagicOS | 通用 provider 添加 `com.hihonor.widget.type=honorcard`，保留标准 `android.appwidget.provider` 以兼容旧系统和其他厂商；响应式宽度与横竖屏 | 原生卡片接入标识已实现；快服务推荐/审核及折叠屏行为需平台和真机验证 |
-| OPPO ColorOS | 本次完成标准 Android Widget 回退，布局响应式、支持浅/深色和本地刷新 | **专有泛在卡片尚未接入**。已下载核实 OPPO-OpenPlatform 发布的 `com.oplus.pantanal.card:seedling-support-external:3.0.7` AAR，包含 Seedling SDK 的 provider/API；仍缺可验证的官方 UPK 示例/打包工具和项目接入参数。单独引入 SDK 不会产生可用卡片，暂不向 APK 增加未使用的依赖与权限。取得这些材料后可沿用快照继续接入 |
+| 标准 Android（小米、OPPO、vivo、Pixel 等） | 三个可缩放 AppWidget provider；Android 12+ 按宿主给出的 `OPTION_APPWIDGET_SIZES` 提供多尺寸 RemoteViews，旧系统提供横竖屏两套；预览图、`previewLayout`、Android 15+ 脱敏示例数据生成预览、系统圆角 | Android 9+；各厂商桌面的实际呈现仍需真机验证 |
+| 荣耀 MagicOS | 同一组三个 provider 添加 `com.hihonor.widget.type=honorcard`，保留标准 `android.appwidget.provider` 以兼容旧系统和其他桌面；响应式宽度与横竖屏 | 官方卡片接入标识已实现；系统卡片识别、快服务推荐/审核及折叠屏行为需平台和真机验证 |
 
-专用小米/vivo provider 默认关闭，主 App 在对应品牌第一次启动时开启。通用组件始终保留，旧系统、未审核、非厂商桌面可选择 Android 小部件回退。其他品牌不会出现额外十个 OEM 组件。
+所有品牌只注册同一组三个组件，均默认可用，不按品牌动态开关。临近课程支持小号/宽版，今日课程支持紧凑/详细版，本周课表使用大尺寸。没有小米/vivo 专有组件入口、曝光广播或厂商专用刷新周期；不引入 OPPO Seedling SDK，也不依赖这些厂商组件库的收录审核。
 
 ## 时间与刷新
 
 - 主 App 写入、用户刷新、添加/缩放/恢复、开机、升级、日期/时间/时区/配置变化会触发本地更新。
-- 通用组件被动更新周期30分钟；小米额外接收曝光更新，最小间隔60秒。
-- 通用/小米组件安排下一次上下课或午夜的非精确 `AlarmManager.setWindow`，窗口10分钟，不申请精确闹钟，不启动常驻服务。系统省电/Doze可能继续推迟，**不能保证课堂边界按秒刷新**。
-- vivo 原子组件遵循12小时被动周期；不通过边界闹钟绕过规范。需要即时重算时点刷新，或打开主 App；应用写入新快照会主动更新。
+- 三个组件均使用标准 Android 的30分钟被动更新周期。
+- 组件安排下一次上下课或午夜的非精确 `AlarmManager.setWindow`，窗口10分钟，不申请精确闹钟，不启动常驻服务。系统省电/Doze可能继续推迟，**不能保证课堂边界按秒刷新**。
 - 快照默认覆盖本周一至未来14天，过期后要求打开主 App 同步。它只反映上次同步结果，学校临时调课必须先在 App 更新。
 
 ## 官方文档（2026-10-13 查阅）
 
 - Google：[创建 AppWidget](https://developer.android.com/develop/ui/views/appwidgets/overview)、[灵活布局](https://developer.android.com/develop/ui/views/appwidgets/layouts)、[组件预览](https://developer.android.com/develop/ui/views/appwidgets/previews)、[设计规范](https://developer.android.com/design/ui/widget)。
-- 小米：[技术规范与系统能力](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1584)、[HyperOS 设计规范](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1664)、[适配示例](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1585)、[提交审核流程](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1588)、[常见问题](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1591)。
-- vivo：[设计理念](https://dev.vivo.com.cn/documentCenter/doc/834)、[产品规范](https://dev.vivo.com.cn/documentCenter/doc/841)、[原子组件适配技术规范](https://dev.vivo.com.cn/documentCenter/doc/845)。技术规范的完整示例经官方公开文档接口读取核实。
 - 荣耀：[安卓卡片接入开发指南](https://developer.honor.com/en/doc/guides/100171)。遵循官方标识、主题、响应式布局约定；Google 回退保留系统字体缩放，不采用荣耀文档中将所有字号改为 dp 的建议。
-- OPPO：[Seedling API / 泛在服务文档](https://open.oppomobile.com/new/developmentDoc/info?id=13330)、[SDK 接入指南](https://open.oppomobile.com/new/developmentDoc/info?id=12719)、[官方潘塔纳尔系统介绍（服务开发/打包流程）](https://www.oppo.com/content/dam/oppo/event-page-asset/coloroshack-2023/cn/home/v1/static/Introduction_of_Pantanal_cn.pdf)、[官方文档检索中的版本与 SDK 说明](https://open.oppomobile.com/documentation/page/search?keyword=ColorOS%20Watch)、[OPPO-OpenPlatform 发布的 SDK](https://central.sonatype.com/artifact/com.oplus.pantanal.card/seedling-support-external/3.0.7)。网页依赖 JavaScript；本次取得公开索引的 API/版本信息与实际 SDK AAR，未取得官方 UPK 示例/打包工具。不能据此宣称专有卡片可构建。
-
 ## 验证方式
 
 ```bash
@@ -51,8 +43,10 @@ python3 scripts/validate-android-widgets.py
 
 Android 构建需要仓库既有的签名配置；PR CI 使用独立 compile-only fixture，不改现有签名策略。新增 Robolectric 4.17 仅用于 Android 单元测试，不进入 APK。
 
-PR #15 的验证记录：代码提交 `f24bb11` 的 Android 编译、Debug APK 与 Robolectric 测试通过（9项、0失败、0跳过，[CI run 65](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/38434261813)）；`3fc0c2f` 的 iOS 模拟器测试及 macOS `desktopTest` 通过（[CI run 64](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/38432784294)），两次代码提交之间没有 shared 改动。后续只补充验证记录的提交不改变产品代码。本地静态校验通过；完整 Gradle 构建因环境缺 javac/Android SDK无法完成。
+本轮收敛范围后，本地静态检查验证三个标准 provider、荣耀标识、预览、主题与配色；Android 编译、Debug APK 和 Robolectric 测试交由 PR #15 CI 执行。本地环境缺 javac/Android SDK，不能完成完整 Gradle 构建。
+
+共享代码本轮未改动；此前提交 `3fc0c2f` 的 iOS 模拟器测试及 macOS `desktopTest` 已通过（[CI run 64](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/38432784294)）。
 
 共享测试覆盖上下课边界、次日/跨周、空周/过期、异常 JSON。Android 测试实际执行 `RemoteViews.apply`，覆盖全部 provider 的资源、浅/深色、放大字体、旧/新 API 和剩余计数；文件读取测试覆盖重新写入、损坏、删除。这些测试不证明 OEM 桌面中心收录、真机进程内存或桌面 UI 成色。
 
-真机验收至少包括：三种组件/五种尺寸、浅深色、字体1.0/1.5、4×6/5×6网格、横竖屏与折叠展开、同时添加多个实例、冷启动点击、账号退出、清应用数据、午夜/上下课/改时区、超过快照覆盖期、未审核原生回退。用 `adb shell dumpsys meminfo team.bjtuss.bjtuselfservice.kmp:widgetProvider` 记录厂商进程内存；截图使用脱敏课表。
+真机验收至少包括：三种组件/五种尺寸、浅深色、字体1.0/1.5、4×6/5×6网格、横竖屏与折叠展开、同时添加多个实例、冷启动点击、账号退出、清应用数据、午夜/上下课/改时区、超过快照覆盖期、荣耀旧系统/第三方桌面的标准组件兼容性。用 `adb shell dumpsys meminfo team.bjtuss.bjtuselfservice.kmp:widgetProvider` 记录厂商进程内存；截图使用脱敏课表。

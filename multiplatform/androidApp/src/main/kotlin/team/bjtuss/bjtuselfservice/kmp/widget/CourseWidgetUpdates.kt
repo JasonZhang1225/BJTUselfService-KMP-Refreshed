@@ -7,8 +7,6 @@ import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import team.bjtuss.bjtuselfservice.shared.feature.widget.AndroidCourseWidgetStore
 import team.bjtuss.bjtuselfservice.shared.feature.widget.CourseWidgetSnapshot
 import java.time.LocalDate
@@ -24,27 +22,11 @@ object CourseWidgetUpdates {
 
     val providers: List<CourseWidgetProvider> = listOf(
         NextCourseWidget(), TodayCourseWidget(), WeekCourseWidget(),
-        XiaomiNextSmallWidget(), XiaomiNextWideWidget(), XiaomiTodayWideWidget(), XiaomiTodayLargeWidget(), XiaomiWeekWidget(),
-        VivoNextSmallWidget(), VivoNextWideWidget(), VivoTodayWideWidget(), VivoTodayLargeWidget(), VivoWeekWidget(),
     )
     private val executor = Executors.newSingleThreadExecutor()
 
     fun install(context: Context) {
         val appContext = context.applicationContext
-        // OEM 专用 provider 只在对应品牌开启；通用组件始终保留，未审核或旧系统可回退。
-        val manufacturer = Build.MANUFACTURER.lowercase(java.util.Locale.ROOT)
-        for (provider in providers.filter { it.host != WidgetHost.ANDROID }) {
-            val enabled = when (provider.host) {
-                WidgetHost.XIAOMI -> manufacturer in setOf("xiaomi", "redmi", "poco")
-                WidgetHost.VIVO -> manufacturer in setOf("vivo", "iqoo")
-                else -> false
-            }
-            val component = ComponentName(appContext, provider.javaClass)
-            val state = if (enabled) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-            if (appContext.packageManager.getComponentEnabledSetting(component) != state) {
-                appContext.packageManager.setComponentEnabledSetting(component, state, PackageManager.DONT_KILL_APP)
-            }
-        }
         AndroidCourseWidgetStore.install(appContext) {
             appContext.sendBroadcast(Intent(appContext, CourseWidgetRefreshReceiver::class.java).setAction(SNAPSHOT_CHANGED))
         }
@@ -74,12 +56,11 @@ object CourseWidgetUpdates {
         manager.updateAppWidget(id, CourseWidgetRenderer.render(context, provider, id, manager.getAppWidgetOptions(id), snapshot, now))
     }
 
-    fun updateAll(context: Context, includeVivo: Boolean = true) {
+    fun updateAll(context: Context) {
         val manager = AppWidgetManager.getInstance(context)
         val snapshot = AndroidCourseWidgetStore.read(context)
         val now = ZonedDateTime.now()
         for (provider in providers) {
-            if (!includeVivo && provider.host == WidgetHost.VIVO) continue
             for (id in manager.getAppWidgetIds(ComponentName(context, provider.javaClass))) {
                 update(context, manager, provider, id, snapshot, now)
             }
@@ -87,14 +68,14 @@ object CourseWidgetUpdates {
         schedule(context, snapshot, now)
     }
 
-    /** 原生 Android / 小米按课程边界安排一次非精确刷新；不申请精确闹钟或后台常驻权限。 */
+    /** 按课程边界安排一次非精确刷新；不申请精确闹钟或后台常驻权限。 */
     fun schedule(context: Context, snapshot: CourseWidgetSnapshot? = AndroidCourseWidgetStore.read(context), now: ZonedDateTime = ZonedDateTime.now()) {
         val manager = AppWidgetManager.getInstance(context)
         val alarm = context.getSystemService(AlarmManager::class.java)
         val callback = PendingIntent.getBroadcast(context, 0,
             Intent(context, CourseWidgetRefreshReceiver::class.java).setAction(BOUNDARY),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val hasScheduledWidgets = providers.filter { it.host != WidgetHost.VIVO }.any {
+        val hasScheduledWidgets = providers.any {
             manager.getAppWidgetIds(ComponentName(context, it.javaClass)).isNotEmpty()
         }
         if (!hasScheduledWidgets || snapshot == null) {
@@ -119,8 +100,7 @@ class CourseWidgetRefreshReceiver : BroadcastReceiver() {
             Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED, Intent.ACTION_CONFIGURATION_CHANGED)
         if (intent.action !in accepted) return
         CourseWidgetUpdates.enqueue(this, context) {
-            // vivo 被动间隔 >=12h；不借边界闹钟绕过厂商刷新规范。
-            CourseWidgetUpdates.updateAll(context.applicationContext, includeVivo = intent.action != CourseWidgetUpdates.BOUNDARY)
+            CourseWidgetUpdates.updateAll(context.applicationContext)
         }
     }
 }

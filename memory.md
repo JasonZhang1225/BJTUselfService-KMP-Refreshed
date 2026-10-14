@@ -1,6 +1,6 @@
 # BJTUselfService 实时工作记忆
 
-> 最后更新：2026-10-13。
+> 最后更新：2026-10-14。
 > 当前工作分支：`feat/android-course-widgets`，基于 `mine/main@9dff5e6`；已推送并开草稿 PR #15，安卓小组件改动尚未合入。
 > KMP 应用版本：`1.8.4-Beta3` / Build 35（macOS/Windows 安装包数值版本 1.8.4）。正式 Latest 仍为 `v1.8.3-KMP`。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
@@ -8,9 +8,8 @@
 
 ## 进行中
 
-- Android 课表小组件：复用 iOS 快照，实现临近/今日/本周原生 RemoteViews、Google 回退、小米曝光刷新与固定尺寸、vivo 原子组件标识与12小时被动周期、荣耀原生卡片标识。华为已按用户要求移出范围。
-  - OPPO 完成标准 Android 回退；已核实公开 SDK AAR，专有 Seedling/UPK 卡片尚缺官方示例/打包工具与接入参数，已向用户询问材料，未宣称完成。
-  - 静态 XML/13 provider/厂商契约/配色检查与 `git diff --check` 通过。PR #15 的代码提交 `f24bb11`：Android `:shared:compileAndroidMain :androidApp:assembleDebug :androidApp:testDebugUnitTest` 通过，9项测试、0失败、0跳过；提交 `3fc0c2f` 的 `:shared:iosSimulatorArm64Test :shared:desktopTest` 通过，后续提交未改变 shared 代码。本地 Gradle 因缺 javac/Android SDK无法完成，以上为 CI 证据。厂商真机中心收录、内存与 UI 未验。
+- Android 课表小组件（PR #15）：复用 iOS 快照，实现临近/今日/本周原生 RemoteViews。按最新要求仅保留荣耀官方卡片标识，小米、OPPO、vivo、Pixel 等统一使用三个可缩放标准 Android provider；移除小米/vivo 专用 provider、广播、品牌开关和刷新策略。不引入 OPPO Seedling SDK；华为专有适配不在范围内。
+  - 本轮静态 XML/三个 provider/荣耀标识/配色检查和 Android CI 待最终复核；本地缺 javac/Android SDK，完整构建交给 PR CI。此前 shared 代码的 `:shared:iosSimulatorArm64Test :shared:desktopTest` 在提交 `3fc0c2f` 通过，本轮未改 shared。荣耀系统卡片识别、平台推荐/审核、真机内存与桌面 UI 未验。
   - 技术规范、文档来源、刷新限制和真机验收清单：`docs/migration/android-course-widgets.md`。
 
 ## 当前痛点
