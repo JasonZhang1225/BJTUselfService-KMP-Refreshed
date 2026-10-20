@@ -2,6 +2,8 @@ package team.bjtuss.bjtuselfservice.shared.domain.home
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeKind
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 
@@ -134,4 +136,19 @@ class HomeChangeFieldTest {
             scoreId = 0,
             homeworkType = 0,
         )
+
+    @Test
+    fun submittedAndPostponedDeadlineAreFavorable() {
+        assertTrue(HomeChangeField("状态", "未提交", "已提交").isFavorableChange())
+        assertFalse(HomeChangeField("状态", "已提交", "未提交").isFavorableChange())
+        assertTrue(HomeChangeField("截止时间", "2026-10-11 24:00", "2026-10-25 24:00").isFavorableChange())
+        assertTrue(HomeChangeField("截止时间", "2026-10-11 23:00", "2026-10-11 24:00").isFavorableChange())
+        assertFalse(HomeChangeField("截止时间", "2026-10-25 24:00", "2026-10-11 24:00").isFavorableChange())
+        assertTrue(
+            HomeChangeField("截止", "2026年10月19日 24:00 · 周一", "2026年11月02日 24:00 · 周一").isFavorableChange(),
+        )
+        assertFalse(HomeChangeField("截止时间", "未填写", "2026-10-25 24:00").isFavorableChange())
+        assertFalse(HomeChangeField("分数", "未公布成绩", "95").isFavorableChange())
+        assertFalse(HomeChangeField("状态", "已提交", "已提交").isFavorableChange())
+    }
 }
