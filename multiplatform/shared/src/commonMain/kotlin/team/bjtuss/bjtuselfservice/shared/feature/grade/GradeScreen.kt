@@ -38,7 +38,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -69,7 +68,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
+import team.bjtuss.bjtuselfservice.shared.feature.home.ChangeRecordsSheet
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
@@ -1152,6 +1151,7 @@ private fun gradeScoreColor(numeric: Int): Color = when {
     else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
+/** 同步后成绩有变动时弹出；与首页“某某有更新”共用同一套弹层和卡片样式。 */
 @Composable
 internal fun GradeChangeNoticeDialog(
     changes: List<HomeChangeRecord>,
@@ -1162,67 +1162,12 @@ internal fun GradeChangeNoticeDialog(
         it.kind == DataChangeKind.MODIFIED && it.beforeDetail == it.afterDetail
     }
     if (visible.isEmpty()) return
-    val changeScrollState = rememberScrollState()
-    AppleSheetOrAlert(
-        onDismissRequest = onDismiss,
-        title = "成绩变动",
-        confirmLabel = "前往成绩",
-        onConfirm = onOpenGrades,
-        dismissLabel = "知道了",
-        needsFullHeight = true,
-    ) {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 420.dp)
-                    .verticalScroll(changeScrollState)
-                    .desktopTouchScroll(changeScrollState),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                visible.forEach { change ->
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Text(
-                                when (change.kind) {
-                                    DataChangeKind.ADDED -> "新增"
-                                    DataChangeKind.MODIFIED -> "修改"
-                                    DataChangeKind.DELETED -> "删除"
-                                },
-                                color = when (change.kind) {
-                                    DataChangeKind.ADDED -> MaterialTheme.colorScheme.primary
-                                    DataChangeKind.MODIFIED -> MaterialTheme.colorScheme.tertiary
-                                    DataChangeKind.DELETED -> MaterialTheme.colorScheme.error
-                                },
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                change.title,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Medium,
-                            )
-                            if (change.beforeDetail.isNotBlank()) {
-                                Text(
-                                    "原：${change.beforeDetail}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            if (change.afterDetail.isNotBlank()) {
-                                Text(
-                                    "现：${change.afterDetail}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-    }
+    ChangeRecordsSheet(
+        title = "成绩有更新",
+        changes = visible,
+        actionLabel = "前往成绩",
+        onAction = onOpenGrades,
+        onDismiss = onDismiss,
+        onOpenRecord = { onOpenGrades() },
+    )
 }
