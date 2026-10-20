@@ -140,6 +140,32 @@ fun matchExamChange(
     return byType.firstOrNull() ?: named.firstOrNull()
 }
 
+/**
+ * 对学生有利的变更：作业由未提交变为已提交，或截止时间延后。界面把这一行标成绿色。
+ * 只看单个字段，新增/删除记录由调用方排除。
+ */
+fun HomeChangeField.isFavorableChange(): Boolean {
+    if (before == after) return false
+    return when {
+        label == "状态" -> before.contains("未提交") && after.contains("已提交") && !after.contains("未提交")
+        label.contains("截止") -> {
+            val old = deadlineSortKey(before) ?: return false
+            val new = deadlineSortKey(after) ?: return false
+            new > old
+        }
+        else -> false
+    }
+}
+
+// 兼容 `2026-10-11 24:00`、`2026年10月11日 24:00 · 周日` 等显示文字；24:00 仍算当天，排序不受影响。
+private val deadlineKeyPattern = Regex("""(\d{4})\D{1,2}(\d{1,2})\D{1,2}(\d{1,2})\D+?(\d{1,2}):(\d{2})""")
+
+private fun deadlineSortKey(text: String): Long? {
+    val match = deadlineKeyPattern.find(text) ?: return null
+    val (year, month, day, hour, minute) = match.destructured.toList().map(String::toLong)
+    return (((year * 100 + month) * 100 + day) * 100 + hour) * 100 + minute
+}
+
 data class HomeChangeFeedSnapshot(
     val baselineDomains: Set<HomeChangeDomain> = emptySet(),
     val records: List<HomeChangeRecord> = emptyList(),

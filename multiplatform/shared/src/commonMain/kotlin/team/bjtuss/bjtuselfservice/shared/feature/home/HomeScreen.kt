@@ -115,6 +115,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.home.agendaWeekMarks
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeAgendaDay
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeDomain
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeRecord
+import team.bjtuss.bjtuselfservice.shared.domain.home.isFavorableChange
 import team.bjtuss.bjtuselfservice.shared.domain.home.matchExamChange
 import team.bjtuss.bjtuselfservice.shared.domain.home.matchHomeworkChange
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeStatus
@@ -1573,6 +1574,29 @@ private fun HomeChangeDialog(
     onMarkRead: () -> Unit,
     onOpenRecord: (HomeChangeRecord) -> Unit,
 ) {
+    ChangeRecordsSheet(
+        title = "${domain.title}有更新",
+        changes = changes,
+        actionLabel = "标记已读",
+        onAction = onMarkRead,
+        onDismiss = onDismiss,
+        onOpenRecord = onOpenRecord,
+    )
+}
+
+/**
+ * 变动明细弹层：首页各数据域与同步后的成绩变动共用，卡片样式一致。
+ * iOS 主操作放进原生标题栏左侧，其它平台放底部按钮。
+ */
+@Composable
+internal fun ChangeRecordsSheet(
+    title: String,
+    changes: List<HomeChangeRecord>,
+    actionLabel: String,
+    onAction: () -> Unit,
+    onDismiss: () -> Unit,
+    onOpenRecord: (HomeChangeRecord) -> Unit,
+) {
     val isIos = currentPlatform().family == PlatformFamily.IOS
     val changeScrollState = rememberScrollState()
     val visible = changes.filterNot {
@@ -1580,9 +1604,9 @@ private fun HomeChangeDialog(
     }
     AppleSheet(
         onDismissRequest = onDismiss,
-        title = "${domain.title}有更新",
-        confirmLabel = if (isIos) "标记已读" else null,
-        onConfirm = if (isIos) onMarkRead else null,
+        title = title,
+        confirmLabel = if (isIos) actionLabel else null,
+        onConfirm = if (isIos) onAction else null,
         dismissLabel = if (isIos) null else "关闭",
         needsFullHeight = false,
         scrollableBody = true,
@@ -1592,9 +1616,11 @@ private fun HomeChangeDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
+                    // 留白放在滚动区外：iOS 26 标题栏的玻璃按钮比栏底更低，
+                    // 内容滚上去时在按钮下方被裁掉，不再钻到按钮底下。
+                    .padding(top = IosChangeSheetHeaderClearance)
                     .verticalScroll(changeScrollState)
                     .desktopTouchScroll(changeScrollState)
-                    .padding(top = 44.dp)
                     .sheetScrollContentPadding(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -1620,12 +1646,18 @@ private fun HomeChangeDialog(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.End,
                 ) {
-                    Button(onClick = onMarkRead) { Text("标记已读") }
+                    Button(onClick = onAction) { Text(actionLabel) }
                 }
             }
         }
     }
 }
+
+/**
+ * 正文视口本来就从原生标题栏底边开始；iOS 26 的玻璃按钮比栏底再低约 8pt，
+ * 只需让出这一截，正文就不会滑到按钮底下。
+ */
+private val IosChangeSheetHeaderClearance = 12.dp
 
 @Composable
 private fun HomeChangeDialogCards(
@@ -1762,15 +1794,20 @@ private fun ChangeFieldDiffRow(field: team.bjtuss.bjtuselfservice.shared.domain.
         DataChangeKind.MODIFIED -> changed
         DataChangeKind.ADDED, DataChangeKind.DELETED -> true
     }
+    // 已提交、截止延后这类利好变更用绿色，和作业卡片“已提交”胶囊同一组色值。
+    val favorable = pair && field.isFavorableChange()
+    val dark = scheme.background.luminance() < 0.5f
     val background = when {
         kind == DataChangeKind.ADDED -> scheme.primaryContainer
         kind == DataChangeKind.DELETED -> scheme.errorContainer
+        favorable -> if (dark) Color(0xFF174D2A) else Color(0xFFD9F2DF)
         emphasize -> scheme.tertiaryContainer
         else -> Color.Transparent
     }
     val valueColor = when {
         kind == DataChangeKind.ADDED -> scheme.onPrimaryContainer
         kind == DataChangeKind.DELETED -> scheme.onErrorContainer
+        favorable -> if (dark) Color(0xFF9BE7AA) else Color(0xFF1C6B35)
         emphasize -> scheme.onTertiaryContainer
         else -> scheme.onSurface
     }

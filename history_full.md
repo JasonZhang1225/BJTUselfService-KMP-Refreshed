@@ -878,3 +878,10 @@
 - 清理范围：本地 feat/ai-agent-dev、fix/mis-sso-auth；mine 的 feat/ai-agent-dev、fix/mis-sso-auth、fix/deadline-24-attachment-ext、release/v1.8.4-KMP-version，删除前逐一确认提交已在 main 祖先中。上游 origin 和所有标签保留。清理前 Git bundle 与本地文档补丁保存在忽略目录 `.artifacts/branch-cleanup-20261020/`。
 - 本地凭据：MisSecret.env 保存 5 组 dotenv 凭据（10 个键，0600），MisSecret.md 仅含键名索引；Python 内存解析往返核对值一致，Git 忽略两文件。仅提交 .gitignore 规则，不提交凭据或索引。
 - 验证：git diff --check；合并后的应用源码与 031d049b 逐文件一致（仅 .gitignore、memory.md、history_full.md 有差异），沿用既有验证结果；本次不新增业务逻辑、不重跑构建、不安装或实机验证。分支推送后核对本地 main 与 mine/main 一致、各旧分支提交均可从 main 到达。
+
+## 2026-10-20 变动弹窗统一与利好变更标绿（PR #31，`claude/iphone-ui-fixes-bmlf9p`）
+
+- 改动：成绩变动弹窗改用与首页“某某有更新”共用的 `ChangeRecordsSheet`（`HomeScreen.kt`），标题“成绩有更新”，iOS 半屏可拉高、主操作“前往成绩”，Android/桌面为底部 sheet；iOS 变动弹层正文从标题栏下方开始滚动，滚动区外留白 12dp（首版 64dp 实机偏高后收窄）；新增 `HomeChangeField.isFavorableChange()`（`HomeChange.kt`），作业“未提交→已提交”、截止时间延后的字段行用“已提交”胶囊同色绿底。
+- 原因/决策：成绩变动弹窗从未删除，只是旧样式（`GradeScreenModel.refresh()` 联网结果与缓存不同就弹）；当日 4 条“删除”系学校教务系统网页同样缺失若干 2025-2026-1 成绩，属学校侧，不改代码。iOS 26 玻璃按钮比导航栏底边低约 8pt，原留白在滚动区内导致内容滑到按钮下。
+- 验证：本地 Gradle 被 Maven Central 429 限流，仅 CI 验证：`kmp-security-check` 两次提交均通过；workflow_dispatch 打包 run 39413535742、39426847208 四端成功；用户真机确认绿色标记，并据截图把留白由 64dp 改为 12dp。新增 `HomeChangeFieldTest.submittedAndPostponedDeadlineAreFavorable`。
+- 未验证：12dp 版本未见真机截图；未在模拟器检查深色与文字放大；Android/桌面的成绩弹窗新样式未实机查看。
