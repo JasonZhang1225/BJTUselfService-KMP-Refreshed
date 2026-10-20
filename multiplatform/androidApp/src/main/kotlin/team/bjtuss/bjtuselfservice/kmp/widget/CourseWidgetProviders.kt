@@ -8,8 +8,10 @@ import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.util.SizeF
 import android.widget.RemoteViews
 import kotlin.time.Clock
@@ -64,6 +66,8 @@ class CourseWidgetRefreshReceiver : BroadcastReceiver() {
 
 object CourseWidgetUpdater {
     private const val ACTION_REFRESH = "team.bjtuss.bjtuselfservice.kmp.widget.REFRESH"
+    /** 只记录桌面上报的尺寸（无课表、无账号信息），`adb logcat -s CourseWidget` 可查。 */
+    private const val TAG = "CourseWidget"
 
     private fun providerClass(kind: CourseWidgetKind): Class<out CourseWidgetProvider> = when (kind) {
         CourseWidgetKind.UP_NEXT -> UpNextCourseWidgetProvider::class.java
@@ -111,22 +115,60 @@ object CourseWidgetUpdater {
             views.setOnClickPendingIntent(android.R.id.background, openApp)
             return views
         }
-        // Android 12+：桌面上报当前可能出现的每个尺寸（竖屏/横屏、荣耀折叠屏展开态等），各排一份，
-        // 字号、行数都按真实宽高计算；桌面按当前格子挑最合适的那份。
+        val sizes = reportedSizes(context, kind, options)
+        Log.i(TAG, "${kind.name} sdk=${Build.VERSION.SDK_INT} source=${sizes.source} sizes=${sizes.sizes}")
+        // 桌面上报了多个尺寸（竖屏/横屏、荣耀折叠屏展开态等）：各排一份，桌面按当前格子挑；
+        // 只有一个尺寸时直接排这一份。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && sizes.sizes.size > 1) {
+            return RemoteViews(sizes.sizes.associateWith { render(family(kind, it.width, it.height), it.width, it.height) })
+        }
+        val size = sizes.sizes.first()
+        return render(family(kind, size.width, size.height), size.width, size.height)
+    }
+
+    private class ReportedSizes(val source: String, val sizes: List<SizeF>)
+
+    /**
+     * 小组件实际尺寸，按可靠程度依次取：
+     * 1. Android 12 的尺寸列表；
+     * 2. 老式 MIN/MAX 宽高（竖屏取最小宽×最大高，横屏取最大宽×最小高）——部分桌面（推测含 HarmonyOS 4）不报列表；以前这时用写死的兜底尺寸，大卡片按小尺寸排、只显示一两条；
+     * 3. 都没有时按屏幕宽度和默认格数估算，宁小勿大：少放一行留白，也不让内容被裁掉。
+     */
+    private fun reportedSizes(context: Context, kind: CourseWidgetKind, options: Bundle): ReportedSizes {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             @Suppress("DEPRECATION")
-            val reported = options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
-            val fallback = when (kind) {
-                CourseWidgetKind.UP_NEXT -> listOf(SizeF(170f, 170f), SizeF(350f, 170f))
-                CourseWidgetKind.TODAY -> listOf(SizeF(350f, 170f), SizeF(350f, 360f))
-                CourseWidgetKind.WEEK -> listOf(SizeF(350f, 360f))
-            }
-            val actual = reported?.takeIf { it.isNotEmpty() }?.distinct() ?: fallback
-            return RemoteViews(actual.associateWith { render(family(kind, it.width, it.height), it.width, it.height) })
+            val list = options.getParcelableArrayList<SizeF>(AppWidgetManager.OPTION_APPWIDGET_SIZES)
+                ?.filter { it.width > 0f && it.height > 0f }
+                ?.distinct()
+            if (!list.isNullOrEmpty()) return ReportedSizes("sizes", list)
         }
-        val width = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 250).toFloat()
-        val height = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 160).toFloat()
-        return render(family(kind, width, height), width, height)
+        val minWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0)
+        val maxWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 0)
+        val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0)
+        val maxHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 0)
+        val landscape = context.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val fromInts = if (landscape) {
+            SizeF((maxWidth.takeIf { it > 0 } ?: minWidth).toFloat(), (minHeight.takeIf { it > 0 } ?: maxHeight).toFloat())
+        } else {
+            SizeF((minWidth.takeIf { it > 0 } ?: maxWidth).toFloat(), (maxHeight.takeIf { it > 0 } ?: minHeight).toFloat())
+        }
+        if (fromInts.width > 0f && fromInts.height > 0f) {
+            return ReportedSizes("minmax(${minWidth}x$minHeight..${maxWidth}x$maxHeight)", listOf(fromInts))
+        }
+        return ReportedSizes("estimate", listOf(estimatedSize(context, kind)))
+    }
+
+    /** 按 4 列桌面、正方形格子估算默认格数下的尺寸，并限制在小组件声明的尺寸范围内。 */
+    private fun estimatedSize(context: Context, kind: CourseWidgetKind): SizeF {
+        val (columns, rows, maxWidth, maxHeight) = when (kind) {
+            CourseWidgetKind.UP_NEXT -> listOf(2, 2, 530, 260)
+            CourseWidgetKind.TODAY -> listOf(4, 2, 530, 530)
+            CourseWidgetKind.WEEK -> listOf(4, 4, 530, 600)
+        }
+        val cell = (context.resources.configuration.screenWidthDp - 32f) / 4f
+        val width = (columns * cell - 16f).coerceIn(110f, maxWidth.toFloat())
+        val height = (rows * cell - 16f).coerceIn(110f, maxHeight.toFloat())
+        return SizeF(width, height)
     }
 
     /** 宽不到 200dp 的临近课程用小号；高不到 230dp 的今日课程用中号。 */
