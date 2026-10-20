@@ -885,3 +885,18 @@
 - 原因/决策：成绩变动弹窗从未删除，只是旧样式（`GradeScreenModel.refresh()` 联网结果与缓存不同就弹）；当日 4 条“删除”系学校教务系统网页同样缺失若干 2025-2026-1 成绩，属学校侧，不改代码。iOS 26 玻璃按钮比导航栏底边低约 8pt，原留白在滚动区内导致内容滑到按钮下。
 - 验证：本地 Gradle 被 Maven Central 429 限流，仅 CI 验证：`kmp-security-check` 两次提交均通过；workflow_dispatch 打包 run 39413535742、39426847208 四端成功；用户真机确认绿色标记，并据截图把留白由 64dp 改为 12dp。新增 `HomeChangeFieldTest.submittedAndPostponedDeadlineAreFavorable`。
 - 未验证：12dp 版本未见真机截图；未在模拟器检查深色与文字放大；Android/桌面的成绩弹窗新样式未实机查看。
+
+## 2026-10-20 华为桌面课表小组件尺寸兜底（PR #32，`claude/huawei-widget-size`）
+
+- 改动：HarmonyOS 4.2 用户反馈周视图大卡片地点被截断、今日课程只显示一条。推断桌面不报 Android 12 尺寸列表，旧代码落到写死兜底（周视图按 350×360 排、今日课程系统挑最小的 350×170 中号）。改为依次取尺寸列表 → MIN/MAX 四个值 → 按屏幕宽估算，并以 `CourseWidget` 标签在 logcat 记录上报来源与尺寸（`CourseWidgetProviders.kt`）。
+- 原因/决策：华为桌面不提供 `OPTION_APPWIDGET_SIZES` 时不能退回固定尺寸。
+- 验证：本地 Gradle 被 429 限流，仅 CI 验证。
+- 未验证：未在华为设备实测，尺寸来源推断待用户装包后看 logcat 确认。
+
+## 2026-10-20 教务系统不可达时自动登录闪退修复（PR #33，`fix/auto-login-aa-link-crash`，合并提交 909aa24b）
+
+- 现象：华为 HBN-AL10（HarmonyOS 4.2 / Android 12，装 `1.8.5-EmergencyFix2`）每次打开约 15 秒后闪退。adb crash 缓冲区 14 次同一堆栈：`SchoolNetworkException` ← `ConnectException: aa.bjtu.edu.cn:443 ECONNREFUSED`，在主线程 `LaunchedEffectImpl` 中未捕获。当时 Mac 同样连不上 aa、MIS 可达，属学校侧临时故障；iOS 模拟器旧版 `1.8.5-AgentAlpha` 同条件下 SIGABRT 复现，与设备品牌无关。
+- 原因：冷启动静默自动登录 `performAutomaticLogin` 只用 try 包住 MIS 登录，随后 `finishLogin` → `SchoolLoginProtocol.linkAcademicSystem()` 的网络异常直接抛出；该写法自 KMP 迁移（55ebd24b，2026-08-03）即存在。登录页手动点“登录”走同一函数，同样会崩。
+- 改动：`linkAcademicSystem()` 网络异常返回 false、`CancellationException` 仍抛出，自动登录、`SchoolSessionRecovery`、`AgentSync` 三处调用方同时受益。按用户要求，教务关联失败不再阻止登录：`finishLogin` 照常进入主界面，课表/成绩/考试保留缓存并在同步详情就地显示“本轮同步失败”，之后刷新经 `SchoolSessionRecovery` 重新关联。曾试加“教务系统暂时无法连接”弹窗，与升级说明、物理在线关闭弹窗叠加，已撤掉。`SchoolLoginProtocolTest` 新增拒绝连接、MIS 模块请求失败、取消传播 3 个用例。
+- 验证：`./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosSimulatorArm64` BUILD SUCCESSFUL，合入 #31/#32 后 932 测试零失败；签名模拟器 xcodebuild（iPhone 17 Pro，Debug）BUILD SUCCEEDED。iOS 模拟器：教务真实断开时进入主界面且手动登录就地报错不崩；教务恢复后用临时传输层拦截 aa（未提交、已撤销）验证最终版，主界面正常、同步详情仅成绩/课程表与校历周数/考试安排失败、进程持续存活；教务正常时同步全部完成。原始崩溃日志在 `.artifacts/crash-HBN/`。
+- 未验证：华为实机未安装新包复测；macOS/Windows 仅编译；`AgentSync.login` 关联失败仍返回 `Network`（未改为放行），按需再议。
