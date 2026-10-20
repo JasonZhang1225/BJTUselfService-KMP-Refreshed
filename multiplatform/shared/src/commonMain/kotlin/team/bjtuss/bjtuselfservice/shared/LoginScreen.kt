@@ -208,9 +208,9 @@ fun LoginRoute(
     ): LoginState {
         val linking = LoginState.LinkingAcademicSystem(profile)
         state = linking
-        if (!protocol.value.linkAcademicSystem()) {
-            return LoginState.Failed(LoginFailure.ACADEMIC_LINK_FAILED, canRetry = true)
-        }
+        // 教务关联失败不阻止进入：MIS、邮箱、物理在线等仍可用；课表/成绩/考试保留缓存，
+        // 在同步详情里就地显示失败，之后刷新会经 SchoolSessionRecovery 重新关联。
+        protocol.value.linkAcademicSystem()
         val cacheReady = runCatching {
             cacheStore.claimLegacyAccountData(profile.studentId)
         }.isSuccess

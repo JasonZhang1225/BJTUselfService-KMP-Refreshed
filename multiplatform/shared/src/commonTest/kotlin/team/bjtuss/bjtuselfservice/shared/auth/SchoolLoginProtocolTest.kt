@@ -1,11 +1,14 @@
 package team.bjtuss.bjtuselfservice.shared.auth
 
+import kotlinx.coroutines.CancellationException
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
+import team.bjtuss.bjtuselfservice.shared.network.SchoolNetworkException
 import kotlin.io.encoding.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
@@ -218,6 +221,41 @@ class SchoolLoginProtocolTest {
     }
 
     @Test
+    fun academicLinkReturnsFalseWhenAcademicHostRefusesConnection() = runSuspend {
+        // MIS 可达、aa.bjtu.edu.cn 拒绝连接：冷启动自动登录曾因此异常未捕获而反复闪退。
+        val transport = FailingAcademicHostTransport(
+            moduleBody = """<form id="redirect" action="https://aa.bjtu.edu.cn/sso"></form>""",
+            failure = SchoolNetworkException("School request failed", RuntimeException("ECONNREFUSED")),
+        )
+
+        assertFalse(SchoolLoginProtocol(transport).linkAcademicSystem())
+        assertEquals(2, transport.requests.size)
+    }
+
+    @Test
+    fun academicLinkReturnsFalseWhenMisModuleRequestFails() = runSuspend {
+        val transport = FailingAcademicHostTransport(
+            moduleBody = null,
+            failure = SchoolNetworkException("School request failed"),
+        )
+
+        assertFalse(SchoolLoginProtocol(transport).linkAcademicSystem())
+        assertEquals(1, transport.requests.size)
+    }
+
+    @Test
+    fun academicLinkStillPropagatesCancellation() {
+        val transport = FailingAcademicHostTransport(
+            moduleBody = """<form id="redirect" action="https://aa.bjtu.edu.cn/sso"></form>""",
+            failure = CancellationException("cancelled"),
+        )
+
+        assertFailsWith<CancellationException> {
+            runSuspend { SchoolLoginProtocol(transport).linkAcademicSystem() }
+        }
+    }
+
+    @Test
     fun logoutAlwaysClearsLocalCookiesWhenServerLogoutFails() = runSuspend {
         val transport = QueueTransport(emptyList())
         val protocol = SchoolLoginProtocol(transport)
@@ -249,6 +287,24 @@ private class QueueTransport(
     override fun clearSession() {
         clearCount++
     }
+}
+
+/** MIS module 页返回 [moduleBody]（为 null 时 MIS 也失败），其余请求一律抛出 [failure]。 */
+private class FailingAcademicHostTransport(
+    private val moduleBody: String?,
+    private val failure: Exception,
+) : SchoolHttpTransport {
+    val requests = mutableListOf<SchoolHttpRequest>()
+
+    override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse {
+        requests += request
+        if (moduleBody != null && request.url.startsWith("https://mis.bjtu.edu.cn/module/")) {
+            return SchoolHttpResponse(statusCode = 200, finalUrl = request.url, body = moduleBody.encodeToByteArray())
+        }
+        throw failure
+    }
+
+    override fun clearSession() = Unit
 }
 
 private fun runSuspend(block: suspend () -> Unit) {
