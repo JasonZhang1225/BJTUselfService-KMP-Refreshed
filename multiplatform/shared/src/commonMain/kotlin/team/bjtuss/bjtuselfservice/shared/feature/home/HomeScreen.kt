@@ -1653,8 +1653,11 @@ internal fun ChangeRecordsSheet(
     }
 }
 
-/** 原生标题栏（含 iOS 26 玻璃按钮的下沿）占用的高度；正文从这里以下开始滚动。 */
-private val IosChangeSheetHeaderClearance = 64.dp
+/**
+ * 正文视口本来就从原生标题栏底边开始；iOS 26 的玻璃按钮比栏底再低约 8pt，
+ * 只需让出这一截，正文就不会滑到按钮底下。
+ */
+private val IosChangeSheetHeaderClearance = 12.dp
 
 @Composable
 private fun HomeChangeDialogCards(
