@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-20。
-> 当前分支：`fix/auto-login-aa-link-crash`（基于 mine/main@b083953b，已本地提交、未推送）；已整合原 `feat/ai-agent-dev`、`fix/mis-sso-auth` 与原 main 的全部历史；本地和 mine 统一仅保留 main。分支清理备份见 `.artifacts/branch-cleanup-20261020/before-cleanup.bundle`。
+> 当前分支：`fix/auto-login-aa-link-crash`（已合入 mine/main@6e92d071，已推送 mine，PR 待合入）；已整合原 `feat/ai-agent-dev`、`fix/mis-sso-auth` 与原 main 的全部历史；本地和 mine 统一仅保留 main。分支清理备份见 `.artifacts/branch-cleanup-20261020/before-cleanup.bundle`。
 > KMP 源码版本：`1.8.5-EmergencyFix1` / Build 39（桌面数值版本 1.8.5）；最新 GitHub Release 为 `v1.8.5-EmergencyFix1`（2026-10-20，本次查询 isPrerelease=false；旧日志记录的是发布时状态）。本次未替换本机安装版。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
@@ -11,7 +11,8 @@
 
 ## 进行中
 
-- `fix/auto-login-aa-link-crash`（已本地提交、未推送）：MIS 可达但 aa.bjtu.edu.cn 拒绝连接时，冷启动自动登录在 `LaunchedEffect` 中因 `linkAcademicSystem()` 抛 `SchoolNetworkException` 未捕获而每次启动闪退（华为 HBN-AL10 实机 14 次 + iOS 模拟器旧版 SIGABRT 均复现，KMP 迁移起即存在）。修复：`SchoolLoginProtocol.linkAcademicSystem()` 网络异常返回 false（取消仍抛出）；按用户要求，教务关联失败不再阻止登录，直接进入主界面，课表/成绩/考试保留缓存并在同步详情就地显示失败，刷新时经 `SchoolSessionRecovery` 重新关联（未加额外弹窗，避免与升级说明弹窗叠加）。`SchoolLoginProtocolTest` +3；desktopTest 931 零失败，四端编译与签名模拟器 xcodebuild 通过；iOS 模拟器验证：教务真实断开时（弹窗版）及教务恢复后用临时传输层拦截 aa（最终版，补丁已撤销未提交）均直接进入主界面，同步详情仅成绩/课表/考试失败；教务正常时同步全部完成。未在华为实机装新包验证。原始日志在 `.artifacts/crash-HBN/`。
+- `claude/huawei-widget-size`（PR 待合入）：HarmonyOS 4.2 用户反馈周视图大卡片地点被截断、今日课程只显示一条。推断桌面不报 Android 12 尺寸列表，旧代码落到写死兜底（周视图按 350×360 排、今日课程系统挑最小的 350×170 中号）。改为依次取尺寸列表 → MIN/MAX 四个值 → 按屏幕宽估算，并以 `CourseWidget` 标签在 logcat 记录上报来源与尺寸。本地 Gradle 被 429 限流，仅 CI 验证；未在华为设备实测，推断待用户装包确认。
+- `fix/auto-login-aa-link-crash`（PR 待合入）：MIS 可达但 aa.bjtu.edu.cn 拒绝连接时，冷启动自动登录在 `LaunchedEffect` 中因 `linkAcademicSystem()` 抛 `SchoolNetworkException` 未捕获而每次启动闪退（华为 HBN-AL10 实机 14 次 + iOS 模拟器旧版 SIGABRT 均复现，KMP 迁移起即存在）。修复：`SchoolLoginProtocol.linkAcademicSystem()` 网络异常返回 false（取消仍抛出）；按用户要求，教务关联失败不再阻止登录，直接进入主界面，课表/成绩/考试保留缓存并在同步详情就地显示失败，刷新时经 `SchoolSessionRecovery` 重新关联（未加额外弹窗，避免与升级说明弹窗叠加）。`SchoolLoginProtocolTest` +3；desktopTest 931 零失败，四端编译与签名模拟器 xcodebuild 通过；iOS 模拟器验证：教务真实断开时（弹窗版）及教务恢复后用临时传输层拦截 aa（最终版，补丁已撤销未提交）均直接进入主界面，同步详情仅成绩/课表/考试失败；教务正常时同步全部完成。未在华为实机装新包验证。原始日志在 `.artifacts/crash-HBN/`。
 
 ## 当前痛点
 
