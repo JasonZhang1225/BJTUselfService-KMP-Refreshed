@@ -4,6 +4,7 @@ import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import io.ktor.http.takeFrom
 import kotlin.io.encoding.Base64
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -252,20 +253,26 @@ class SchoolLoginProtocol(
         }
     }
 
-    suspend fun linkAcademicSystem(): Boolean {
+    /**
+     * MIS 登录后关联教务。网络失败（如 MIS 可达但 aa.bjtu.edu.cn 拒绝连接）返回 false 而不抛出：
+     * 冷启动自动登录在 LaunchedEffect 中调用，未捕获的异常会让应用每次启动都闪退。
+     */
+    suspend fun linkAcademicSystem(): Boolean = try {
         val module = transport.execute(SchoolHttpRequest(SchoolHttpMethod.GET, AA_MODULE_URL))
-        val redirect = when (val parsed = parseAcademicRedirectUrl(module.bodyText())) {
-            is ParseResult.Success -> parsed.value
-            is ParseResult.Failure -> return false
+        when (val parsed = parseAcademicRedirectUrl(module.bodyText())) {
+            is ParseResult.Success -> transport.execute(
+                SchoolHttpRequest(
+                    method = SchoolHttpMethod.GET,
+                    url = parsed.value + "?",
+                    headers = mapOf("Referer" to AA_MODULE_URL),
+                ),
+            ).finalUrl.matchesEndpoint(SchoolEndpoints.AA_HOME_URL)
+            is ParseResult.Failure -> false
         }
-        val response = transport.execute(
-            SchoolHttpRequest(
-                method = SchoolHttpMethod.GET,
-                url = redirect + "?",
-                headers = mapOf("Referer" to AA_MODULE_URL),
-            ),
-        )
-        return response.finalUrl.matchesEndpoint(SchoolEndpoints.AA_HOME_URL)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        false
     }
 
     /**
