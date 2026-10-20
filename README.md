@@ -33,7 +33,7 @@ _**相对原版新增/增强的功能（节选）：**_
 
 - **Android**：arm64-v8a .`apk`（包名 `team.bjtuss.bjtuselfservice.kmp`与原版包名不同，可共存）
 - **iOS**：unsigned `.ipa`（开发/侧载构建，需自行签名安装，可使用 SideStore ，参考 [iOS 自签与安装指南](docs/iOS-sign-guide.md)）
-- **macOS**：Arm64`.dmg`（仅支持 Apple Silicon 芯片 Mac，ad-hoc 签名，未公证，首次打开可能需要在终端执行 `sudo xattr -r -d com.apple.quarantine /Applications/交大自由行 KMP.app`）
+- **macOS**：Arm64`.dmg`（仅支持 Apple Silicon 芯片 Mac，ad-hoc 签名，未公证，首次打开可能需要在终端执行 `sudo xattr -r -d com.apple.quarantine /Applications/交大自由行\ KMP.app`）
 - **Windows**：x64 `.msi` 安装包
 - 对于其他系统平台或架构，可以使用源码自行打包对应平台版本
 
