@@ -122,6 +122,7 @@ import team.bjtuss.bjtuselfservice.shared.currentPlatform
 import kotlin.math.PI
 import team.bjtuss.bjtuselfservice.shared.accessibleAlpha
 import team.bjtuss.bjtuselfservice.shared.data.grade.formatGradeDetailForDisplay
+import team.bjtuss.bjtuselfservice.shared.data.library.libraryReminderNow
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.usesLegacySmartTransportFor
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
@@ -152,6 +153,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.assignment.*
 import team.bjtuss.bjtuselfservice.shared.logging.SyncTiming
 import team.bjtuss.bjtuselfservice.shared.feature.citel.CitelDetailWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkWorkspace
+import team.bjtuss.bjtuselfservice.shared.feature.library.LibraryWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.CoursewareContentSource
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.CoursewareScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.CoursewareWorkspace
@@ -348,6 +350,10 @@ fun AuthenticatedAppShell(
         if (written != null) lastWidgetDays = written
     }
     val homeState by homeModel.state.collectAsState()
+    // 图书馆借阅数据只存在会话内存；首页提醒由当前借阅派生，历史记录不参与。
+    val libraryModel = session.libraryModel
+    val libraryState by libraryModel.state.collectAsState()
+    val libraryReminder = remember(libraryState.loans) { libraryReminderNow(libraryState.loans) }
     val phyVlabEnabled = settingsState.preferences.isPhyVlabEnabled
     // 同步期间壳层随任一状态流重组；只在来源数据变化时重新聚合，作业页才能跳过无关重组。
     val aggregatedAssignments = remember(homeworkState.homework, phyVlabState, phyVlabEnabled,
@@ -665,6 +671,8 @@ fun AuthenticatedAppShell(
             if (physicsLabEnabled) launch { session.physicsLabModel?.refresh() }
             launch { session.physicsDemoModel?.refresh() }
             if (citelEnabled) launch { session.citelModel?.refresh() }
+            // 图书馆与学校业务会话独立：全局刷新时一并重取借阅（失败保留旧数据）。
+            launch { session.libraryModel.refresh(silent = true) }
             // 用户主动刷新或后台超过阈值后的全局刷新；关闭的模块不访问网络。
             if (phyVlabEnabled) {
                 launch { phyVlabModel.refresh() }
@@ -769,6 +777,7 @@ fun AuthenticatedAppShell(
                         }
                     },
                 )
+                AppSection.LIBRARY -> libraryModel.refresh()
                 AppSection.PHYVLAB -> if (phyVlabEnabled) phyVlabModel.refresh()
                 AppSection.PHYSICS_LAB -> if (physicsLabEnabled) session.physicsLabModel?.refresh()
                 AppSection.CITEL -> if (currentRoute == CitelDetailRoute) citelState.selectedTask?.let { session.citelModel?.selectTask(it) } else if (currentRoute != CitelSettingsRoute && citelEnabled) session.citelModel?.refresh()
@@ -1048,6 +1057,13 @@ fun AuthenticatedAppShell(
         if (physicsLabEnabled && !entryLoggingIn && shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) {
             SyncTiming.measure("startup.physics-lab") { labModel.refresh() }
         }
+    }
+    // 图书馆：登录后静默同步一次，用于首页「借阅到期」提醒；失败不打扰用户，
+    // 进入页面或手动刷新时再报错。原生二级页宿主不重复同步。
+    LaunchedEffect(libraryModel, entryLoggingIn, forcedRouteId, nativeTabBarEnabled) {
+        if (entryLoggingIn) return@LaunchedEffect
+        if (!shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) return@LaunchedEffect
+        SyncTiming.measure("startup.library") { libraryModel.refreshIfNeeded() }
     }
 
     // 物理在线总开关同时控制同步与底栏入口。
@@ -1498,6 +1514,8 @@ fun AuthenticatedAppShell(
                         platform = platform,
                         expanded = expanded,
                         mailboxUnread = mailboxUnread,
+                        libraryReminder = libraryReminder.takeIf { libraryState.user != null },
+                        onOpenLibrary = { navigateToSection(AppSection.LIBRARY) },
                         holdNetwork = entryLoggingIn,
                         homework = homeworkState.homework,
                         exams = examState.exams,
@@ -1791,6 +1809,28 @@ fun AuthenticatedAppShell(
                     fileGateway = homeworkFileGateway,
                     directoryGateway = coursewareDirectoryGateway,
                     onRefresh = refresh,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            AppSection.LIBRARY -> DestinationPage(
+                title = AppSection.LIBRARY.title,
+                expanded = expanded,
+                refreshable = true,
+                isRefreshing = libraryState.loading || libraryState.refreshing,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
+                modifier = modifier,
+                // 账户摘要与 tab 固定在列表上方，页内不做顶栏 underlap。
+                staticTopBar = true,
+                idleStatusText = when {
+                    libraryState.failure != null -> "同步失败"
+                    libraryState.lastSyncEpochSeconds != null -> "已同步"
+                    else -> "未同步"
+                },
+            ) {
+                LibraryWorkspace(
+                    model = libraryModel,
+                    expanded = expanded,
+                    holdNetwork = entryLoggingIn,
                     modifier = Modifier.fillMaxSize(),
                 )
             }

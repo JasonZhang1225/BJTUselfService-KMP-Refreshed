@@ -8,7 +8,8 @@ class NewMigrationNavigationTest {
         val preferences = AppPreferences(bottomNavigationItems = listOf("HOME", "MAILBOX", "MAILBOX", "UNKNOWN", "CLASSROOMS", "EXAMS", "COURSEWARE", "SETTINGS", "GRADES", "MORE"))
         val tabs = bottomNavSections(preferences)
         assertEquals(listOf(AppSection.HOME, AppSection.MAILBOX, AppSection.EXAMS, AppSection.COURSEWARE, AppSection.SETTINGS, AppSection.MORE), tabs)
-        assertTrue(applicationSections(preferences).none { it in tabs })
+        // 底栏只是快捷方式：已加到底栏的入口仍应出现在应用目录中。
+        assertTrue(tabs.filter { it != AppSection.HOME && it != AppSection.MORE }.all { it in applicationSections(preferences) })
         assertFalse(AppSection.CLASSROOMS in applicationSections(preferences))
     }
     @Test fun emptySelectionMeansTwoTabsAndEveryOtherFeatureInApplications() {
@@ -30,7 +31,8 @@ class NewMigrationNavigationTest {
         assertFalse(AppSection.PHYSICS_LAB in bottomNavSections(disabled.copy(bottomNavigationItems = listOf("PHYSICS_LAB"))))
         val pinned = enabled.copy(bottomNavigationItems = listOf("PHYSICS_LAB"))
         assertTrue(AppSection.PHYSICS_LAB in bottomNavSections(pinned))
-        assertFalse(AppSection.PHYSICS_LAB in applicationSections(pinned))
+        // 加到底栏后仍保留在应用目录。
+        assertTrue(AppSection.PHYSICS_LAB in applicationSections(pinned))
         assertFalse(shouldOpenNativeSectionRoute("PHYSICS_LAB", true, bottomNavSections(pinned)))
         assertTrue(shouldOpenNativeSectionRoute("PHYSICS_LAB", true, bottomNavSections(enabled)))
     }
