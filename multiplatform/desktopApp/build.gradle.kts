@@ -26,6 +26,10 @@ fun resolveDesktopPackageJavaHome(): String {
     val candidates = listOfNotNull(
         System.getenv("DESKTOP_PACKAGE_JAVA_HOME")?.trim()?.takeIf(String::isNotEmpty),
         System.getenv("JAVA_HOME")?.trim()?.takeIf(String::isNotEmpty),
+        // Android Studio 的 Gradle 守护进程通常没有 JAVA_HOME（用自带 JBR），
+        // 但 IDE 同步也会配置本模块；缺这一项会让整仓同步直接失败。打包时若该
+        // JDK 没有 jpackage，会由 jpackage 任务自己报错。
+        System.getProperty("java.home"),
         "/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home",
     )
     return candidates.firstOrNull { File(it).isDirectory }

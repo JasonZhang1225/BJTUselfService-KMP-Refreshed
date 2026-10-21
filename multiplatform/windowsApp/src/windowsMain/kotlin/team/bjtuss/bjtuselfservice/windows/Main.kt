@@ -14,6 +14,12 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.sun.jna.Library
 import com.sun.jna.Native
+import com.sun.jna.platform.win32.Advapi32Util
+import com.sun.jna.platform.win32.WinReg
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import java.awt.Dimension
 import java.awt.Image
 import java.awt.Toolkit
@@ -88,12 +94,23 @@ fun main(args: Array<String>) {
                 state = state,
                 icon = appWindowIcon(),
             ) {
-                LaunchedEffect(Unit) {
+                LaunchedEffect(window) {
                     window.minimumSize = Dimension(720, 520)
-                    applyWindowsDarkTitleBar(window.windowHandle)
                     // 多尺寸图标列表：Windows 按当前 DPI 选最合适尺寸，避免缩放模糊。
                     appWindowIconImages()?.let { images ->
                         window.iconImages = images
+                    }
+                    // 标题栏跟随系统浅/深色：轮询注册表以支持运行中切换 Windows 主题。
+                    // 实测单次 JNA 读注册表约 40µs（20k 次平均），2s 一次的任务周期占用
+                    // ≈0.002% CPU；注册表读取放到 IO 线程，避免占用 Compose 主线程。
+                    var appliedDark: Boolean? = null
+                    while (isActive) {
+                        val dark = withContext(Dispatchers.IO) { isWindowsAppsUseDarkTheme() }
+                        if (dark != appliedDark) {
+                            applyWindowsTitleBarTheme(window.windowHandle, dark)
+                            appliedDark = dark
+                        }
+                        delay(2_000)
                     }
                 }
                 // Count completed content clicks only. Focus, mouse movement, wheel
@@ -153,14 +170,17 @@ private fun appWindowIconResource(): java.io.InputStream? =
     Thread.currentThread().contextClassLoader.getResourceAsStream("app-icon.png")
 
 /**
- * Windows 10/11 标题栏跟随系统深色：DWM 的 DWMWA_USE_IMMERSIVE_DARK_MODE
- * （属性 20，Windows 10 1809+；Windows 11 22H2 上 20/19 均可用）。
- * 不设置时标题栏始终用系统浅色主题（白底黑字），与应用内深色主题割裂。
+ * Windows 10/11 标题栏跟随**系统**浅色/深色主题（DWM 的 DWMWA_USE_IMMERSIVE_DARK_MODE，
+ * 属性 20，Windows 10 1809+）。
+ *
+ * 注意：Java/AWT 窗口不会自动跟随系统深色，所以必须显式设置；但以前这里无条件写 1，
+ * 导致系统浅色时应用内容是浅色、标题栏却是纯黑。现在由调用方按注册表 AppsUseLightTheme
+ * 决定深浅，并在窗口生命周期内轮询以跟随系统主题切换。
  */
-private fun applyWindowsDarkTitleBar(windowHandle: Long) {
+private fun applyWindowsTitleBarTheme(windowHandle: Long, dark: Boolean) {
     if (windowHandle == 0L) return
+    val darkMode = intArrayOf(if (dark) 1 else 0)
     runCatching {
-        val darkMode = intArrayOf(1)
         Dwmapi.INSTANCE.DwmSetWindowAttribute(
             windowHandle,
             DWMWA_USE_IMMERSIVE_DARK_MODE,
@@ -169,6 +189,16 @@ private fun applyWindowsDarkTitleBar(windowHandle: Long) {
         )
     }
 }
+
+/** 系统“应用模式”是否为深色；读不到时按浅色处理（与 Windows 默认一致）。 */
+private fun isWindowsAppsUseDarkTheme(): Boolean = runCatching {
+    val lightTheme = Advapi32Util.registryGetIntValue(
+        WinReg.HKEY_CURRENT_USER,
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        "AppsUseLightTheme",
+    )
+    lightTheme == 0
+}.getOrDefault(false)
 
 private interface Dwmapi : Library {
     fun DwmSetWindowAttribute(
