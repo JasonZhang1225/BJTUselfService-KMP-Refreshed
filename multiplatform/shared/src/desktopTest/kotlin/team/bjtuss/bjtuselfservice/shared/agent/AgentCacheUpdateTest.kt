@@ -9,16 +9,23 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import team.bjtuss.bjtuselfservice.shared.auth.Credentials
-import team.bjtuss.bjtuselfservice.shared.auth.LoginFailure
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
 import team.bjtuss.bjtuselfservice.shared.cache.JvmAesCacheValueProtector
 import team.bjtuss.bjtuselfservice.shared.cache.openDesktopCacheStore
 import team.bjtuss.bjtuselfservice.shared.security.AccountPreferences
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
+import team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin
+import team.bjtuss.bjtuselfservice.shared.sync.RefreshReason
+import team.bjtuss.bjtuselfservice.shared.sync.RefreshReport
+import team.bjtuss.bjtuselfservice.shared.sync.RefreshSource
+import team.bjtuss.bjtuselfservice.shared.sync.RefreshSourceResult
+import team.bjtuss.bjtuselfservice.shared.sync.RefreshStatus
 
 class AgentCacheUpdateTest {
     private val directory: File = Files.createTempDirectory("agent-sync").toFile()
@@ -29,62 +36,50 @@ class AgentCacheUpdateTest {
         directory.deleteRecursively()
     }
 
-    // region 编排
+    // region 输出
 
     @Test
-    fun refreshesInAppOrderAndCalendarAfterCourses() = runBlocking {
-        val calls = mutableListOf<String>()
-        val report = runAgentSync(
-            targets = listOf(AgentSyncTarget.EXAMS, AgentSyncTarget.COURSES, AgentSyncTarget.GRADES),
-            login = { calls += "login"; AgentLoginOutcome.Ok },
-            refresh = { calls += it.wire; null },
-            refreshCalendar = { calls += "calendar"; true },
-        )
-        assertEquals(listOf("login", "grades", "courses", "calendar", "exams"), calls)
-        assertTrue(report.allOk)
-        assertTrue(report.academicCalendarUpdated)
-        assertEquals(AgentExit.OK, report.toOutput(json = true).exitCode)
-    }
-
-    @Test
-    fun loginFailureSkipsEveryRefresh() = runBlocking {
-        var refreshed = false
-        val report = runAgentSync(
-            targets = AgentSyncTarget.entries,
-            login = { AgentLoginOutcome.ManualRequired(LoginFailure.CAPTCHA_RECOGNITION_FAILED) },
-            refresh = { refreshed = true; null },
-            refreshCalendar = { refreshed = true; true },
-        )
-        assertFalse(refreshed)
-        val output = report.toOutput(json = true)
-        assertEquals(AgentExit.LOGIN_FAILED, output.exitCode)
-        assertTrue("manual_required" in output.stdout)
-        assertTrue("手动登录" in output.stderr)
-    }
-
-    @Test
-    fun partialFailureAndTimeoutDoNotStopOtherTargets() = runBlocking {
-        val report = runAgentSync(
-            targets = AgentSyncTarget.entries,
-            login = { AgentLoginOutcome.Ok },
-            refresh = { target ->
-                when (target) {
-                    AgentSyncTarget.HOMEWORK -> "session_expired"
-                    AgentSyncTarget.EXAMS -> { delay(1_000); null }
-                    AgentSyncTarget.GRADES -> error("boom")
-                    else -> null
-                }
-            },
-            refreshCalendar = { false },
-            perTargetTimeoutMillis = 200,
-        )
-        assertEquals(null, report.results[AgentSyncTarget.COURSES])
-        assertEquals("session_expired", report.results[AgentSyncTarget.HOMEWORK])
-        assertEquals("超时", report.results[AgentSyncTarget.EXAMS])
-        assertTrue(report.results[AgentSyncTarget.GRADES]!!.startsWith("失败"))
-        val output = report.toOutput(json = false)
+    fun reportKeepsLegacyResultsAndAddsPerSourceDetail() {
+        val report = RefreshReport("20990001", RefreshOrigin.CLI, 1, 2, listOf(
+            RefreshSourceResult(RefreshSource.GRADES, RefreshStatus.SUCCESS, fetchedAtEpochSeconds = 1_760_000_000),
+            RefreshSourceResult(RefreshSource.HOMEWORK, RefreshStatus.NEEDS_USER_ACTION, RefreshReason.SESSION_EXPIRED, "请重新登录"),
+            RefreshSourceResult(RefreshSource.CITEL, RefreshStatus.SKIPPED, RefreshReason.NOT_CONFIGURED),
+            RefreshSourceResult(RefreshSource.EXAMS, RefreshStatus.FAILED, "network", fetchedAtEpochSeconds = 1_700_000_000),
+        ))
+        val output = report.toCacheUpdateOutput(json = true, executor = "headless", login = AgentLoginOutcome.Ok)
         assertEquals(AgentExit.PARTIAL, output.exitCode)
-        assertTrue("课表：已更新" in output.stdout)
+        val body = Json.parseToJsonElement(output.stdout).jsonObject
+        assertEquals("headless", body["executor"]!!.jsonPrimitive.content)
+        val results = body["results"]!!.jsonObject
+        assertEquals("ok", results["grades"]!!.jsonPrimitive.content)
+        assertEquals("session_expired", results["homework"]!!.jsonPrimitive.content)
+        assertNull(results["citel"], "跳过的来源不进入旧版 results 映射")
+        val sources = body["sources"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("grades", "homework", "citel", "exams"), sources.map { it["source"]!!.jsonPrimitive.content })
+        // 失败来源报告上次真实同步时间，而不是本次刷新时间。
+        assertTrue(sources[3]["syncedAt"]!!.jsonPrimitive.content.startsWith("2023-11-1"))
+        assertFalse("20990001" in output.stdout, "输出不带学号")
+        assertTrue("App 里处理" in output.stderr)
+    }
+
+    @Test
+    fun allSuccessOrSkippedIsOk() {
+        val report = RefreshReport("x", RefreshOrigin.CLI, 1, 2, listOf(
+            RefreshSourceResult(RefreshSource.GRADES, RefreshStatus.SUCCESS),
+            RefreshSourceResult(RefreshSource.PHYVLAB, RefreshStatus.SKIPPED, RefreshReason.DISABLED),
+        ))
+        val output = report.toCacheUpdateOutput(json = false, executor = "app", login = AgentLoginOutcome.Ok)
+        assertEquals(AgentExit.OK, output.exitCode)
+        assertTrue("执行者：交大自由行 App" in output.stdout)
+        assertTrue("物理在线：跳过（已关闭）" in output.stdout)
+    }
+
+    @Test
+    fun parsesLegacyAndNewSourceNames() {
+        assertEquals(RefreshSource.entries.toSet(), parseRefreshSources(emptyList()))
+        assertEquals(RefreshSource.entries.toSet(), parseRefreshSources(listOf("all")))
+        assertEquals(setOf(RefreshSource.GRADES, RefreshSource.CITEL), parseRefreshSources(listOf("grades", "citel")))
+        assertNull(parseRefreshSources(listOf("grades", "shell")))
     }
 
     // endregion
@@ -123,10 +118,11 @@ class AgentCacheUpdateTest {
     }
 
     @Test
-    fun unsupportedTargetsPointToApp() {
-        val output = runCacheUpdate(listOf("citel"), platform(remember = true))
+    fun unknownTargetsAreRejectedBeforeAnyIo() {
+        val output = runCacheUpdate(listOf("shell"), platform(remember = true))
         assertEquals(AgentExit.USAGE, output.exitCode)
-        assertTrue("打开 App" in output.stderr)
+        assertTrue("physicsLab" in output.stderr)
+        assertTrue(directory.listFiles().orEmpty().isEmpty())
     }
 
     @Test

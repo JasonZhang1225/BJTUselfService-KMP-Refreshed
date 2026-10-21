@@ -190,6 +190,9 @@ import team.bjtuss.bjtuselfservice.shared.feature.home.homeSyncDialogTitle
 import team.bjtuss.bjtuselfservice.shared.webview.openExternalUrl
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommand
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
+import team.bjtuss.bjtuselfservice.shared.sync.AppRefreshCoordinator
+import team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin
+import team.bjtuss.bjtuselfservice.shared.sync.RefreshRequest
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.domain.grade.CourseType
@@ -618,67 +621,21 @@ fun AuthenticatedAppShell(
             AssignmentSource.CITEL -> if (citelEnabled) session.citelModel?.refresh()
         }
     }
-    val refreshGlobal: suspend (Boolean) -> Unit = globalRefresh@ { forceReauthenticate ->
-        val sessionRefresh = SessionRefreshCoordinator(reauthenticate = reauthenticateSession,
-            probeSession = session.probeSession, onRecoveryStateChanged = { sessionRecoveryInProgress = it })
-        if (forceReauthenticate && !sessionRefresh.recoverBeforeRefresh()) return@globalRefresh
-        suspend fun refreshModule(operation: suspend () -> Unit, sessionExpired: () -> Boolean) {
-            sessionRefresh.run(operation, sessionExpired)
-        }
-        coroutineScope {
-            launch {
-                refreshModule(
-                    operation = homeModel::refresh,
-                    sessionExpired = { homeModel.state.value.failure == HomeStatusFailure.SESSION_EXPIRED },
-                )
-            }
-            launch {
-                sessionRefresh.run(
-                    operation = { mailboxModel.refreshUnreadInboxCount() },
-                    sessionExpired = {
-                        when (val current = mailboxModel.state.value) {
-                            MailboxUiState.SessionUnavailable -> true
-                            is MailboxUiState.Ready -> current.failure == MailboxFailure.SESSION_EXPIRED
-                            else -> false
-                        }
-                    },
-                )
-            }
-            launch {
-                refreshModule(
-                    operation = homeworkModel::refresh,
-                    sessionExpired = { homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED },
-                )
-            }
-            launch {
-                refreshModule(
-                    operation = examScheduleModel::refresh,
-                    sessionExpired = { examScheduleModel.state.value.failure == ExamScheduleSyncFailure.SESSION_EXPIRED },
-                )
-            }
-            launch {
-                refreshModule(
-                    operation = courseScheduleModel::refresh,
-                    sessionExpired = { courseScheduleModel.state.value.failure == CourseScheduleSyncFailure.SESSION_EXPIRED },
-                )
-            }
-            if (physicsLabEnabled) launch { session.physicsLabModel?.refresh() }
-            launch { session.physicsDemoModel?.refresh() }
-            if (citelEnabled) launch { session.citelModel?.refresh() }
-            // 用户主动刷新或后台超过阈值后的全局刷新；关闭的模块不访问网络。
-            if (phyVlabEnabled) {
-                launch { phyVlabModel.refresh() }
-            }
-            launch {
-                refreshModule(
-                    operation = gradeModel::refresh,
-                    sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
-                )
-                if (gradeModel.state.value.courseTypesByCode == null) {
-                    gradeModel.ensureProgramCourseTypes()
-                }
-            }
-        }
+    // 全局刷新统一交给公共刷新服务：与 CLI/后台任务共用同一执行者，同源请求合并、逐源报告。
+    // 正式会话由 AppDataGraph 提供；离线布局探针等没有协调器的会话，全局刷新不访问网络。
+    val refreshCoordinator = remember(session) {
+        session.refreshCoordinator ?: AppRefreshCoordinator(
+            accountScope = profile.studentId,
+            adapters = emptyList(),
+            scope = scope,
+            nowEpochSeconds = { kotlin.time.Clock.System.now().epochSeconds },
+        )
+    }
+    LaunchedEffect(refreshCoordinator) {
+        refreshCoordinator.recoveryInProgress.collect { sessionRecoveryInProgress = it }
+    }
+    val refreshGlobal: suspend (Boolean) -> Unit = { forceReauthenticate ->
+        refreshCoordinator.refresh(RefreshRequest(origin = RefreshOrigin.APP, forceReauthenticate = forceReauthenticate))
     }
     val latestGlobalRefresh = rememberUpdatedState(refreshGlobal)
     LaunchedEffect(session, forcedRouteId, nativeTabBarEnabled) {

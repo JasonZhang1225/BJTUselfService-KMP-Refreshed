@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-21。
-> 当前分支：本地 `agent-remote`，基于最新 `main@f454d3a5cf15`（PR #34/#35 均已合入）；本次仅新增 Agent Remote 计划并更新工作记忆/日志；文档交付分支为 `agent-remote`，尚未实现功能或创建实际 PR。
+> 当前分支：`claude/kind-cannon-afcnlu`（基于 `agent-remote@4eb558a`），实现 Agent Remote 计划 PR 1–4，草稿 PR #36 → `agent-remote`，未合入。
 > KMP 源码版本：`1.8.5-EmergencyFix2` / Build 40；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。`history_full.md` 尚无 EmergencyFix2 发版条目。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
@@ -11,11 +11,14 @@
 
 ## 进行中
 
-- Agent Remote 需求与分期计划：见 `docs/agent/agent-remote-plan.md`。本次只做计划，不实现；用户将逐个指定计划 PR 1–7。
-  - 默认 Windows 每 30 分钟全量刷新并上报快照、每 5 秒仅轮询即时指令，两周期独立且可改；Site 普通查询优先快照，不频繁触发学校刷新。
-  - App/CLI/后台任务共用全量刷新服务；App 开着时代理给 App 执行，App 关着时无窗口执行，避免双会话。
-  - 每用户独立私人 Site 与插件；提供可分发干净模板和一句话搭建向导；私人 Site 的机器鉴权/配对先实测。
-  - 已验证分支基线、计划结构和文档差异；没有运行构建、连接校园系统、创建 Site 或更改后台设置。
+- Agent Remote 计划 PR 1–4（草稿 PR #36 → `agent-remote`，分支 `claude/kind-cannon-afcnlu`；计划见 `docs/agent/agent-remote-plan.md`）。
+  - PR 1：`shared/.../sync/` 公共刷新服务（`AppRefreshCoordinator`、逐源报告、`AppDataGraph` 组合根）；App 全局刷新已改走它。
+  - PR 2：`agent/host/` 本机 IPC（127.0.0.1 + 私有端点文件令牌）、`AppRefreshHost`/`HeadlessRefreshHost`；`cache update` 默认全量，App 开着交给 App，关着无窗口执行，GUI 启动请求交接；新增退出码 7/8。
+  - PR 3：`multiplatform/remote-site-template/`（D1 迁移、配对/快照/任务 API、Node 测试）+ `agent/remote/RemoteProtocol.kt` 契约测试。**owner-private 平台机器访问未实测、未建任何 Site。**
+  - PR 4：`agent/remote/` 常驻调度（30 分钟刷新上报、5 秒轮询）、设置卡片、Windows 托盘/后台/开机启动/单实例；默认关闭。
+  - 验证：本机 Linux 容器 `:shared:desktopTest` 987 项全过（需 `LC_ALL=C.UTF-8`，否则 `DesktopAgentIntegrationTest` 因中文路径 127 失败，属环境问题）；`npm test` 14 项全过；Android/desktop/Windows 编译通过。iOS 编译、macOS 测试、Windows IPC/DPAPI 单测交给 PR CI。
+  - 未验证：真实学校登录下的无窗口刷新、Windows 真机 GUI（托盘、隐藏窗口时组合是否持续、开机启动）、Ktor 客户端对真实 Site 的连通、IPC 交接时序在真机的表现。
+  - 容器备注：`repo.maven.apache.org` 返回 429，用 `~/.gradle/init.d` 改走 Google 镜像（不入库）；Android SDK 装在 `/opt/android-sdk`。
 
 ## 当前痛点
 
@@ -44,7 +47,7 @@
 
 ## 接下来
 
-- Agent Remote 按计划逐期实施，工作 PR 目标为集成分支 `agent-remote`，最后由用户决定合入 main；其他工作继续从最新 main 建分支。
+- 用户审阅 PR #36；合入 `agent-remote` 后把 PR 1–4 记入 `history_full.md`。之后按计划 PR 5（MCP 与即时精确查询），开始前先实测 owner-private Site 机器访问。
 
 1. 在真机已有版本（SideStore 保留扩展）上验证小组件共享容器与各尺寸显示。
 2. 华为 HBN-AL10（HarmonyOS 4.2）装含 PR #32/#33 的新包：确认课表小组件尺寸（logcat `CourseWidget` 标签）与教务不可达时不再闪退。
