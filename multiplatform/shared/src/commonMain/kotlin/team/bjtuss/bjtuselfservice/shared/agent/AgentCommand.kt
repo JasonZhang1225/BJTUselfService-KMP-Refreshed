@@ -1,19 +1,16 @@
 package team.bjtuss.bjtuselfservice.shared.agent
 
-import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.isoDayNumber
-import kotlinx.datetime.minus
-import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.time.Instant
-import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentSource
 
 /** 命令行输出：stdout 给调用方（agent）解析，stderr 只放人能读的提示。 */
 data class AgentOutput(val stdout: String, val stderr: String = "", val exitCode: Int = AgentExit.OK)
@@ -37,7 +34,8 @@ object AgentExit {
     const val VERSION_MISMATCH = 8
 }
 
-const val AGENT_SCHEMA_VERSION = 1
+/** CLI JSON 外层版本；与远程查询、数据集同为 2。 */
+const val AGENT_SCHEMA_VERSION = AGENT_DATASET_SCHEMA_VERSION
 
 /** 打开缓存的结果由平台层提供；命令本身是纯逻辑，便于测试。 */
 fun interface AgentSnapshotProvider {
@@ -50,30 +48,30 @@ sealed interface AgentSnapshotResult {
 }
 
 val AGENT_USAGE = """
-    用法: bjtu <命令> [选项]
-      status                          版本、账号、缓存情况
-      calendar [范围] [筛选]          聚合日程：课程、实验、考试、作业开放/折扣/截止
-      courses [范围] [--course 关键词] 课程与实验
-      homework [--pending] [筛选]     作业：课程平台、物理在线、CITEL
-      exams
-      grades                          需要在 App 设置里允许
-      citel                           CITEL 任务列表（元数据）
-      citel show <id> [--fetch] [--json]  缓存题面与用例；--fetch 才联网
-      citel export <id> --out <新目录> [--fetch]  导出 problem.md 和 tests/N.in、N.out
-      cache read <courses|homework|exams|grades|citel|calendar> [同上选项]
-      cache update [all|来源,...]   全量刷新（默认全部来源；App 开着时交给 App 执行，否则后台登录执行）
-      install [--no-claude] | uninstall | doctor   安装/移除 Skill 与启动脚本，检查环境（仅桌面端）
-      uninstall-app [--yes]            Mac 卸载清理：默认预览；--yes 才删除数据并将 App 移到废纸篓
-    范围: --today | --tomorrow | --week [N] | --date YYYY-MM-DD | --from YYYY-MM-DD --to YYYY-MM-DD
-          （calendar 默认今天起 7 天；courses 默认本周）
-    筛选（可组合，多值用逗号或重复参数）:
-      --source course,phyvlab,citel   只看这些来源的作业
-      --course 关键词                  课程名包含关键词（忽略大小写）
-      --kind class,lab,exam,assignment_open,assignment_discount,assignment_due   仅 calendar
-      --app-filter                    套用用户在 App 作业页存的课程筛选（默认不套用）
-      --all                           连同物理实验课里没约上的实验一起列出
-    注意: 北京时间 00:00 截止的作业算作前一天 24:00 截止（与 App 首页一致），JSON 里 agendaDate 为归属日、start/dueTime 为实际时刻。
-    通用选项: --json  输出 JSON（给 agent 用）；默认输出 Markdown
+    用法: bjtu <命令> [选项] [--json]
+      status                       数据可用情况与各来源同步时间
+      homework [筛选]              作业：一次返回课程平台、物理在线、CITEL 全部来源（默认已交/未交全部列出）
+      calendar [范围] [筛选]       按天列出课程、实验、考试、作业截止（默认未来 7 天）
+      courses [范围]               只看课程与实验（默认本周）
+      exams [--status upcoming|all] [--course 关键词]
+      grades [--course 关键词] [--term 学期]   需要在 App 里允许
+      mail [--unread] [--keyword 关键词] [--limit N]   收件箱最近邮件摘要
+      citel                        CITEL 任务元数据
+      citel show <id> [--fetch] [--json]   缓存题面与用例；--fetch 才联网
+      citel export <id> --out <新目录> [--fetch]
+      cache update [all|来源,...]  全量刷新（App 开着时交给 App 执行）
+      install [--no-claude] | uninstall | doctor   安装/移除 Skill 与启动脚本（仅桌面端）
+      uninstall-app [--yes]        Mac 卸载清理：默认预览
+    范围（calendar、courses，以及 homework 按截止日筛选；只能选一种）:
+      --range today|tomorrow|this_week|next_week|next_7_days   （--today/--tomorrow/--week/--next-week 是简写）
+      --date YYYY-MM-DD | --from YYYY-MM-DD --to YYYY-MM-DD | --week N（第 N 教学周）
+    筛选:
+      --status pending|unsubmitted|overdue|submitted|all   homework，默认 all（全部，每项带状态）
+      --sources course_platform,phyvlab,citel               homework，默认全部
+      --kinds class,lab,exam,assignment_due,assignment_discount,assignment_open   calendar
+      --course 关键词   --include-unbooked（含没约的物理实验）  --detail（含作业说明与链接）
+    与远程 MCP 工具参数同名同义：get_homework、get_calendar、get_exams、get_grades、get_mail、get_status。
+    时间均为北京时间；due 字段是换算好的截止（00:00 截止写作前一天 24:00），直接引用即可。
 """.trimIndent()
 
 private val prettyJson = Json { prettyPrint = true }
@@ -91,169 +89,123 @@ fun runAgentCommand(args: List<String>, provider: AgentSnapshotProvider, now: In
     if (name !in KNOWN_COMMANDS) return AgentOutput("", "未知命令：$name\n$AGENT_USAGE", AgentExit.USAGE)
 
     // 参数错误必须在碰缓存（和系统安全存储）之前就报出来。
-    try {
-        validateOptions(options)
-    } catch (error: AgentUsageException) {
+    val query = try {
+        if (name == "citel") {
+            if (options.isNotEmpty()) throw AgentQueryException("bad_request", "citel 列表不接受选项")
+            null
+        } else parseAgentQuery(if (name == "courses") AgentQueryCommand.CALENDAR else name, cliArguments(name, options))
+    } catch (error: AgentQueryException) {
         return AgentOutput("", "${error.message}\n$AGENT_USAGE", AgentExit.USAGE)
     }
     val today = now.toLocalDateTime(AGENT_TIME_ZONE).date
     val ready = when (val result = provider.load(today)) {
         is AgentSnapshotResult.Unavailable -> return AgentOutput(
-            if (json) envelope(name, now, JsonNull, error = result.reason).render() else "",
+            if (json) render(agentQueryError(null, name, now.epochSeconds, "local_cache", "no_data", result.reason)) else "",
             result.reason, AgentExit.NO_DATA,
         )
         is AgentSnapshotResult.Ready -> result
     }
     val snapshot = ready.snapshot
-    return try {
-        when (name) {
-            "status" -> render(json, name, now, statusJson(ready), statusMarkdown(ready), snapshot)
-            "calendar" -> {
-                val range = parseRange(options, today, snapshot)
-                val calendarOptions = AgentCalendarOptions(kinds = parseKinds(options), homework = homeworkOptions(options))
-                val items = agentCalendar(snapshot, range.first, range.second, now, calendarOptions)
-                render(json, name, now, calendarJson(items, range, snapshot), calendarMarkdown(items, range), snapshot)
-            }
-            "courses" -> {
-                val range = parseRange(options, today, snapshot, defaultWeek = true)
-                val items = agentCalendar(snapshot, range.first, range.second, now, AgentCalendarOptions(
-                    kinds = setOf(AgentCalendarKind.CLASS, AgentCalendarKind.LAB),
-                    homework = homeworkOptions(options),
-                ))
-                render(json, name, now, calendarJson(items, range, snapshot), calendarMarkdown(items, range), snapshot)
-            }
-            "homework" -> {
-                val items = agentHomework(snapshot, homeworkOptions(options).copy(pendingOnly = "--pending" in options), now)
-                render(json, name, now, homeworkJson(items, snapshot), homeworkMarkdown(items), snapshot)
-            }
-            "exams" -> render(json, name, now, examsJson(snapshot), examsMarkdown(snapshot), snapshot)
-            "grades" -> if (!ready.gradesAllowed) {
-                val reason = "成绩默认不开放给 AI Agent。需要时请在 App 设置的“AI 助手”里允许读取成绩。"
-                AgentOutput(if (json) envelope(name, now, JsonNull, error = reason).render() else "", reason, AgentExit.NOT_ALLOWED)
-            } else render(json, name, now, gradesJson(snapshot), gradesMarkdown(snapshot), snapshot)
-            "citel" -> render(json, name, now, citelJson(snapshot), citelMarkdown(snapshot), snapshot)
-            else -> AgentOutput("", AGENT_USAGE, AgentExit.USAGE)
-        }
-    } catch (error: AgentUsageException) {
-        AgentOutput("", "${error.message}\n$AGENT_USAGE", AgentExit.USAGE)
+    if (query == null) {
+        val data = citelJson(snapshot)
+        return AgentOutput(if (json) render(buildJsonObject {
+            put("schemaVersion", AGENT_SCHEMA_VERSION); put("command", "citel"); put("origin", "local_cache"); put("data", data)
+        }) else citelMarkdown(snapshot))
     }
+    val result = localAgentQuery(snapshot, query, now, ready.gradesAllowed).let { result ->
+        if (query.command != AgentQueryCommand.STATUS) result
+        else JsonObject(result + mapOf("appVersion" to JsonPrimitive(ready.appVersion), "account" to JsonPrimitive(maskStudentId(snapshot.studentId))))
+    }
+    val error = result["error"] as? JsonObject
+    val code = (error?.get("code") as? JsonPrimitive)?.content
+    val exit = when (code) {
+        null -> AgentExit.OK
+        "not_allowed" -> AgentExit.NOT_ALLOWED
+        "bad_request" -> AgentExit.USAGE
+        else -> AgentExit.NO_DATA
+    }
+    val message = (error?.get("message") as? JsonPrimitive)?.content.orEmpty()
+    return AgentOutput(if (json) render(result) else if (error == null) agentResultMarkdown(result) else "",
+        if (error != null) message else "", exit)
 }
 
-private val KNOWN_COMMANDS = setOf("status", "calendar", "courses", "homework", "exams", "grades", "citel", "help", "--help", "-h")
+/** 用本机缓存执行统一查询：数据集只展开查询需要的课表日期。 */
+fun localAgentQuery(snapshot: AgentSnapshot, query: AgentQuery, now: Instant, gradesAllowed: Boolean, origin: String = "local_cache"): JsonObject {
+    val weeks = snapshot.academicWeeks.map { AgentWeek(it.week, it.startDate.toString()) }
+    val (from, to) = agentScheduleWindow(query, weeks, now.epochSeconds)
+    val dataset = buildAgentDataset(snapshot, AgentDatasetPart.entries.toSet(), from, to, now, gradesAllowed)
+    val sources = snapshot.syncedAt.mapValues { AgentSourceState(fetchedAt = it.value) }
+    return runAgentQuery(dataset, sources, query, now.epochSeconds, origin)
+}
 
+/** citel show/export 等桌面子命令的参数错误。 */
 class AgentUsageException(message: String) : IllegalArgumentException(message)
 
-private fun render(json: Boolean, name: String, now: Instant, data: JsonElement, markdown: String, snapshot: AgentSnapshot): AgentOutput {
-    val fresh = freshness(snapshot, name, now)
-    return AgentOutput(if (json) envelope(name, now, data, freshness = fresh).render() else fresh.banner() + markdown)
-}
+private val KNOWN_COMMANDS = setOf("status", "calendar", "courses", "homework", "exams", "grades", "mail", "citel", "help", "--help", "-h")
 
-private fun envelope(name: String, now: Instant, data: JsonElement, error: String? = null, freshness: Freshness? = null): JsonObject =
-    buildJsonObject {
-        put("schemaVersion", AGENT_SCHEMA_VERSION)
-        put("command", name)
-        put("generatedAt", isoTime(now.epochSeconds))
-        put("timeZone", AGENT_TIME_ZONE.id)
-        if (error != null) put("error", error)
-        if (freshness != null) put("freshness", freshness.toJson())
-        put("data", data)
+private fun render(result: JsonObject): String = prettyJson.encodeToString(JsonObject.serializer(), result) + "\n"
+
+// region CLI 选项 → 统一查询参数
+
+/**
+ * 把 `--名字 值` 转成与 MCP 工具相同的 JSON 参数，再交给 [parseAgentQuery] 统一校验。
+ * 旧选项保留为简写：--today/--tomorrow/--week [N]/--next-week、--source、--kind、--pending、--all。
+ */
+internal fun cliArguments(command: String, options: List<String>): JsonObject {
+    val values = linkedMapOf<String, JsonElement>()
+    val lists = linkedMapOf<String, MutableList<String>>()
+    var index = 0
+    fun value(name: String): String {
+        val next = options.getOrNull(index + 1)?.takeIf { !it.startsWith("--") }
+            ?: throw AgentQueryException("bad_request", "$name 缺少参数")
+        index += 1
+        return next
     }
-
-private fun JsonObject.render(): String = prettyJson.encodeToString(JsonObject.serializer(), this) + "\n"
-
-// region 参数
-
-internal fun parseRange(
-    options: List<String>,
-    today: LocalDate,
-    snapshot: AgentSnapshot,
-    defaultWeek: Boolean = false,
-): Pair<LocalDate, LocalDate> {
-    optionValue(options, "--date")?.let { val d = parseDate(it); return d to d }
-    val from = optionValue(options, "--from")
-    val to = optionValue(options, "--to")
-    if (from != null || to != null) {
-        val start = from?.let(::parseDate) ?: today
-        val end = to?.let(::parseDate) ?: start
-        if (end < start) throw AgentUsageException("--to 早于 --from")
-        if (end.toEpochDays() - start.toEpochDays() > 180) throw AgentUsageException("日期范围最多 180 天")
-        return start to end
+    fun set(key: String, element: JsonElement) {
+        if (key in values) throw AgentQueryException("bad_request", "--$key 重复")
+        values[key] = element
     }
-    if ("--today" in options) return today to today
-    if ("--tomorrow" in options) return today.plus(1, DateTimeUnit.DAY).let { it to it }
-    val weekIndex = options.indexOf("--week")
-    if (weekIndex >= 0 || defaultWeek) {
-        val explicit = options.getOrNull(weekIndex + 1)?.takeIf { weekIndex >= 0 && !it.startsWith("--") }
-        if (explicit != null) {
-            val week = explicit.toIntOrNull() ?: throw AgentUsageException("--week 后应为周次数字")
-            val start = snapshot.academicWeeks.firstOrNull { it.week == week }?.startDate
-                ?: throw AgentUsageException("没有第 $week 周的日期（校历未缓存）")
-            return start to start.plus(6, DateTimeUnit.DAY)
+    fun addList(key: String, raw: String, alias: (String) -> String = { it }) {
+        lists.getOrPut(key) { mutableListOf() } += raw.split(',', '，').map(String::trim).filter(String::isNotEmpty).map(alias)
+    }
+    while (index < options.size) {
+        when (val option = options[index]) {
+            "--today" -> set("range", JsonPrimitive("today"))
+            "--tomorrow" -> set("range", JsonPrimitive("tomorrow"))
+            "--next-week" -> set("range", JsonPrimitive("next_week"))
+            "--week" -> {
+                val next = options.getOrNull(index + 1)?.takeIf { !it.startsWith("--") }
+                if (next == null) set("range", JsonPrimitive("this_week")) else {
+                    index += 1
+                    set("week", JsonPrimitive(next.toIntOrNull() ?: throw AgentQueryException("bad_request", "--week 后应为周次数字")))
+                }
+            }
+            "--range" -> set("range", JsonPrimitive(value(option).replace('-', '_')))
+            "--date", "--from", "--to", "--course", "--status", "--keyword", "--term" -> set(option.drop(2), JsonPrimitive(value(option)))
+            "--limit" -> set("limit", JsonPrimitive(value(option).toIntOrNull() ?: throw AgentQueryException("bad_request", "--limit 应为数字")))
+            "--sources", "--source" -> addList("sources", value(option)) { source ->
+                when (source.lowercase()) {
+                    "course", "platform", "course_platform" -> "course_platform"
+                    "physics", "phyvlab" -> "phyvlab"
+                    else -> source.lowercase()
+                }
+            }
+            "--kinds", "--kind" -> addList("kinds", value(option)) { it.lowercase() }
+            "--pending" -> set("status", JsonPrimitive("pending"))
+            "--include-unbooked", "--all" -> set("includeUnbooked", JsonPrimitive(true))
+            "--detail" -> set("detail", JsonPrimitive(true))
+            "--unread" -> set("unread", JsonPrimitive(true))
+            else -> throw AgentQueryException("bad_request", "未知选项：$option")
         }
-        val monday = today.minus(today.dayOfWeek.isoDayNumber - 1, DateTimeUnit.DAY)
-        return monday to monday.plus(6, DateTimeUnit.DAY)
+        index += 1
     }
-    // 默认：今天起 7 天。
-    return today to today.plus(6, DateTimeUnit.DAY)
-}
-
-/** 只做语法检查，不需要缓存数据。 */
-private fun validateOptions(options: List<String>) {
-    listOf("--date", "--from", "--to").forEach { name -> optionValue(options, name)?.let(::parseDate) }
-    optionValues(options, "--source").forEach { parseSource(it) }
-    optionValues(options, "--course")
-    parseKinds(options)
-    val weekIndex = options.indexOf("--week")
-    if (weekIndex >= 0) {
-        options.getOrNull(weekIndex + 1)?.takeIf { !it.startsWith("--") }?.let {
-            if (it.toIntOrNull() == null) throw AgentUsageException("--week 后应为周次数字")
-        }
+    lists.forEach { (key, items) -> set(key, JsonArray(items.distinct().map(::JsonPrimitive))) }
+    if (command == "courses") {
+        if ("kinds" in values) throw AgentQueryException("bad_request", "courses 固定为课程与实验，不接受 --kinds")
+        values["kinds"] = JsonArray(listOf(JsonPrimitive("class"), JsonPrimitive("lab")))
+        if (listOf("range", "date", "from", "to", "week").none { it in values }) values["range"] = JsonPrimitive("this_week")
     }
-    val unknown = options.filter { it.startsWith("--") && it !in KNOWN_OPTIONS }
-    if (unknown.isNotEmpty()) throw AgentUsageException("未知选项：${unknown.joinToString(" ")}")
-}
-
-private val KNOWN_OPTIONS = setOf(
-    "--date", "--from", "--to", "--today", "--tomorrow", "--week", "--source", "--course", "--kind",
-    "--pending", "--all", "--app-filter",
-)
-
-private fun homeworkOptions(options: List<String>) = AgentHomeworkOptions(
-    sources = optionValues(options, "--source").map(::parseSource).toSet().ifEmpty { AssignmentSource.entries.toSet() },
-    courseKeywords = optionValues(options, "--course"),
-    applyAppFilter = "--app-filter" in options,
-    includeUnbooked = "--all" in options,
-)
-
-private fun parseKinds(options: List<String>): Set<AgentCalendarKind> =
-    optionValues(options, "--kind").map { value ->
-        AgentCalendarKind.entries.firstOrNull { it.wire == value.lowercase() }
-            ?: throw AgentUsageException("--kind 只能是 ${AgentCalendarKind.entries.joinToString(",") { it.wire }}")
-    }.toSet().ifEmpty { AgentCalendarKind.entries.toSet() }
-
-/** 可重复、可逗号分隔：`--course 物理 --course 数据结构` 或 `--source course,citel`。 */
-private fun optionValues(options: List<String>, name: String): List<String> =
-    options.indices.filter { options[it] == name }.flatMap { index ->
-        val value = options.getOrNull(index + 1)?.takeIf { !it.startsWith("--") }
-            ?: throw AgentUsageException("$name 缺少参数")
-        value.split(',', '，').map(String::trim).filter(String::isNotEmpty)
-    }
-
-private fun optionValue(options: List<String>, name: String): String? {
-    val index = options.indexOf(name)
-    if (index < 0) return null
-    return options.getOrNull(index + 1)?.takeIf { !it.startsWith("--") }
-        ?: throw AgentUsageException("$name 缺少参数")
-}
-
-private fun parseDate(value: String): LocalDate =
-    runCatching { LocalDate.parse(value) }.getOrNull() ?: throw AgentUsageException("日期格式应为 YYYY-MM-DD：$value")
-
-private fun parseSource(value: String): AssignmentSource = when (value.lowercase()) {
-    "course", "course_platform", "platform" -> AssignmentSource.COURSE_PLATFORM
-    "phyvlab", "physics" -> AssignmentSource.PHYVLAB
-    "citel" -> AssignmentSource.CITEL
-    else -> throw AgentUsageException("--source 只能是 course、phyvlab 或 citel")
+    return JsonObject(values)
 }
 
 // endregion

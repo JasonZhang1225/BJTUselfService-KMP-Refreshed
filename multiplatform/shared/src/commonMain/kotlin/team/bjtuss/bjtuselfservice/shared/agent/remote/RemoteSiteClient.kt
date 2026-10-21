@@ -42,6 +42,8 @@ sealed interface RemoteCall<out T> {
 /** 设备一侧调用私人 Site 的接口；Windows 主动连接，Site 不连回电脑。 */
 interface RemoteSiteClient {
     suspend fun pair(request: RemotePairRequest): RemoteCall<RemotePairResponse>
+    /** 不需要设备令牌的版本探测；旧 Site 没有该接口时按失败处理。 */
+    suspend fun health(): RemoteCall<RemoteHealth> = RemoteCall.Failure(RemoteFailureKind.CLIENT_ERROR, "unsupported")
     suspend fun putSnapshot(snapshot: RemoteSnapshot): RemoteCall<RemoteSnapshotAck>
     suspend fun putScopes(scopes: List<String>): RemoteCall<Unit>
     suspend fun putScopes(scopes: List<String>, scopesRevision: Long): RemoteCall<Unit> = putScopes(scopes)
@@ -64,6 +66,9 @@ class KtorRemoteSiteClient(
 
     override suspend fun pair(request: RemotePairRequest) =
         call(HttpMethod.Post, "/api/v1/device/pair", request, RemotePairRequest.serializer(), RemotePairResponse.serializer(), device = false)
+
+    override suspend fun health() =
+        call(HttpMethod.Get, "/api/v1/health", "", String.serializer(), RemoteHealth.serializer(), device = false, raw = true)
 
     override suspend fun putSnapshot(snapshot: RemoteSnapshot) =
         call(HttpMethod.Put, "/api/v1/device/snapshot", snapshot, RemoteSnapshot.serializer(), RemoteSnapshotAck.serializer())
@@ -109,7 +114,7 @@ class KtorRemoteSiteClient(
                 if (token != null) header("Authorization", "Bearer $token")
                 if (access != null) header("OAI-Sites-Authorization", remotePlatformAuthorization(access))
                 val text = if (raw) body as String else remoteJson.encodeToString(bodySerializer, body)
-                setBody(TextContent(text, ContentType.Application.Json))
+                if (method != HttpMethod.Get) setBody(TextContent(text, ContentType.Application.Json))
             }
             val status = response.status.value
             val text = response.bodyAsText()

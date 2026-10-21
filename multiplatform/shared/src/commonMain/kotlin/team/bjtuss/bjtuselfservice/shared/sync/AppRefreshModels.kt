@@ -6,7 +6,7 @@ package team.bjtuss.bjtuselfservice.shared.sync
  */
 enum class RefreshSource(val wire: String, val label: String) {
     HOME("home", "首页"),
-    MAIL_UNREAD("mailUnread", "邮箱未读"),
+    MAIL_UNREAD("mailUnread", "邮箱"),
     HOMEWORK("homework", "课程平台作业"),
     EXAMS("exams", "考试"),
     COURSES("courses", "课表"),

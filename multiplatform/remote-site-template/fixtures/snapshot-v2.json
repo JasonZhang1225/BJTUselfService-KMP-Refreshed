@@ -1,0 +1,262 @@
+{
+  "schemaVersion": 2,
+  "deviceId": "dev_exampleDevice01",
+  "accountBindingId": "bind_exampleAccount01",
+  "snapshotId": "snap_example0001",
+  "sequence": 42,
+  "scopesRevision": 1,
+  "generatedAt": 1792540800,
+  "uploadedAt": 1792540805,
+  "scopes": [
+    "schedule",
+    "exams",
+    "assignments"
+  ],
+  "sources": {
+    "courses": {
+      "status": "success",
+      "fetchedAt": 1792540790
+    },
+    "exams": {
+      "status": "success",
+      "fetchedAt": 1792540791
+    },
+    "homework": {
+      "status": "failed",
+      "fetchedAt": 1792530000,
+      "reason": "network"
+    },
+    "citel": {
+      "status": "skipped",
+      "fetchedAt": null,
+      "reason": "not_configured"
+    },
+    "grades": {
+      "status": "success",
+      "fetchedAt": 1792540795
+    }
+  },
+  "data": {
+    "schedule": {
+      "from": "2026-10-14",
+      "to": "2026-12-16",
+      "currentWeek": 8,
+      "academicCalendar": "cached",
+      "weeks": [
+        {
+          "week": 7,
+          "start": "2026-10-12"
+        },
+        {
+          "week": 8,
+          "start": "2026-10-19"
+        },
+        {
+          "week": 9,
+          "start": "2026-10-26"
+        },
+        {
+          "week": 10,
+          "start": "2026-11-02"
+        }
+      ],
+      "sessions": [
+        {
+          "kind": "class",
+          "title": "高等数学 A(I)",
+          "date": "2026-10-21",
+          "start": "08:00",
+          "end": "09:50",
+          "location": "思源楼 101",
+          "teacher": "示例教师甲",
+          "source": "courses"
+        },
+        {
+          "kind": "class",
+          "title": "程序设计基础",
+          "date": "2026-10-21",
+          "start": "14:00",
+          "end": "15:50",
+          "location": "机械楼 201",
+          "source": "courses"
+        },
+        {
+          "kind": "class",
+          "title": "高等数学 A(I)",
+          "date": "2026-10-23",
+          "start": "10:10",
+          "end": "12:00",
+          "location": "思源楼 101",
+          "teacher": "示例教师甲",
+          "source": "courses"
+        },
+        {
+          "kind": "class",
+          "title": "大学物理（下）",
+          "date": "2026-10-26",
+          "start": "08:00",
+          "end": "09:50",
+          "location": "思源楼 305",
+          "source": "courses"
+        },
+        {
+          "kind": "lab",
+          "title": "分光计的调节",
+          "date": "2026-10-27",
+          "start": "13:30",
+          "end": "16:30",
+          "location": "物理实验中心 3 楼",
+          "source": "physicsLab"
+        },
+        {
+          "kind": "lab",
+          "title": "演示实验：光的偏振",
+          "date": "2026-10-28",
+          "start": "18:30",
+          "end": "19:30",
+          "location": "物理实验中心 1 楼",
+          "source": "physicsDemo"
+        }
+      ]
+    },
+    "exams": {
+      "items": [
+        {
+          "course": "示例课程乙",
+          "type": "期中考试",
+          "status": "正常",
+          "raw": "2026-10-27 09:00-11:00 思源楼 202",
+          "date": "2026-10-27",
+          "start": "09:00",
+          "end": "11:00",
+          "location": "思源楼 202"
+        },
+        {
+          "course": "形势与政策",
+          "type": "随堂考试",
+          "status": "已结束",
+          "raw": "2026-10-16 14:00-15:00 思源楼 101",
+          "date": "2026-10-16",
+          "start": "14:00",
+          "end": "15:00",
+          "location": "思源楼 101"
+        },
+        {
+          "course": "线性代数",
+          "type": "期末考试",
+          "status": "待安排",
+          "raw": "时间地点待定"
+        }
+      ]
+    },
+    "assignments": {
+      "sources": [
+        {
+          "source": "course_platform",
+          "label": "课程平台",
+          "enabled": true
+        },
+        {
+          "source": "phyvlab",
+          "label": "物理在线",
+          "enabled": true
+        },
+        {
+          "source": "citel",
+          "label": "CITEL",
+          "enabled": true
+        }
+      ],
+      "items": [
+        {
+          "id": "course_platform:88002",
+          "source": "course_platform",
+          "sourceLabel": "课程平台",
+          "course": "高等数学 A(I)",
+          "title": "第 5 次作业",
+          "submitted": false,
+          "open": {
+            "date": "2026-10-11",
+            "time": "08:00",
+            "text": "2026-10-11（周日）08:00",
+            "epoch": 1791676800
+          },
+          "due": {
+            "date": "2026-10-18",
+            "time": "23:59",
+            "text": "2026-10-18（周日）23:59",
+            "epoch": 1792339140
+          },
+          "type": "作业",
+          "submittedCount": 98,
+          "totalCount": 120
+        },
+        {
+          "id": "course_platform:88003",
+          "source": "course_platform",
+          "sourceLabel": "课程平台",
+          "course": "程序设计基础",
+          "title": "实验报告 2",
+          "submitted": true,
+          "due": {
+            "date": "2026-10-21",
+            "time": "08:10",
+            "text": "2026-10-21（周三）08:10",
+            "epoch": 1792541400
+          },
+          "type": "实验报告",
+          "score": "95",
+          "submittedCount": 110,
+          "totalCount": 112
+        },
+        {
+          "id": "phyvlab:501",
+          "source": "phyvlab",
+          "sourceLabel": "物理在线",
+          "course": "大学物理（下）",
+          "title": "第 5 章在线测验",
+          "submitted": false,
+          "due": {
+            "date": "2026-10-23",
+            "time": "23:59",
+            "text": "2026-10-23（周五）23:59",
+            "epoch": 1792771140
+          },
+          "url": "https://phyvlab.example/mod/quiz/view.php?id=501"
+        },
+        {
+          "id": "citel:9265",
+          "source": "citel",
+          "sourceLabel": "CITEL",
+          "course": "数据结构",
+          "title": "实验 3 链表",
+          "submitted": false,
+          "open": {
+            "date": "2026-10-15",
+            "time": "08:00",
+            "text": "2026-10-15（周四）08:00",
+            "epoch": 1792022400
+          },
+          "due": {
+            "date": "2026-10-25",
+            "time": "24:00",
+            "text": "2026-10-25（周日）24:00",
+            "epoch": 1792944000
+          },
+          "discountFrom": {
+            "date": "2026-10-24",
+            "time": "12:00",
+            "text": "2026-10-24（周六）12:00",
+            "epoch": 1792814400
+          },
+          "discount": "0.8",
+          "allowLate": true,
+          "type": "编程题",
+          "programming": true,
+          "judgeStatus": "WA 7/10",
+          "url": "https://citel.example/mod/9265"
+        }
+      ]
+    }
+  }
+}

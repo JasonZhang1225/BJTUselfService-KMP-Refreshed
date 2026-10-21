@@ -1,16 +1,19 @@
 package team.bjtuss.bjtuselfservice.shared.agent.remote
 
-/** 指向已有远端分支中的协议文档，不依赖尚未推送的本地搭建笔记。 */
-const val REMOTE_SETUP_DOCUMENT_URL = "https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/blob/agent-remote/docs/agent/agent-remote-plan.md"
+/** 模板所在的仓库路径；合入 main 前联调可临时改成开发分支。 */
+const val REMOTE_TEMPLATE_URL = "https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/tree/main/multiplatform/remote-site-template"
 
+/** 设置页“复制提示词”的内容：发给 ChatGPT（Work 模式），由它用 Sites 搭建私人 Site 与插件。 */
 val REMOTE_SETUP_PROMPT = """
-请使用 Sites 插件，根据交大自由行的 Agent Remote 文档：
-$REMOTE_SETUP_DOCUMENT_URL
-以及同一仓库的 multiplatform/remote-site-template 模板，为我创建只有我自己可访问的 Site 架构插件，用于远程读取电脑上传的课表、考试、作业和实验缓存快照。
+请使用 Sites 插件，按交大自由行的远程模板为我搭建只有我自己能访问的私人 Site 和插件：
+$REMOTE_TEMPLATE_URL
+（先读模板的 README.md；查询约定见仓库 docs/agent/agent-query-contract.md。）
 
-请创建并发布私人 Site，使用持久数据库保存设备、快照与任务；普通查询直接读取云端快照，只有我明确要求最新数据时才让电脑执行刷新。保留逐来源同步时间、失败状态和任务进度，不要上传学校系统密码，不要将 Site 公开。
+要求：
+1. 原样使用模板最新版（0.4.0 或更高）的 src、migrations、drizzle 与 plugin/skills/bjtuss-remote/SKILL.md，用持久数据库保存设备、快照与任务；不要改写查询逻辑和日期换算。
+2. 发布为私人 Site，不要公开；不要让我上传学校系统密码。
+3. 复用 Site 自动生成的插件，提供模板定义的 11 个工具：get_status、get_homework、get_calendar、get_exams、get_grades、get_mail、request_live_query、request_refresh_all、request_citel_problem、request_mail_message、get_request_result，并附上模板里的查询 Skill；确认在 ChatGPT 的 Chat、Work 和 Codex 模式里都能调用。
+4. 如果我已经有旧版 Site，请在原 Site 上升级到最新模板（按顺序执行新增的数据库迁移）并重新发布插件，不要另建第二个。同一个 Site 要能同时连接我的电脑和手机。
 
-请复用 Site 自动生成的插件，提供 get_status、query_snapshot、request_refresh_all、request_live_query、request_citel_problem、get_request_result 六个工具和配套查询 Skill；确认插件可在 ChatGPT 的 Chat Work 和 Codex 模式中调用。
-
-完成后请给我 Site 地址，生成一个一次性配对码，并引导我完成电脑端安全连接配置。不要让我手工复制平台内部访问凭据。若私人 Site 的电脑访问尚未验证，请明确说明并先解决，不要只提供一个配对码就声称链路已通。
+完成后告诉我 Site 地址，为每台要连接的设备各生成一个一次性配对码；电脑端由你引导完成安全连接配置，手机端请给我一份可填写的“Site 访问凭据”（服务访问令牌）。电脑端不要让我手工复制平台内部访问凭据。若电脑访问私人 Site 尚未验证，请明确说明并先解决，不要只给一个配对码就说已经连通。
 """.trimIndent()

@@ -2,6 +2,8 @@ package team.bjtuss.bjtuselfservice.shared.agent.remote
 
 import java.io.File
 import java.nio.file.Files
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -100,7 +102,8 @@ class RemoteAgentControllerTest {
             mapOf("courses" to RemoteSourceState("failed", 1, "network")),
             { source -> if (source == RefreshSource.COURSES) 1_700_000_000 else null },
             Instant.fromEpochSeconds(1_792_540_800))
-        assertEquals(setOf("schedule"), content.data.keys, "未授权范围与没有数据的 mail 不出现")
+        assertEquals(setOf("schedule", "mail"), content.data.keys, "只出现已授权范围")
+        assertEquals(JsonArray(emptyList()), content.data.getValue("mail").jsonObject.getValue("items"), "没同步过邮箱时为空列表")
         assertEquals(RemoteSourceState("failed", 1_700_000_000, "network"), content.sources["courses"])
         assertEquals("not_refreshed", content.sources["mailUnread"]?.reason)
         assertNull(content.sources["grades"])

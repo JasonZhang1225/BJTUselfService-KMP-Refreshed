@@ -11,7 +11,8 @@ import kotlinx.serialization.json.JsonObject
  * 快照与任务只携带获准上云的业务数据，绝不包含学校密码、Cookie、令牌或数据库密钥。
  */
 const val REMOTE_PROTOCOL_VERSION = 1
-const val REMOTE_SNAPSHOT_SCHEMA_VERSION = 1
+/** 2：data 改为 Agent 数据集（与本机 CLI 同一结构）。 */
+const val REMOTE_SNAPSHOT_SCHEMA_VERSION = 2
 
 /** 允许上云的数据范围；成绩与邮箱默认不上传。 */
 enum class RemoteScope(val wire: String, val label: String) {
@@ -19,7 +20,7 @@ enum class RemoteScope(val wire: String, val label: String) {
     EXAMS("exams", "考试"),
     ASSIGNMENTS("assignments", "作业与实验"),
     GRADES("grades", "成绩"),
-    MAIL("mail", "邮箱未读数"),
+    MAIL("mail", "邮箱"),
     ;
 
     companion object {
@@ -33,6 +34,8 @@ object RemoteOperation {
     const val QUERY = "query"
     const val REFRESH_ALL = "refresh_all"
     const val CITEL_PROBLEM = "citel_problem"
+    /** 读取单封邮件正文（需要邮箱范围；学校会标记为已读）。 */
+    const val MAIL_MESSAGE = "mail_message"
 }
 
 object RemoteTaskStatus {
@@ -59,7 +62,32 @@ data class RemotePairRequest(
     val deviceName: String,
     val accountBindingId: String,
     val scopes: List<String>,
+    /** desktop：常驻并领取即时任务；mobile：只在刷新后上传快照（模板 0.4.0 起支持多设备）。 */
+    val deviceKind: String = RemoteDeviceKind.DESKTOP,
 )
+
+object RemoteDeviceKind {
+    const val DESKTOP = "desktop"
+    const val MOBILE = "mobile"
+}
+
+/** 支持电脑与手机同时绑定的最低 Site 模板版本；更旧的模板配对新设备会撤销其他设备。 */
+const val REMOTE_MULTI_DEVICE_TEMPLATE = "0.4.0"
+
+@Serializable
+data class RemoteHealth(val protocolVersion: Int = 0, val templateVersion: String? = null)
+
+/** 比较 `x.y.z` 形式的模板版本。 */
+fun remoteTemplateAtLeast(version: String?, minimum: String): Boolean {
+    val parts = version?.split('.')?.map { it.toIntOrNull() ?: return false } ?: return false
+    val want = minimum.split('.').map { it.toInt() }
+    for (i in 0 until maxOf(parts.size, want.size)) {
+        val a = parts.getOrElse(i) { 0 }
+        val b = want.getOrElse(i) { 0 }
+        if (a != b) return a > b
+    }
+    return true
+}
 
 @Serializable
 data class RemotePairResponse(

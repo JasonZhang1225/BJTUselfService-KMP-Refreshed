@@ -41,6 +41,7 @@ internal fun MoreWorkspace(
     platformFamily: PlatformFamily = currentPlatform().family,
     onOpenPhysicsDemo: (() -> Unit)? = null,
     onOpenAgentPlugins: (() -> Unit)? = null,
+    agentPluginTitle: String = "Agent 和 ChatGPT 插件",
 ) {
     val scroll = rememberLazyListState()
     val topClearance = LocalTopBarClearance.current
@@ -79,7 +80,7 @@ internal fun MoreWorkspace(
             }
         }
         onOpenAgentPlugins?.let { open ->
-            add(ApplicationTile("Agent 和 ChatGPT 插件", specialIcon = SpecialTileIcon.AGENT, onClick = open))
+            add(ApplicationTile(agentPluginTitle, specialIcon = SpecialTileIcon.AGENT, onClick = open))
         }
     }
     activeAccountEntry?.let { entry ->

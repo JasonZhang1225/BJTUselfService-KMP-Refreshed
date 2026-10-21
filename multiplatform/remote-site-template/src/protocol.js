@@ -1,11 +1,18 @@
+import { validateAgentQuery as validateQuery } from "./query.js";
+
 // 远程协议常量与输入校验。与 KMP 端 agent/remote/RemoteProtocol.kt 一一对应；
 // 两边共享 fixtures/ 下的脱敏样例，改字段时同时改两边并更新样例。
 
 export const PROTOCOL_VERSION = 1;
-export const SNAPSHOT_SCHEMA_VERSION = 1;
-export const TEMPLATE_VERSION = "0.2.0";
+/** 2：data 为 Agent 数据集（与电脑端 CLI 同一结构，见 src/agent-query.js）。 */
+export const SNAPSHOT_SCHEMA_VERSION = 2;
+export const TEMPLATE_VERSION = "0.4.0";
 
-/** 允许上云的数据范围。grades、mail 默认不上传，由用户在电脑端单独开启。 */
+/** 设备类型：desktop 常驻并领取即时任务；mobile 只在 App 刷新后上传快照。 */
+export const DEVICE_KINDS = Object.freeze(["desktop", "mobile"]);
+export const MAX_ACTIVE_DEVICES = 5;
+
+/** 允许上云的数据范围。grades、mail（收件箱摘要）默认不上传，由用户在电脑端单独开启。 */
 export const SCOPES = Object.freeze(["schedule", "exams", "assignments", "grades", "mail"]);
 export const DEFAULT_SCOPES = Object.freeze(["schedule", "exams", "assignments"]);
 
@@ -17,7 +24,7 @@ export const SOURCES = Object.freeze([
 export const SOURCE_STATUSES = Object.freeze(["success", "failed", "skipped", "needs_user_action"]);
 
 /** 即时任务操作白名单；不接受任意命令、路径、脚本、URL 或 SQL。 */
-export const OPERATIONS = Object.freeze(["query", "refresh_all", "citel_problem"]);
+export const OPERATIONS = Object.freeze(["query", "refresh_all", "citel_problem", "mail_message"]);
 export const TASK_STATUSES = Object.freeze(["queued", "running", "succeeded", "partial", "failed", "expired", "revoked"]);
 export const RESULT_STATUSES = Object.freeze(["succeeded", "partial", "failed"]);
 export const FRESHNESS = Object.freeze(["local", "latest"]);
@@ -51,7 +58,6 @@ export const bad = (code, message) => new ProtocolError(400, code, message);
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
 const NAME_PATTERN = /^[^\u0000-\u001f]{1,64}$/;
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export function requireObject(value, field) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw bad("bad_request", `${field} 必须是对象`);
@@ -91,7 +97,14 @@ export function validatePairRequest(body) {
     deviceName: body.deviceName,
     accountBindingId: requireId(body.accountBindingId, "accountBindingId"),
     scopes: validateScopes(body.scopes ?? DEFAULT_SCOPES),
+    deviceKind: validateDeviceKind(body.deviceKind),
   };
+}
+
+export function validateDeviceKind(kind) {
+  if (kind === undefined || kind === null) return "desktop";
+  if (!DEVICE_KINDS.includes(kind)) throw bad("bad_request", "deviceKind 无效");
+  return kind;
 }
 
 /**
@@ -136,27 +149,21 @@ export function validateTaskRequest(body) {
   if (!OPERATIONS.includes(body.operation)) throw bad("unsupported_operation", "不支持的操作");
   const idempotencyKey = requireId(body.idempotencyKey, "idempotencyKey");
   const args = requireObject(body.arguments ?? {}, "arguments");
-  const allowed = {
-    refresh_all: [],
-    query: ["freshness", "sources", "course", "date", "taskId"],
-    citel_problem: ["taskId", "includeFullText"],
-  }[body.operation];
-  for (const key of Object.keys(args)) {
-    if (!allowed.includes(key)) throw bad("bad_request", `arguments.${key} 不允许`);
-  }
+  if (body.operation === "refresh_all" && Object.keys(args).length) throw bad("bad_request", "refresh_all 不接受参数");
   if (body.operation === "query") {
+    // 即时查询的参数就是对应查询工具的参数，再加 command 与 freshness；由 agent-query.js 同一套白名单校验。
     if (!FRESHNESS.includes(args.freshness ?? "local")) throw bad("bad_request", "freshness 无效");
-    if (args.sources !== undefined) {
-      if (!Array.isArray(args.sources) || args.sources.length === 0 || args.sources.some((s) => !SOURCES.includes(s))) {
-        throw bad("bad_request", "sources 无效");
-      }
-    }
-    if (args.course !== undefined && (typeof args.course !== "string" || !NAME_PATTERN.test(args.course))) throw bad("bad_request", "course 无效");
-    if (args.date !== undefined && (typeof args.date !== "string" || !DATE_PATTERN.test(args.date))) throw bad("bad_request", "date 无效");
-    if (args.taskId !== undefined && (typeof args.taskId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(args.taskId))) throw bad("bad_request", "taskId 无效");
+    if (typeof args.command !== "string") throw bad("bad_request", "command 无效");
+    const { command, freshness, ...params } = args;
+    validateQuery(command, params);
+  }
+  if (body.operation === "mail_message") {
+    if (Object.keys(args).some((key) => key !== "messageId")) throw bad("bad_request", "mail_message 只接受 messageId");
+    if (typeof args.messageId !== "string" || !/^[A-Za-z0-9:._-]{1,128}$/.test(args.messageId)) throw bad("bad_request", "messageId 无效");
   }
   if (body.operation === "citel_problem") {
     if (typeof args.taskId !== "string" || !/^[1-9][0-9]{0,8}$/.test(args.taskId)) throw bad("bad_request", "CITEL taskId 必须为正整数模块 ID");
+    if (Object.keys(args).some((key) => !["taskId", "includeFullText"].includes(key))) throw bad("bad_request", "citel_problem 参数无效");
     if (args.includeFullText !== undefined && typeof args.includeFullText !== "boolean") throw bad("bad_request", "includeFullText 无效");
   }
   return { operation: body.operation, idempotencyKey, arguments: args };

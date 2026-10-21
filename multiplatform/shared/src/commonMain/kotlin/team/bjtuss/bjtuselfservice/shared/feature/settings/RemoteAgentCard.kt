@@ -1,20 +1,27 @@
 package team.bjtuss.bjtuselfservice.shared.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,13 +32,13 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlin.time.Instant
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.toLocalDateTime
 import team.bjtuss.bjtuselfservice.shared.agent.AGENT_TIME_ZONE
@@ -39,25 +46,26 @@ import team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteAgentController
 import team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteIntervals
 import team.bjtuss.bjtuselfservice.shared.agent.remote.RemotePhase
 import team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteScope
-import team.bjtuss.bjtuselfservice.shared.agent.remote.REMOTE_SETUP_DOCUMENT_URL
 import team.bjtuss.bjtuselfservice.shared.agent.remote.REMOTE_SETUP_PROMPT
 
 /** 只有提供了远程控制器的宿主（首版仅 Windows）才显示“远程查询”设置。 */
 val LocalRemoteAgentController = staticCompositionLocalOf<RemoteAgentController?> { null }
 
 /**
- * 应用页“Agent 和 ChatGPT 插件”：配对私人 Site、选择上云范围与周期、查看最近同步与错误、暂停或解除绑定。
+ * 应用页“Agent 和 ChatGPT 插件”的远程部分：两张卡片。
+ * - 远程查询：说明 → 设置方法（框起来的步骤，只留“复制提示词”）→ 配对表单或同步设置。
+ * 开机启动、静默启动与托盘在 [StartupSection]。
  * 默认关闭；开启前必须明确同意上云内容可被 Site 与 ChatGPT 读取。
  */
 @Composable
 internal fun RemoteAgentCard(controller: RemoteAgentController, showStatus: Boolean = true) {
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
-    val uriHandler = LocalUriHandler.current
     val config by controller.config.collectAsState()
     val status by controller.status.collectAsState()
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    var promptCopied by remember { mutableStateOf(false) }
 
     fun launchAction(action: suspend () -> Pair<String, Boolean>?) {
         if (busy) return
@@ -69,51 +77,35 @@ internal fun RemoteAgentCard(controller: RemoteAgentController, showStatus: Bool
         }
     }
 
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("远程查询", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                "通过 ChatGPT Sites 架构插件实现远程查询。电脑轮询 Site 并定时上传缓存数据快照。" +
-                    "你可在手机等其他设备的 ChatGPT（Chat Work 和 Codex 模式均可）调用插件，获取你的课表、作业等数据。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                "该功能不会上传你的学校系统密码，需要你的电脑一直开机并运行交大自由行 App 作为服务端。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text("设置方法", style = MaterialTheme.typography.labelLarge)
-            Text("1. 在 ChatGPT Work 中，发送以下内容：", style = MaterialTheme.typography.bodySmall)
-            SelectionContainer {
-                Text(REMOTE_SETUP_PROMPT, style = MaterialTheme.typography.bodySmall)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        val mobile = controller.mobile
+        SettingsSection(
+            title = if (mobile) "ChatGPT 插件" else "远程查询（ChatGPT 插件）",
+            subtitle = if (mobile) {
+                "在 ChatGPT 里查询课表、作业、考试和邮箱。每次在 App 里刷新后，把这台设备的缓存上传到你自己的私人 Site，" +
+                    "不会上传学校系统密码。手机不在后台常驻，也不执行“要最新数据”这类即时查询（那需要电脑端在线）。"
+            } else {
+                "在手机等设备的 ChatGPT 里查询课表、作业、考试和邮箱。电脑定时把本机缓存上传到你自己的私人 Site，" +
+                    "不会上传学校系统密码；电脑需要保持开机并运行交大自由行。"
+            },
+        ) {
+            SetupSteps(paired = config.paired, copied = promptCopied, mobile = mobile) {
+                clipboard.setText(AnnotatedString(REMOTE_SETUP_PROMPT))
+                promptCopied = true
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(onClick = {
-                    clipboard.setText(AnnotatedString(REMOTE_SETUP_PROMPT))
-                    message = "设置提示词已复制。" to false
-                }) { Text("复制提示词") }
-                OutlinedButton(onClick = { uriHandler.openUri(REMOTE_SETUP_DOCUMENT_URL) }) { Text("查看文档") }
-            }
-            Text("2. 拿到 Site 地址和配对码后，在本页下方填写，选择允许上云的数据，确认同意后点击“配对并开启”。" +
-                "若配对码过期，可在你的 Site 页面重新生成。", style = MaterialTheme.typography.bodySmall)
-            Text("远程同步默认关闭，配对前请由连接助手确认私人 Site 可供电脑访问。", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (!config.paired) {
-                PairingForm(busy) { url, code, scopes, consent ->
+                GroupLabel("配对")
+                PairingForm(busy, askPlatformAccess = mobile) { url, code, access, scopes, consent ->
                     launchAction {
-                        controller.pair(url, code, null, scopes, consent)?.let { it to true } ?: ("配对成功，已开始同步。" to false)
+                        controller.pair(url, code, access, scopes, consent)?.let { it to true }
+                            ?: ((if (mobile) "配对成功。之后每次刷新都会上传到 Site。" else "配对成功，已开始同步。") to false)
                     }
                 }
             } else {
                 if (showStatus) {
                     Text(remotePhaseText(status.phase), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        buildString {
-                            append("Site：${config.siteUrl}\n")
-                            append("最近上传：${formatRemoteTime(status.lastUploadAt)}　最近连接：${formatRemoteTime(status.lastSeenAt)}")
-                            if (status.activeTasks > 0) append("\n正在执行 ${status.activeTasks} 个手机请求")
-                        },
+                        "最近上传 ${formatRemoteTime(status.lastUploadAt)} · 最近连接 ${formatRemoteTime(status.lastSeenAt)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -124,18 +116,12 @@ internal fun RemoteAgentCard(controller: RemoteAgentController, showStatus: Bool
                 SwitchRow("开启远程同步", "关闭后不再上传与轮询，本机正常使用不受影响。", config.enabled) { enabled ->
                     controller.setEnabled(enabled)
                 }
-                Text("允许上云的数据", style = MaterialTheme.typography.labelLarge)
-                RemoteScope.entries.forEach { item ->
-                    val checked = item in config.scopeSet
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = checked, enabled = !busy, onCheckedChange = { on ->
-                            val next = if (on) config.scopeSet + item else config.scopeSet - item
-                            launchAction { controller.setScopes(next)?.let { it to true } }
-                        })
-                        Text(item.label + if (item in RemoteScope.DEFAULT) "" else "（默认关闭）")
-                    }
+                GroupLabel("允许上云的数据")
+                ScopeChecklist(config.scopeSet, enabled = !busy) { next ->
+                    launchAction { controller.setScopes(next)?.let { it to true } }
                 }
-                IntervalFields(config.uploadIntervalSeconds, config.pollIntervalSeconds) { upload, poll ->
+                GroupLabel("同步频率")
+                if (!mobile) IntervalFields(config.uploadIntervalSeconds, config.pollIntervalSeconds) { upload, poll ->
                     val effective = controller.setIntervals(upload, poll)
                     message = "实际生效：每 ${effective.uploadIntervalSeconds / 60} 分 ${effective.uploadIntervalSeconds % 60} 秒刷新上报，" +
                         "每 ${effective.pollIntervalSeconds} 秒检查手机请求。" to false
@@ -143,7 +129,7 @@ internal fun RemoteAgentCard(controller: RemoteAgentController, showStatus: Bool
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(onClick = { launchAction { controller.uploadNow() to false } }, enabled = !busy && config.enabled,
                         modifier = Modifier.weight(1f)) {
-                        Text(if (busy) "处理中…" else "立即同步")
+                        Text(if (busy) "处理中…" else if (mobile) "刷新并上传" else "立即同步")
                     }
                     OutlinedButton(onClick = {
                         launchAction {
@@ -153,30 +139,6 @@ internal fun RemoteAgentCard(controller: RemoteAgentController, showStatus: Bool
                     }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("解除绑定") }
                 }
             }
-            controller.host?.let { host ->
-                Text("后台运行", style = MaterialTheme.typography.labelLarge)
-                var autostart by remember(host) { mutableStateOf(false) }
-                var startupLoaded by remember(host) { mutableStateOf(false) }
-                androidx.compose.runtime.LaunchedEffect(host) {
-                    autostart = withContext(Dispatchers.IO) { host.isAutostartEnabled() }
-                    startupLoaded = true
-                }
-                SwitchRow("开机启动", if (host.autostartSupported) "默认关闭。登录 Windows 后自动启动；远程同步已开启时在后台运行。"
-                    else "安装版支持开机启动，当前运行环境无法设置。", autostart,
-                    enabled = !busy && startupLoaded && host.autostartSupported) { enabled ->
-                    launchAction {
-                        val success = withContext(Dispatchers.IO) { host.setAutostart(enabled) }
-                        autostart = withContext(Dispatchers.IO) { host.isAutostartEnabled() }
-                        if (success && autostart == enabled) null else "开机启动设置未生效，请稍后重试。" to true
-                    }
-                }
-                SwitchRow("最小化到托盘", if (host.traySupported) "开启后，最小化或点击关闭会留在托盘中后台运行。"
-                    else "当前系统不支持托盘，关闭窗口会退出应用。", config.minimizeToTray,
-                    enabled = host.traySupported && !busy, onChange = controller::setMinimizeToTray)
-                Text("可从托盘重新打开窗口；在托盘菜单选择“退出”会结束 App 并停止远程查询。" +
-                    "关闭此开关后，点击窗口关闭按钮会退出 App。", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
             message?.let { (text, error) ->
                 Text(text, style = MaterialTheme.typography.bodySmall,
                     color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -185,30 +147,124 @@ internal fun RemoteAgentCard(controller: RemoteAgentController, showStatus: Bool
     }
 }
 
+/** 一张设置卡片：标题、一句说明、内容，统一间距与字号。 */
+@Composable
+internal fun SettingsSection(title: String, subtitle: String? = null, content: @Composable ColumnScope.() -> Unit) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                subtitle?.let {
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun GroupLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(top = 4.dp))
+}
+
+/** 框起来的设置步骤：提示词不展开，只提供复制按钮。 */
+@Composable
+private fun SetupSteps(paired: Boolean, copied: Boolean, mobile: Boolean = false, onCopy: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("设置方法", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            SetupStep(1, if (mobile) "已经在电脑上搭好 Site：在 Site 页面为这台设备再生成一个配对码（Site 需为模板 0.4.0 或更高）。" +
+                "还没有 Site：复制搭建提示词发给 ChatGPT（Work 模式），由它搭建只有你能访问的私人 Site 和插件。"
+            else "复制搭建提示词，发给 ChatGPT（Work 模式）。它会用 Sites 为你搭建只有你能访问的私人 Site 和插件。") {
+                FilledTonalButton(onClick = onCopy) { Text(if (copied) "已复制" else "复制提示词") }
+            }
+            SetupStep(2, if (mobile) "把 Site 地址、配对码，以及 ChatGPT 给出的“Site 访问凭据”填到下方。配对码过期可在 Site 页面重新生成。"
+                else "ChatGPT 完成后会给出 Site 地址和一次性配对码，填到下方。配对码过期可在 Site 页面重新生成。")
+            SetupStep(3, "选择允许上云的数据，确认同意后点击“配对并开启”。")
+            if (paired) {
+                Text("本机已配对。更新 Site 模板或换新 Site 时，可再次复制提示词。",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SetupStep(number: Int, text: String, action: (@Composable () -> Unit)? = null) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(24.dp)) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(number.toString(), style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text, style = MaterialTheme.typography.bodyMedium)
+            action?.invoke()
+        }
+    }
+}
+
+@Composable
+private fun ScopeChecklist(selected: Set<RemoteScope>, enabled: Boolean = true, onChange: (Set<RemoteScope>) -> Unit) {
+    Column {
+        RemoteScope.entries.forEach { item ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = item in selected, enabled = enabled, onCheckedChange = { on ->
+                    onChange(if (on) selected + item else selected - item)
+                })
+                Column(Modifier.weight(1f)) {
+                    Text(item.label, style = MaterialTheme.typography.bodyLarge)
+                    Text(remoteScopeDetail(item), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+internal fun remoteScopeDetail(scope: RemoteScope): String = when (scope) {
+    RemoteScope.SCHEDULE -> "课表、物理实验与演示实验（前 1 周到后 8 周）"
+    RemoteScope.EXAMS -> "考试时间地点"
+    RemoteScope.ASSIGNMENTS -> "课程平台、物理在线、CITEL 的作业与截止时间"
+    RemoteScope.GRADES -> "全部成绩（默认关闭）"
+    RemoteScope.MAIL -> "收件箱最近邮件的发件人、主题与摘要；可按需读取正文（默认关闭）"
+}
+
 @Composable
 private fun PairingForm(
     busy: Boolean,
-    onPair: (String, String, Set<RemoteScope>, Boolean) -> Unit,
+    askPlatformAccess: Boolean = false,
+    onPair: (String, String, String?, Set<RemoteScope>, Boolean) -> Unit,
 ) {
     var url by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
+    var access by remember { mutableStateOf("") }
     var scopes by remember { mutableStateOf(RemoteScope.DEFAULT) }
     var consent by remember { mutableStateOf(false) }
     OutlinedTextField(url, { url = it.trim() }, label = { Text("Site 地址（https://…）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
     OutlinedTextField(code, { code = it.uppercase().take(12) }, label = { Text("配对码（在 Site 页面生成）") }, singleLine = true,
         modifier = Modifier.fillMaxWidth())
-    Text("允许上云的数据", style = MaterialTheme.typography.labelLarge)
-    RemoteScope.entries.forEach { item ->
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = item in scopes, onCheckedChange = { on -> scopes = if (on) scopes + item else scopes - item })
-            Text(item.label + if (item in RemoteScope.DEFAULT) "" else "（默认关闭）")
-        }
+    if (askPlatformAccess) {
+        // 私人 Site 在平台层只放行带服务访问凭据的机器请求；手机没有电脑那样的连接助手，只能手动填写。
+        OutlinedTextField(access, { access = it.trim() }, label = { Text("Site 访问凭据（ChatGPT 提供；没有可留空）") },
+            singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+        Text("凭据只保存在本机系统安全存储里，用于让这台设备访问你的私人 Site。", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    GroupLabel("允许上云的数据")
+    ScopeChecklist(scopes) { scopes = it }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Checkbox(checked = consent, onCheckedChange = { consent = it })
-        Text("我同意所选数据上传到我自己的 Site，并可被 Site 与 ChatGPT 读取。", style = MaterialTheme.typography.bodySmall)
+        Text("我同意所选数据上传到我自己的 Site，并可被 Site 与 ChatGPT 读取。", style = MaterialTheme.typography.bodyMedium)
     }
-    Button(onClick = { onPair(url, code, scopes, consent) }, enabled = !busy && consent && url.isNotBlank() && code.isNotBlank(),
+    Button(onClick = { onPair(url, code, access.ifBlank { null }, scopes, consent) }, enabled = !busy && consent && url.isNotBlank() && code.isNotBlank(),
         modifier = Modifier.fillMaxWidth()) {
         Text(if (busy) "正在配对…" else "配对并开启")
     }
@@ -233,10 +289,10 @@ private fun IntervalFields(uploadSeconds: Int, pollSeconds: Int, onApply: (Int, 
 }
 
 @Composable
-private fun SwitchRow(title: String, detail: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+internal fun SwitchRow(title: String, detail: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title)
+        Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = checked, onCheckedChange = onChange, enabled = enabled)

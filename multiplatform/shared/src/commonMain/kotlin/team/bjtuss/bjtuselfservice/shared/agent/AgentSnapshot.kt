@@ -1,13 +1,9 @@
 package team.bjtuss.bjtuselfservice.shared.agent
 
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.toInstant
 import kotlinx.serialization.json.Json
 import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
-import team.bjtuss.bjtuselfservice.shared.cache.SyncSource
-import team.bjtuss.bjtuselfservice.shared.cache.syncedAt
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabCacheSnapshot
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.decodePhyVlabCache
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
@@ -22,6 +18,9 @@ import team.bjtuss.bjtuselfservice.shared.feature.course.inferAcademicWeeks
 import team.bjtuss.bjtuselfservice.shared.feature.phydemo.PhysicsDemoBooking
 import team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLab
 import team.bjtuss.bjtuselfservice.shared.feature.physicslab.physicsLabWeekCount
+import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailSummary
+import team.bjtuss.bjtuselfservice.shared.sync.RefreshSource
+import team.bjtuss.bjtuselfservice.shared.sync.cachedSourceSyncTime
 
 /** 离线读取方需要的全部缓存数据。只读，不含任何凭据。 */
 data class AgentSnapshot(
@@ -43,8 +42,10 @@ data class AgentSnapshot(
     val physicsLabs: List<PhysicsLab>?,
     val physicsDemos: List<PhysicsDemoBooking>?,
     val assignmentFilters: AggregateAssignmentFilters,
-    /** 各数据源最近一次成功同步（Unix 秒）；null 表示没有记录（未同步过或旧版本 App 写的缓存）。 */
-    val syncedAt: Map<AgentDataSource, Long?> = emptyMap(),
+    /** 各数据源（RefreshSource.wire）最近一次成功同步（Unix 秒）；null 表示没有记录。只含已启用的来源。 */
+    val syncedAt: Map<String, Long?> = emptyMap(),
+    /** 收件箱最近邮件摘要（邮箱刷新时写入）；没有同步过为空。 */
+    val mailInbox: List<AgentMailItem> = emptyList(),
 ) {
     val citelEnabled: Boolean get() = preferences.isCitelEnabled
     val phyVlabEnabled: Boolean get() = preferences.isPhyVlabEnabled
@@ -92,22 +93,17 @@ fun loadAgentSnapshot(cache: CacheStore, studentId: String, today: LocalDate): A
         physicsDemos = physicsDemos,
         assignmentFilters = decodeOrNull<AggregateAssignmentFilters>(cache.metadata(studentId, "assignment.aggregate.filters"))
             ?: AggregateAssignmentFilters(),
-        syncedAt = buildMap {
-            put(AgentDataSource.COURSES, cache.syncedAt(studentId, SyncSource.COURSES))
-            put(AgentDataSource.HOMEWORK, cache.syncedAt(studentId, SyncSource.HOMEWORK))
-            put(AgentDataSource.EXAMS, cache.syncedAt(studentId, SyncSource.EXAMS))
-            put(AgentDataSource.GRADES, cache.syncedAt(studentId, SyncSource.GRADES))
-            if (preferences.isPhyVlabEnabled) {
-                put(AgentDataSource.PHYVLAB, cache.metadata(studentId, PHYVLAB_SNAPSHOT_KEY)?.let(::decodePhyVlabCache)
-                    ?.savedAtEpochMillis?.takeIf { it > 0 }?.div(1000))
+        syncedAt = RefreshSource.entries.filter { source ->
+            when (source) {
+                RefreshSource.PHYVLAB -> preferences.isPhyVlabEnabled
+                RefreshSource.CITEL -> preferences.isCitelEnabled
+                RefreshSource.PHYSICS_LAB -> physicsLabs != null
+                RefreshSource.PHYSICS_DEMO -> physicsDemos != null
+                RefreshSource.HOME -> false
+                else -> true
             }
-            if (preferences.isCitelEnabled) put(AgentDataSource.CITEL, cache.metadata(studentId, "citel.lastSync")?.toLongOrNull())
-            if (physicsDemos != null) {
-                put(AgentDataSource.PHYSICS_DEMO, cache.metadata(studentId, "phydemo.lastSync")?.let { text ->
-                    runCatching { LocalDateTime.parse(text).toInstant(AGENT_TIME_ZONE).epochSeconds }.getOrNull()
-                })
-            }
-        },
+        }.associate { it.wire to cachedSourceSyncTime(cache, studentId, it) },
+        mailInbox = loadAgentMailInbox(cache, studentId),
     )
 }
 
@@ -129,3 +125,27 @@ private inline fun <reified T> decodeOrNull(value: String?): T? =
 
 private const val PHYVLAB_SNAPSHOT_KEY = "phyvlab_snapshot_v1"
 private const val PROFILE_NAME_KEY = "profile_name"
+
+private const val MAIL_INBOX_KEY = "agent.mail.inbox"
+
+/** 邮箱刷新后把收件箱摘要写进本机加密缓存，供 CLI 与远程快照读取（不含正文和附件）。 */
+fun saveAgentMailInbox(cache: CacheStore, studentId: String, messages: List<MailSummary>) {
+    val items = messages.map { message ->
+        val time = mailTime(message.receivedAt.ifBlank { message.sentAt })
+        AgentMailItem(
+            id = message.id,
+            from = message.sender.trim(),
+            subject = message.subject.trim().ifBlank { "（无主题）" },
+            preview = message.preview.trim().take(120).ifBlank { null },
+            received = time?.second,
+            receivedDate = time?.first,
+            unread = !message.isRead,
+            hasAttachments = message.hasAttachments,
+        )
+    }
+    cache.putMetadata(studentId, MAIL_INBOX_KEY, agentDatasetJson.encodeToString(items))
+}
+
+private fun loadAgentMailInbox(cache: CacheStore, studentId: String): List<AgentMailItem> =
+    cache.metadata(studentId, MAIL_INBOX_KEY)?.takeIf(String::isNotBlank)
+        ?.let { runCatching { agentDatasetJson.decodeFromString<List<AgentMailItem>>(it) }.getOrNull() }.orEmpty()

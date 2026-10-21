@@ -25,19 +25,20 @@ internal fun AiAssistantSettingsScreen(model: SettingsScreenModel, platform: Pla
         if (platform.family == PlatformFamily.MacOS) platformAgentIntegration() else null
     }
     val remote = LocalRemoteAgentController.current
+    val startup = LocalAppStartupHost.current
     var localStatus by remember(integration) { mutableStateOf<AgentIntegrationStatus?>(null) }
     var localLoading by remember(integration) { mutableStateOf(integration != null) }
     var statusRefreshKey by remember { mutableStateOf(0) }
 
-    val settings = remember(integration, remote, model) { movableContentOf {
+    val settings = remember(integration, remote, startup, model) { movableContentOf {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         integration?.let {
             AgentAssistantCard(it, preferences.preferences.agentGradesAllowed, model::setAgentGradesAllowed,
                 showStatus = false, statusRefreshKey = statusRefreshKey,
                 onStatusChange = { status -> localStatus = status; localLoading = false })
         }
         remote?.let { RemoteAgentCard(it, showStatus = false) }
+        startup?.let { StartupSection(it, remote) }
         if (integration == null && remote == null) {
             Text("当前平台暂不提供本机 AI 接入或远程同步设置。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -45,14 +46,13 @@ internal fun AiAssistantSettingsScreen(model: SettingsScreenModel, platform: Pla
     } }
     val dashboard = remember(integration, remote) { movableContentOf {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("功能状态", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        LocalAssistantStatus(localStatus, localLoading, integration != null) {
+        Text("运行状态", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(start = 4.dp))
+        if (integration != null || !platform.isMobile) LocalAssistantStatus(localStatus, localLoading, integration != null) {
             localLoading = true
             statusRefreshKey += 1
         }
         remote?.let { RemoteAssistantStatus(it) }
-        Text("本机 AI 的成绩读取权限与 Site 上云范围分别设置。", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     } }
     BoxWithConstraints(modifier.fillMaxSize().padding(top = LocalTopBarClearance.current, bottom = LocalBottomBarClearance.current)) {
@@ -134,25 +134,25 @@ private fun RemoteAssistantStatus(controller: RemoteAgentController) {
     val config by controller.config.collectAsState()
     val status by controller.status.collectAsState()
     val uri = LocalUriHandler.current
-    StatusPanel("私人 Site 与电脑配对") {
-        Text(if (config.paired) "已配对" else "尚未配对", style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary)
-        Text(remotePhaseText(status.phase), style = MaterialTheme.typography.bodyMedium)
+    StatusPanel(if (controller.mobile) "ChatGPT 插件" else "远程查询") {
+        Text(if (!config.paired) "尚未配对" else if (controller.mobile && status.phase == RemotePhase.RUNNING) "已开启：每次刷新后上传。"
+            else remotePhaseText(status.phase), style = MaterialTheme.typography.titleSmall,
+            color = if (status.phase == RemotePhase.RUNNING) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
         if (config.paired) {
             StatusField("Site 地址", config.siteUrl.orEmpty())
             StatusField("最近连接", formatRemoteTime(status.lastSeenAt))
             StatusField("最近刷新学校数据", formatRemoteTime(status.lastRefreshAt))
             StatusField("最近上传快照", formatRemoteTime(status.lastUploadAt))
-            StatusField("下次计划同步", formatRemoteTime(status.nextUploadAt))
-            StatusField("正在执行的请求", status.activeTasks.toString())
+            if (!controller.mobile) {
+                StatusField("下次计划同步", formatRemoteTime(status.nextUploadAt))
+                StatusField("正在执行的请求", status.activeTasks.toString())
+            }
             StatusField("允许上云", RemoteScope.entries.filter { it in config.scopeSet }.joinToString("、") { it.label })
             OutlinedButton(onClick = { config.siteUrl?.let(uri::openUri) }) { Text("打开我的 Site") }
         } else {
-            Text("在左侧填写私人 Site 地址和配对码，再选择允许上云的数据。窄窗口请向下查看设置。",
+            Text("按“设置方法”搭建私人 Site 后，填写地址和配对码完成配对。",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         status.lastError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-        Text("这里显示电脑与 Site 的连接状态；聊天端插件是否可用，需在聊天中单独验证。",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

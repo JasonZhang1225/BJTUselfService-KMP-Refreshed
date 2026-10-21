@@ -53,7 +53,7 @@ class WindowsRemoteSiteLiveTest {
             pairedDevice = pair.deviceId
             println("REMOTE_PROBE_STEP: pairing")
             token = pair.deviceToken
-            val fixture = remoteJson.decodeFromString(RemoteSnapshot.serializer(), File("../remote-site-template/fixtures/snapshot-v1.json").readText())
+            val fixture = remoteJson.decodeFromString(RemoteSnapshot.serializer(), File("../remote-site-template/fixtures/snapshot-v2.json").readText())
             val snapshot = fixture.copy(deviceId = pair.deviceId, accountBindingId = pair.accountBindingId, scopesRevision = pair.scopesRevision)
             assertIs<RemoteCall.Ok<Unit>>(device.putScopes(snapshot.scopes, snapshot.scopesRevision))
             assertTrue(assertIs<RemoteCall.Ok<RemoteSnapshotAck>>(device.putSnapshot(snapshot)).value.stored)

@@ -1,7 +1,7 @@
-# Windows 本地开发与私人 Site 搭建（模板 0.2.0 / 协议 1）
+# Windows 本地开发与私人 Site 搭建（模板 0.4.0 / 协议 1 / 快照 schema 2）
 
 维护源：`multiplatform/remote-site-template/`。该目录与 Gradle 工程独立，无第三方 Node 依赖，要求 Node ≥22.5。
-当前远程 Skill 与 MCP 写法、用法快照见同目录 `remote-skill-mcp-export-20261021/`。
+MCP 工具、Skill 与本机 CLI 共用的查询参数和返回结构见同目录 `agent-query-contract.md`；工具与 Skill 的唯一维护源是模板的 `src/mcp.js` 与 `plugin/skills/bjtuss-remote/SKILL.md`，不要另存副本。
 
 ## Windows 本地开发
 
@@ -9,7 +9,7 @@
 所有示例均为虚构数据，数据库在内存中，重启重置。它不读取 App 的真实缓存、DPAPI 或学校账号。
 预览拥有者鉴权由回环开发服务器处理；此服务器不能用作线上部署入口。
 
-`plugin/` 为本地开发插件。使用目标宿主支持的本地插件导入流程选择该目录后，应能发现 6 个工具。
+`plugin/` 为本地开发插件。使用目标宿主支持的本地插件导入流程选择该目录后，应能发现 11 个工具。
 也可用 JSONL 向 `node plugin/server/stdio.mjs` 输入 `initialize`、`tools/list` 和 `tools/call` 验证。
 默认连接本地虚构预览；仅在需要受控远程调试时，在进程环境配置 `BJTU_REMOTE_SITE_URL`、
 `BJTU_REMOTE_OWNER_TOKEN`、`BJTU_REMOTE_PLATFORM_ACCESS`。凭据不能放入插件包或命令参数。
@@ -29,8 +29,8 @@ Windows 打包：在 `multiplatform/` 用 JDK 21 运行 `gradlew.bat :windowsApp
 
 ## 一句话创建入口
 
-电脑 App 的入口为 **应用 → Agent 和 ChatGPT 插件**，其中“远程查询”提供说明、文档链接和“复制提示词”。
-把提示词发送到 ChatGPT Work，要求根据 Agent Remote 文档和模板创建私人 Site、自动生成的插件与一次性配对码。
+电脑 App 的入口为 **应用 → Agent 和 ChatGPT 插件**，其中“远程查询”的“设置方法”框里只有一个“复制提示词”按钮。
+把提示词发送到 ChatGPT Work，要求按模板（README 与查询契约）创建私人 Site、自动生成的插件与一次性配对码；已有旧版 Site 的在原 Site 上升级到 0.3.0。
 搭建助手需要先验证私人 Site 的电脑访问并完成安全连接配置，不得只给出配对码就声称链路已通。
 
 拿到地址和配对码后，在同一页填写，选择允许上云的数据、确认同意，再点击“配对并开启”。
@@ -38,6 +38,12 @@ Windows 打包：在 `multiplatform/` 用 JDK 21 运行 `gradlew.bat :windowsApp
 
 同时提供干净模板包。`node scripts/package-template.mjs <源码目录外的绝对输出路径.tar.gz>`
 按明确清单生成包，不携带现有 project_id、个人地址、令牌、快照或数据库。
+
+## 手机与平板（Android / iOS）
+
+设置 → 功能开关里的“ChatGPT 插件”默认开启，应用页出现同名入口（不配对就不会上传任何数据，不想看到可以关掉）。手机不做定时上传、心跳和本地 CLI，只在每次 App 刷新完成后上传快照；
+即时查询仍由电脑执行。配对前 App 先读取 Site 的 `/api/v1/health`，模板低于 0.4.0 时拒绝配对（旧模板配对新设备会撤销电脑）。
+手机没有电脑那样的连接助手，私人 Site 的服务访问凭据需要在配对表单里手动填写，保存在 Android Keystore / Apple Keychain。
 
 ## 正式私人 Site
 
@@ -60,10 +66,13 @@ Windows 打包：在 `multiplatform/` 用 JDK 21 运行 `gradlew.bat :windowsApp
 6. 真实数据上云前由用户在电脑端确认范围。课表、考试、作业为默认范围，成绩和邮箱另行选择。
    普通查询使用云端快照；用户明确要求最新时才创建最小来源任务，结果可能排队、部分失败或要求手动登录。
 
-默认后台周期为 1800 秒刷新上传、5 秒轮询；只有开启远程同步才执行上传和轮询。开机启动默认关闭，需用户自己选择。
+默认后台周期为 1800 秒刷新上传、5 秒轮询；只有开启远程同步才执行上传和轮询。开机启动默认关闭，需用户自己选择：
+Windows 写当前用户 `Run` 启动项，出现在任务管理器“启动应用”与“设置 → 应用 → 启动”，在那里禁用后 App 内如实显示关闭；
+macOS 写 `~/Library/LaunchAgents` 登录项，出现在“系统设置 → 通用 → 登录项与扩展”。“静默启动”（默认开）只影响开机自动启动：
+Windows 只留托盘、macOS 不开窗口（点程序坞图标打开）；手动打开总是显示窗口。
 本页下方的“最小化到托盘”与上云授权独立保存，默认开启：最小化或点关闭会隐藏窗口并保留托盘，
 可从托盘重新打开；托盘菜单的“退出”结束 App 和远程服务。关闭该开关后点窗口关闭按钮会退出 App。
-系统不支持托盘时不会隐藏成无法重新打开的后台进程。开机启动在已配对并开启远程同步时后台启动，否则显示主窗口。
+系统不支持托盘时不会隐藏成无法重新打开的后台进程。
 一台活跃电脑绑定一个学校账号；切换学校账号需重新确认绑定。
 
 ### Codex 启动的调试实例与安装版存储隔离

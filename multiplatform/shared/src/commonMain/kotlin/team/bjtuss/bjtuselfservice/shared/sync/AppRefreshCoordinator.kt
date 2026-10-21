@@ -1,5 +1,9 @@
 package team.bjtuss.bjtuselfservice.shared.sync
 
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -77,6 +81,11 @@ class AppRefreshCoordinator(
     /** 当前正在刷新的来源。 */
     val running: StateFlow<Set<RefreshSource>> = runningSources.asStateFlow()
 
+    private val completedReports = MutableSharedFlow<RefreshReport>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** 每次 [refresh] 完成后的报告（只发给正在收听的一方，不回放）；手机端 ChatGPT 插件据此上传快照。 */
+    val completed: SharedFlow<RefreshReport> = completedReports.asSharedFlow()
+
     val supportedSources: Set<RefreshSource> get() = adapterBySource.keys
 
     /**
@@ -109,6 +118,7 @@ class AppRefreshCoordinator(
             }
         }
         return RefreshReport(accountScope, request.origin, startedAt, nowEpochSeconds(), results)
+            .also { if (!closed && waits.isNotEmpty()) completedReports.tryEmit(it) }
     }
 
     /** 退出登录或切换账号：取消在途刷新，此后请求一律不再执行。 */

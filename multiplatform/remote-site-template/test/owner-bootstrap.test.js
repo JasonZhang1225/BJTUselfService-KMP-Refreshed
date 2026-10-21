@@ -20,6 +20,6 @@ test("未显式开启私有部署引导时，任意身份头不能初始化拥�
   assert.equal((await site.call("GET", "/api/v1/owner/status", { headers: { "oai-authenticated-user-id": "untrusted-user" } })).status, 503);
   const list = await site.call("POST", "/mcp", { body: { jsonrpc: "2.0", id: 1, method: "tools/list" } });
   assert.equal(list.status, 200);
-  assert.equal(list.body.result.tools.length, 6);
+  assert.equal(list.body.result.tools.length, 11);
   assert.equal(JSON.stringify(list.body).includes("devices"), false);
 });

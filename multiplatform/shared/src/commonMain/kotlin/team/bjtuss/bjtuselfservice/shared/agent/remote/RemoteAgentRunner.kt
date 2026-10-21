@@ -354,21 +354,13 @@ class RemoteAgentRunner(
                 return
             }
             val previous = resultMutex.withLock { store.loadResults().firstOrNull { it.requestId == task.requestId } }
-            if (previous != null && when (task.operation) {
-                    RemoteOperation.QUERY -> runCatching { parseRemoteQuery(task.arguments, config.scopeSet) }.isFailure
-                    RemoteOperation.CITEL_PROBLEM -> RemoteScope.ASSIGNMENTS !in config.scopeSet
-                    else -> false
-                }) {
+            if (previous != null && !remoteTaskAllowed(task.operation, task.arguments, config.scopeSet)) {
                 submitWithRetry(api, task.requestId, RemoteTaskResult(leaseId, RemoteTaskStatus.FAILED,
                     error = RemoteError(RemoteErrorCode.SCOPE_DENIED, "历史结果的查询范围已撤销")))
                 return
             }
             val outcome = previous ?: taskOutcome(api, task, leaseId)
-            val scopeAllowed = when (task.operation) {
-                RemoteOperation.QUERY -> runCatching { parseRemoteQuery(task.arguments, configFlow.value.scopeSet) }.isSuccess
-                RemoteOperation.CITEL_PROBLEM -> RemoteScope.ASSIGNMENTS in configFlow.value.scopeSet
-                else -> true
-            }
+            val scopeAllowed = remoteTaskAllowed(task.operation, task.arguments, configFlow.value.scopeSet)
             if (!bindingStillCurrent(config) || (!scopeAllowed && outcome.status != RemoteTaskStatus.FAILED)) {
                 submitWithRetry(api, task.requestId, RemoteTaskResult(leaseId, RemoteTaskStatus.FAILED,
                     error = RemoteError(RemoteErrorCode.SCOPE_DENIED, "查询期间绑定或数据范围已变化")))
@@ -449,7 +441,7 @@ class RemoteAgentRunner(
                     if (uploaded == null) put("snapshotUploaded", false)
                 })
             }
-            RemoteOperation.QUERY, RemoteOperation.CITEL_PROBLEM -> withLeaseRenewal(api, task.requestId, leaseId) {
+            RemoteOperation.QUERY, RemoteOperation.CITEL_PROBLEM, RemoteOperation.MAIL_MESSAGE -> withLeaseRenewal(api, task.requestId, leaseId) {
                 val result = executor.query(task, config.scopeSet)
                     ?: return@withLeaseRenewal failed(RemoteErrorCode.UNSUPPORTED_OPERATION, "当前执行者不支持精确查询")
                 val current = configFlow.value

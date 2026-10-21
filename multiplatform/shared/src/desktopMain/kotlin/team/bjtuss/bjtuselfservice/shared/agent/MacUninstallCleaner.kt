@@ -24,6 +24,7 @@ class MacUninstallCleaner internal constructor(
     private val trash: (File) -> Boolean,
 ) : AppLocalDataCleaner {
     val supportDirectory: File get() = File(home, "Library/Application Support/BJTUselfServiceKMP")
+    private val loginItem: File get() = File(home, "Library/LaunchAgents/${team.bjtuss.bjtuselfservice.shared.system.MacLaunchAgentStartupHost.LABEL}.plist")
     private val auxiliaryDirectories get() = listOf(File(home, "Library/Caches/BJTUselfServiceKMP"), File(home, "Library/Logs/BJTUselfServiceKMP"))
 
     /** No key reads, preferences access, mkdir, lock creation or writes. */
@@ -36,6 +37,7 @@ class MacUninstallCleaner internal constructor(
         appendLine("- 删除本 App 偏好节点：$preferencesNode（保留共享 java.util.prefs plist）")
         appendLine("- 清除本 App Keychain secret bag 与全部旧服务条目（不读取内容）")
         appendLine("- 移除本 App 管理的 AI Skill、Claude 链接与启动脚本；保留同名外部文件")
+        appendLine("- 删除（若存在）开机启动登录项：${loginItem.absolutePath}")
         appendLine(if (bundle != null) "- 最后将当前 App 移到废纸篓：${bundle.absolutePath}（可恢复）" else "- 未识别当前 App 包，执行清理前会拒绝；请经 App 安装包启动器运行。")
     }
 
@@ -62,6 +64,7 @@ class MacUninstallCleaner internal constructor(
             step("移除 AI 助手") { require(integration().uninstall() is AgentInstallResult.Done) }
             step("清除应用偏好") { removePreferences() }
             step("清除 Keychain") { clearSecrets(true) }
+            step("删除开机启动登录项") { if (loginItem.isFile) require(loginItem.delete()) }
             step("删除缓存目录") { deleteLocalTree(supportDirectory) }
             auxiliaryDirectories.forEach { directory -> step("删除 ${directory.name} 目录") { deleteLocalTree(directory) } }
             if (failures.isNotEmpty()) return AgentOutput("", "部分清理失败：${failures.joinToString("、")}。App 尚未移到废纸篓，可以重试。", AgentExit.PARTIAL)

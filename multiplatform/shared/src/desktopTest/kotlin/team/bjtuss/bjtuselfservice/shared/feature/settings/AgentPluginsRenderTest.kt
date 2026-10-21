@@ -42,11 +42,18 @@ class AgentPluginsRenderTest {
                 override suspend fun snapshotContent(scopes: Set<RemoteScope>, lastStates: Map<String, RemoteSourceState>): RemoteSnapshotContent? = null
             }, scope, host = object : RemoteHostPlatform {
                 override val deviceName = "测试电脑"
-                override val autostartSupported = true
                 override val traySupported = true
-                override fun isAutostartEnabled() = false
-                override fun setAutostart(enabled: Boolean) = true
             })
+            val startup = object : AppStartupHost {
+                override val autostartSupported = true
+                override val unsupportedReason = ""
+                override val systemManageHint = "“任务管理器 → 启动应用”"
+                override val silentStartDetail = "开机启动时不弹出窗口，只在托盘中运行。"
+                override fun isAutostartEnabled() = true
+                override fun setAutostart(enabled: Boolean) = true
+                override fun isSilentStart() = true
+                override fun setSilentStart(enabled: Boolean) {}
+            }
             try {
                 for (name in listOf("apps-light", "apps-dark", "setup-light", "setup-dark", "setup-large")) {
                     val scene = ImageComposeScene(width = if (name.startsWith("apps")) 1000 else 520,
@@ -56,7 +63,10 @@ class AgentPluginsRenderTest {
                             CompositionLocalProvider(LocalRemoteAgentController provides controller) {
                                 Surface(Modifier.fillMaxSize()) {
                                     if (name.startsWith("apps")) MoreWorkspace(AppPreferences(), {}, Modifier.fillMaxSize(), onOpenAgentPlugins = {})
-                                    else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) { RemoteAgentCard(controller) }
+                                    else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                                        RemoteAgentCard(controller)
+                                        StartupSection(startup, controller)
+                                    }
                                 }
                             }
                         }

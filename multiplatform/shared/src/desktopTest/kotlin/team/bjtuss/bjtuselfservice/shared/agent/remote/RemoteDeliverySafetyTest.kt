@@ -107,7 +107,7 @@ class RemoteDeliverySafetyTest {
                 override suspend fun query(task: RemoteTask, scopes: Set<RemoteScope>) = RemoteQueryOutcome(
                     RemoteTaskStatus.SUCCEEDED, buildJsonObject { put("text", "测".repeat(90_000)) })
             }
-            val args = remoteJson.parseToJsonElement("""{"sources":["courses"],"freshness":"local"}""") as JsonObject
+            val args = remoteJson.parseToJsonElement("""{"command":"calendar","freshness":"local"}""") as JsonObject
             val task = RemoteTask("req_largeText01", "dev_delivery01", "bind_delivery01", "query", args, 1, 500,
                 "running", 1, "lease_largeText01", 220)
             f.runner(executor).handleTask(f.site, task)
@@ -119,13 +119,13 @@ class RemoteDeliverySafetyTest {
         }
     }
 
-    @Test fun scheduleScopeDoesNotExposeAssignmentCourseNamesInFilterMetadata() {
+    @Test fun scheduleScopeDoesNotExposeAssignmentCourseNames() {
         Fixture().use { f ->
             val snapshot = loadAgentSnapshot(f.cache, "20990001", LocalDate.parse("2026-10-21")).copy(
                 citelTasks = listOf(CitelTask(9265, 1, "未授权课程", "示例题", "https://citel.bjtu.edu.cn/mlsv3/", true)))
             for (scopes in listOf(setOf(RemoteScope.SCHEDULE), RemoteScope.DEFAULT)) {
                 val remote = buildRemoteSnapshotContent(snapshot, scopes, emptyMap(), { null }, Instant.parse("2026-10-21T00:00:00Z"))
-                assertFalse(remote.data.getValue("schedule").toString().contains("未授权课程"), "每个范围的筛选元数据必须独立")
+                assertFalse(remote.data.getValue("schedule").toString().contains("未授权课程"), "每个范围的数据必须独立")
             }
         }
     }

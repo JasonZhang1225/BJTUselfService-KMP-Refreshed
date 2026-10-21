@@ -14,8 +14,12 @@ export function fixture(name) {
 export function createD1(filename = ":memory:") {
   const db = new DatabaseSync(filename);
   db.exec("PRAGMA foreign_keys = ON");
+  // 与 D1/Drizzle 一样只执行尚未应用的迁移：重新打开同一数据库时不重复 ALTER。
+  db.exec("CREATE TABLE IF NOT EXISTS _test_migrations (name TEXT PRIMARY KEY)");
   for (const file of readdirSync(join(root, "migrations")).sort()) {
+    if (db.prepare("SELECT 1 FROM _test_migrations WHERE name = ?").get(file)) continue;
     db.exec(readFileSync(join(root, "migrations", file), "utf8"));
+    db.prepare("INSERT INTO _test_migrations (name) VALUES (?)").run(file);
   }
   const statement = (sql, args = []) => ({
     bind: (...next) => statement(sql, next),
@@ -71,7 +75,7 @@ export async function pairDevice(site, overrides = {}) {
 
 export function snapshotFor(device, overrides = {}) {
   return {
-    ...fixture("snapshot-v1.json"),
+    ...fixture("snapshot-v2.json"),
     deviceId: device.deviceId,
     accountBindingId: device.accountBindingId,
     ...overrides,

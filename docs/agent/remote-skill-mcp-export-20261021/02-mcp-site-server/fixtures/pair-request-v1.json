@@ -1,7 +1,0 @@
-{
-  "protocolVersion": 1,
-  "pairingCode": "ABCD2345",
-  "deviceName": "寝室 Windows（示例）",
-  "accountBindingId": "bind_exampleAccount01",
-  "scopes": ["schedule", "exams", "assignments"]
-}

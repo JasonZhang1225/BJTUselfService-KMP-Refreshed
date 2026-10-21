@@ -1,55 +1,73 @@
 package team.bjtuss.bjtuselfservice.shared.agent.remote
 
-import kotlinx.datetime.LocalDate
-import kotlinx.serialization.json.*
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import team.bjtuss.bjtuselfservice.shared.agent.AgentDatasetPart
+import team.bjtuss.bjtuselfservice.shared.agent.AgentQuery
+import team.bjtuss.bjtuselfservice.shared.agent.AgentQueryCommand
+import team.bjtuss.bjtuselfservice.shared.agent.AgentQueryException
+import team.bjtuss.bjtuselfservice.shared.agent.parseAgentQuery
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshSource
 
-/** 白名单查询 DTO；与 Site query 参数一致，不转为 shell、路径或任意 URL。 */
-data class RemoteQuery(
-    val sources: Set<RefreshSource>, val latest: Boolean = false,
-    val course: String? = null, val date: LocalDate? = null, val taskId: String? = null,
-)
+/**
+ * 即时查询（request_live_query）：参数就是对应 MCP 查询工具的参数，再加 `command` 与 `freshness`。
+ * 电脑端用与 CLI 相同的引擎在本机缓存上执行，返回结构与 get_homework 等完全一致，只是 origin 不同。
+ */
+data class RemoteLiveQuery(val query: AgentQuery, val latest: Boolean)
 
-fun parseRemoteQuery(arguments: JsonObject, scopes: Set<RemoteScope>): RemoteQuery {
-    require(arguments.keys.all { it in setOf("sources", "freshness", "course", "date", "taskId") }) { "bad_request" }
-    val names = (arguments["sources"] as? JsonArray)?.map { (it as? JsonPrimitive)?.content ?: error("bad_request") }
-        ?: error("bad_request")
-    require(names.isNotEmpty()) { "bad_request" }
-    val sources = names.map { name -> RefreshSource.entries.firstOrNull { it.wire == name } ?: error("bad_request") }.toSet()
-    val allowed = scopes.flatMap { REMOTE_SCOPE_SOURCES[it].orEmpty() }.toSet()
-    require(sources.all { it in allowed }) { "scope_denied" }
-    fun string(key: String): String? = arguments[key]?.let {
-        require(it is JsonPrimitive && it.isString) { "bad_request" }
-        it.content.also { value -> require(value.isNotBlank() && value.length <= 128) { "bad_request" } }
-    }
-    val freshness = string("freshness") ?: "local"
-    require(freshness in setOf("local", "latest")) { "bad_request" }
-    return RemoteQuery(sources, freshness == "latest", string("course"), string("date")?.let(LocalDate::parse), string("taskId"))
+/** 每个查询至少需要其中一个上云范围；calendar 用已授权的部分拼出日程。 */
+fun remoteCommandScopes(command: String): Set<RemoteScope> = when (command) {
+    AgentQueryCommand.CALENDAR -> setOf(RemoteScope.SCHEDULE, RemoteScope.EXAMS, RemoteScope.ASSIGNMENTS)
+    AgentQueryCommand.HOMEWORK -> setOf(RemoteScope.ASSIGNMENTS)
+    AgentQueryCommand.EXAMS -> setOf(RemoteScope.EXAMS)
+    AgentQueryCommand.GRADES -> setOf(RemoteScope.GRADES)
+    AgentQueryCommand.MAIL -> setOf(RemoteScope.MAIL)
+    else -> RemoteScope.entries.toSet()
 }
 
-/** 日期优先沿用 CLI 的 agendaDate/dueAgendaDate，保留午夜归日前一天的含义。 */
-fun projectRemoteQuery(data: JsonObject, query: RemoteQuery): JsonObject {
-    fun JsonObject.text(vararg keys: String): String? = keys.firstNotNullOfOrNull { (this[it] as? JsonPrimitive)?.contentOrNull }
-    fun project(value: JsonElement): JsonElement = when (value) {
-        is JsonArray -> JsonArray(value.filter { item ->
-            if (item !is JsonObject) true else {
-                val source = item.text("source")?.let { if (it in setOf("course", "course_platform")) "homework" else it }
-                val due = item.text("dueTime", "dueAt")
-                val dueDate = due?.take(10)?.let(LocalDate::parse)?.let { day ->
-                    if (due?.contains("T00:00:00+08:00") == true) kotlinx.datetime.LocalDate.fromEpochDays(day.toEpochDays() - 1) else day
-                }?.toString()
-                val date = item.text("agendaDate", "dueAgendaDate", "date", "start")?.take(10) ?: dueDate
-                (source == null || query.sources.any { it.wire == source }) &&
-                    (query.course == null || item.text("courseName", "course", "name", "title").orEmpty().contains(query.course, ignoreCase = true)) &&
-                    (query.taskId == null || item.text("id", "taskId") == query.taskId) &&
-                    (query.date == null || date == query.date.toString())
-            }
-        })
-        is JsonObject -> JsonObject(value.mapValues { project(it.value) })
-        else -> value
+fun remoteDatasetParts(scopes: Set<RemoteScope>): Set<AgentDatasetPart> = scopes.map { scope ->
+    when (scope) {
+        RemoteScope.SCHEDULE -> AgentDatasetPart.SCHEDULE
+        RemoteScope.EXAMS -> AgentDatasetPart.EXAMS
+        RemoteScope.ASSIGNMENTS -> AgentDatasetPart.ASSIGNMENTS
+        RemoteScope.GRADES -> AgentDatasetPart.GRADES
+        RemoteScope.MAIL -> AgentDatasetPart.MAIL
     }
-    val scopes = REMOTE_SCOPE_SOURCES.filterValues { sources -> sources.any { it in query.sources } }.keys
-    return JsonObject(data.filterKeys { name -> scopes.any { it.wire == name } }.mapValues { project(it.value) })
+}.toSet()
+
+/** freshness=latest 时只刷新这个查询用得到、且已授权的来源。 */
+fun remoteRefreshSources(command: String, scopes: Set<RemoteScope>): Set<RefreshSource> =
+    remoteCommandScopes(command).filter { it in scopes }.flatMap { REMOTE_SCOPE_SOURCES[it].orEmpty() }.toSet()
+
+/** 抛出 IllegalArgumentException：message 为 bad_request 或 scope_denied。 */
+fun parseRemoteLiveQuery(arguments: JsonObject, scopes: Set<RemoteScope>): RemoteLiveQuery {
+    val command = (arguments["command"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        ?.takeIf { it in AgentQueryCommand.ALL } ?: throw IllegalArgumentException("bad_request")
+    val freshness = (arguments["freshness"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: "local"
+    if (freshness !in setOf("local", "latest")) throw IllegalArgumentException("bad_request")
+    if (remoteCommandScopes(command).none { it in scopes }) throw IllegalArgumentException("scope_denied")
+    val query = try {
+        parseAgentQuery(command, JsonObject(arguments - "command" - "freshness"))
+    } catch (_: AgentQueryException) {
+        throw IllegalArgumentException("bad_request")
+    }
+    return RemoteLiveQuery(query, freshness == "latest")
+}
+
+/** 读取单封邮件正文的参数：Coremail 邮件 ID。 */
+fun parseRemoteMailMessage(arguments: JsonObject, scopes: Set<RemoteScope>): String {
+    if (RemoteScope.MAIL !in scopes) throw IllegalArgumentException("scope_denied")
+    if (arguments.keys.any { it != "messageId" }) throw IllegalArgumentException("bad_request")
+    return (arguments["messageId"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        ?.takeIf { Regex("^[A-Za-z0-9:._-]{1,128}$").matches(it) } ?: throw IllegalArgumentException("bad_request")
+}
+
+/** 任务在当前授权下是否还允许执行（领取时与提交前各查一次）。 */
+fun remoteTaskAllowed(operation: String, arguments: JsonObject, scopes: Set<RemoteScope>): Boolean = when (operation) {
+    RemoteOperation.QUERY -> runCatching { parseRemoteLiveQuery(arguments, scopes) }.isSuccess
+    RemoteOperation.CITEL_PROBLEM -> RemoteScope.ASSIGNMENTS in scopes
+    RemoteOperation.MAIL_MESSAGE -> runCatching { parseRemoteMailMessage(arguments, scopes) }.isSuccess
+    else -> true
 }
 
 data class RemoteQueryOutcome(val status: String, val result: JsonObject, val error: RemoteError? = null)

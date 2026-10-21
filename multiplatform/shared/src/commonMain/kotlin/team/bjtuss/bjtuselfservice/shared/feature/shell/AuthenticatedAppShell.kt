@@ -280,6 +280,8 @@ fun AuthenticatedAppShell(
     val mailboxMessageLoading = (mailboxState as? MailboxUiState.Ready)?.isMessageLoading == true
     val phyVlabState by phyVlabModel.state.collectAsState()
     val settingsState by settingsModel.state.collectAsState()
+    // 电脑端由宿主提供常驻控制器；手机/平板用会话自带的（只在刷新后上传）。
+    val remoteAgent = team.bjtuss.bjtuselfservice.shared.feature.settings.LocalRemoteAgentController.current ?: session.remoteAgent
     val physicsLabEnabled = settingsState.preferences.isPhysicsLabEnabled
     val citelEnabled = settingsState.preferences.isCitelEnabled
     val physicsLabFlow = remember(session) { session.physicsLabModel?.state ?: MutableStateFlow(PhysicsLabState()) }
@@ -1908,6 +1910,11 @@ fun AuthenticatedAppShell(
                     physicsDemoConfigured = physicsDemoState.configured,
                     phyVlabConfigured = phyVlabAccountState.configured,
                     onPhyVlabSettings = openPhyVlabSettings,
+                    onAgentPluginEnabled = { enabled ->
+                        settingsModel.setAgentPluginEnabled(enabled)
+                        // 关闭功能同时暂停上云同步，不在入口隐藏后继续悄悄上传。
+                        if (!enabled) remoteAgent?.setEnabled(false)
+                    },
                     physicsDemoEnabled = physicsDemoState.enabled,
                     onPhysicsDemoEnabled = { enabled -> scope.launch { session.physicsDemoModel?.setEnabled(enabled) } },
                     onPhysicsDemoSettings = {
@@ -2059,11 +2066,13 @@ fun AuthenticatedAppShell(
                 )
             }
             AiAssistantSettingsRoute -> DestinationPage(
-                title = "Agent 和 ChatGPT 插件", expanded = expanded, refreshable = false,
+                title = team.bjtuss.bjtuselfservice.shared.feature.settings.agentPluginTitle(platform), expanded = expanded, refreshable = false,
                 isRefreshing = false, showBack = true, modifier = modifier, scrollUnderTopBar = true,
             ) {
-                team.bjtuss.bjtuselfservice.shared.feature.settings.AiAssistantSettingsScreen(
-                    settingsModel, platform, Modifier.fillMaxSize())
+                CompositionLocalProvider(team.bjtuss.bjtuselfservice.shared.feature.settings.LocalRemoteAgentController provides remoteAgent) {
+                    team.bjtuss.bjtuselfservice.shared.feature.settings.AiAssistantSettingsScreen(
+                        settingsModel, platform, Modifier.fillMaxSize())
+                }
             }
             PhysicsDemoSettingsRoute -> DestinationPage(
                 title = "演示实验账号设置", expanded = expanded, refreshable = false,
@@ -2174,7 +2183,9 @@ fun AuthenticatedAppShell(
                 scrollUnderTopBar = true,
             ) {
                 MoreWorkspace(
-                    onOpenAgentPlugins = if (platform.family == PlatformFamily.MacOS || team.bjtuss.bjtuselfservice.shared.feature.settings.LocalRemoteAgentController.current != null) ({
+                    agentPluginTitle = team.bjtuss.bjtuselfservice.shared.feature.settings.agentPluginTitle(platform),
+                    onOpenAgentPlugins = if (settingsState.preferences.isAgentPluginEnabled &&
+                        (platform.family == PlatformFamily.MacOS || remoteAgent != null)) ({
                         if (useNativeSecondaryRoutes) onOpenNativeRoute(AI_ASSISTANT_SETTINGS_ROUTE_ID)
                         else backStack.add(AiAssistantSettingsRoute)
                     }) else null,

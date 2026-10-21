@@ -2,11 +2,11 @@
 // 便于在 Sites/D1 上运行，也能在本地用 node:sqlite 适配器做真实 SQL 测试。
 
 import {
-  DEFAULT_SCOPES, LIMITS, PROTOCOL_VERSION, ProtocolError, TEMPLATE_VERSION,
+  DEFAULT_SCOPES, LIMITS, MAX_ACTIVE_DEVICES, PROTOCOL_VERSION, ProtocolError, SCOPES, TEMPLATE_VERSION,
   bad, requireId, requireInt, requireObject, requireProtocol,
   validatePairRequest, validateScopes, validateSnapshot, validateTaskRequest, validateTaskResult,
 } from "./protocol.js";
-import { permittedSources, withoutGlobalFilterMetadata } from "./query.js";
+import { SCOPE_SOURCES, commandAllowed, permittedSources } from "./query.js";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const PAIR_FAILURE_WINDOW_SECONDS = 10 * 60;
@@ -51,6 +51,12 @@ function parseJson(text, fallback) {
   } catch {
     return fallback;
   }
+}
+
+/** 一组快照中最近收到的那份的序号与时间。 */
+function latestMeta(snaps) {
+  const row = [...snaps].sort((x, y) => y.row.received_at - x.row.received_at)[0].row;
+  return { snapshotId: row.snapshot_id, sequence: row.sequence, generatedAt: row.generated_at, uploadedAt: row.uploaded_at, receivedAt: row.received_at };
 }
 
 function taskView(row) {
@@ -112,7 +118,8 @@ export class RemoteService {
 
   /**
    * 设备用一次性配对码换取设备令牌（只返回这一次，Site 只存摘要）。
-   * 首版每位用户一台活跃设备：新配对会撤销旧设备及其未完成任务。
+   * 一个 Site 可同时绑定电脑和手机（最多 MAX_ACTIVE_DEVICES 台）。同名同类型的旧绑定视为同一台设备重新配对，
+   * 连同其未完成任务一起撤销；超出上限时撤销最早的绑定。
    */
   async pairDevice(body) {
     const input = validatePairRequest(body);
@@ -129,14 +136,18 @@ export class RemoteService {
     }
     const deviceId = `dev_${randomId(12)}`;
     const deviceToken = `bjtud_${randomId(32)}`;
+    const sameDevice = "SELECT device_id FROM devices WHERE revoked_at IS NULL AND device_name = ? AND device_kind = ?";
     await this.db.batch([
-      this.q("UPDATE tasks SET status = 'revoked', completed_at = ? WHERE status IN ('queued', 'running') AND device_id IN (SELECT device_id FROM devices WHERE revoked_at IS NULL)", now),
-      this.q("UPDATE devices SET revoked_at = ? WHERE revoked_at IS NULL", now),
-      this.q(`INSERT INTO devices (device_id, token_hash, device_name, account_binding_id, protocol_version, created_at, last_seen_at, scopes_json, scopes_revision)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-        deviceId, await sha256Hex(deviceToken), input.deviceName, input.accountBindingId, PROTOCOL_VERSION, now, now, JSON.stringify(input.scopes)),
+      this.q(`UPDATE tasks SET status = 'revoked', completed_at = ? WHERE status IN ('queued', 'running') AND device_id IN (${sameDevice})`,
+        now, input.deviceName, input.deviceKind),
+      this.q(`UPDATE devices SET revoked_at = ? WHERE device_id IN (${sameDevice})`, now, input.deviceName, input.deviceKind),
+      this.q(`INSERT INTO devices (device_id, token_hash, device_name, account_binding_id, protocol_version, created_at, last_seen_at, scopes_json, scopes_revision, device_kind)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+        deviceId, await sha256Hex(deviceToken), input.deviceName, input.accountBindingId, PROTOCOL_VERSION, now, now, JSON.stringify(input.scopes), input.deviceKind),
     ]);
-    return { protocolVersion: PROTOCOL_VERSION, deviceId, deviceToken, accountBindingId: input.accountBindingId, scopes: input.scopes, scopesRevision: 1, templateVersion: TEMPLATE_VERSION };
+    const overflow = (await this.activeDevices()).slice(MAX_ACTIVE_DEVICES);
+    for (const old of overflow) await this.revokeDevice(old.device_id);
+    return { protocolVersion: PROTOCOL_VERSION, deviceId, deviceToken, accountBindingId: input.accountBindingId, scopes: input.scopes, scopesRevision: 1, templateVersion: TEMPLATE_VERSION, deviceKind: input.deviceKind };
   }
 
   // ---------- 设备 ----------
@@ -269,8 +280,14 @@ export class RemoteService {
 
   // ---------- 拥有者：查询与管理 ----------
 
-  async activeDevice() {
-    return this.q("SELECT * FROM devices WHERE revoked_at IS NULL ORDER BY created_at DESC LIMIT 1").first();
+  /** 全部有效绑定，最新配对在前。 */
+  async activeDevices() {
+    return (await this.q("SELECT * FROM devices WHERE revoked_at IS NULL ORDER BY created_at DESC").all()).results ?? [];
+  }
+
+  /** 执行即时任务的电脑：最近在线的 desktop 绑定。手机不轮询，不能领取任务。 */
+  async taskDevice() {
+    return this.q("SELECT * FROM devices WHERE revoked_at IS NULL AND device_kind = 'desktop' ORDER BY COALESCE(last_seen_at, 0) DESC, created_at DESC LIMIT 1").first();
   }
 
   async queriesPaused() {
@@ -292,14 +309,11 @@ export class RemoteService {
   async createTask(body) {
     await this.ensureQueriesAllowed();
     const input = validateTaskRequest(body);
-    const device = await this.activeDevice();
-    if (!device) throw new ProtocolError(409, "no_device", "还没有绑定电脑");
+    const device = await this.taskDevice();
+    if (!device) throw new ProtocolError(409, "no_device", "还没有绑定可以执行即时查询的电脑（手机只在刷新时上传快照）");
     const scopes = parseJson(device.scopes_json, DEFAULT_SCOPES);
-    if (input.operation === "query" && (input.arguments.sources ?? []).some(s => !permittedSources(scopes).includes(s))) {
-      throw new ProtocolError(403, "scope_denied", "查询超出设备授权范围");
-    }
-    if (input.operation === "citel_problem" && !scopes.includes("assignments")) {
-      throw new ProtocolError(403, "scope_denied", "用户没有允许作业数据上云");
+    if (!taskAllowed(input.operation, input.arguments, scopes)) {
+      throw new ProtocolError(403, "scope_denied", "查询超出设备授权范围，请在电脑端“允许上云的数据”里开启");
     }
     const now = this.now();
     const requestId = `req_${randomId(12)}`;
@@ -321,30 +335,55 @@ export class RemoteService {
     requireId(requestId, "requestId");
     const row = await this.q("SELECT * FROM tasks WHERE request_id = ?", requestId).first();
     if (!row) throw new ProtocolError(404, "not_found", "任务不存在或已清理");
-    const device = await this.activeDevice();
-    if (!device || row.device_id !== device.device_id) return { ...taskView({ ...row, result_json: null }), status: "revoked" };
+    const device = (await this.activeDevices()).find((d) => d.device_id === row.device_id);
+    if (!device) return { ...taskView({ ...row, result_json: null }), status: "revoked" };
     const scopes = parseJson(device.scopes_json, []);
     const args = parseJson(row.arguments_json, {});
-    if ((row.operation === "citel_problem" && !scopes.includes("assignments")) ||
-        (row.operation === "query" && (args.sources ?? []).some(s => !permittedSources(scopes).includes(s)))) throw new ProtocolError(403, "scope_denied", "任务数据范围已撤销");
+    if (!taskAllowed(row.operation, args, scopes)) throw new ProtocolError(403, "scope_denied", "任务数据范围已撤销");
     return taskView(row);
   }
 
-  /** 最新快照：按设备当前已授权范围再过滤一遍，关闭的范围立即不可读。 */
+  /**
+   * 合并后的最新快照：每个上云范围取“该范围数据同步时间最新”的那台设备的快照（同步时间相同取生成较晚的），
+   * 并按那台设备当前授权再过滤——关闭的范围立即不可读。电脑和手机谁刚刷新过就用谁的。
+   */
   async latestSnapshot() {
     await this.ensureQueriesAllowed();
-    const device = await this.activeDevice();
-    if (!device) return { device: null, snapshot: null };
-    const row = await this.q("SELECT * FROM snapshots WHERE device_id = ?", device.device_id).first();
-    if (!row) return { device: this.deviceView(device), snapshot: null };
-    const body = parseJson(row.body_json, null);
-    const allowed = parseJson(device.scopes_json, DEFAULT_SCOPES);
-    const data = Object.fromEntries(Object.entries(body?.data ?? {}).filter(([key]) => allowed.includes(key))
-      .map(([key, value]) => [key, withoutGlobalFilterMetadata(value)]));
+    const devices = await this.activeDevices();
+    if (!devices.length) return { device: null, devices: [], snapshot: null };
+    const rows = (await this.q(`SELECT * FROM snapshots WHERE device_id IN (${devices.map(() => "?").join(",")})`,
+      ...devices.map((d) => d.device_id)).all()).results ?? [];
+    const snaps = rows.map((row) => {
+      const device = devices.find((d) => d.device_id === row.device_id);
+      return { row, device, body: parseJson(row.body_json, null), allowed: parseJson(device.scopes_json, []) };
+    }).filter((s) => s.body);
+    const union = SCOPES.filter((scope) => devices.some((d) => parseJson(d.scopes_json, []).includes(scope)));
+    const primary = (await this.taskDevice()) ?? [...devices].sort((x, y) => (y.last_seen_at ?? 0) - (x.last_seen_at ?? 0))[0];
+    const view = { ...this.deviceView(primary), scopes: union };
+    const data = {};
+    const sources = {};
+    const origins = {};
+    const used = new Set();
+    for (const scope of SCOPES) {
+      const freshness = (snap) => Math.max(0, ...SCOPE_SOURCES[scope].map((s) => snap.body.sources?.[s]?.fetchedAt ?? 0));
+      const chosen = snaps.filter((s) => s.allowed.includes(scope) && (s.body.scopes ?? []).includes(scope) && s.body.data?.[scope] !== undefined)
+        .sort((x, y) => (freshness(y) - freshness(x)) || (y.row.generated_at - x.row.generated_at))[0];
+      if (!chosen) continue;
+      data[scope] = chosen.body.data[scope];
+      origins[scope] = chosen.device.device_name;
+      used.add(chosen);
+      for (const source of SCOPE_SOURCES[scope]) {
+        const state = chosen.body.sources?.[source];
+        if (state && (sources[source] === undefined || (state.fetchedAt ?? 0) > (sources[source].fetchedAt ?? 0))) sources[source] = state;
+      }
+    }
+    if (!Object.keys(data).length) return { device: view, devices: devices.map((d) => this.deviceView(d)), snapshot: null };
     return {
-      device: this.deviceView(device),
-      snapshot: { ...body, scopes: (body?.scopes ?? []).filter((s) => allowed.includes(s)), data,
-        sources: Object.fromEntries(Object.entries(body?.sources ?? {}).filter(([s]) => permittedSources(allowed).includes(s))), receivedAt: row.received_at },
+      device: view,
+      devices: devices.map((d) => this.deviceView(d)),
+      // 顶层的序号与时间取最近收到的那份；每台设备的快照另列在 parts。
+      snapshot: { ...latestMeta([...used]), schemaVersion: 2, scopes: Object.keys(data), data, sources, origins,
+        parts: [...used].map((u) => ({ deviceId: u.device.device_id, deviceName: u.device.device_name, ...latestMeta([u]) })) },
     };
   }
 
@@ -352,6 +391,7 @@ export class RemoteService {
     return {
       deviceId: device.device_id,
       deviceName: device.device_name,
+      deviceKind: device.device_kind ?? "desktop",
       createdAt: device.created_at,
       revokedAt: device.revoked_at ?? null,
       lastSeenAt: device.last_seen_at ?? null,
@@ -361,26 +401,44 @@ export class RemoteService {
   }
 
   async status() {
-    const devices = (await this.q("SELECT * FROM devices ORDER BY created_at DESC LIMIT 10").all()).results ?? [];
-    const active = devices.find((d) => d.revoked_at == null);
-    const snapshot = active ? await this.q("SELECT snapshot_id, sequence, generated_at, uploaded_at, received_at, body_json FROM snapshots WHERE device_id = ?", active.device_id).first() : null;
+    const devices = (await this.q("SELECT * FROM devices ORDER BY created_at DESC LIMIT 20").all()).results ?? [];
+    const taskDevice = await this.taskDevice();
+    const active = devices.filter((d) => d.revoked_at == null);
+    const snapshots = active.length ? ((await this.q(`SELECT device_id, snapshot_id, sequence, generated_at, uploaded_at, received_at, body_json FROM snapshots WHERE device_id IN (${active.map(() => "?").join(",")})`,
+      ...active.map((d) => d.device_id)).all()).results ?? []) : [];
     const counts = (await this.q("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status").all()).results ?? [];
-    const latestRefresh = active ? await this.q("SELECT request_id, idempotency_key, status, created_at, completed_at, expires_at FROM tasks WHERE device_id = ? AND operation = 'refresh_all' ORDER BY created_at DESC, rowid DESC LIMIT 1", active.device_id).first() : null;
+    const latestRefresh = taskDevice ? await this.q("SELECT request_id, idempotency_key, status, created_at, completed_at, expires_at FROM tasks WHERE device_id = ? AND operation = 'refresh_all' ORDER BY created_at DESC, rowid DESC LIMIT 1", taskDevice.device_id).first() : null;
+    // 逐源同步时间：每个来源取各设备里最新的一份（只看该设备仍授权的来源）。
+    const sources = {};
+    for (const row of snapshots) {
+      const device = active.find((d) => d.device_id === row.device_id);
+      const allowed = permittedSources(parseJson(device.scopes_json, []));
+      for (const [name, state] of Object.entries(parseJson(row.body_json, {})?.sources ?? {})) {
+        if (allowed.includes(name) && (sources[name] === undefined || (state.fetchedAt ?? 0) > (sources[name].fetchedAt ?? 0))) sources[name] = state;
+      }
+    }
+    const newest = [...snapshots].sort((x, y) => y.received_at - x.received_at)[0];
     return {
       templateVersion: TEMPLATE_VERSION,
       protocolVersion: PROTOCOL_VERSION,
       serverTime: this.now(),
       queriesPaused: await this.queriesPaused(),
       devices: devices.map((d) => this.deviceView(d)),
-      snapshot: snapshot ? {
-        snapshotId: snapshot.snapshot_id,
-        sequence: snapshot.sequence,
-        generatedAt: snapshot.generated_at,
-        uploadedAt: snapshot.uploaded_at,
-        receivedAt: snapshot.received_at,
-        sources: Object.fromEntries(Object.entries(parseJson(snapshot.body_json, {})?.sources ?? {})
-          .filter(([s]) => permittedSources(parseJson(active.scopes_json, [])).includes(s))),
+      taskDeviceId: taskDevice?.device_id ?? null,
+      snapshot: newest ? {
+        snapshotId: newest.snapshot_id,
+        sequence: newest.sequence,
+        generatedAt: newest.generated_at,
+        uploadedAt: newest.uploaded_at,
+        receivedAt: newest.received_at,
+        sources,
       } : null,
+      snapshots: snapshots.map((row) => ({
+        deviceId: row.device_id,
+        deviceName: active.find((d) => d.device_id === row.device_id)?.device_name ?? null,
+        generatedAt: row.generated_at,
+        receivedAt: row.received_at,
+      })),
       tasks: Object.fromEntries(counts.map((c) => [c.status, c.n])),
       latestRefreshTask: latestRefresh ? {
         requestId: latestRefresh.request_id, idempotencyKey: latestRefresh.idempotency_key,
@@ -431,3 +489,11 @@ export class RemoteService {
 }
 
 export { bad };
+
+/** 即时任务在当前授权下是否允许（与 KMP remoteTaskAllowed 一致）。 */
+function taskAllowed(operation, args, scopes) {
+  if (operation === "query") return commandAllowed(args?.command, scopes);
+  if (operation === "citel_problem") return scopes.includes("assignments");
+  if (operation === "mail_message") return scopes.includes("mail");
+  return true;
+}
