@@ -907,3 +907,10 @@
 - 原因：HarmonyOS 4.2 / AOSP 12 录屏中多个页面入口无跳转，但校园网/校园卡弹窗仍能打开；详情 Activity 缺少会话时会立即 finish，会话桥的全局清理存在旧宿主覆盖新宿主的风险。尚不能证明这是录屏的唯一根因。
 - 验证：修复分支 `./gradlew :shared:desktopTest --no-configuration-cache`，936 项全部通过；新增 4 项会话交接测试在隔离工程通过，以旧无条件清理语义对照时 2 项保护测试失败。代码提交 c6eb350 的 Android CI 编译通过。Package run 39522324933 使用独立提交 935d5ba。
 - 未验证：未在华为真机复现或验收；未改版本号、未发 Release。PR #35 的 iOS 弹层修复仍独立待合并。
+
+## 2026-10-21 图书馆借阅功能（PR #38，`feat/library`，合并提交 cdd4978）
+
+- 改动：新增图书馆（opac.bjtu.edu.cn）借阅：数据层（SSO OAuth2 授权、回调页 `data/time/enc` 换会话、用户信息/当前借阅/历史/续借）、`LibraryModel`/`LibraryScreen`（当前/历史 tab、单本+全选批量续借确认、新应还日期与失败原因展示）、`AppSection.LIBRARY` + 应用页磁贴 + 底栏候选 + 首页到期提醒；借阅数据只存内存。附带修复：应用目录保留已加入底栏的入口；Windows 标题栏跟随系统浅/深色；`desktopApp` 的 `java.home` 兜底修复 Android Studio 同步；iOS `OfflineLayoutProbe` 补 `libraryModel`；README 按上游 `v1.8.0` 更新原工程说明。
+- 原因/决策：图书馆登录链必须跟完 `find/sso/login/bjtu/0?data&time&enc` 才写入 `SESSION` Cookie（只做到 login 会 401）；续借响应 `data.result` 在 `fail==0` 时是新应还日期、`fail>0` 时才是失败原因；底栏视为快捷方式，应用目录应始终完整。
+- 验证：本机 Windows + JDK 21 + 仓库 Gradle 9.3.1：`:androidApp:assembleDebug`、`:windowsApp:compileKotlinWindows` 成功；`:shared:desktopTest` 975 项中 5 项失败均为 macOS 专属旧测试（`DesktopAgentIntegrationTest`、`MacUninstallCleanerTest`），图书馆 36 项（协议 6、数据层 16、模型 13、真实链路 1）全过；真实账号登录/借阅/历史与续借在 Android 真机、Windows 源码运行验证通过；PR #38 CI 三项全绿（Android 37s、iOS/macOS 15m30s、windows-cli 2m7s）。首次 CI 因 iOS `OfflineLayoutProbe` 漏传 `libraryModel` 失败，补提交 `7f2dcea` 后转绿。
+- 未验证：iOS 真机 UI、macOS 端交互；未改版本号、未打 tag、未发 Release。
