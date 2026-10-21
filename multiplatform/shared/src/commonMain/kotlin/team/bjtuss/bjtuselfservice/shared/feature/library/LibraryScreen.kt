@@ -1,5 +1,6 @@
 package team.bjtuss.bjtuselfservice.shared.feature.library
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,7 +10,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -50,11 +49,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import team.bjtuss.bjtuselfservice.shared.data.library.LibraryLoan
@@ -182,53 +182,46 @@ private fun LibraryReadyContent(
     val topClearance = LocalTopBarClearance.current
     val bottomClearance = LocalBottomBarClearance.current
     val horizontal = if (expanded) 24.dp else 16.dp
-    val showActionBar = state.tab == LibraryTab.CURRENT
+    // 续借栏只在当前借阅有书时出现：空列表时全选/续借都无事可做，不再白占一条。
+    val showActionBar = state.tab == LibraryTab.CURRENT && state.loans.isNotEmpty()
+    val density = LocalDensity.current
+    var actionBarHeight by remember { mutableStateOf(0.dp) }
+    // 壳层给出的净空可能是旋转前（竖屏 34pt）的值；横屏真实 home indicator 只有 ~21pt。
+    // 取当前窗口的真实底部安全区，不超过壳层净空，避免胶囊悬得过高。
+    val liveBottomInset = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding()
+    val actionBarBottom = 10.dp + if (bottomClearance > 0.dp) minOf(bottomClearance, liveBottomInset) else 0.dp
 
-    // 横屏（iPhone 横置时可用高度只有 ~300pt）若仍把账户卡与 tab 固定在列表上方，
-    // 滚动视口会被挤成一条细缝；矮视口下改为随列表一起滚动，竖屏保持固定头部不变。
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-    val compactHeight = maxHeight < 480.dp
-    val header: @Composable () -> Unit = {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            LibraryAccountCard(
-                user = state.user!!,
-                loansTotal = state.loansTotal,
-                currentCount = state.loans.size,
-                reminder = reminder,
-                refreshing = state.refreshing || state.loading,
-                expanded = expanded,
-                onRefresh = onRefresh,
-            )
-            LibraryTabRow(tab = state.tab, onTab = onTab)
-        }
-    }
-    Column(modifier = Modifier.fillMaxSize()) {
-        // 账户摘要与 tab 固定在列表上方（壳层对本页用 staticTopBar）：切 tab、看借阅总数时
-        // 不用先滚回顶部。固定内容消费顶部留白；滚动视口从它下方开始，因此列表不再重复让位。
-        if (!compactHeight) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = horizontal, end = horizontal, top = 8.dp + topClearance),
-            ) { header() }
-        }
+    Box(modifier = Modifier.fillMaxSize()) {
+        // 账户摘要与 tab 作为列表首项随内容滚动：内容可以滚进 iOS 原生玻璃顶栏后面，
+        // 横屏矮视口也不会被固定头部挤成一条细缝。
         TopScrollLazyColumn(
             state = listState,
-            modifier = Modifier.weight(1f).fillMaxWidth().desktopTouchScroll(listState),
+            modifier = Modifier.fillMaxSize().desktopTouchScroll(listState),
             contentPadding = PaddingValues(
                 start = horizontal,
                 end = horizontal,
-                top = if (compactHeight) 8.dp + topClearance else 10.dp,
-                // 续借栏在列表下方时已由它消费底部安全区，列表末尾不再重复叠加。
-                bottom = if (showActionBar) 16.dp else 24.dp + bottomClearance,
+                top = 8.dp + topClearance,
+                // 续借胶囊浮在列表上方：末尾让开胶囊本身与它下方的安全区。
+                bottom = if (showActionBar) actionBarHeight + actionBarBottom + 16.dp else 24.dp + bottomClearance,
             ),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            if (compactHeight) {
-                item(key = "library-header") { header() }
+            item(key = "library-header") {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    LibraryAccountCard(
+                        user = state.user!!,
+                        loansTotal = state.loansTotal,
+                        currentCount = state.loans.size,
+                        reminder = reminder,
+                        refreshing = state.refreshing || state.loading,
+                        expanded = expanded,
+                        onRefresh = onRefresh,
+                    )
+                    LibraryTabRow(tab = state.tab, onTab = onTab)
+                }
             }
             // 已有数据时刷新失败只做页内提示条，不清空列表；续借结果对话框打开时不重复亮红条。
             if (state.failure != null && state.renewResult == null) {
@@ -260,12 +253,18 @@ private fun LibraryReadyContent(
         if (showActionBar) {
             LibraryRenewBar(
                 state = state,
-                bottomClearance = bottomClearance,
                 onToggleAll = onSelectAll,
                 onRenew = onRenewSelected,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    // 横屏刘海侧：胶囊避开水平安全区。
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                    .padding(start = horizontal, end = horizontal, bottom = actionBarBottom)
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .onSizeChanged { size -> actionBarHeight = with(density) { size.height.toDp() } },
             )
         }
-    }
     }
 }
 
@@ -577,56 +576,52 @@ private fun LibraryHistoryCard(loan: LibraryLoan) {
     }
 }
 
+/**
+ * 续借操作条：浮在列表上方的胶囊，内容在它后面继续滚动，不再画一整条铺底的 Material 底栏，
+ * 也不在底部安全区留实心空带。
+ */
 @Composable
 private fun LibraryRenewBar(
     state: LibraryUiState,
-    bottomClearance: Dp,
     onToggleAll: () -> Unit,
     onRenew: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            tonalElevation = 3.dp,
-            shadowElevation = 6.dp,
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(percent = 50),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        shadowElevation = 8.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // 横屏刘海侧：按钮避开水平安全区，与上方内容对齐；背景仍铺满全宽。
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                    .padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Checkbox(
-                    checked = state.allVisibleSelected,
-                    onCheckedChange = { onToggleAll() },
-                    enabled = state.loans.isNotEmpty() && !state.renewing,
-                    modifier = Modifier.semantics { contentDescription = "全选当前借阅" },
-                )
-                Text("全选", style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.weight(1f))
-                Button(onClick = onRenew, enabled = state.canRenew) {
-                    if (state.renewing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = LocalContentColor.current,
-                            strokeWidth = 2.dp,
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("正在续借…")
-                    } else {
-                        Text("续借(${state.selectedLoanIds.size})")
-                    }
+            Checkbox(
+                checked = state.allVisibleSelected,
+                onCheckedChange = { onToggleAll() },
+                enabled = !state.renewing,
+                modifier = Modifier.semantics { contentDescription = "全选当前借阅" },
+            )
+            Text("全选", style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.weight(1f))
+            Button(onClick = onRenew, enabled = state.canRenew) {
+                if (state.renewing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = LocalContentColor.current,
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("正在续借…")
+                } else {
+                    Text("续借(${state.selectedLoanIds.size})")
                 }
             }
         }
-        // 底栏净空只留透明空位，不绘制占位条，避免盖住 iOS 原生玻璃底栏。
-        // 壳层给出的净空可能是旋转前（竖屏 34pt）或宿主上报的较大值；横屏真实 home indicator
-        // 只有 ~21pt。取当前窗口的真实底部安全区，不超过壳层净空，避免底部多出一截空带。
-        val liveBottomInset = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding()
-        val barBottom = if (bottomClearance > 0.dp) minOf(bottomClearance, maxOf(liveBottomInset, 0.dp)) else 0.dp
-        if (barBottom > 0.dp) Spacer(Modifier.height(barBottom))
     }
 }
 

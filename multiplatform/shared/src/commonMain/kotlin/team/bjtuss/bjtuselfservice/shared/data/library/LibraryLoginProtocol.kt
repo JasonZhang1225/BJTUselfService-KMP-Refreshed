@@ -165,8 +165,7 @@ class LibraryLoginProtocol(
         // 浏览器此时会跳到 firstReferer 完成收尾：这一步才会下发 API 鉴权用的 SESSION Cookie
         //（只做 /OAuth2/bjtu/login 时 /find/* 会全部 401，已实测）。失败按网络失败处理，
         // 让 repository 的“会话过期重登一次”策略再试一轮。
-        val finishUrl = callback.firstReferer?.takeIf { it.startsWith(LibraryEndpoints.ORIGIN) }
-            ?: LibraryEndpoints.LOGIN_REFER
+        val finishUrl = libraryFinishUrl(callback.firstReferer)
         val finished = followAllowed(
             finishUrl + (if ('?' in finishUrl) "&" else "?") +
                 "data=" + callback.data.encodeURLParameter() +
@@ -257,7 +256,8 @@ class LibraryLoginProtocol(
 
     /** 逐跳跟随，只允许 SSO 与图书馆主机的 HTTPS 443，避免被登录链带去任意站点。 */
     private suspend fun followAllowed(url: String, maxHops: Int = 10): SchoolHttpResponse? {
-        var current = url
+        // 起始地址同样要过白名单：调用方传入的地址可能来自页面内容（如回调页的 firstReferer）。
+        var current = resolveAllowed(url, url) ?: return null
         var hops = 0
         while (hops < maxHops) {
             hops += 1
@@ -299,4 +299,20 @@ class LibraryLoginProtocol(
         if (target.host !in ALLOWED_HOSTS) return null
         return target.toString()
     }
+}
+
+/**
+ * 回调页 `firstReferer` 来自页面内容，只接受图书馆主机本身（HTTPS、默认端口、主机名精确相等）。
+ * 前缀判断会放过 `https://opac.bjtu.edu.cn.attacker.example/...`，进而把一次性的
+ * data/time/enc 带去别的主机；不合规时回退到固定的收尾地址。
+ */
+internal fun libraryFinishUrl(firstReferer: String?): String {
+    val candidate = firstReferer?.trim()?.takeIf { it.isNotEmpty() && it.none(Char::isISOControl) }
+        ?: return LibraryEndpoints.LOGIN_REFER
+    val parsed = runCatching { Url(candidate) }.getOrNull() ?: return LibraryEndpoints.LOGIN_REFER
+    val trusted = parsed.protocol.name == "https" &&
+        parsed.host == Url(LibraryEndpoints.ORIGIN).host &&
+        (parsed.specifiedPort == 0 || parsed.specifiedPort == 443) &&
+        parsed.user == null && parsed.password == null
+    return if (trusted) parsed.toString() else LibraryEndpoints.LOGIN_REFER
 }

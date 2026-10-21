@@ -1819,8 +1819,8 @@ fun AuthenticatedAppShell(
                 isRefreshing = libraryState.loading || libraryState.refreshing,
                 showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
-                // 账户摘要与 tab 固定在列表上方，页内不做顶栏 underlap。
-                staticTopBar = true,
+                // 账户摘要与 tab 随列表滚动，内容滚进原生玻璃顶栏后面（与考试/作业页一致）。
+                scrollUnderTopBar = true,
                 idleStatusText = when {
                     libraryState.failure != null -> "同步失败"
                     libraryState.lastSyncEpochSeconds != null -> "已同步"

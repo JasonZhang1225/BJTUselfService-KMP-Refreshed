@@ -81,4 +81,28 @@ class LibraryLoginProtocolTest {
         val parsed = parseLibraryCallback(callbackHtml(firstReferer = "")) ?: error("expected callback params")
         assertNull(parsed.firstReferer)
     }
+
+    @Test
+    fun finishUrlKeepsLibraryHostReferer() {
+        assertEquals(
+            "https://opac.bjtu.edu.cn/find/sso/login/bjtu/0",
+            libraryFinishUrl("https://opac.bjtu.edu.cn/find/sso/login/bjtu/0"),
+        )
+    }
+
+    @Test
+    fun finishUrlRejectsLookalikeAndForeignHosts() {
+        listOf(
+            "https://opac.bjtu.edu.cn.attacker.example/find/sso/login/bjtu/0",
+            "https://opac.bjtu.edu.cn@attacker.example/find",
+            "http://opac.bjtu.edu.cn/find/sso/login/bjtu/0",
+            "https://opac.bjtu.edu.cn:8443/find/sso/login/bjtu/0",
+            "https://attacker.example/?u=https://opac.bjtu.edu.cn",
+            "/find/sso/login/bjtu/0",
+            "",
+            null,
+        ).forEach { referer ->
+            assertEquals(LibraryEndpoints.LOGIN_REFER, libraryFinishUrl(referer), "referer=$referer")
+        }
+    }
 }

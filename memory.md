@@ -1,8 +1,8 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-21。
-> 当前分支：`feat/library`（PR [#38](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/38)，已推送、CI 运行中，待用户手动合并；基于 `main@f454d3a`，该提交已包含 PR #35 合并）。
-> KMP 源码版本：`1.8.5-EmergencyFix2` / Build 40；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。`history_full.md` 尚无 EmergencyFix2 发版条目。
+> 当前分支：`claude/amazing-mccarthy-sfljuw`（基于 `feat/library@4238374`，即 PR [#40](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/40) 头部；PR #38 已关闭，由 #40 重新合入 main，待用户合并）。
+> KMP 源码版本：`1.8.6-Alpha` / Build 41（PR #40 内已改版本号，尚未发版）；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。`history_full.md` 尚无 EmergencyFix2 发版条目。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
 > 认证现状（2026-10-20，PR #29/#30 已纳入 main）：MIS 走统一身份认证 sso.bjtu.edu.cn（SM2 加密密码、默认免验证码）；物理在线用独立账号密码（设置 → 物理在线账号设置）；智慧教学仍卡在学校的旧 CAS 跳转。
@@ -11,7 +11,13 @@
 
 ## 进行中
 
-- 图书馆借阅功能（PR [#38](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/38)，待合并）：新增 `data/library/`（模型、endpoints、SSO OAuth2 登录协议、remote、repository）、`feature/library/`（LibraryModel、LibraryScreen）、`AppSection.LIBRARY` + 应用页磁贴 + 底栏自定义候选 + 首页到期提醒卡片；续借支持单本/全选批量并带确认弹窗，不做离线缓存。
+- 图书馆 iOS 顶/底栏与 PR #40 评审修复（`claude/amazing-mccarthy-sfljuw`，2026-10-21）：
+  - 顶栏：图书馆页由 `staticTopBar` 改为 `scrollUnderTopBar`，账户卡与 tab 作为列表首项随内容滚动，内容滚进 iOS 原生液态玻璃顶栏（与考试/作业页一致），横屏不再有固定头部挤压和顶部实心空带。
+  - 续借栏：整条 Material 底栏 + 底部透明净空（横屏露出黑条）改为浮在列表上方的胶囊（最宽 560dp、避开水平安全区，底边 = 真实底部安全区 + 10dp），列表末尾按胶囊实测高度让位；当前借阅为空时不显示。
+  - 评审：`firstReferer` 改为精确校验 https + `opac.bjtu.edu.cn` + 默认端口（新增 `libraryFinishUrl` 及 2 个测试），`followAllowed` 起始地址也过白名单；`LibraryLoginProtocol`/`LibraryModel` 以学号为 remember key，换账号不沿用旧借阅与 loanId。
+  - 本机 Gradle：Maven Central 对容器出口 429，已在用户级 `~/.gradle/init.d/maven-central-mirror.gradle.kts` 优先走 Google 的 Maven Central 镜像（不在仓库内）。
+  - 未验证：iOS 模拟器/真机实际观感（本环境为 Linux，无 Xcode）；横屏顶栏高度若仍明显高于其他页，需用 `--layout-metrics` 采宿主上报的 `top=`。
+- 图书馆借阅功能（PR [#40](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/40)，待合并；#38 已关闭）：新增 `data/library/`（模型、endpoints、SSO OAuth2 登录协议、remote、repository）、`feature/library/`（LibraryModel、LibraryScreen）、`AppSection.LIBRARY` + 应用页磁贴 + 底栏自定义候选 + 首页到期提醒卡片；续借支持单本/全选批量并带确认弹窗，不做离线缓存。
   - 协议证据（2026-10-21 真实抓包）：SSO 会话有效时授权页直接回 `opac.bjtu.edu.cn/OAuth2/bjtu/index?code=...`；回调页 HTML 内一次性 `data/time/enc`；`/OAuth2/bjtu/login` 返回 `{"status":true}` 并写 opac Cookie（`p_auth_token` 等）；`/find/*` 只靠 Cookie 鉴权（不带 SPA 动态 JWT 头也能读取，已实测）。
   - 已验证（本机 Windows，JDK 21，仓库 Gradle 9.3.1）：`:androidApp:assembleDebug`、`:windowsApp:compileKotlinWindows` BUILD SUCCESSFUL；`:shared:desktopTest` 975 项中 5 项失败均为 macOS 专属旧测试（`DesktopAgentIntegrationTest` 3、`MacUninstallCleanerTest` 2，Windows 上本来就会失败），图书馆 36 项（协议 6、数据层 16、模型 13、真实链路 1）全部通过。IDE 自动改的 Gradle 9.8.0 wrapper / daemon JVM / tooling.parallel / `.idea` 已全部还原，wrapper 保持 9.3.1 并保留 SHA256 校验。
   - 本机构建准备：生成了仅测试用 keystore `~/.android/bjtu-kmp-upload.keystore`（alias `bjtu-kmp-local`，口令属本机环境信息，未记录在仓库），`multiplatform/local.properties` 写入 sdk.dir；对应本地签名口令写在用户级 `~/.gradle/gradle.properties`（均被 gitignore/仓库外，不提交）。AGP 已自动安装 SDK Platform 36。

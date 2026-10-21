@@ -293,13 +293,14 @@ internal fun rememberAuthenticatedSession(
     }
     // 图书馆（opac）登录不在 CAS/MIS 链路上：它走独立的 OAuth2 授权页，
     // 但复用同一个统一身份认证会话与内存凭据。数据只保存在内存，不写缓存。
-    val libraryLoginProtocol = remember(transport) {
+    // 以学号为 key 按账号隔离：换账号后不沿用上一账号的借阅快照、自动同步标记与 loanId。
+    val libraryLoginProtocol = remember(profile.studentId, transport) {
         LibraryLoginProtocol(
             transport = transport,
             credentialsProvider = { latestCredentials.value.takeIf(Credentials::isValid) },
         )
     }
-    val libraryModel = remember(transport, libraryLoginProtocol) {
+    val libraryModel = remember(profile.studentId, transport, libraryLoginProtocol) {
         LibraryModel(
             repository = DefaultLibraryRepository(
                 remote = SchoolLibraryRemoteDataSource(transport),
