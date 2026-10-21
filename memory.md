@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
-> 最后更新：2026-10-20。
-> 当前分支：`main`（= mine/main@909aa24b，PR #31/#32/#33 均已合入）；已整合原 `feat/ai-agent-dev`、`fix/mis-sso-auth` 与原 main 的全部历史；本地和 mine 只保留 `main` 与 `claude/宣传图制作`（2026-10-20 已删除 #31–#33 的已合并分支）。分支清理备份见 `.artifacts/branch-cleanup-20261020/before-cleanup.bundle`。
+> 最后更新：2026-10-21。
+> 当前分支：`fix/ios-sheet-dismissal`（基于 mine/main@c94d18a，尚未合入；PR #31/#32/#33 均已合入）；已整合原 `feat/ai-agent-dev`、`fix/mis-sso-auth` 与原 main 的全部历史；本地和 mine 只保留 `main` 与 `claude/宣传图制作`（2026-10-20 已删除 #31–#33 的已合并分支）。分支清理备份见 `.artifacts/branch-cleanup-20261020/before-cleanup.bundle`。
 > KMP 源码版本：`1.8.5-EmergencyFix2` / Build 40；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。`history_full.md` 尚无 EmergencyFix2 发版条目。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
@@ -11,7 +11,10 @@
 
 ## 进行中
 
-- 暂无；后续按需从最新 `main` 新建功能或修复分支。
+- iOS 课程详情关闭后卡片无响应（`fix/ios-sheet-dismissal`）：用户确认首次详情通过右上角关闭按钮收起；6 秒录屏中课程卡片仍有按压反馈，课表/周数弹层可正常开关，未证明主线程整体卡死。原生弹层宿主被所有 `AppleSheet` 共用，内容、关闭回调和动画状态存在串用风险。
+  - 修复：每个 `AppleSheet` 组合通过 `createPresentation()` 持有独立 iOS 呈现对象；旧组合的释放/关闭动画不能清空后一个弹层。原生 dismissal delegate 绑定具体控制器，忽略过期回调，并在发起 present 前绑定 delegate。
+  - 验证：真实 `AppleSheet` + 可延迟关闭完成的测试宿主，3 项离屏集成测试通过（重叠弹层独立释放、关闭后快速重开、重组保留呈现对象并更新回调）；`./gradlew :shared:desktopTest --no-configuration-cache` 完整共享测试 935 项全部通过（含新增 3 项）。Linux 无 Xcode/iOS 模拟器，原生编译与 iOS 测试交给 PR CI，未做 iPhone 实机复测，未修改版本号或发版。
+- Android 导航会话交接修复仍在独立 PR #34（`fix/android-native-navigation-session`）；本分支从 main 新建，不包含该 PR 的代码。
 
 ## 当前痛点
 
