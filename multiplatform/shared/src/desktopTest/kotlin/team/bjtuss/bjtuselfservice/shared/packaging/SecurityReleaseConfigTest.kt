@@ -178,9 +178,12 @@ class SecurityReleaseConfigTest {
     }
 
     @Test
-    fun iosDeploymentTargetIsAtLeast16() {
-        val config = root.resolve("multiplatform/iosApp/Configuration/Config.xcconfig").readText()
-        assertTrue("IPHONEOS_DEPLOYMENT_TARGET = 16.0" in config)
+    fun iosDeploymentTargetIs18() {
+        // 实时活动的手表 small 视图与分钟计时需要 iOS 18；宿主与小组件扩展必须一致。
+        listOf("Config.xcconfig", "Widget.xcconfig").forEach { name ->
+            val config = root.resolve("multiplatform/iosApp/Configuration/$name").readText()
+            assertTrue("IPHONEOS_DEPLOYMENT_TARGET = 18.0" in config, name)
+        }
     }
 }
 

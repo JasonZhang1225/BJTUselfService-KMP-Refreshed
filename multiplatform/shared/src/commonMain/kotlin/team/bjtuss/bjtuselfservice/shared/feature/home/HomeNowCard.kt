@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -75,9 +76,12 @@ internal fun HomeNowSection(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         sessions.forEach { session ->
+            val category = courseColorCategory(session.course, schedule.courseTypesByCode)
+            val liveTarget = remember(session, today, category) { session.liveActivityTarget(today, category) }
             HomeNowCard(
                 session,
-                accent = courseCategoryAccent(courseColorCategory(session.course, schedule.courseTypesByCode)),
+                accent = courseCategoryAccent(category),
+                liveTarget = liveTarget,
                 onClick = { selected = session.course },
             )
         }
@@ -101,6 +105,8 @@ internal fun HomeNowCard(
     /** 课程类别强调色（CourseCategoryPalette），与课程表、小组件一致。 */
     accent: Color,
     onClick: () -> Unit,
+    /** iOS 实时活动（灵动岛）的 Live 按钮；其余平台不显示。 */
+    liveTarget: LiveActivityTarget? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val status = when {
@@ -143,21 +149,13 @@ internal fun HomeNowCard(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Top,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        title,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    StatusChip(status, session.ongoing, accent)
-                }
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 if (place.isNotBlank()) {
                     Text(
                         place,
@@ -180,14 +178,23 @@ internal fun HomeNowCard(
                     )
                 }
             }
+            // 状态与 Live 竖排同宽，左侧整列留给课名、地点和教师。
+            Column(
+                modifier = Modifier.width(IntrinsicSize.Max),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                StatusChip(status, session.ongoing, accent, Modifier.fillMaxWidth())
+                liveTarget?.let { LiveActivityButton(it, Modifier.fillMaxWidth()) }
+            }
         }
     }
 }
 
 @Composable
-private fun StatusChip(label: String, ongoing: Boolean, accent: Color) {
+private fun StatusChip(label: String, ongoing: Boolean, accent: Color, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
     Surface(
+        modifier = modifier,
         shape = RoundedCornerShape(999.dp),
         color = if (ongoing) accent.copy(alpha = 0.16f) else scheme.surfaceVariant,
         contentColor = if (ongoing) accent else scheme.onSurfaceVariant,
@@ -197,6 +204,7 @@ private fun StatusChip(label: String, ongoing: Boolean, accent: Color) {
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
             maxLines = 1,
         )
     }
