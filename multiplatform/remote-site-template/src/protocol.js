@@ -6,7 +6,11 @@ import { validateAgentQuery as validateQuery } from "./query.js";
 export const PROTOCOL_VERSION = 1;
 /** 2：data 为 Agent 数据集（与电脑端 CLI 同一结构，见 src/agent-query.js）。 */
 export const SNAPSHOT_SCHEMA_VERSION = 2;
-export const TEMPLATE_VERSION = "0.3.0";
+export const TEMPLATE_VERSION = "0.4.0";
+
+/** 设备类型：desktop 常驻并领取即时任务；mobile 只在 App 刷新后上传快照。 */
+export const DEVICE_KINDS = Object.freeze(["desktop", "mobile"]);
+export const MAX_ACTIVE_DEVICES = 5;
 
 /** 允许上云的数据范围。grades、mail（收件箱摘要）默认不上传，由用户在电脑端单独开启。 */
 export const SCOPES = Object.freeze(["schedule", "exams", "assignments", "grades", "mail"]);
@@ -93,7 +97,14 @@ export function validatePairRequest(body) {
     deviceName: body.deviceName,
     accountBindingId: requireId(body.accountBindingId, "accountBindingId"),
     scopes: validateScopes(body.scopes ?? DEFAULT_SCOPES),
+    deviceKind: validateDeviceKind(body.deviceKind),
   };
+}
+
+export function validateDeviceKind(kind) {
+  if (kind === undefined || kind === null) return "desktop";
+  if (!DEVICE_KINDS.includes(kind)) throw bad("bad_request", "deviceKind 无效");
+  return kind;
 }
 
 /**

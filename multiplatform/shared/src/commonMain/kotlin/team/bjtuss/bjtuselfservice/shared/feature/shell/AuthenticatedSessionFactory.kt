@@ -69,9 +69,17 @@ internal fun rememberAuthenticatedSession(
             refreshDispatcher = Dispatchers.Main,
         )
     }
+    // 手机/平板的 ChatGPT 插件：不常驻、不轮询，只在 App 每次刷新后上传快照。
+    val sessionHolder = remember(graph) { MobileSessionHolder() }
+    val mobileRemote = remember(graph) {
+        createMobileRemoteAgent(platform, cacheStore, securityCoordinator, graph.refreshCoordinator, sessionHolder)
+    }
     // 退出登录、切换账号或宿主销毁：取消旧账号的在途刷新，结果不会写进新账号缓存。
     DisposableEffect(graph) {
-        onDispose { graph.close() }
+        onDispose {
+            mobileRemote?.close()
+            graph.close()
+        }
     }
     val session = remember(graph, profile, appPreferences, coursewareDirectoryGateway, systemCalendarGateway) {
         AuthenticatedSession(
@@ -105,7 +113,8 @@ internal fun rememberAuthenticatedSession(
                 loginProtocol.checkSession() is SessionProbeResult.Active
             },
             refreshCoordinator = graph.refreshCoordinator,
-        )
+            remoteAgent = mobileRemote?.controller,
+        ).also { sessionHolder.session = it }
     }
     // 登录完成只更新可观察状态，不换会话实例：M17 原生壳按会话实例装配一级入口，
     // 换实例等于重建整条玻璃 TabBar——各 tab 的返回栈被丢弃、所有 Compose 宿主重来。

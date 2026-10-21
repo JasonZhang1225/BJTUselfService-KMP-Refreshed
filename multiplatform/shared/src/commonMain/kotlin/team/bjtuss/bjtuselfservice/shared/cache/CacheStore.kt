@@ -44,7 +44,10 @@ data class AppPreferences(
     val staggeredSecondSlot: Boolean = true,
     /** 是否允许本机 AI Agent 命令行读取成绩（默认否，其余数据由“AI 助手”安装后即可读）。 */
     val agentGradesAllowed: Boolean = false,
+    /** “Agent 和 ChatGPT 插件”（手机端为“ChatGPT 插件”）功能开关；null 时电脑端默认开、手机端默认关。 */
+    val agentPluginEnabled: Boolean? = null,
 ) {
+    fun isAgentPluginEnabled(mobile: Boolean): Boolean = agentPluginEnabled ?: !mobile
     val isPhysicsLabEnabled: Boolean get() = physicsLabEnabled == true
     /** 1.8.3 的三个必看弹窗已合并为一个；三项都确认过的用户不再看到合并弹窗。 */
     val release183GuidePending: Boolean
@@ -406,6 +409,7 @@ class CacheStore(
         aggregateAssignments = setting(SettingKey.AGGREGATE_ASSIGNMENTS)?.toBooleanStrictOrNull() ?: true,
         staggeredSecondSlot = booleanSetting(SettingKey.STAGGERED_SECOND_SLOT, true),
         agentGradesAllowed = booleanSetting(SettingKey.AGENT_GRADES_ALLOWED, false),
+        agentPluginEnabled = setting(SettingKey.AGENT_PLUGIN_ENABLED)?.toBooleanStrictOrNull(),
         autoSyncPhyVlab = booleanSetting(SettingKey.AUTO_SYNC_PHYVLAB, true),
         currentWeek = setting(SettingKey.CURRENT_WEEK)?.toIntOrNull()?.coerceIn(0, 56) ?: 0,
         checkUpdate = booleanSetting(SettingKey.CHECK_UPDATE, true),
@@ -433,6 +437,7 @@ class CacheStore(
             putSetting(SettingKey.AGGREGATE_ASSIGNMENTS, preferences.aggregateAssignments.toString())
             putSetting(SettingKey.STAGGERED_SECOND_SLOT, preferences.staggeredSecondSlot.toString())
             putSetting(SettingKey.AGENT_GRADES_ALLOWED, preferences.agentGradesAllowed.toString())
+            preferences.agentPluginEnabled?.let { putSetting(SettingKey.AGENT_PLUGIN_ENABLED, it.toString()) }
             putSetting(SettingKey.AUTO_SYNC_PHYVLAB, preferences.autoSyncPhyVlab.toString())
             putSetting(SettingKey.CURRENT_WEEK, preferences.currentWeek.coerceIn(0, 56).toString())
             putSetting(SettingKey.CHECK_UPDATE, preferences.checkUpdate.toString())
@@ -629,6 +634,7 @@ private object SettingKey {
     const val AGGREGATE_ASSIGNMENTS = "aggregate_assignments"
     const val STAGGERED_SECOND_SLOT = "staggered_second_slot"
     const val AGENT_GRADES_ALLOWED = "agent_grades_allowed"
+    const val AGENT_PLUGIN_ENABLED = "agent_plugin_enabled"
     const val AUTO_SYNC_PHYVLAB = "auto_sync_phyvlab"
     const val CURRENT_WEEK = "current_week"
     const val CHECK_UPDATE = "check_update"

@@ -30,6 +30,8 @@ import team.bjtuss.bjtuselfservice.shared.sync.cachedSourceSyncTime
 interface RemoteHostPlatform {
     val deviceName: String
     val traySupported: Boolean get() = false
+    /** [RemoteDeviceKind]：电脑常驻领取任务；手机只在刷新后上传。 */
+    val deviceKind: String get() = RemoteDeviceKind.DESKTOP
 }
 
 /**
@@ -140,9 +142,19 @@ class RemoteAgentController(
     val status get() = runner.status
 
     /** 开启了远程同步：关闭主窗口时应留在后台继续运行（明确退出才停止）。 */
-    val keepRunningInBackground: Boolean get() = configState.value.runnable
+    val keepRunningInBackground: Boolean get() = configState.value.runnable && !mobile
 
-    fun start() = runner.start(scope)
+    /** 手机/平板：不常驻、不轮询任务，只在 App 每次刷新完成后上传一次快照。 */
+    val mobile: Boolean get() = host?.deviceKind == RemoteDeviceKind.MOBILE
+
+    /** 电脑端启动定时上传与任务轮询；手机端什么也不做（改由 [uploadAfterRefresh] 驱动）。 */
+    fun start() {
+        if (!mobile) runner.start(scope)
+    }
+
+    /** App 完成一次刷新后调用：用这次刷新的逐源结果生成并上传快照（未开启或未配对时直接跳过）。 */
+    suspend fun uploadAfterRefresh(report: RefreshReport): RemoteUploadOutcome =
+        runner.runUploadCycle(refreshFirst = false, remote = false, report = report)
 
     fun close() = runner.stop()
 
@@ -172,11 +184,21 @@ class RemoteAgentController(
                 secrets.savePlatformAccessSiteUrl(if (enteredAccess != null) url else null)
             }
             val wireScopes = RemoteScope.entries.filter { it in scopes }.map { it.wire }
-            val response = clientFactory(url).pair(RemotePairRequest(
+            val api = clientFactory(url)
+            if (mobile) {
+                // 旧模板（0.4.0 之前）一个 Site 只认一台设备：手机配对会把电脑顶掉。先确认 Site 已升级。
+                val version = (api.health() as? RemoteCall.Ok)?.value?.templateVersion
+                if (!remoteTemplateAtLeast(version, REMOTE_MULTI_DEVICE_TEMPLATE)) {
+                    return "你的 Site 模板版本是 ${version ?: "未知"}，还不支持电脑和手机同时连接。" +
+                        "请先让 ChatGPT 把 Site 升级到 $REMOTE_MULTI_DEVICE_TEMPLATE 或更高版本，再配对手机。"
+                }
+            }
+            val response = api.pair(RemotePairRequest(
                 pairingCode = code,
                 deviceName = host?.deviceName?.take(64)?.ifBlank { null } ?: "Windows 电脑",
                 accountBindingId = bindingId,
                 scopes = wireScopes,
+                deviceKind = host?.deviceKind ?: RemoteDeviceKind.DESKTOP,
             ))
             when (response) {
                 is RemoteCall.Ok -> {
@@ -193,7 +215,8 @@ class RemoteAgentController(
                 is RemoteCall.Failure -> when (response.code) {
                     "pairing_invalid" -> "配对码无效、已过期或已使用，请在 Site 重新生成。"
                     "pairing_locked" -> "配对失败次数过多，请 10 分钟后在 Site 重新生成配对码。"
-                    "platform_auth_required" -> "电脑与私人 Site 的连接授权未就绪，请通过 AI 助手重新连接这台电脑。"
+                    "platform_auth_required" -> if (mobile) "私人 Site 拒绝了这台设备的访问：请检查“Site 访问凭据”是否填写正确，或让 ChatGPT 重新生成。"
+                        else "电脑与私人 Site 的连接授权未就绪，请通过 AI 助手重新连接这台电脑。"
                     else -> if (response.kind == RemoteFailureKind.UNAUTHORIZED)
                         "Site 未通过配对身份验证，请重新生成配对码后重试。"
                     else RemoteAgentRunner.describe(response)

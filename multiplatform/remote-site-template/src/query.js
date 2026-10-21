@@ -51,9 +51,11 @@ export function querySnapshot(payload, command, args, now) {
     device: payload.device ? { name: payload.device.deviceName, lastSeen: clock(payload.device.lastSeenAt) } : null,
     snapshotReceived: clock(payload.snapshot?.receivedAt),
     snapshotScopes: payload.snapshot?.scopes ?? [],
+    // 每类数据来自哪台设备（电脑或手机，谁的同步更新就用谁的）。
+    dataFrom: payload.snapshot?.origins ?? {},
   };
   if (!payload.snapshot) {
-    return { ...agentQueryError(null, command, now, "cloud_snapshot", "no_snapshot", "电脑还没有上传过快照：请确认电脑上的交大自由行已登录并开启远程同步。"), remote };
+    return { ...agentQueryError(null, command, now, "cloud_snapshot", "no_snapshot", "还没有设备上传过快照：请确认电脑或手机上的交大自由行已登录并开启 ChatGPT 插件同步。"), remote };
   }
   if (payload.snapshot.schemaVersion !== 2) {
     return { ...agentQueryError(null, command, now, "cloud_snapshot", "schema_mismatch", "电脑端版本与 Site 模板不一致，请更新电脑上的交大自由行。"), remote };

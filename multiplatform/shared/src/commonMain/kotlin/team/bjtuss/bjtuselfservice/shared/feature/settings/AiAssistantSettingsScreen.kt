@@ -48,7 +48,7 @@ internal fun AiAssistantSettingsScreen(model: SettingsScreenModel, platform: Pla
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("运行状态", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(start = 4.dp))
-        LocalAssistantStatus(localStatus, localLoading, integration != null) {
+        if (integration != null || !platform.isMobile) LocalAssistantStatus(localStatus, localLoading, integration != null) {
             localLoading = true
             statusRefreshKey += 1
         }
@@ -134,16 +134,19 @@ private fun RemoteAssistantStatus(controller: RemoteAgentController) {
     val config by controller.config.collectAsState()
     val status by controller.status.collectAsState()
     val uri = LocalUriHandler.current
-    StatusPanel("远程查询") {
-        Text(if (config.paired) remotePhaseText(status.phase) else "尚未配对", style = MaterialTheme.typography.titleSmall,
+    StatusPanel(if (controller.mobile) "ChatGPT 插件" else "远程查询") {
+        Text(if (!config.paired) "尚未配对" else if (controller.mobile && status.phase == RemotePhase.RUNNING) "已开启：每次刷新后上传。"
+            else remotePhaseText(status.phase), style = MaterialTheme.typography.titleSmall,
             color = if (status.phase == RemotePhase.RUNNING) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
         if (config.paired) {
             StatusField("Site 地址", config.siteUrl.orEmpty())
             StatusField("最近连接", formatRemoteTime(status.lastSeenAt))
             StatusField("最近刷新学校数据", formatRemoteTime(status.lastRefreshAt))
             StatusField("最近上传快照", formatRemoteTime(status.lastUploadAt))
-            StatusField("下次计划同步", formatRemoteTime(status.nextUploadAt))
-            StatusField("正在执行的请求", status.activeTasks.toString())
+            if (!controller.mobile) {
+                StatusField("下次计划同步", formatRemoteTime(status.nextUploadAt))
+                StatusField("正在执行的请求", status.activeTasks.toString())
+            }
             StatusField("允许上云", RemoteScope.entries.filter { it in config.scopeSet }.joinToString("、") { it.label })
             OutlinedButton(onClick = { config.siteUrl?.let(uri::openUri) }) { Text("打开我的 Site") }
         } else {

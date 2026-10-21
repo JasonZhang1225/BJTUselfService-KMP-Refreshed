@@ -93,3 +93,7 @@ internal fun StartupSection(host: AppStartupHost, remote: RemoteAgentController?
         }
     }
 }
+
+/** 功能名：电脑端有本机 Agent 和 ChatGPT 插件两部分；手机端只有 ChatGPT 插件。 */
+fun agentPluginTitle(platform: team.bjtuss.bjtuselfservice.shared.PlatformInfo): String =
+    if (platform.isMobile) "ChatGPT 插件" else "Agent 和 ChatGPT 插件"

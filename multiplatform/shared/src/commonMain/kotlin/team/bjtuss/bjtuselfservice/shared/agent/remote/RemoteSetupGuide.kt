@@ -10,10 +10,10 @@ $REMOTE_TEMPLATE_URL
 （先读模板的 README.md；查询约定见仓库 docs/agent/agent-query-contract.md。）
 
 要求：
-1. 原样使用模板 0.3.0 的 src、migrations 与 plugin/skills/bjtuss-remote/SKILL.md，用持久数据库保存设备、快照与任务；不要改写查询逻辑和日期换算。
+1. 原样使用模板最新版（0.4.0 或更高）的 src、migrations、drizzle 与 plugin/skills/bjtuss-remote/SKILL.md，用持久数据库保存设备、快照与任务；不要改写查询逻辑和日期换算。
 2. 发布为私人 Site，不要公开；不要让我上传学校系统密码。
 3. 复用 Site 自动生成的插件，提供模板定义的 11 个工具：get_status、get_homework、get_calendar、get_exams、get_grades、get_mail、request_live_query、request_refresh_all、request_citel_problem、request_mail_message、get_request_result，并附上模板里的查询 Skill；确认在 ChatGPT 的 Chat、Work 和 Codex 模式里都能调用。
-4. 如果我已经有旧版 Site，请在原 Site 上升级到 0.3.0 并重新发布插件，不要另建第二个。
+4. 如果我已经有旧版 Site，请在原 Site 上升级到最新模板（按顺序执行新增的数据库迁移）并重新发布插件，不要另建第二个。同一个 Site 要能同时连接我的电脑和手机。
 
-完成后告诉我 Site 地址，生成一个一次性配对码，并引导我完成电脑端的安全连接配置，不要让我手工复制平台内部访问凭据。若电脑访问私人 Site 尚未验证，请明确说明并先解决，不要只给一个配对码就说已经连通。
+完成后告诉我 Site 地址，为每台要连接的设备各生成一个一次性配对码；电脑端由你引导完成安全连接配置，手机端请给我一份可填写的“Site 访问凭据”（服务访问令牌）。电脑端不要让我手工复制平台内部访问凭据。若电脑访问私人 Site 尚未验证，请明确说明并先解决，不要只给一个配对码就说已经连通。
 """.trimIndent()

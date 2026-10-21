@@ -62,7 +62,32 @@ data class RemotePairRequest(
     val deviceName: String,
     val accountBindingId: String,
     val scopes: List<String>,
+    /** desktop：常驻并领取即时任务；mobile：只在刷新后上传快照（模板 0.4.0 起支持多设备）。 */
+    val deviceKind: String = RemoteDeviceKind.DESKTOP,
 )
+
+object RemoteDeviceKind {
+    const val DESKTOP = "desktop"
+    const val MOBILE = "mobile"
+}
+
+/** 支持电脑与手机同时绑定的最低 Site 模板版本；更旧的模板配对新设备会撤销其他设备。 */
+const val REMOTE_MULTI_DEVICE_TEMPLATE = "0.4.0"
+
+@Serializable
+data class RemoteHealth(val protocolVersion: Int = 0, val templateVersion: String? = null)
+
+/** 比较 `x.y.z` 形式的模板版本。 */
+fun remoteTemplateAtLeast(version: String?, minimum: String): Boolean {
+    val parts = version?.split('.')?.map { it.toIntOrNull() ?: return false } ?: return false
+    val want = minimum.split('.').map { it.toInt() }
+    for (i in 0 until maxOf(parts.size, want.size)) {
+        val a = parts.getOrElse(i) { 0 }
+        val b = want.getOrElse(i) { 0 }
+        if (a != b) return a > b
+    }
+    return true
+}
 
 @Serializable
 data class RemotePairResponse(

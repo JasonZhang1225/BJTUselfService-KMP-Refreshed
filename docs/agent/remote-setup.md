@@ -1,4 +1,4 @@
-# Windows 本地开发与私人 Site 搭建（模板 0.3.0 / 协议 1 / 快照 schema 2）
+# Windows 本地开发与私人 Site 搭建（模板 0.4.0 / 协议 1 / 快照 schema 2）
 
 维护源：`multiplatform/remote-site-template/`。该目录与 Gradle 工程独立，无第三方 Node 依赖，要求 Node ≥22.5。
 MCP 工具、Skill 与本机 CLI 共用的查询参数和返回结构见同目录 `agent-query-contract.md`；工具与 Skill 的唯一维护源是模板的 `src/mcp.js` 与 `plugin/skills/bjtuss-remote/SKILL.md`，不要另存副本。
@@ -38,6 +38,12 @@ Windows 打包：在 `multiplatform/` 用 JDK 21 运行 `gradlew.bat :windowsApp
 
 同时提供干净模板包。`node scripts/package-template.mjs <源码目录外的绝对输出路径.tar.gz>`
 按明确清单生成包，不携带现有 project_id、个人地址、令牌、快照或数据库。
+
+## 手机与平板（Android / iOS）
+
+设置 → 功能开关里打开“ChatGPT 插件”后，应用页出现同名入口。手机不做定时上传、心跳和本地 CLI，只在每次 App 刷新完成后上传快照；
+即时查询仍由电脑执行。配对前 App 先读取 Site 的 `/api/v1/health`，模板低于 0.4.0 时拒绝配对（旧模板配对新设备会撤销电脑）。
+手机没有电脑那样的连接助手，私人 Site 的服务访问凭据需要在配对表单里手动填写，保存在 Android Keystore / Apple Keychain。
 
 ## 正式私人 Site
 

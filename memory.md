@@ -20,11 +20,31 @@
   - Windows：开机启动改用 JNA 注册表 API（原 reg.exe 读回 GBK 输出、中文安装路径校验必失败）；托盘改为 AWT 托盘并指定中文字体，jlink 加 `jdk.charsets`、`jdk.localedata`（推测方框乱码来自缺 GBK 编码器，未实机验证）。
   - CI 修复：`RemoteAgentCard` 的 `Dispatchers.IO`（commonMain 在 iOS 不可用）；`packageMsi` 的 doLast 引用脚本对象破坏配置缓存。
   - 第二轮（用户反馈）：`homework` 默认改为 `status: all`（问“这周 DDL”带范围全部列出并标状态，问“没交的”才筛）。开机启动改为可被系统管理：Windows 读取 `StartupApproved\Run`（任务管理器禁用后如实显示关闭），按钮可打开“设置 → 应用 → 启动”；macOS 新增 LaunchAgent 登录项（`MacLaunchAgentStartupHost`，卸载清理一并删除）。新增“静默启动”（默认开，Java Preferences），只对带 `--background` 的开机启动生效。开机启动/静默/托盘移到独立卡片 `StartupSection`（Windows 与 macOS 都显示）。macOS 登录项与静默启动、Windows 任务管理器交互均未实机验证。
+  - 第三轮：Android/iOS（手机与平板）启用“ChatGPT 插件”。设置 → 功能开关首行新增开关（电脑端名“Agent 和 ChatGPT 插件”，电脑端默认开；手机端“ChatGPT 插件”，默认关），关闭时隐藏应用页入口并暂停上云同步。手机端控制器挂在 `AuthenticatedSession.remoteAgent`（原生二级页共享），不定时、不轮询、无 CLI，只在来源为 APP 的刷新完成后上传快照（`AppRefreshCoordinator.completed`）；密钥用 Android Keystore / Apple Keychain（`AccountSecurityStore.remoteVault`）。配对前读 `/api/v1/health`，模板 <0.4.0 拒绝（旧模板会撤销电脑）；手机需手填“Site 访问凭据”。Site 模板 0.4.0：多设备（迁移 0002 加 `device_kind`，上限 5 台，同名同类型重配只替换自己），查询每个范围取同步最新的设备快照，任务只派给最近在线的电脑。Android/iOS 只经 CI 编译，未在真机/模拟器打开页面；手机端真实配对与上传未验证。
   - 删除 `docs/agent/remote-skill-mcp-export-20261021/` 副本；Skill/MCP 唯一维护源是模板 `src/mcp.js` 与 `plugin/skills/bjtuss-remote/SKILL.md`，本机 Skill 在 `AgentSkill.kt`，两者规则同文。
   - 验证与未验证边界见本次交付说明；Windows 托盘/开机启动、iOS 编译、真实 ChatGPT 问答需实机或 CI 验证。
 
 - **Agent Remote 基本实现（`agent-remote`）。** 上一轮实现与证据见 `docs/agent/windows-local-verification-2026-10-21.md`；Site https://bjtuss-private-remote.ardent-rice-3928.chatgpt.site 仍是旧模板 0.2.0，需要按新提示词升级后才能与新电脑端配合。未验证：新 MSI 升级安装、连续半小时/睡眠恢复、第二真实用户部署、Apple 原生构建；远程常驻仅 Windows。
 - **main 已前进到 1.8.6-KMP（图书馆借阅等），本分支未合并 main。**
+
+## 要让 ChatGPT 做的事（它不太聪明：一次只发一条，照抄，做完逐项核对）
+
+模板维护源是 `multiplatform/remote-site-template/`（当前 0.4.0：快照 schema 2、11 个工具、多设备）。合入 main 前，链接里的 `tree/main` 要换成实际分支名。
+私人 Site 现状：https://bjtuss-private-remote.ardent-rice-3928.chatgpt.site 仍是 0.2.0，新版电脑端/手机端都连不上，必须先升级。
+
+1. **升级 Site（在原 Site 上，不要新建）**——发给 ChatGPT（Work 模式）：
+   > 用 Sites 插件更新我已有的私人 Site（地址：<Site 地址>），不要新建第二个 Site。代码完全以这个目录为准：<仓库>/tree/<分支>/multiplatform/remote-site-template 。把 src/、migrations/、drizzle/、plugin/ 整个替换成模板里的版本，不要自己改写任何查询、日期或权限逻辑。数据库按顺序执行还没执行过的迁移（0002_multi_device.sql），不要删库重建。保持 Site 私人可见。
+   - 核对：打开 `<Site>/api/v1/health`，`templateVersion` 必须是 `0.4.0`（或更高）、`protocolVersion` 是 `1`。不是就让它重做，不要接受“已更新”的口头说法。
+2. **重新发布插件（MCP 与 Skill）**——发给 ChatGPT：
+   > 用这个 Site 自动生成的插件重新发布，不要另建插件。工具列表必须正好是这 11 个：get_status、get_homework、get_calendar、get_exams、get_grades、get_mail、request_live_query、request_refresh_all、request_citel_problem、request_mail_message、get_request_result。Skill 原样使用模板 plugin/skills/bjtuss-remote/SKILL.md，一个字都不要改。发布后在新对话里调用一次 get_status 和 get_homework（range=this_week）给我看原始返回。
+   - 核对：返回里有 `schemaVersion: 2`、`summary.bySource` 三个来源；截止时间形如 `2026-10-25（周日）24:00`。旧的 `query_snapshot` 工具不应再出现。
+3. **给每台设备生成配对码**——发给 ChatGPT：
+   > 在 Site 页面为“电脑”和“手机”各生成一个一次性配对码（10 分钟有效）。同一个 Site 要同时连接两台设备，不要撤销已有设备。
+   - 电脑：Windows App → 应用 → Agent 和 ChatGPT 插件，填地址与配对码。电脑的平台访问凭据仍由连接助手写入系统安全存储（不手填）。
+   - 手机：先在 设置 → 功能开关 打开“ChatGPT 插件”，再进 应用 → ChatGPT 插件 填写；还需要一份“Site 访问凭据”，发给 ChatGPT：
+     > 为我的私人 Site 生成一个给手机 App 用的服务访问凭据（service access token），只给这一个 Site 用，告诉我完整的值，我会填进手机 App 的安全存储。
+4. **验收多设备**——在 ChatGPT 里问“这周的 DDL”，核对：物理在线、CITEL 都列出；24:00 截止日期正确；`remote.dataFrom` 显示数据来自刚刷新过的那台设备。手机刚刷新过时数据应来自手机。
+5. 以后模板再升级：重复第 1、2 步；电脑端/手机端若提示“模板版本过旧”或 `schema_mismatch`，就是 Site 没升级成功。
 
 ## 当前痛点
 

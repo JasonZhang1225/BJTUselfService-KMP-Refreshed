@@ -5,7 +5,7 @@ description: 查询北京交通大学“交大自由行”电脑端上传到私�
 
 # 交大自由行（远程）
 
-数据来自用户电脑上的交大自由行 App 定时上传的快照。工具与电脑本机的 `bjtu` 命令行一一对应，参数同名、返回结构相同：
+数据来自用户电脑（定时上传）和手机/平板（每次在 App 里刷新后上传）的交大自由行快照；每类数据自动取同步时间最新的那台设备，`remote.dataFrom` 说明来自哪台设备。工具与电脑本机的 `bjtu` 命令行一一对应，参数同名、返回结构相同：
 `get_homework` ⇔ `bjtu homework`，`get_calendar` ⇔ `bjtu calendar`，`get_exams` ⇔ `bjtu exams`，`get_grades` ⇔ `bjtu grades`，`get_mail` ⇔ `bjtu mail`，`get_status` ⇔ `bjtu status`。
 
 ## 选工具
@@ -39,6 +39,7 @@ description: 查询北京交通大学“交大自由行”电脑端上传到私�
 - `request_citel_problem`：`taskId` 取 CITEL 作业 `id` 的数字部分（`citel:9265` → `9265`）；`includeFullText: true` 只在用户明确同意联网获取全文/用例时设置。
 - `request_mail_message`：读取一封邮件正文，学校邮箱会把它标记为已读；只在用户要看正文时调用。
 - 任务返回 `queued` / `running` 只表示排队或执行中，用 `get_request_result` 跟进，不能说成已经更新；同一意图重试沿用同一个 `idempotencyKey`。`partial` / `failed` 要说明哪个来源失败、原来的同步时间，必要时请用户在电脑上的 App 处理。
+- 即时查询和刷新只能由电脑执行（手机不在后台运行）。返回 `no_device` 表示没有可用的电脑：告诉用户只能读快照，或请他在手机 App 里刷新一次再查。
 - `scope_denied` 表示用户没有允许这类数据上云：照实告诉用户可以在电脑端“Agent 和 ChatGPT 插件 → 允许上云的数据”里开启，不要尝试绕过。
 - 插件只读：没有交作业、提交代码、发邮件或远程执行命令的能力，不要尝试代替用户提交。
 
