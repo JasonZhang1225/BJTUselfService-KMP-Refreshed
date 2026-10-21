@@ -315,6 +315,17 @@ class AppDataGraph(
         nowEpochSeconds = nowEpochSeconds,
     )
 
+    /**
+     * 无窗口宿主在刷新前先载入缓存（不访问网络），让变动记录以本机缓存为基线，
+     * 与 App 先显示缓存再同步的顺序一致。App 由各页面自己初始化，不调用这里。
+     */
+    suspend fun loadCachedState() {
+        gradeModel.initialize(refreshFromNetwork = false)
+        courseScheduleModel.initialize(refreshFromNetwork = false)
+        homeworkModel.initialize(refreshFromNetwork = false)
+        examScheduleModel.initialize(refreshFromNetwork = false)
+    }
+
     fun close() {
         refreshCoordinator.close()
     }

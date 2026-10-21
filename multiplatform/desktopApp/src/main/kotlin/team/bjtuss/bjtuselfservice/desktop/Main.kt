@@ -84,9 +84,12 @@ fun main(args: Array<String>) {
     }
     val accountSecurityStore = createDesktopAccountSecurityStore()
     val cacheStoreHandle = createDesktopCacheStore()
-    // 告诉命令行“App 正在运行”：此时 agent 的 cache update 会让用户在 App 里刷新，避免两边各登录一次互相顶掉会话。
-    appRunningLock = team.bjtuss.bjtuselfservice.shared.agent.holdAgentAppLock(
+    // 刷新执行者：持锁并开放本机 IPC，命令行 `cache update` 交给当前会话执行，避免两边各登录一次互相顶掉会话。
+    // 后台命令行正在刷新时先请它交出执行权（最多等几秒），拿不到也照常启动。
+    val currentSession = java.util.concurrent.atomic.AtomicReference<AuthenticatedSession?>(null)
+    appRunningLock = team.bjtuss.bjtuselfservice.shared.agent.host.AppRefreshHost.start(
         File(System.getProperty("user.home"), "Library/Application Support/BJTUselfServiceKMP"),
+        sessionProvider = currentSession::get,
     )
 
     try {
@@ -200,11 +203,16 @@ fun main(args: Array<String>) {
                         systemCalendarGateway = systemCalendarGateway,
                         appCommandBus = appCommandBus,
                         captchaRecognizer = captchaRecognizer,
-                        onAuthenticatedSessionChanged = { authenticatedSession.value = it },
+                        onAuthenticatedSessionChanged = {
+                            authenticatedSession.value = it
+                            currentSession.set(it)
+                        },
                     )
             }
         }
     } finally {
+        // 先停 IPC、删端点再释放锁；异常退出时由系统释放锁，残留端点会因连不上被忽略。
+        runCatching { appRunningLock?.close() }
         cacheStoreHandle.store.close()
     }
 }

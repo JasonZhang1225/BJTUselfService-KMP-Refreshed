@@ -30,7 +30,7 @@ $cliCommand <命令> [选项] --json
 ```
 
 - 始终加 `--json` 并解析 JSON；不加时输出给人看的 Markdown。
-- 退出码：0 成功；2 本机没有缓存或无法确定账号（让用户打开 App 登录并同步一次）；3 刷新时自动登录失败；4 刷新部分失败；5 用户没允许读取这类数据；6 App 正在运行（让用户在 App 里刷新）；64 参数错误（stderr 有用法）。
+- 退出码：0 成功；2 本机没有缓存或无法确定账号（让用户打开 App 登录并同步一次）；3 刷新时自动登录失败（或 App 开着但未登录）；4 刷新部分失败；5 用户没允许读取这类数据；6 App 开着但没响应刷新请求（旧版本，让用户在 App 里刷新）；7 刷新已交给 App 但未在时限内返回（可能仍在进行，稍后重新查询）；8 命令行与 App 版本不一致；64 参数错误（stderr 有用法）。
 - 第一次调用可能弹出系统钥匙串授权，请让用户点“始终允许”。
 
 ## 命令
@@ -47,7 +47,7 @@ $cliCommand <命令> [选项] --json
 | `citel export <id> --out <新目录>` | 离线导出 problem.md 和 tests/N.in、N.out；不覆盖已有目录 |
 | 上面两项加 `--fetch` | 登录 CITEL 获取完整题面和 I/O 后缓存。**需要题面时先问用户，同意后才加 --fetch**；App 开着时请在 App 获取全文 |
 | `grades` | 成绩；默认不开放，返回退出码 5 时告诉用户可在 App 设置“AI 助手”里允许 |
-| `cache update [grades,courses,homework,exams]` | 用 App 记住的账号在后台登录并刷新这几类数据（约 10–60 秒，会联网）。**只在用户同意刷新后运行**。物理在线、CITEL、物理实验、演示实验不支持，需用户打开 App 刷新 |
+| `cache update [来源,...]` | 默认刷新全部已启用且已配置的数据源（首页、邮箱未读、作业、考试、课表、成绩、物理实验、演示实验、CITEL、物理在线；约 10–90 秒，会联网）。App 开着时交给 App 执行、界面同步显示；App 没开时用记住的账号在后台登录执行。可只带部分来源，如 `homework,citel`。**只在用户同意刷新后运行** |
 
 范围：`--today`、`--tomorrow`、`--week`（本周）、`--week N`（第 N 教学周）、`--date YYYY-MM-DD`、`--from YYYY-MM-DD --to YYYY-MM-DD`（最多 180 天）。`calendar` 默认今天起 7 天，`courses` 默认本周。
 
@@ -63,8 +63,7 @@ $cliCommand <命令> [选项] --json
 
 JSON 顶层有 `freshness`：`sources` 是各数据源的同步时间和 `ageHours`，`stale` 是超过 $AGENT_STALE_AFTER_HOURS 小时的数据源，`unknown` 是没有同步时间记录的。
 - `stale` 不为空时：**先告诉用户哪些数据已超过 $AGENT_STALE_AFTER_HOURS 小时（例如“作业 6 小时前同步”），问是否先刷新再查**。
-  - 用户同意：运行 `cache update`（只带 `stale` 里它支持的那几项，如 `cache update homework,exams --json`），完成后重新查询再回答。退出码 6 表示 App 开着，请用户在 App 里点刷新后告诉你；退出码 3 表示自动登录失败，请用户打开 App 手动登录。
-  - `stale` 里有 `phyvlab`、`citel`、`physicsDemo`：这些只能在 App 里刷新，直接请用户打开 App。
+  - 用户同意：运行 `cache update`（可只带 `stale` 里的来源，如 `cache update homework,citel --json`），完成后重新查询再回答。JSON 的 `sources` 逐项给出 `success/failed/skipped/needs_user_action` 和真实同步时间：`skipped` 是用户没开启或没配置，不要催刷新；`needs_user_action` 请用户打开 App 处理。退出码 6 表示旧版 App 开着，请用户在 App 里点刷新；退出码 3 表示自动登录失败或 App 未登录，请用户打开 App 登录。
   - 用户说不用：基于现有缓存回答，并在答案里注明同步时间。
 - 只有 `unknown`：照常回答，末尾提一句这些数据的同步时间未知。
 - 都新：直接回答，可顺带说明同步时间。

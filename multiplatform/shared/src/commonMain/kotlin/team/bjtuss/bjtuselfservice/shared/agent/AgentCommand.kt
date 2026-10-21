@@ -29,8 +29,12 @@ object AgentExit {
     const val LOGIN_FAILED = 3
     /** cache update：部分数据源刷新失败，失败项保留原缓存。 */
     const val PARTIAL = 4
-    /** cache update：App 正在运行，请在 App 里刷新。 */
+    /** cache update：App 正在运行但没有响应刷新请求（旧版本 App 或正在启动），请在 App 里刷新。 */
     const val APP_RUNNING = 6
+    /** cache update：请求已交给 App/后台执行者，但在时限内没有收到结果；刷新可能仍在进行。 */
+    const val REFRESH_PENDING = 7
+    /** cache update：命令行与运行中的 App 刷新协议版本不一致，需要更新到同一版本。 */
+    const val VERSION_MISMATCH = 8
 }
 
 const val AGENT_SCHEMA_VERSION = 1
@@ -57,7 +61,7 @@ val AGENT_USAGE = """
       citel show <id> [--fetch] [--json]  缓存题面与用例；--fetch 才联网
       citel export <id> --out <新目录> [--fetch]  导出 problem.md 和 tests/N.in、N.out
       cache read <courses|homework|exams|grades|citel|calendar> [同上选项]
-      cache update [grades,courses,homework,exams]   用记住的账号后台登录并刷新（App 开着时请在 App 里刷新）
+      cache update [all|来源,...]   全量刷新（默认全部来源；App 开着时交给 App 执行，否则后台登录执行）
       install [--no-claude] | uninstall | doctor   安装/移除 Skill 与启动脚本，检查环境（仅桌面端）
       uninstall-app [--yes]            Mac 卸载清理：默认预览；--yes 才删除数据并将 App 移到废纸篓
     范围: --today | --tomorrow | --week [N] | --date YYYY-MM-DD | --from YYYY-MM-DD --to YYYY-MM-DD
