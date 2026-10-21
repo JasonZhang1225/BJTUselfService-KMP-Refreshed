@@ -18,6 +18,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
@@ -74,6 +75,8 @@ internal class FakeSiteClient : RemoteSiteClient {
 
 internal class FakeExecutor(var account: String? = "20990001") : RemoteRefreshExecutor {
     val refreshes = AtomicInteger()
+    /** 非 null 时刷新挂起在这里，用来制造“刷新进行中又来一次轮询”的交错。 */
+    @Volatile var gate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
     val contentReads = AtomicInteger()
     val origins = CopyOnWriteArrayList<Boolean>()
     var reportStatus = RefreshStatus.SUCCESS
@@ -83,6 +86,7 @@ internal class FakeExecutor(var account: String? = "20990001") : RemoteRefreshEx
     override suspend fun refreshAll(remote: Boolean): RefreshReport? {
         if (account == null) return null
         refreshes.incrementAndGet()
+        gate?.await()
         origins += remote
         return RefreshReport(account!!, if (remote) RefreshOrigin.REMOTE else RefreshOrigin.SCHEDULED, 10, 20, listOf(
             RefreshSourceResult(RefreshSource.COURSES, RefreshStatus.SUCCESS, fetchedAtEpochSeconds = 20),
@@ -171,6 +175,23 @@ class RemoteAgentRunnerTest {
     }
 
     @Test
+    fun concurrentPollDuringUploadKeepsEveryPersistedField() = runBlocking {
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        executor.gate = gate
+        val cycle = async(Dispatchers.Default) { runner.runUploadCycle(refreshFirst = true, remote = false) }
+        withTimeout(5_000) { while (executor.refreshes.get() == 0) delay(5) }
+        now += 120
+        assertNull(runner.pollOnce(this))
+        gate.complete(Unit)
+        assertIs<RemoteUploadOutcome.Uploaded>(cycle.await())
+        val state = store.loadState()
+        // 以前两边整份覆盖：上传会抹掉轮询写的在线时间，轮询会抹掉上传尝试时间（导致下一轮立即重刷）。
+        assertEquals(now, state.lastSeenAt, "轮询写的在线时间被上传覆盖")
+        assertEquals(now - 120, state.lastUploadAttemptAt, "上传尝试时间被轮询覆盖")
+        assertTrue(state.lastSequence > 0)
+    }
+
+    @Test
     fun accountSwitchPausesWithoutContactingSite() = runBlocking {
         executor.account = "20990002"
         val outcome = assertIs<RemoteUploadOutcome.Skipped>(runner.runUploadCycle(refreshFirst = true, remote = false))
@@ -243,15 +264,24 @@ class RemoteAgentRunnerTest {
         realRunner.start(scope)
         realRunner.start(scope)
         withTimeout(20_000) { while (client.polls.get() < 5 || executor.refreshes.get() < 1) delay(10) }
-        assertEquals(1, executor.refreshes.get(), "启动时到期只上报一轮，空轮询不刷新")
-        assertEquals(1, client.snapshots.size)
-        // 改成 300 秒（压缩后 3 秒）：旧频率的循环必须立即失效，也不能多出第二个循环。
+        assertEquals(1, executor.refreshes.get(), "启动时到期只上报一轮，空轮询不刷新：refreshes=${executor.refreshes.get()}")
+        assertEquals(1, client.snapshots.size, "snapshots=${client.snapshots.size}")
+        // 改成 300 秒（压缩后 3 秒）：等轮询静下来（连续 500 毫秒没有新轮询），再确认之后 1.5 秒内不再增加。
+        // 若旧频率的循环还在或多开了循环，轮询会持续增加，永远静不下来（超时失败）。
         config.value = config.value.copy(pollIntervalSeconds = 300)
-        delay(200)
-        val afterChange = client.polls.get()
-        delay(1_000)
-        assertTrue(client.polls.get() - afterChange <= 1, "改间隔后不能保留旧频率的循环")
-        assertEquals(1, executor.refreshes.get())
+        withTimeout(20_000) {
+            var last = client.polls.get()
+            var quietSince = System.currentTimeMillis()
+            while (System.currentTimeMillis() - quietSince < 500) {
+                delay(20)
+                val current = client.polls.get()
+                if (current != last) { last = current; quietSince = System.currentTimeMillis() }
+            }
+        }
+        val settled = client.polls.get()
+        delay(1_500)
+        assertEquals(settled, client.polls.get(), "改间隔后不能保留旧频率的循环：settled=$settled now=${client.polls.get()}")
+        assertEquals(1, executor.refreshes.get(), "refreshes=${executor.refreshes.get()}")
         realRunner.stop()
         scope.cancel()
     }

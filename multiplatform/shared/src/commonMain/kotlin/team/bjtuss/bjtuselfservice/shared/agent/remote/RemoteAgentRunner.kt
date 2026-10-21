@@ -91,6 +91,16 @@ class RemoteAgentRunner(
 
     private val uploadMutex = Mutex()
     private val resultMutex = Mutex()
+    /** 上传、轮询和错误记录并发改同一份持久状态：只能在锁内“读—改—写”各自的字段，不能整份覆盖。 */
+    private val stateMutex = Mutex()
+
+    private suspend fun updateState(transform: (RemoteAgentPersistedState) -> RemoteAgentPersistedState): RemoteAgentPersistedState =
+        stateMutex.withLock {
+            val current = store.loadState()
+            val next = transform(current)
+            if (next != current) store.saveState(next)
+            next
+        }
     private var jobs: List<Job> = emptyList()
     @kotlin.concurrent.Volatile private var stopped: RemotePhase? = null
 
@@ -201,7 +211,7 @@ class RemoteAgentRunner(
         return (raw * jitter).toLong().coerceIn(1, max.coerceAtLeast(1))
     }
 
-    private fun handleTerminal(failure: RemoteCall.Failure) {
+    private suspend fun handleTerminal(failure: RemoteCall.Failure) {
         when (failure.kind) {
             RemoteFailureKind.UNAUTHORIZED -> stopped = RemotePhase.NEEDS_PAIRING
             RemoteFailureKind.PROTOCOL_MISMATCH -> stopped = RemotePhase.PROTOCOL_MISMATCH
@@ -210,9 +220,8 @@ class RemoteAgentRunner(
         recordError(describe(failure))
     }
 
-    private fun recordError(message: String?) {
-        val state = store.loadState().copy(lastError = message)
-        store.saveState(state)
+    private suspend fun recordError(message: String?) {
+        updateState { it.copy(lastError = message) }
         statusState.update { it.copy(lastError = message, phase = phaseFor(configFlow.value)) }
     }
 
@@ -231,9 +240,7 @@ class RemoteAgentRunner(
             }
             val api = client() ?: return@withLock RemoteUploadOutcome.Skipped("not_paired")
             val now = clock()
-            var state = store.loadState()
-            state = state.copy(lastUploadAttemptAt = now)
-            store.saveState(state)
+            var lastStates = updateState { it.copy(lastUploadAttemptAt = now) }.lastSourceStates
             val pending = store.loadPending()?.takeIf {
                 it.deviceId == config.deviceId && it.accountBindingId == config.accountBindingId &&
                     now - it.generatedAt < config.uploadIntervalSeconds && it.scopes.toSet() == config.scopes.toSet()
@@ -241,15 +248,17 @@ class RemoteAgentRunner(
             val snapshot = if (pending != null && report == null) pending else {
                 val refreshed = report ?: if (refreshFirst) executor.refreshAll(remote) else null
                 if (refreshed != null) {
-                    state = state.copy(
-                        lastRefreshAt = refreshed.finishedAtEpochSeconds,
-                        lastSourceStates = refreshed.results.associate { it.source.wire to RemoteSourceState(it.status.wire, it.fetchedAtEpochSeconds, it.reason) },
-                    )
+                    lastStates = updateState {
+                        it.copy(
+                            lastRefreshAt = refreshed.finishedAtEpochSeconds,
+                            lastSourceStates = refreshed.results.associate { r -> r.source.wire to RemoteSourceState(r.status.wire, r.fetchedAtEpochSeconds, r.reason) },
+                        )
+                    }.lastSourceStates
                     statusState.update { it.copy(lastRefreshAt = refreshed.finishedAtEpochSeconds) }
                 }
-                val content = executor.snapshotContent(config.scopeSet, state.lastSourceStates)
-                    ?: return@withLock RemoteUploadOutcome.Skipped("cache_unavailable").also { store.saveState(state) }
-                val sequence = maxOf(state.lastSequence + 1, now * 1_000)
+                val content = executor.snapshotContent(config.scopeSet, lastStates)
+                    ?: return@withLock RemoteUploadOutcome.Skipped("cache_unavailable")
+                val sequence = updateState { it.copy(lastSequence = maxOf(it.lastSequence + 1, now * 1_000)) }.lastSequence
                 RemoteSnapshot(
                     deviceId = config.deviceId!!,
                     accountBindingId = config.accountBindingId!!,
@@ -261,8 +270,6 @@ class RemoteAgentRunner(
                     sources = content.sources,
                     data = content.data,
                 ).also {
-                    state = state.copy(lastSequence = sequence)
-                    store.saveState(state)
                     // 先落盘再上传：上传失败或进程退出后重传同一快照。
                     store.savePending(it)
                 }
@@ -270,9 +277,9 @@ class RemoteAgentRunner(
             when (val result = api.putSnapshot(snapshot.copy(uploadedAt = clock()))) {
                 is RemoteCall.Ok -> {
                     store.savePending(null)
-                    state = state.copy(lastUploadAt = clock(), lastError = null)
-                    store.saveState(state)
-                    statusState.update { it.copy(lastUploadAt = state.lastUploadAt, lastError = null, lastSequence = snapshot.sequence) }
+                    val uploadedAt = clock()
+                    updateState { it.copy(lastUploadAt = uploadedAt, lastError = null) }
+                    statusState.update { it.copy(lastUploadAt = uploadedAt, lastError = null, lastSequence = snapshot.sequence) }
                     RemoteUploadOutcome.Uploaded(snapshot.sequence, result.value.duplicate)
                 }
                 is RemoteCall.Failure -> {
@@ -290,9 +297,8 @@ class RemoteAgentRunner(
         return when (val result = api.poll()) {
             is RemoteCall.Ok -> {
                 val now = clock()
-                val state = store.loadState()
                 // 在线时间本地也只粗粒度记录（约每分钟）。
-                if (state.lastSeenAt == null || now - state.lastSeenAt >= 60) store.saveState(state.copy(lastSeenAt = now))
+                updateState { state -> if (state.lastSeenAt == null || now - state.lastSeenAt >= 60) state.copy(lastSeenAt = now) else state }
                 statusState.update { it.copy(lastSeenAt = now) }
                 result.value.task?.let { task ->
                     val scope = taskScope ?: CoroutineScope(kotlin.coroutines.coroutineContext)
