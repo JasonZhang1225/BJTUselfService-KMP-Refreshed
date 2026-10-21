@@ -1,0 +1,121 @@
+name: Android debug APK
+
+# 每次推送（含分支推送）与同仓库 PR 都构建一个可安装的 Debug APK 产物，
+# 对应上游项目的「Debug 构建」自动化；Release 打包/发布仍由 kmp-package 负责。
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "multiplatform/**"
+      - ".github/workflows/android-debug.yml"
+  pull_request:
+    paths:
+      - "multiplatform/**"
+      - ".github/workflows/android-debug.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-debug-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  debug:
+    name: Build Android debug APK
+    # Fork PR 拿不到仓库 secrets，无法签名构建；跳过，由 security-check 的编译检查兜底。
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: multiplatform
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+
+      - name: Restore Android upload keystore
+        env:
+          BJTU_ANDROID_KEYSTORE_BASE64: ${{ secrets.BJTU_ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$BJTU_ANDROID_KEYSTORE_BASE64" ]; then
+            echo "Missing secret BJTU_ANDROID_KEYSTORE_BASE64"
+            exit 1
+          fi
+          python3 - <<'PY'
+          import base64, os, pathlib
+          raw = os.environ["BJTU_ANDROID_KEYSTORE_BASE64"]
+          path = pathlib.Path.home() / ".android" / "bjtu-kmp-upload.keystore"
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_bytes(base64.b64decode(raw))
+          path.chmod(0o600)
+          print(f"keystore_bytes={path.stat().st_size}")
+          PY
+          echo "BJTU_ANDROID_KEYSTORE=$HOME/.android/bjtu-kmp-upload.keystore" >> "$GITHUB_ENV"
+
+      - name: Build debug APK
+        env:
+          BJTU_ANDROID_STORE_PASSWORD: ${{ secrets.BJTU_ANDROID_STORE_PASSWORD }}
+          BJTU_ANDROID_KEY_ALIAS: ${{ secrets.BJTU_ANDROID_KEY_ALIAS }}
+          BJTU_ANDROID_KEY_PASSWORD: ${{ secrets.BJTU_ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :androidApp:assembleDebug --stacktrace
+
+      - name: Stage APK artifact
+        id: artifact
+        run: |
+          VERSION="$(sed -n 's/.*CURRENT_VERSION = "\([^"]*\)".*/\1/p' shared/src/commonMain/kotlin/team/bjtuss/bjtuselfservice/shared/update/AppUpdateChecker.kt | head -n 1)"
+          VERSION="${VERSION%-KMP}"
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          APK="$(find androidApp/build/outputs/apk/debug -type f -name '*-arm64-v8a-debug.apk' | head -n 1)"
+          if [ -z "$APK" ]; then
+            echo "arm64-v8a debug APK not found"
+            find androidApp/build/outputs/apk/debug -type f -name '*.apk' -print
+            exit 1
+          fi
+          test -n "$VERSION"
+          test -f "$APK"
+          NAME="BJTUSelfService-KMP-${VERSION}-debug-${SHORT_SHA}-arm64-v8a.apk"
+          cp "$APK" "$NAME"
+          touch "$NAME"
+          python3 scripts/stage-actions-artifact.py "$NAME"
+          echo "file=$NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          ls -lh "$NAME"
+
+      - name: Write job summary
+        run: |
+          {
+            echo "### Android Debug APK"
+            echo ""
+            echo "- 版本：${{ steps.artifact.outputs.version }}"
+            echo "- 提交：${{ steps.artifact.outputs.sha }}"
+            echo "- 文件：\`${{ steps.artifact.outputs.file }}\`"
+            echo "- 安装包签名使用仓库 secrets 中的测试/上传 keystore；正式发布请用 Release 流程。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk-${{ steps.artifact.outputs.sha }}
+          path: multiplatform/artifact-upload/${{ steps.artifact.outputs.file }}
+          if-no-files-found: error
+          retention-days: 14
