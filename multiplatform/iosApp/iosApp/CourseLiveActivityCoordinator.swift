@@ -1,6 +1,7 @@
 import ActivityKit
 import BackgroundTasks
 import Foundation
+import os
 import UIKit
 
 /// 与 shared/.../feature/home/LiveActivityButton.ios.kt 的常量一一对应。
@@ -314,12 +315,27 @@ final class CourseLiveActivityCoordinator {
     /// 启动处理在后台队列被调用，不能继承主线程隔离。
     nonisolated static func registerBackgroundRefresh() {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: CourseLiveActivityBridge.refreshTaskId, using: nil) { task in
+            // 正常完成与到期都必须报告完成，且只报一次；到期不报会被系统结束并降低以后的唤醒频率。
+            let completed = OSAllocatedUnfairLock(initialState: false)
+            let finish = { (success: Bool) in
+                let first = completed.withLock { (done: inout Bool) -> Bool in
+                    defer { done = true }
+                    return !done
+                }
+                if first { task.setTaskCompleted(success: success) }
+            }
             let work = Task { @MainActor in
+                // 先预约下一次：等待 ActivityKit 时到期，也不会断掉后台换课。
+                CourseLiveActivityCoordinator.shared.scheduleBackgroundRefresh()
                 await CourseLiveActivityCoordinator.shared.reconcile()
                 CourseLiveActivityCoordinator.shared.scheduleBackgroundRefresh()
-                task.setTaskCompleted(success: true)
+                finish(true)
             }
-            task.expirationHandler = { work.cancel() }
+            // ActivityKit 的等待不响应取消，到期时直接报告失败，不等它跑完。
+            task.expirationHandler = {
+                work.cancel()
+                finish(false)
+            }
         }
     }
 

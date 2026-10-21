@@ -11,8 +11,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -111,15 +113,34 @@ internal actual fun LiveActivityButton(target: LiveActivityTarget, modifier: Mod
     val status = rememberLiveActivityStatus() ?: return
     val active = status.activeId == target.id
     var pressed by remember { mutableStateOf(false) }
-    val description = if (active) "实时活动，已开启" else "实时活动，未开启"
+    val description = when {
+        !status.enabled -> "实时活动，已在系统设置中关闭"
+        active -> "实时活动，已开启"
+        else -> "实时活动，未开启"
+    }
     Box(
-        // 卡片整体可点并合并无障碍信息；这里单独成一个按钮节点，读屏双击直接开启或关闭。
+        // 卡片整体可点并合并无障碍信息；这里单独成一个按钮节点。原生菜单对读屏不可达，
+        // 读屏双击直接开启或关闭（系统关闭时前往设置），提前时间以自定义操作提供。
         modifier.semantics(mergeDescendants = true) {
             role = Role.Button
             contentDescription = description
-            onClick {
-                sendLiveActivityCommand(if (active) "stop" else "start", target)
-                true
+            if (!status.enabled) {
+                onClick(label = "前往设置开启") {
+                    openLiveActivitySettings()
+                    true
+                }
+            } else {
+                onClick(label = if (active) "关闭" else "开启") {
+                    sendLiveActivityCommand(if (active) "stop" else "start", target)
+                    true
+                }
+                customActions = LEAD_MINUTE_OPTIONS.map { minutes ->
+                    val selected = if (minutes == status.leadMinutes) "，已选中" else ""
+                    CustomAccessibilityAction(leadTitle(target, minutes) + selected) {
+                        chooseLeadMinutes(minutes, target, active)
+                        true
+                    }
+                }
             }
         },
     ) {
@@ -163,24 +184,16 @@ private fun buildMenu(target: LiveActivityTarget, active: Boolean, status: LiveA
             title = "前往设置开启",
             image = UIImage.systemImageNamed("gear"),
             identifier = null,
-        ) { _ ->
-            NSURL.URLWithString(UIApplicationOpenSettingsURLString)?.let {
-                UIApplication.sharedApplication.openURL(it, options = emptyMap<Any?, Any?>(), completionHandler = null)
-            }
-        }
+        ) { _ -> openLiveActivitySettings() }
         return UIMenu.menuWithTitle(title = "实时活动已在系统设置中关闭", children = listOf(settings))
     }
     // 选中的提前时间打勾，并记作以后所有课程的默认值；没在显示时顺便恢复这一项的自动出现。
     val leads = LEAD_MINUTE_OPTIONS.map { minutes ->
-        val leadMinute = (target.startMinute - minutes).coerceAtLeast(0)
         UIAction.actionWithTitle(
-            title = "课前 $minutes 分钟显示 (${hm(leadMinute)})",
+            title = leadTitle(target, minutes),
             image = if (minutes == status.leadMinutes) UIImage.systemImageNamed("checkmark") else null,
             identifier = null,
-        ) { _ ->
-            NSUserDefaults.standardUserDefaults.setInteger(minutes.toLong(), LEAD_MINUTES_KEY)
-            sendLiveActivityCommand(if (active) "lead" else "arm", target)
-        }
+        ) { _ -> chooseLeadMinutes(minutes, target, active) }
     }
     val control = if (active) {
         UIAction.actionWithTitle(
@@ -210,6 +223,21 @@ private fun buildMenu(target: LiveActivityTarget, active: Boolean, status: LiveA
             control,
         ),
     )
+}
+
+private fun leadTitle(target: LiveActivityTarget, minutes: Int): String =
+    "课前 $minutes 分钟显示 (${hm((target.startMinute - minutes).coerceAtLeast(0))})"
+
+/** 记作以后所有课程的默认提前时间；没在显示时顺便恢复这一项的自动出现。 */
+private fun chooseLeadMinutes(minutes: Int, target: LiveActivityTarget, active: Boolean) {
+    NSUserDefaults.standardUserDefaults.setInteger(minutes.toLong(), LEAD_MINUTES_KEY)
+    sendLiveActivityCommand(if (active) "lead" else "arm", target)
+}
+
+private fun openLiveActivitySettings() {
+    NSURL.URLWithString(UIApplicationOpenSettingsURLString)?.let {
+        UIApplication.sharedApplication.openURL(it, options = emptyMap<Any?, Any?>(), completionHandler = null)
+    }
 }
 
 /** 已到课前 N 分钟：此时没在显示说明被关掉了，按钮叫“重新开启”。 */

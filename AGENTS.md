@@ -49,6 +49,7 @@
 - 分支流程：`main` 跟踪 `mine/main`。每项改动在 `feat/…`、`fix/…`、`perf/…` 分支开发，用户要求时推到 `mine` 并开 PR 合入 `mine/main`；合并由用户决定。PR 由 `kmp-security-check`（共享测试/编译）和 `kmp-package`（iOS 相关改动时打 Debug IPA）检查。
 - 标签：`debug-*` 只触发 Actions 打包、不建 Release；`v*`（如 `v1.8.3-KMP`）打四端包并发 GitHub Release，发布说明放 `docs/releases/<tag>.md`。
 - 改版本号要同步修改：`multiplatform/androidApp/build.gradle.kts`（versionName/versionCode）、`desktopApp/build.gradle.kts`（数值版本）、`windowsApp/build.gradle.kts`、`iosApp/iosApp/Info.plist`、`iosApp/CourseScheduleWidget/Info.plist`（版本与 Build 必须与宿主一致），以及 `shared/.../update/AppUpdateChecker.kt` 的 `CURRENT_VERSION` 和 `AppUpdateCheckerTest`。
+- iOS 最低系统为 18.0（实时活动的 Apple Watch 视图与分钟计时依赖 iOS 18）：宿主 `Config.xcconfig` 与小组件 `Widget.xcconfig` 必须一致，由 `kmp-security-check.yml` 与 `SecurityReleaseConfigTest` 断言；调整时三处同步，并在发布说明写明。
 - 技术栈：Kotlin Multiplatform + Compose Multiplatform/Material 3；Ktor；Ksoup 解析 HTML；`kotlinx.serialization`；SQLDelight 缓存；凭据走 Android Keystore / Apple Keychain / macOS `MacOsSecretBag` / Windows DPAPI；验证码 Android/Windows 用 PyTorch 模型，Apple 用 Core ML。
 - 本机验证产物（截图、导出、诊断日志）放忽略目录 `.artifacts/`，不进 Git。
 
