@@ -600,7 +600,14 @@ fun LoginRoute(
                 windowClass = windowClass,
                 appCommandBus = appCommandBus,
                 nativeNavigationEnabled = nativeNavigationEnabled,
-                onOpenNativeRoute = onOpenNativeRoute,
+                onOpenNativeRoute = { routeId ->
+                    // Android 从当前仍可交互的壳交接会话，再启动原生页面。后台恢复或旧宿主
+                    // 延迟清理后不能只依赖上一次重组的 SideEffect，否则详情页会读到 null 并立即退出。
+                    if (platform.family == PlatformFamily.Android) {
+                        onAuthenticatedSessionChanged(authenticatedSession)
+                    }
+                    onOpenNativeRoute(routeId)
+                },
                 onOpenExternalUrl = onOpenExternalUrl,
             )
         }

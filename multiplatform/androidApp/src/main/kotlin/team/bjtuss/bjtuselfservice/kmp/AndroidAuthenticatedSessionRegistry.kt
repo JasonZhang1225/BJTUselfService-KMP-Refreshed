@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Application
 import android.os.Bundle
 import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
+import team.bjtuss.bjtuselfservice.shared.NativeSessionHandoff
 
 /**
  * 根 Activity 与系统详情 Activity 之间的进程内会话桥。
@@ -34,13 +35,15 @@ object AndroidAuthenticatedSessionRegistry {
     }
     private val observers = linkedSetOf<(AuthenticatedSession?) -> Unit>()
 
-    var session: AuthenticatedSession? = null
-        private set
+    private val handoff = NativeSessionHandoff<AuthenticatedSession>()
+    val session: AuthenticatedSession?
+        get() = handoff.session
 
     @Synchronized
-    fun update(value: AuthenticatedSession?) {
-        session = value
-        observers.toList().forEach { it(value) }
+    fun update(owner: Any, value: AuthenticatedSession?) {
+        if (handoff.update(owner, value)) {
+            observers.toList().forEach { it(value) }
+        }
     }
 
     @Synchronized
