@@ -15,7 +15,8 @@
   - 顶栏：图书馆页由 `staticTopBar` 改为 `scrollUnderTopBar`，账户卡与 tab 作为列表首项随内容滚动，内容滚进 iOS 原生液态玻璃顶栏（与考试/作业页一致），横屏不再有固定头部挤压和顶部实心空带。
   - 续借栏：整条 Material 底栏 + 底部透明净空（横屏露出黑条）改为浮在列表上方的胶囊（最宽 560dp、避开水平安全区，底边 = 真实底部安全区 + 10dp），列表末尾按胶囊实测高度让位；当前借阅为空时不显示。
   - 评审：`firstReferer` 改为精确校验 https + `opac.bjtu.edu.cn` + 默认端口（新增 `libraryFinishUrl` 及 2 个测试），`followAllowed` 起始地址也过白名单；`LibraryLoginProtocol`/`LibraryModel` 以学号为 remember key，换账号不沿用旧借阅与 loanId。
-  - 本机 Gradle：Maven Central 对容器出口 429，已在用户级 `~/.gradle/init.d/maven-central-mirror.gradle.kts` 优先走 Google 的 Maven Central 镜像（不在仓库内）。
+  - 云环境（Mine）：Maven Central 对容器出口 429；用户已在 Mine 的 Setup script 里写入 Gradle 镜像 init 脚本（Google 的 Maven Central 镜像）、Android SDK（`/opt/android-sdk`，platform 36、build-tools 36.0.0）与仅云容器用的一次性调试签名（随机口令，非共享 upload key，APK 不能覆盖安装正式包）；`ANDROID_HOME` 写在环境变量。
+  - 已验证（云容器 Linux，JDK 21）：`:shared:compileKotlinDesktop`、`:windowsApp:compileKotlinWindows`、`:androidApp:assembleDebug` BUILD SUCCESSFUL；`:shared:desktopTest` 978 项仅 `DesktopAgentIntegrationTest` 1 项失败（macOS 专属，Linux 返回 127），图书馆 39 项全过。iOS 交给 PR CI。
   - 未验证：iOS 模拟器/真机实际观感（本环境为 Linux，无 Xcode）；横屏顶栏高度若仍明显高于其他页，需用 `--layout-metrics` 采宿主上报的 `top=`。
 - 图书馆借阅功能（PR [#40](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/40)，待合并；#38 已关闭）：新增 `data/library/`（模型、endpoints、SSO OAuth2 登录协议、remote、repository）、`feature/library/`（LibraryModel、LibraryScreen）、`AppSection.LIBRARY` + 应用页磁贴 + 底栏自定义候选 + 首页到期提醒卡片；续借支持单本/全选批量并带确认弹窗，不做离线缓存。
   - 协议证据（2026-10-21 真实抓包）：SSO 会话有效时授权页直接回 `opac.bjtu.edu.cn/OAuth2/bjtu/index?code=...`；回调页 HTML 内一次性 `data/time/enc`；`/OAuth2/bjtu/login` 返回 `{"status":true}` 并写 opac Cookie（`p_auth_token` 等）；`/find/*` 只靠 Cookie 鉴权（不带 SPA 动态 JWT 头也能读取，已实测）。
