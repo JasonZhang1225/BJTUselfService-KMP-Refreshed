@@ -918,3 +918,18 @@
   - 验证：真实 `AppleSheet` + 可延迟关闭完成的测试宿主，3 项离屏集成测试通过（重叠弹层独立释放、关闭后快速重开、重组保留呈现对象并更新回调）；`./gradlew :shared:desktopTest --no-configuration-cache` 完整共享测试 935 项全部通过（含新增 3 项）。Linux 无 Xcode/iOS 模拟器，原生编译与 iOS 测试交给 PR CI，未做 iPhone 实机复测，未修改版本号或发版。
 - PR #34 已由用户合入 main（eff3629），完成细节移入 `history_full.md`。本次将 main 合入 #35，只解决 `memory.md` 冲突，保留两项修复的源码原样。
 - Package 记录：PR #34 的 `935d5ba` → run `39522324933`；PR #35 原独立提交 `5430eb8` → run `39522327270`。两次打包均已成功，使用各自原提交；当前 #35 合入 main 后的提交包含两项修复，未额外触发打包；未改版本或创建 Release。
+
+## 2026-10-21 Agent Remote 计划 PR 1–4（PR #36 → `agent-remote`，合并提交 8d36c82）
+
+- 改动（每个计划 PR 一个提交，按序）：
+  - PR 1 `de9917e`：`shared/.../sync/` 公共全量刷新服务 `AppRefreshCoordinator`（逐源 success/failed/skipped/needs_user_action 与真实同步时间；同源合并、重叠补齐、会话恢复整批合并、单源超时、关闭取消）；`AppDataGraph` 把 Compose 内的 Repository/ScreenModel 装配移到普通 Kotlin；App 全局刷新改走协调器；邮箱未读探测返回是否成功，首页/邮箱未读/物理实验补记同步时间。
+  - PR 2 `a73caf1`：`agent/host/` 本机 IPC（仅 127.0.0.1，令牌写在用户私有端点文件，请求带 ID/截止时间/长度上限/协议版本）；`AppRefreshHost`、`HeadlessRefreshHost`。`cache update` 默认全量（含物理实验、演示实验、CITEL、物理在线），App 开着交给 App，关着无窗口执行，GUI 启动请求交接；新增退出码 7（已交出但无结果）、8（版本不一致），旧版 App 不响应仍为 6；没有缓存时直接返回 2。
+  - PR 3 `fd15a12`：`multiplatform/remote-site-template/`（D1 迁移；配对/快照/租约任务/拥有者管理/有界清理；令牌与配对码只存摘要；Node 测试用 node:sqlite 跑真实迁移 SQL）；`agent/remote/RemoteProtocol.kt` 与模板共用虚构 fixtures 做契约测试；CI 新增模板测试作业。
+  - PR 4 `0b21027`：`agent/remote/` 常驻调度（默认 1800 秒先刷新再上报、5 秒只领任务；退避加抖动、Retry-After、401 停止；只重传不重刷；任务续租与本地结果记录）；设置页“远程查询（手机）”卡片；Windows 托盘、关窗隐藏、`--background`、开机启动（HKCU Run，默认关）、单实例唤出；令牌只进 DPAPI。
+  - 修复 `b008ab4`、`40027ad`：轮询与上报“整份读改写”持久状态互相覆盖，上报尝试时间丢失导致立即再做一次全量刷新（macOS CI 负载下 refreshes=2）；改为同一把锁内只改各自字段，新增交错回归测试（修复前失败）。`b008ab4` 只放宽测试时序，未修到根因。
+- 原因/决策：按 `docs/agent/agent-remote-plan.md` 实施；远程同步默认关闭，需配对与上云同意；拥有者接口暂用部署机密 `OWNER_TOKEN`，未配置一律拒绝。用户选择保留修复提交、不改写历史。
+- 验证：
+  - CI：`de9917e`、`a73caf1`、`fd15a12` 自身运行的检查全部通过；`0b21027`、`b008ab4` 的 iOS compile and macOS security tests 失败（上述竞态）；`40027ad` 四项（Android、iOS/macOS、模板测试、Windows CLI 冒烟与 IPC/远程/DPAPI 单测）全部通过。
+  - 本地 Linux：`LC_ALL=C.UTF-8 ./gradlew :shared:desktopTest` 988 项全过；runner 测试在 CPU 2 倍超载下连续 5 次通过；`:shared:compileAndroidMain :androidApp:compileDebugKotlin :desktopApp:compileKotlin :windowsApp:compileKotlinWindows` 通过；模板 `npm test` 14 项全过。
+- 未验证：owner-private Site 的平台机器访问（未建任何 Site）；真实学校登录下的无窗口刷新；Windows 真机托盘、窗口隐藏后组合是否持续、开机启动、IPC 交接时序；Ktor 客户端对真实 Site 的连通。
+- 环境备注：容器内 `repo.maven.apache.org` 返回 429，用 `~/.gradle/init.d` 改走 Google 镜像（不入库）；不设 `LC_ALL=C.UTF-8` 时 `DesktopAgentIntegrationTest` 因中文路径失败，属环境问题。

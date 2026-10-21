@@ -2,7 +2,7 @@
 
 > 日期：2026-10-21（北京时间）。
 > 集成分支：`agent-remote`，基于用户刚合并 PR #34、#35 后的 `main@f454d3a5cf15`。
-> 状态（2026-10-21 更新）：计划 PR 1–4 已在 `claude/kind-cannon-afcnlu` 实现，草稿 PR #36 目标 `agent-remote`，未合入；PR 5–7 未开始。
+> 状态（2026-10-21 更新）：计划 PR 1–4 已合入 `agent-remote`（PR #36，合并提交 8d36c82）；PR 5–7 未开始。
 > 计划 PR 3 的首项“owner-private Site 机器访问实测”**未完成**（没有创建任何 Site），电脑端远程同步默认关闭，仅可用测试 Site 与虚构数据联调。
 > Windows 实机（DPAPI 真实令牌、托盘/后台/开机启动、登录刷新）只经 Windows CI 编译与单元测试，未在真机验证。
 > 本计划接续 `ai-agent-plan.md`；现有 CLI 和本机 Skill 保留，下面的刷新语义在实现后替代旧计划的相应限制。
