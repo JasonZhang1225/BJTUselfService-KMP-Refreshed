@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-21。
-> 当前分支：`feat/library`（图书馆借阅功能开发中，未提交/未推送；基于 `main@f454d3a`，该提交已包含 PR #35 合并）。
+> 当前分支：`feat/library`（PR [#38](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/38)，已推送、CI 运行中，待用户手动合并；基于 `main@f454d3a`，该提交已包含 PR #35 合并）。
 > KMP 源码版本：`1.8.5-EmergencyFix2` / Build 40；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。`history_full.md` 尚无 EmergencyFix2 发版条目。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
@@ -11,7 +11,7 @@
 
 ## 进行中
 
-- 图书馆借阅功能（`feat/library`，未提交/未推送）：新增 `data/library/`（模型、endpoints、SSO OAuth2 登录协议、remote、repository）、`feature/library/`（LibraryModel、LibraryScreen）、`AppSection.LIBRARY` + 应用页磁贴 + 底栏自定义候选 + 首页到期提醒卡片；续借支持单本/全选批量并带确认弹窗，不做离线缓存。
+- 图书馆借阅功能（PR [#38](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/38)，待合并）：新增 `data/library/`（模型、endpoints、SSO OAuth2 登录协议、remote、repository）、`feature/library/`（LibraryModel、LibraryScreen）、`AppSection.LIBRARY` + 应用页磁贴 + 底栏自定义候选 + 首页到期提醒卡片；续借支持单本/全选批量并带确认弹窗，不做离线缓存。
   - 协议证据（2026-10-21 真实抓包）：SSO 会话有效时授权页直接回 `opac.bjtu.edu.cn/OAuth2/bjtu/index?code=...`；回调页 HTML 内一次性 `data/time/enc`；`/OAuth2/bjtu/login` 返回 `{"status":true}` 并写 opac Cookie（`p_auth_token` 等）；`/find/*` 只靠 Cookie 鉴权（不带 SPA 动态 JWT 头也能读取，已实测）。
   - 已验证（本机 Windows，JDK 21，仓库 Gradle 9.3.1）：`:androidApp:assembleDebug`、`:windowsApp:compileKotlinWindows` BUILD SUCCESSFUL；`:shared:desktopTest` 975 项中 5 项失败均为 macOS 专属旧测试（`DesktopAgentIntegrationTest` 3、`MacUninstallCleanerTest` 2，Windows 上本来就会失败），图书馆 36 项（协议 6、数据层 16、模型 13、真实链路 1）全部通过。IDE 自动改的 Gradle 9.8.0 wrapper / daemon JVM / tooling.parallel / `.idea` 已全部还原，wrapper 保持 9.3.1 并保留 SHA256 校验。
   - 本机构建准备：生成了仅测试用 keystore `~/.android/bjtu-kmp-upload.keystore`（alias `bjtu-kmp-local`，口令属本机环境信息，未记录在仓库），`multiplatform/local.properties` 写入 sdk.dir；对应本地签名口令写在用户级 `~/.gradle/gradle.properties`（均被 gitignore/仓库外，不提交）。AGP 已自动安装 SDK Platform 36。
