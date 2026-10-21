@@ -41,7 +41,7 @@ Windows 打包：在 `multiplatform/` 用 JDK 21 运行 `gradlew.bat :windowsApp
 
 ## 手机与平板（Android / iOS）
 
-设置 → 功能开关里打开“ChatGPT 插件”后，应用页出现同名入口。手机不做定时上传、心跳和本地 CLI，只在每次 App 刷新完成后上传快照；
+设置 → 功能开关里的“ChatGPT 插件”默认开启，应用页出现同名入口（不配对就不会上传任何数据，不想看到可以关掉）。手机不做定时上传、心跳和本地 CLI，只在每次 App 刷新完成后上传快照；
 即时查询仍由电脑执行。配对前 App 先读取 Site 的 `/api/v1/health`，模板低于 0.4.0 时拒绝配对（旧模板配对新设备会撤销电脑）。
 手机没有电脑那样的连接助手，私人 Site 的服务访问凭据需要在配对表单里手动填写，保存在 Android Keystore / Apple Keychain。
 

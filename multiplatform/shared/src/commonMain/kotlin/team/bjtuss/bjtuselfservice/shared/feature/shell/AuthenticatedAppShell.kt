@@ -2184,7 +2184,7 @@ fun AuthenticatedAppShell(
             ) {
                 MoreWorkspace(
                     agentPluginTitle = team.bjtuss.bjtuselfservice.shared.feature.settings.agentPluginTitle(platform),
-                    onOpenAgentPlugins = if (settingsState.preferences.isAgentPluginEnabled(platform.isMobile) &&
+                    onOpenAgentPlugins = if (settingsState.preferences.isAgentPluginEnabled &&
                         (platform.family == PlatformFamily.MacOS || remoteAgent != null)) ({
                         if (useNativeSecondaryRoutes) onOpenNativeRoute(AI_ASSISTANT_SETTINGS_ROUTE_ID)
                         else backStack.add(AiAssistantSettingsRoute)

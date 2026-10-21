@@ -63,7 +63,7 @@ internal fun createMobileRemoteAgent(
     )
     scope.launch {
         coordinator.completed.collect { report ->
-            val enabled = holder.session?.settingsModel?.state?.value?.preferences?.isAgentPluginEnabled(mobile = true) == true
+            val enabled = holder.session?.settingsModel?.state?.value?.preferences?.isAgentPluginEnabled == true
             if (report.origin == RefreshOrigin.APP && enabled) runCatching { controller.uploadAfterRefresh(report) }
         }
     }

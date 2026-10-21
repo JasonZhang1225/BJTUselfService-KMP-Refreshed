@@ -44,10 +44,10 @@ data class AppPreferences(
     val staggeredSecondSlot: Boolean = true,
     /** 是否允许本机 AI Agent 命令行读取成绩（默认否，其余数据由“AI 助手”安装后即可读）。 */
     val agentGradesAllowed: Boolean = false,
-    /** “Agent 和 ChatGPT 插件”（手机端为“ChatGPT 插件”）功能开关；null 时电脑端默认开、手机端默认关。 */
+    /** “Agent 和 ChatGPT 插件”（手机端为“ChatGPT 插件”）功能开关；默认开，方便用户发现（不配对不会上传任何数据）。 */
     val agentPluginEnabled: Boolean? = null,
 ) {
-    fun isAgentPluginEnabled(mobile: Boolean): Boolean = agentPluginEnabled ?: !mobile
+    val isAgentPluginEnabled: Boolean get() = agentPluginEnabled ?: true
     val isPhysicsLabEnabled: Boolean get() = physicsLabEnabled == true
     /** 1.8.3 的三个必看弹窗已合并为一个；三项都确认过的用户不再看到合并弹窗。 */
     val release183GuidePending: Boolean

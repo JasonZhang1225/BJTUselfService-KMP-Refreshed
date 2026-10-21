@@ -237,7 +237,7 @@ fun SettingsWorkspace(
             model::setPhyVlabEnabled, model::setPhysicsLabEnabled, model::setCitelEnabled,
             onPhysicsLabSettings, onCitelSettings, physicsDemoEnabled, physicsDemoConfigured, onPhysicsDemoEnabled, onPhysicsDemoSettings,
             phyVlabConfigured, onPhyVlabSettings,
-            agentPluginTitle = agentPluginTitle(platform), agentPluginEnabled = state.preferences.isAgentPluginEnabled(platform.isMobile),
+            agentPluginTitle = agentPluginTitle(platform), agentPluginEnabled = state.preferences.isAgentPluginEnabled,
             onAgentPluginEnabled = onAgentPluginEnabled)
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
