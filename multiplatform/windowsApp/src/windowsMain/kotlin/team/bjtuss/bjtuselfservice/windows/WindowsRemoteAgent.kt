@@ -1,8 +1,9 @@
 package team.bjtuss.bjtuselfservice.windows
 
+import com.sun.jna.platform.win32.Advapi32Util
+import com.sun.jna.platform.win32.WinReg
 import java.io.File
 import java.util.Base64
-import java.util.concurrent.TimeUnit
 import java.util.prefs.Preferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -52,6 +53,9 @@ internal class WindowsRemoteSecretStore(
     }
 }
 
+/** 启动项命令：带引号的可执行文件路径 + 后台参数。 */
+internal fun autostartCommand(exe: String): String = "\"$exe\" $BACKGROUND_ARGUMENT"
+
 /**
  * 开机启动：当前用户的 `HKCU\...\Run`（不需要管理员，也不是 LocalSystem 服务），
  * 以用户自己的登录会话运行，才能读取其 DPAPI 数据。默认关闭，只在用户打开开关时写入。
@@ -67,32 +71,31 @@ internal class WindowsRemoteHost(
 
     override fun isAutostartEnabled(): Boolean {
         val exe = appExecutable ?: return false
-        val output = reg("query", RUN_KEY, "/v", VALUE_NAME) ?: return false
-        return exe in output && BACKGROUND_ARGUMENT in output
+        val value = runCatching {
+            if (!Advapi32Util.registryValueExists(WinReg.HKEY_CURRENT_USER, RUN_KEY, VALUE_NAME)) null
+            else Advapi32Util.registryGetStringValue(WinReg.HKEY_CURRENT_USER, RUN_KEY, VALUE_NAME)
+        }.getOrNull() ?: return false
+        return value == autostartCommand(exe)
     }
 
+    /**
+     * 直接调用注册表 API（Unicode），不经 reg.exe：安装路径含中文（“交大自由行 KMP”），
+     * reg.exe 的输出是系统代码页、参数里的引号也会被 Java 的命令行拼接打乱，导致写入后校验失败。
+     */
     override fun setAutostart(enabled: Boolean): Boolean {
         val exe = appExecutable ?: return false
-        return if (enabled) {
-            reg("add", RUN_KEY, "/v", VALUE_NAME, "/t", "REG_SZ", "/d", "\"$exe\" $BACKGROUND_ARGUMENT", "/f") != null
-        } else {
-            reg("delete", RUN_KEY, "/v", VALUE_NAME, "/f") != null || !isAutostartEnabled()
-        }
+        return runCatching {
+            if (enabled) {
+                Advapi32Util.registrySetStringValue(WinReg.HKEY_CURRENT_USER, RUN_KEY, VALUE_NAME, autostartCommand(exe))
+            } else if (Advapi32Util.registryValueExists(WinReg.HKEY_CURRENT_USER, RUN_KEY, VALUE_NAME)) {
+                Advapi32Util.registryDeleteValue(WinReg.HKEY_CURRENT_USER, RUN_KEY, VALUE_NAME)
+            }
+            isAutostartEnabled() == enabled
+        }.getOrDefault(false)
     }
 
-    /** 调用系统 reg.exe（参数逐个传入，不经 shell）；失败返回 null。 */
-    private fun reg(vararg args: String): String? = runCatching {
-        val process = ProcessBuilder(listOf("reg.exe") + args).redirectErrorStream(true).start()
-        val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
-        if (!process.waitFor(10, TimeUnit.SECONDS)) {
-            process.destroy()
-            return null
-        }
-        output.takeIf { process.exitValue() == 0 }
-    }.getOrNull()
-
     private companion object {
-        const val RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+        const val RUN_KEY = "Software\\Microsoft\\Windows\\CurrentVersion\\Run"
         const val VALUE_NAME = "BJTUselfServiceKMP"
     }
 }

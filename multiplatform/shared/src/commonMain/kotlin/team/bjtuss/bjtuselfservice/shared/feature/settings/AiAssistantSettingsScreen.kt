@@ -31,7 +31,6 @@ internal fun AiAssistantSettingsScreen(model: SettingsScreenModel, platform: Pla
 
     val settings = remember(integration, remote, model) { movableContentOf {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         integration?.let {
             AgentAssistantCard(it, preferences.preferences.agentGradesAllowed, model::setAgentGradesAllowed,
                 showStatus = false, statusRefreshKey = statusRefreshKey,
@@ -45,14 +44,13 @@ internal fun AiAssistantSettingsScreen(model: SettingsScreenModel, platform: Pla
     } }
     val dashboard = remember(integration, remote) { movableContentOf {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("功能状态", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text("运行状态", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(start = 4.dp))
         LocalAssistantStatus(localStatus, localLoading, integration != null) {
             localLoading = true
             statusRefreshKey += 1
         }
         remote?.let { RemoteAssistantStatus(it) }
-        Text("本机 AI 的成绩读取权限与 Site 上云范围分别设置。", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     } }
     BoxWithConstraints(modifier.fillMaxSize().padding(top = LocalTopBarClearance.current, bottom = LocalBottomBarClearance.current)) {
@@ -134,10 +132,9 @@ private fun RemoteAssistantStatus(controller: RemoteAgentController) {
     val config by controller.config.collectAsState()
     val status by controller.status.collectAsState()
     val uri = LocalUriHandler.current
-    StatusPanel("私人 Site 与电脑配对") {
-        Text(if (config.paired) "已配对" else "尚未配对", style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary)
-        Text(remotePhaseText(status.phase), style = MaterialTheme.typography.bodyMedium)
+    StatusPanel("远程查询") {
+        Text(if (config.paired) remotePhaseText(status.phase) else "尚未配对", style = MaterialTheme.typography.titleSmall,
+            color = if (status.phase == RemotePhase.RUNNING) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
         if (config.paired) {
             StatusField("Site 地址", config.siteUrl.orEmpty())
             StatusField("最近连接", formatRemoteTime(status.lastSeenAt))
@@ -148,11 +145,9 @@ private fun RemoteAssistantStatus(controller: RemoteAgentController) {
             StatusField("允许上云", RemoteScope.entries.filter { it in config.scopeSet }.joinToString("、") { it.label })
             OutlinedButton(onClick = { config.siteUrl?.let(uri::openUri) }) { Text("打开我的 Site") }
         } else {
-            Text("在左侧填写私人 Site 地址和配对码，再选择允许上云的数据。窄窗口请向下查看设置。",
+            Text("按“设置方法”搭建私人 Site 后，填写地址和配对码完成配对。",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         status.lastError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-        Text("这里显示电脑与 Site 的连接状态；聊天端插件是否可用，需在聊天中单独验证。",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

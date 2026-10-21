@@ -69,7 +69,8 @@ compose.desktop {
         )
         nativeDistributions {
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)
-            modules("java.sql")
+            // jdk.charsets：AWT 原生菜单（托盘）在中文 Windows 上需要 GBK 编码器，缺了会显示方框。
+            modules("java.sql", "jdk.charsets", "jdk.localedata")
             // 中文显示名。英文系统上 jpackage 默认选代码页 1252 的 en .wxl，WiX light 会把中文
             // 打成 `?????` 并报 311；CI 用 -Duser.language=zh 让它选代码页 936 的中文 .wxl。
             // WINDOWS_PACKAGE_NAME/… 仍可手动传 ASCII 兜底。
@@ -148,20 +149,20 @@ afterEvaluate {
                 overrideWxs.copyTo(File(dest, "main.wxs"), overwrite = true)
             }
             if (taskName == "packageMsi") {
-                val rewrite = file("packaging/rewrite-msi-product-code.ps1")
+                // 配置缓存不能序列化脚本对象：路径在配置阶段算好，执行阶段只用纯值和 ProcessBuilder。
+                val rewriteScript = file("packaging/rewrite-msi-product-code.ps1").absolutePath
+                val msiPath = layout.buildDirectory.file("compose/binaries/main/msi/$windowsPackageDisplayName-1.8.5.msi")
+                    .get().asFile.absolutePath
                 doLast {
-                    val rewriteOutput = providers.exec {
-                        commandLine(
-                            "powershell.exe",
-                            "-NoProfile",
-                            "-ExecutionPolicy", "Bypass",
-                            "-File", rewrite.absolutePath,
-                            layout.buildDirectory.file("compose/binaries/main/msi/$windowsPackageDisplayName-1.8.5.msi").get().asFile.absolutePath,
-                        )
-                    }
-                    val rewriteResult = rewriteOutput.result.get()
-                    if (rewriteResult.exitValue != 0) logger.error(rewriteOutput.standardError.asText.get())
-                    rewriteResult.assertNormalExitValue()
+                    val process = ProcessBuilder(
+                        "powershell.exe",
+                        "-NoProfile",
+                        "-ExecutionPolicy", "Bypass",
+                        "-File", rewriteScript,
+                        msiPath,
+                    ).redirectErrorStream(true).start()
+                    val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
+                    check(process.waitFor() == 0) { "改写 MSI ProductCode 失败：$output" }
                 }
             }
         }

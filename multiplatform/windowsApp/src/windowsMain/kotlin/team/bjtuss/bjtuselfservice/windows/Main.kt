@@ -3,9 +3,6 @@ package team.bjtuss.bjtuselfservice.windows
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.painter.ColorPainter
-import androidx.compose.ui.window.Tray
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -132,17 +129,22 @@ fun main(args: Array<String>) {
             LaunchedEffect(Unit) {
                 showRequests.collect { if (it > 0) windowVisible = true }
             }
-            if (traySupported && (remoteConfig.minimizeToTray || remoteConfig.runnable || !windowVisible)) {
-                Tray(
-                    icon = remember { appWindowIcon() ?: ColorPainter(Color(0xFF1F6FEB)) },
-                    tooltip = if (remoteConfig.runnable) "交大自由行 KMP（远程查询运行中）" else "交大自由行 KMP",
-                    onAction = { windowVisible = true },
-                    menu = {
-                        Item("打开交大自由行", onClick = { windowVisible = true })
-                        Item("退出（停止远程查询）", onClick = ::exitApplication)
-                    },
-                )
+            val showTray = traySupported && (remoteConfig.minimizeToTray || remoteConfig.runnable || !windowVisible)
+            val trayTooltip = if (remoteConfig.runnable) "交大自由行 KMP（远程查询运行中）" else "交大自由行 KMP"
+            val trayIconImage = remember { appTrayImage() }
+            val tray = remember { mutableStateOf<WindowsTray?>(null) }
+            DisposableEffect(showTray, trayIconImage) {
+                if (showTray && trayIconImage != null) {
+                    tray.value = runCatching {
+                        WindowsTray(trayIconImage, trayTooltip, onOpen = { windowVisible = true }, onExit = ::exitApplication)
+                    }.getOrNull()
+                }
+                onDispose {
+                    tray.value?.close()
+                    tray.value = null
+                }
             }
+            LaunchedEffect(trayTooltip, tray.value) { tray.value?.setTooltip(trayTooltip) }
             val appCommandBus = remember { AppCommandBus() }
             val shellSubscribers by appCommandBus.subscriptionCount.collectAsState()
             val authenticatedSession = remember { mutableStateOf<AuthenticatedSession?>(null) }
@@ -231,6 +233,12 @@ private fun appWindowIconImages(): List<Image>? {
         source.getScaledInstance(32, 32, Image.SCALE_SMOOTH),
         source.getScaledInstance(48, 48, Image.SCALE_SMOOTH),
     )
+}
+
+/** 托盘图标：取原图，由系统按托盘尺寸缩放；读不到时不显示托盘（窗口照常可用）。 */
+private fun appTrayImage(): Image? {
+    val stream = appWindowIconResource() ?: return null
+    return runCatching { ImageIO.read(stream) }.getOrNull()
 }
 
 private fun appWindowIconResource(): java.io.InputStream? =
