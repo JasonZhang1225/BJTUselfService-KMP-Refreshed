@@ -242,6 +242,8 @@ fun SettingsWorkspace(
         if (agentIntegration != null) {
             AgentAssistantCard(agentIntegration, state.preferences.agentGradesAllowed, model::setAgentGradesAllowed)
         }
+        // 远程查询只在提供了控制器的宿主显示（首版 Windows）。
+        LocalRemoteAgentController.current?.let { RemoteAgentCard(it) }
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("底栏显示", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

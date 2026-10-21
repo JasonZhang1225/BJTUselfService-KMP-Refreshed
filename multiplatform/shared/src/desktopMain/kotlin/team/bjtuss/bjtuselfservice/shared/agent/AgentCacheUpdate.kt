@@ -106,6 +106,10 @@ internal fun runCacheUpdate(
 
     delegate()?.let { return it }
 
+    // 从没登录过（没有缓存目录或数据库）：不建目录、不拿锁，直接说明。
+    if (!File(platform.cacheDirectory, "bjtuselfservice_cache.db").isFile) {
+        return fail("本机还没有交大自由行的缓存。请先打开 App 登录一次。", AgentExit.NO_DATA)
+    }
     val securityFactory = platform.securityStore ?: return fail("当前平台不支持命令行刷新。", AgentExit.NO_DATA)
     val captchaFactory = platform.captchaRecognizer ?: return fail("当前平台不支持命令行刷新。", AgentExit.NO_DATA)
     val lock = AgentAppLock.tryAcquire(platform.cacheDirectory)

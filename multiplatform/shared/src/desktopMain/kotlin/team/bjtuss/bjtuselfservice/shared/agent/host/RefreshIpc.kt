@@ -53,6 +53,8 @@ object RefreshIpcOp {
     /** GUI 启动时请求无窗口宿主交出执行权。 */
     const val HANDOFF = "handoff"
     const val PING = "ping"
+    /** 再次启动 App 时请已在运行（可能隐藏在后台）的窗口进程显示出来，避免出现第二个会话。 */
+    const val SHOW = "show"
 }
 
 /** 可判定的拒绝/失败码（CLI JSON 输出原样带出）。 */
@@ -147,6 +149,9 @@ interface RefreshIpcHandler {
 
     /** 返回 true 表示同意交出执行权（随后释放进程锁）；App 进程总是拒绝。 */
     fun handoff(): Boolean = false
+
+    /** 返回 true 表示已把窗口显示到前台；无窗口宿主返回 false。 */
+    fun show(): Boolean = false
 }
 
 internal val ipcJson = Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false }
@@ -266,6 +271,10 @@ class RefreshIpcServer private constructor(
         }
         when (request.op) {
             RefreshIpcOp.PING -> socket.writeLine(RefreshIpcResponse(REFRESH_IPC_PROTOCOL, request.requestId, "result", executor.wire))
+            RefreshIpcOp.SHOW -> socket.writeLine(
+                if (handler.show()) RefreshIpcResponse(REFRESH_IPC_PROTOCOL, request.requestId, "result", executor.wire)
+                else error(request.requestId, RefreshIpcCode.UNSUPPORTED, "当前执行者没有窗口。"),
+            )
             RefreshIpcOp.HANDOFF -> {
                 val agreed = handler.handoff()
                 socket.writeLine(

@@ -58,14 +58,24 @@ class AppRefreshHost private constructor(
             cacheDirectory: File,
             sessionProvider: () -> AuthenticatedSession?,
             handoffWaitMillis: Long = 8_000,
+            onShowRequest: (() -> Unit)? = null,
         ): AppRefreshHost? {
             if (!cacheDirectory.isDirectory) cacheDirectory.mkdirs()
             val lock = AgentAppLock.tryAcquire(cacheDirectory) ?: run {
                 callRefreshIpc(cacheDirectory, RefreshIpcOp.HANDOFF, deadlineMillis = 5_000)
                 waitForLock(cacheDirectory, handoffWaitMillis)
             } ?: return null
-            val server = RefreshIpcServer.start(cacheDirectory, RefreshExecutor.APP, AppSessionIpcHandler(sessionProvider))
+            val server = RefreshIpcServer.start(cacheDirectory, RefreshExecutor.APP, AppSessionIpcHandler(sessionProvider, onShowRequest))
             return AppRefreshHost(lock, server)
+        }
+
+        /**
+         * 已有 App 窗口进程在运行（例如远程同步开启后隐藏在后台）时请它显示窗口；
+         * 返回 true 表示对方已处理，本进程应直接退出，不再建立第二个会话。
+         */
+        fun showExistingWindow(cacheDirectory: File): Boolean {
+            if (readEndpointFile(cacheDirectory)?.executor != RefreshExecutor.APP.wire) return false
+            return callRefreshIpc(cacheDirectory, RefreshIpcOp.SHOW, deadlineMillis = 5_000) is RefreshIpcCallResult.Completed
         }
     }
 }
@@ -80,7 +90,16 @@ internal fun waitForLock(cacheDirectory: File, waitMillis: Long): AgentAppLock? 
 }
 
 /** App 进程：等到当前会话登录完成，再交给它的 [team.bjtuss.bjtuselfservice.shared.sync.AppRefreshCoordinator]。 */
-internal class AppSessionIpcHandler(private val sessionProvider: () -> AuthenticatedSession?) : RefreshIpcHandler {
+internal class AppSessionIpcHandler(
+    private val sessionProvider: () -> AuthenticatedSession?,
+    private val onShowRequest: (() -> Unit)? = null,
+) : RefreshIpcHandler {
+    override fun show(): Boolean {
+        val show = onShowRequest ?: return false
+        show()
+        return true
+    }
+
     override suspend fun refresh(sources: Set<RefreshSource>, origin: RefreshOrigin, deadlineMillis: Long): RefreshIpcOutcome {
         val session = withTimeoutOrNull(minOf(deadlineMillis, APP_SESSION_WAIT_MILLIS)) { awaitReadySession() } ?: return RefreshIpcOutcome.Rejected(RefreshIpcCode.NOT_SIGNED_IN, "App 正在运行但尚未登录。请在 App 里完成登录后再刷新。")
         val coordinator = session.refreshCoordinator
