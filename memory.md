@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-21。
-> 开发位置：主目录 `C:/Users/zjg/BJTUselfService-KMP-Refreshed` 的本地 `agent-remote`，按用户要求将原 11 个功能提交与后续实现整理为一个基本实现提交；不再使用开发工作树。本轮不推送、不建 PR、不合并 main。
+> 开发位置：主目录 `C:/Users/zjg/BJTUselfService-KMP-Refreshed` 的本地 `agent-remote`，按用户要求将原 11 个功能提交与后续实现整理为一个基本实现提交；不再使用开发工作树。用户已要求提交并推送 `agent-remote`；不建 PR、不合并 main。本地相对 `origin/agent-remote` 仍分叉（整理提交 vs 远端 11 提交）。
 > 压缩前源码、补丁、原提交 bundle 和旧工作树残留均备份于 `.artifacts/agent-remote-consolidation-20261021/`；原迁移备份和 Git stash 保留。宣传图分支 `claude/project-thread-a8br6t@5b165e4` 本地/远端保留。
 > 工作树清理：两个旧版 Temp 工作树已由 Git 自带命令删除，Git 仅登记主目录。`.artifacts/agent-windows` 已不是 Git 工作树；其递归残留清理被自动策略拒绝（blocked by policy），未绕过，完整残留已另存 669036652 字节归档。
 > 实际 `origin` 指向用户仓库 `JasonZhang1225/BJTUselfService-KMP-Refreshed`，无 `mine`，与 AGENTS.md 的旧远端命名不同。压缩基线为已知 `origin/main@f454d3a`；不改写 main 和远端。
@@ -9,6 +9,10 @@
 > Computer Use 已恢复：旧 CODEX_CLI_PATH 指向已不存在的 bin/d0097be4feba73d0/codex.exe，当前程序在 bin/6257d9e8f63c0f2b/codex.exe。已为旧目录建立 Junction，重置后 @oai/sky 可列出并读取安装版窗口；未改写程序。以后移除只删 Junction 本身，不递归删除目标。
 
 ## 进行中
+
+- **远程 Skill/MCP 导出。** 当前写法与用法快照已移入并跟踪 `docs/agent/remote-skill-mcp-export-20261021/`（52 文件）：远程插件 1.0.2 四个原文件、六工具完整 Schema、初始化 instructions、最近发布 Site 源、Windows 查询/CLI 参考源码、用法和虚构 JSONL 示例。`SHA256SUMS.json` 和 provenance 记录来源；MCP src 与最近发布 checkout f02ebf0 逐文件哈希一致，JSON/清单检查通过，无真实凭据缓存。当前插件服务 transport 失败，使用本会话更新后已回读验证的 1.0.2 原文，导出明确注明未再次确认远端变化；没有改逻辑或重新发布。
+
+- **CLI/MCP 一致性只读核对。** 两端复用 agentHomework/agentCalendar 及 homeworkJson/calendarJson 等业务输出，但查询接口、默认数据位置、外层结构和能力没有完全统一：CLI 支持日期范围/周次/未交/多课程/预约与 App 筛选，MCP 仅 sources/course/date/taskId，云端日程窗口为昨天起 21 天；CLI data.items 与 MCP snapshot.data.assignments.homework.items 层级不同，即时结果另套任务回执。远程 Skill 1.0.2 已要求不重复移日，本地 AgentSkill 和 MCP initialize.instructions 仍有旧“午夜归前一天”文案，存在解释歧义，本轮未改。虚构 Node 样例确认 dueAgendaDate=2026-10-25 与 midnightDeadline=true 在 25 日查询保留、26 日为 0 项；只证明该过滤例，不证明真实物理在线漏项原因。
 
 - **Agent Remote 基本实现已收口，等待合入与剩余验收。** 包含公共刷新服务、App/CLI 同一执行者、Windows DPAPI 配对/常驻/托盘/开机启动、私人 Site 持久快照与任务、6 个 MCP 工具、本地开发插件与查询 Skill、应用页“Agent 和 ChatGPT 插件”入口及搭建向导。最小化到托盘独立保存，默认开启，系统无托盘时不隐藏。现有 App/Site 日期处理逻辑没有因 DDL 纠错改动。
 - **验证证据。** JDK 21，`-I .artifacts/emergencyfix2-checks.gradle :shared:desktopTest :shared:compileAndroidMain :desktopApp:compileKotlin :windowsApp:compileKotlinWindows` 成功，996 项共享测试通过（沿用 Windows 既有 5 项排除）；Windows 既往 9 项通过/1 在线项跳过。Node `npm test` 36/36、`node scripts/build.mjs` 通过。浅深色和 1.5 倍文字合成 UI 已检查；`:windowsApp:packageMsi` 成功（45 秒）。本轮整理 Git 不重复构建。更多证据见 `docs/agent/windows-local-verification-2026-10-21.md` 与 `.artifacts/`。

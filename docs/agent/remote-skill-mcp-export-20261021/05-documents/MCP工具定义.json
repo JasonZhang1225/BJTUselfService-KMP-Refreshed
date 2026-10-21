@@ -1,0 +1,196 @@
+[
+  {
+    "name": "get_status",
+    "description": "读取设备最近在线时间及逐源真实同步时间，不访问学校。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "query_snapshot",
+    "description": "普通提问优先调用：读取云端快照，可按来源、课程、北京时间日期或任务过滤，不创建刷新任务。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "home",
+              "mailUnread",
+              "homework",
+              "exams",
+              "courses",
+              "grades",
+              "physicsLab",
+              "physicsDemo",
+              "citel",
+              "phyvlab"
+            ]
+          }
+        },
+        "course": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "taskId": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "request_live_query",
+    "description": "仅用户明确要求实时/最新，或需要云端未存详情时调用。local 只读电脑缓存；latest 仅刷新指定来源。返回任务 ID，稍后查结果。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "home",
+              "mailUnread",
+              "homework",
+              "exams",
+              "courses",
+              "grades",
+              "physicsLab",
+              "physicsDemo",
+              "citel",
+              "phyvlab"
+            ]
+          }
+        },
+        "course": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "taskId": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "freshness": {
+          "type": "string",
+          "enum": [
+            "local",
+            "latest"
+          ]
+        },
+        "idempotencyKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sources",
+        "freshness",
+        "idempotencyKey"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "request_refresh_all",
+    "description": "仅用户明确要求全量刷新时调用，返回排队任务，不代表已经刷新完成。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "idempotencyKey"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "request_citel_problem",
+    "description": "请求指定 CITEL 编程题。includeFullText=true 仅在用户明确授权获取全文/用例时设置。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,8}$"
+        },
+        "includeFullText": {
+          "type": "boolean"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "taskId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "get_request_result",
+    "description": "读取即时任务状态。queued/running 表示仍未完成，partial/failed 不能描述为已取得全部最新数据。",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId"
+      ],
+      "additionalProperties": false
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "openWorldHint": false
+    }
+  }
+]

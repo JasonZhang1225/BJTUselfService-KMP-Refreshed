@@ -1,6 +1,7 @@
 # Windows 本地开发与私人 Site 搭建（模板 0.2.0 / 协议 1）
 
 维护源：`multiplatform/remote-site-template/`。该目录与 Gradle 工程独立，无第三方 Node 依赖，要求 Node ≥22.5。
+当前远程 Skill 与 MCP 写法、用法快照见同目录 `remote-skill-mcp-export-20261021/`。
 
 ## Windows 本地开发
 

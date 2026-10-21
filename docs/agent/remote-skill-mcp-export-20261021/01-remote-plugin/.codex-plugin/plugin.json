@@ -1,0 +1,21 @@
+{
+  "apps": "./.app.json",
+  "interface": {
+    "capabilities": [],
+    "category": "Other",
+    "defaultPrompt": null,
+    "developerName": "App developer",
+    "displayName": "\u4ea4\u5927\u81ea\u7531\u884c\u8fdc\u7a0b\u52a9\u624b",
+    "longDescription": "\u4e2a\u4eba\u6821\u56ed\u5b89\u6392\u7684\u79c1\u4eba\u5feb\u7167\u3001Windows \u914d\u5bf9\u548c\u53ea\u8bfb\u5373\u65f6\u67e5\u8be2\u3002",
+    "shortDescription": "\u4e2a\u4eba\u6821\u56ed\u5b89\u6392\u7684\u79c1\u4eba\u5feb\u7167\u3001Windows \u914d\u5bf9\u548c\u53ea\u8bfb\u5373\u65f6\u67e5\u8be2\u3002",
+    "websiteURL": "https://bjtuss-private-remote.ardent-rice-3928.chatgpt.site"
+  },
+  "name": "dev-9c8cc6038e1c8191885c65089da2a0ef",
+  "version": "1.0.2",
+  "description": "\u4e2a\u4eba\u6821\u56ed\u5b89\u6392\u7684\u79c1\u4eba\u5feb\u7167\u3001Windows \u914d\u5bf9\u548c\u53ea\u8bfb\u5373\u65f6\u67e5\u8be2\u3002",
+  "author": {
+    "name": "App developer"
+  },
+  "keywords": [],
+  "skills": "./skills"
+}

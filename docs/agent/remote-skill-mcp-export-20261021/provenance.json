@@ -1,0 +1,30 @@
+{
+  "exportedAt": "2026-10-21T21:54:50+08:00",
+  "plugin": {
+    "id": "plugin_asdk_app_sites_9c8cc6038e1c8191885c65089da2a0ef",
+    "version": "1.0.2",
+    "releaseId": "pluginrel_6ad8c1212c848191baf033854407cbb5",
+    "source": "Successful post-update source readback retained in this session",
+    "freshReadAttempt": "Unavailable: MCP connector transport request failed",
+    "contentCopiedExactly": true
+  },
+  "site": {
+    "sourceCommit": "f02ebf048cd4774836a5f4e1af3182bac38a3ef4",
+    "sourceCheckoutWasClean": true,
+    "source": "Last successfully deployed independent Site source",
+    "freshRuntimeVerification": false
+  },
+  "repository": {
+    "branch": "agent-remote",
+    "commit": "40dde0f851e5fbaf087a55b3fc11a457c78554d7"
+  },
+  "omitted": [
+    "runtime credentials",
+    "device tokens",
+    "school credentials",
+    "real cache",
+    "runtime database",
+    "production environment values"
+  ],
+  "logicModified": false
+}
