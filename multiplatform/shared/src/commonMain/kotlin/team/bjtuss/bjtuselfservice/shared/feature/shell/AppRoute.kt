@@ -252,23 +252,6 @@ internal fun bottomNavSections(preferences: team.bjtuss.bjtuselfservice.shared.c
 internal fun applicationSections(preferences: team.bjtuss.bjtuselfservice.shared.cache.AppPreferences): List<AppSection> =
     bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled, preferences.isCitelEnabled, preferences.aggregateAssignments)
 
-/** 在底部导航中归属“更多”高亮的入口。 */
-internal val MoreGroupSections = setOf(
-    AppSection.EXAMS,
-    AppSection.COURSEWARE,
-    AppSection.CLASSROOMS,
-    AppSection.CLASSROOM_OCCUPANCY,
-    AppSection.MAILBOX,
-    AppSection.LIBRARY,
-    AppSection.PHYSICS_LAB,
-    AppSection.CITEL,
-    AppSection.ASSIGNMENTS,
-    AppSection.CALENDAR,
-    AppSection.REPORT_CARD_DOWNLOAD,
-    AppSection.SETTINGS,
-    AppSection.MORE,
-)
-
 internal const val LOGIN_SYNC_RETRY_DELAY_MILLIS = 700L
 /** 教室详情的第三级路由：独立于一级/二级 section。 */
 internal data object ClassroomDetailRoute : AppRoute
