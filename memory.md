@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
-> 最后更新：2026-10-20。
-> 当前分支：`main`（= mine/main@909aa24b，PR #31/#32/#33 均已合入）；已整合原 `feat/ai-agent-dev`、`fix/mis-sso-auth` 与原 main 的全部历史；本地和 mine 只保留 `main` 与 `claude/宣传图制作`（2026-10-20 已删除 #31–#33 的已合并分支）。分支清理备份见 `.artifacts/branch-cleanup-20261020/before-cleanup.bundle`。
+> 最后更新：2026-10-21。
+> 当前分支：`fix/android-native-navigation-session`（基于 mine/main@c94d18a，尚未合入；PR #31/#32/#33 均已合入）；已整合原 `feat/ai-agent-dev`、`fix/mis-sso-auth` 与原 main 的全部历史；本地和 mine 只保留 `main` 与 `claude/宣传图制作`（2026-10-20 已删除 #31–#33 的已合并分支）。分支清理备份见 `.artifacts/branch-cleanup-20261020/before-cleanup.bundle`。
 > KMP 源码版本：`1.8.5-EmergencyFix2` / Build 40；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。`history_full.md` 尚无 EmergencyFix2 发版条目。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
@@ -11,7 +11,11 @@
 
 ## 进行中
 
-- 暂无；后续按需从最新 `main` 新建功能或修复分支。
+- Android 原生详情页点击失效排查（`fix/android-native-navigation-session`）：用户提供 HarmonyOS 4.2 / AOSP 12 录屏；页面入口无跳转但校园网/校园卡弹窗可打开，后台往返未恢复；用户回忆底栏似乎仍能切换，未确定。
+  - 修复：`NativeSessionHandoff` 按根宿主令牌保护会话，旧宿主的清理不能覆盖新宿主；MainActivity 使用固定发布回调；Android 点击原生入口时同步重新交接当前会话并直接跳转，避开壳层协程延迟。debug `NativeNavigation` 仅记录路由/会话是否存在，不记录账号或 Cookie。
+  - 已验证：隔离 Gradle 工程直接编译仓库中的 `NativeSessionHandoff.kt` / `NativeSessionHandoffTest.kt`，4 项通过；用旧 Registry 无条件清理语义作对照，2 项保护测试失败。`git diff --check` 通过。
+  - 验证中：`:shared:desktopTest`；Android 完整构建与 Apple 编译/测试交给 PR CI。当前 Linux 环境没有 Android SDK/项目签名与 Apple 工具链。
+  - 边界：只修复已识别的会话生命周期风险和异步跳转依赖；没有华为真机或 logcat，无法证明录屏仅由该路径触发，也未做华为实机验收。未改版本、未合并、未发版。
 
 ## 当前痛点
 

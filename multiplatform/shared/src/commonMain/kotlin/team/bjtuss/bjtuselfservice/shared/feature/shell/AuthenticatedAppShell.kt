@@ -558,6 +558,14 @@ fun AuthenticatedAppShell(
         if (target == AppSection.PHYSICS_LAB && !physicsLabEnabled) return
         if (target == AppSection.CITEL && !citelEnabled) return
         if (backStack.lastOrNull() != target) {
+            if (platform.family == PlatformFamily.Android &&
+                shouldOpenNativeSectionRoute(target.name, useNativeSecondaryRoutes, compactBottomNavSections)
+            ) {
+                // Activity 跳转直接处理当前点击，不依赖壳层协程的存活或 yield 后的调度。
+                // 下方延迟只用于壳内换页时保留 Compose 底栏的按压反馈。
+                onOpenNativeRoute(target.name)
+                return
+            }
             // 先 yield 一帧：让 NavigationBarItem 的 press/ripple 先上屏，
             // 再替换 destination，避免首次点 tab 时内容重组抢掉按压反馈。
             scope.launch {

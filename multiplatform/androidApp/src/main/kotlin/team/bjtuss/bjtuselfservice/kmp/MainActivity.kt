@@ -1,9 +1,11 @@
 package team.bjtuss.bjtuselfservice.kmp
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import team.bjtuss.bjtuselfservice.shared.App
+import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
 import team.bjtuss.bjtuselfservice.shared.cache.createAndroidCacheStore
 import team.bjtuss.bjtuselfservice.shared.security.createAndroidAccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.auth.AndroidOnnxCaptchaRecognizer
@@ -11,6 +13,11 @@ import team.bjtuss.bjtuselfservice.shared.logging.AppLog
 
 class MainActivity : ComponentActivity() {
     private val refreshRate = AndroidRefreshRateController(this)
+    private val sessionOwner = Any()
+    // 回调与 Activity 同生命周期，避免重组更换回调触发登录页 DisposableEffect 的清理。
+    private val publishSession: (AuthenticatedSession?) -> Unit = { session ->
+        AndroidAuthenticatedSessionRegistry.update(sessionOwner, session)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,10 +45,11 @@ class MainActivity : ComponentActivity() {
                 nativeNavigationEnabled = true,
                 onOpenExternalUrl = ::openExternalUrl,
                 onOpenNativeRoute = { routeId ->
+                    if (BuildConfig.DEBUG) Log.d("NativeNavigation", "Root requested route=$routeId sessionReady=${AndroidAuthenticatedSessionRegistry.session != null}")
                     rememberSystemBottomInset()
                     startActivity(NativeDetailActivity.intentFor(this, routeId))
                 },
-                onAuthenticatedSessionChanged = AndroidAuthenticatedSessionRegistry::update,
+                onAuthenticatedSessionChanged = publishSession,
             )
         }
     }
@@ -59,7 +67,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         refreshRate.stop()
-        if (isFinishing) AndroidAuthenticatedSessionRegistry.update(null)
+        if (isFinishing) AndroidAuthenticatedSessionRegistry.update(sessionOwner, null)
         super.onDestroy()
     }
 
