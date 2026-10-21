@@ -9,6 +9,13 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -176,13 +183,13 @@ private fun LibraryReadyContent(
     val horizontal = if (expanded) 24.dp else 16.dp
     val showActionBar = state.tab == LibraryTab.CURRENT
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // 账户摘要与 tab 固定在列表上方（壳层对本页用 staticTopBar）：切 tab、看借阅总数时
-        // 不用先滚回顶部。固定内容消费顶部留白；滚动视口从它下方开始，因此列表不再重复让位。
+    // 横屏（iPhone 横置时可用高度只有 ~300pt）若仍把账户卡与 tab 固定在列表上方，
+    // 滚动视口会被挤成一条细缝；矮视口下改为随列表一起滚动，竖屏保持固定头部不变。
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    val compactHeight = maxHeight < 480.dp
+    val header: @Composable () -> Unit = {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = horizontal, end = horizontal, top = 8.dp + topClearance),
+            modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             LibraryAccountCard(
@@ -196,17 +203,32 @@ private fun LibraryReadyContent(
             )
             LibraryTabRow(tab = state.tab, onTab = onTab)
         }
+    }
+    Column(modifier = Modifier.fillMaxSize()) {
+        // 账户摘要与 tab 固定在列表上方（壳层对本页用 staticTopBar）：切 tab、看借阅总数时
+        // 不用先滚回顶部。固定内容消费顶部留白；滚动视口从它下方开始，因此列表不再重复让位。
+        if (!compactHeight) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = horizontal, end = horizontal, top = 8.dp + topClearance),
+            ) { header() }
+        }
         TopScrollLazyColumn(
             state = listState,
             modifier = Modifier.weight(1f).fillMaxWidth().desktopTouchScroll(listState),
             contentPadding = PaddingValues(
                 start = horizontal,
                 end = horizontal,
-                top = 10.dp,
-                bottom = 24.dp + bottomClearance,
+                top = if (compactHeight) 8.dp + topClearance else 10.dp,
+                // 续借栏在列表下方时已由它消费底部安全区，列表末尾不再重复叠加。
+                bottom = if (showActionBar) 16.dp else 24.dp + bottomClearance,
             ),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            if (compactHeight) {
+                item(key = "library-header") { header() }
+            }
             // 已有数据时刷新失败只做页内提示条，不清空列表；续借结果对话框打开时不重复亮红条。
             if (state.failure != null && state.renewResult == null) {
                 item(key = "library-failure") {
@@ -242,6 +264,7 @@ private fun LibraryReadyContent(
                 onRenew = onRenewSelected,
             )
         }
+    }
     }
 }
 
@@ -567,7 +590,11 @@ private fun LibraryRenewBar(
             shadowElevation = 6.dp,
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 横屏刘海侧：按钮避开水平安全区，与上方内容对齐；背景仍铺满全宽。
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                    .padding(start = 6.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Checkbox(
@@ -594,7 +621,11 @@ private fun LibraryRenewBar(
             }
         }
         // 底栏净空只留透明空位，不绘制占位条，避免盖住 iOS 原生玻璃底栏。
-        if (bottomClearance > 0.dp) Spacer(Modifier.height(bottomClearance))
+        // 壳层给出的净空可能是旋转前（竖屏 34pt）或宿主上报的较大值；横屏真实 home indicator
+        // 只有 ~21pt。取当前窗口的真实底部安全区，不超过壳层净空，避免底部多出一截空带。
+        val liveBottomInset = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding()
+        val barBottom = if (bottomClearance > 0.dp) minOf(bottomClearance, maxOf(liveBottomInset, 0.dp)) else 0.dp
+        if (barBottom > 0.dp) Spacer(Modifier.height(barBottom))
     }
 }
 
