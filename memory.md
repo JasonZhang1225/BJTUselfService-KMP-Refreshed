@@ -1,6 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-21。
+> 云端会话：Agent 查询统一与插件页整改在分支 `claude/chatgpt-plugin-mcp-refactor-6cp10x`（见“进行中”第一条）。
 > 开发位置：主目录 `C:/Users/zjg/BJTUselfService-KMP-Refreshed` 的本地 `agent-remote`，按用户要求将原 11 个功能提交与后续实现整理为一个基本实现提交；不再使用开发工作树。用户已要求提交并推送 `agent-remote`；不建 PR、不合并 main。本地相对 `origin/agent-remote` 仍分叉（整理提交 vs 远端 11 提交）。
 > 压缩前源码、补丁、原提交 bundle 和旧工作树残留均备份于 `.artifacts/agent-remote-consolidation-20261021/`；原迁移备份和 Git stash 保留。宣传图分支 `claude/project-thread-a8br6t@5b165e4` 本地/远端保留。
 > 工作树清理：两个旧版 Temp 工作树已由 Git 自带命令删除，Git 仅登记主目录。`.artifacts/agent-windows` 已不是 Git 工作树；其递归残留清理被自动策略拒绝（blocked by policy），未绕过，完整残留已另存 669036652 字节归档。
@@ -10,16 +11,19 @@
 
 ## 进行中
 
-- **远程 Skill/MCP 导出。** 当前写法与用法快照已移入并跟踪 `docs/agent/remote-skill-mcp-export-20261021/`（52 文件）：远程插件 1.0.2 四个原文件、六工具完整 Schema、初始化 instructions、最近发布 Site 源、Windows 查询/CLI 参考源码、用法和虚构 JSONL 示例。`SHA256SUMS.json` 和 provenance 记录来源；MCP src 与最近发布 checkout f02ebf0 逐文件哈希一致，JSON/清单检查通过，无真实凭据缓存。当前插件服务 transport 失败，使用本会话更新后已回读验证的 1.0.2 原文，导出明确注明未再次确认远端变化；没有改逻辑或重新发布。
+- **Agent 查询统一与插件页整改（分支 `claude/chatgpt-plugin-mcp-refactor-6cp10x`，基于 `agent-remote@5bbba0c`，尚未合入 main）。**
+  - 统一查询层：本机 CLI、电脑即时查询、Site MCP 工具用同一套参数与返回结构（契约 `docs/agent/agent-query-contract.md`）。电脑端生成“Agent 数据集 schema 2”（`AgentDataset.kt`，日期只在这里换算一次：00:00 截止写作前一天 `24:00` 的现成文字，不再输出次日 ISO 时刻）；查询引擎 Kotlin `AgentQuery.kt` 与 JS `remote-site-template/src/agent-query.js` 同构，用 `fixtures/agent-query/` 同一份样例双端测试（17 例）。
+  - 作业一次返回课程平台/物理在线/CITEL 全部来源，`summary.bySource` 给每个来源的数量与启用状态，默认只列未交未截止（旧版整学期全量含说明，推测是 ChatGPT 截断导致物理在线、CITEL 漏项，未实机复现）。日历按天输出 `days`。
+  - 远程快照 schema 1→2（`data` 即数据集），模板 0.3.0，MCP 工具 6→11（`get_homework/get_calendar/get_exams/get_grades/get_mail/get_status` + `request_live_query/refresh_all/citel_problem/mail_message` + `get_request_result`）。旧 Site 会以 `schema_mismatch` 拒收新电脑端快照，需按新提示词在原 Site 升级。
+  - 邮箱范围从“未读数”改为收件箱摘要（最近 ≤99 封，刷新邮箱时写入加密缓存 `agent.mail.inbox`）+ 即时读取正文（`mail_message`，学校会标记已读）。
+  - 插件页重排：远程与本机卡片统一标题/说明/分组字号；“设置方法”框起来，提示词不展开只留“复制提示词”，去掉“查看文档”；提示词改指向 main 上的模板（`REMOTE_TEMPLATE_URL`，合入前联调需临时改分支）。
+  - Windows：开机启动改用 JNA 注册表 API（原 reg.exe 读回 GBK 输出、中文安装路径校验必失败）；托盘改为 AWT 托盘并指定中文字体，jlink 加 `jdk.charsets`、`jdk.localedata`（推测方框乱码来自缺 GBK 编码器，未实机验证）。
+  - CI 修复：`RemoteAgentCard` 的 `Dispatchers.IO`（commonMain 在 iOS 不可用）；`packageMsi` 的 doLast 引用脚本对象破坏配置缓存。
+  - 删除 `docs/agent/remote-skill-mcp-export-20261021/` 副本；Skill/MCP 唯一维护源是模板 `src/mcp.js` 与 `plugin/skills/bjtuss-remote/SKILL.md`，本机 Skill 在 `AgentSkill.kt`，两者规则同文。
+  - 验证与未验证边界见本次交付说明；Windows 托盘/开机启动、iOS 编译、真实 ChatGPT 问答需实机或 CI 验证。
 
-- **CLI/MCP 一致性只读核对。** 两端复用 agentHomework/agentCalendar 及 homeworkJson/calendarJson 等业务输出，但查询接口、默认数据位置、外层结构和能力没有完全统一：CLI 支持日期范围/周次/未交/多课程/预约与 App 筛选，MCP 仅 sources/course/date/taskId，云端日程窗口为昨天起 21 天；CLI data.items 与 MCP snapshot.data.assignments.homework.items 层级不同，即时结果另套任务回执。远程 Skill 1.0.2 已要求不重复移日，本地 AgentSkill 和 MCP initialize.instructions 仍有旧“午夜归前一天”文案，存在解释歧义，本轮未改。虚构 Node 样例确认 dueAgendaDate=2026-10-25 与 midnightDeadline=true 在 25 日查询保留、26 日为 0 项；只证明该过滤例，不证明真实物理在线漏项原因。
-
-- **Agent Remote 基本实现已收口，等待合入与剩余验收。** 包含公共刷新服务、App/CLI 同一执行者、Windows DPAPI 配对/常驻/托盘/开机启动、私人 Site 持久快照与任务、6 个 MCP 工具、本地开发插件与查询 Skill、应用页“Agent 和 ChatGPT 插件”入口及搭建向导。最小化到托盘独立保存，默认开启，系统无托盘时不隐藏。现有 App/Site 日期处理逻辑没有因 DDL 纠错改动。
-- **验证证据。** JDK 21，`-I .artifacts/emergencyfix2-checks.gradle :shared:desktopTest :shared:compileAndroidMain :desktopApp:compileKotlin :windowsApp:compileKotlinWindows` 成功，996 项共享测试通过（沿用 Windows 既有 5 项排除）；Windows 既往 9 项通过/1 在线项跳过。Node `npm test` 36/36、`node scripts/build.mjs` 通过。浅深色和 1.5 倍文字合成 UI 已检查；`:windowsApp:packageMsi` 成功（45 秒）。本轮整理 Git 不重复构建。更多证据见 `docs/agent/windows-local-verification-2026-10-21.md` 与 `.artifacts/`。
-- **真实链路。** Site https://bjtuss-private-remote.ardent-rice-3928.chatgpt.site 仍 owner-private；当前网站源 f02ebf048cd4774836a5f4e1af3182bac38a3ef4、部署 appgdep_6ad8bec4564c819181112b3ff776d5e9 succeeded。真实安装版配对、心跳、快照同步通过，浏览器一次刷新 21:20:44→21:21:01，17 秒自动显示完成并更新来源时间。网页已去掉周期说明并同步新入口。
-- **插件日期规则。** canonical 插件 ID `plugin_asdk_app_sites_9c8cc6038e1c8191885c65089da2a0ef`，1.0.2 / pluginrel_6ad8c1212c848191baf033854407cbb5。只改技能日期解释及版本，回读验证 App 绑定和受众保持：以拉取结果的已处理日期时间为准，归属日 25 日 + 24:00 就按 25 日显示，不能再前移/后移。原始次日 00:00 不覆盖已处理日期。用户“本周DDL整理”测试反馈的物理在线漏项尚未定位，不擅自改过滤逻辑。引用对话正文无法加载，只读到用户纠错与思考概要；未另发聊天验收消息。
-- **安装版存储隔离。** Codex 启动的诊断进程读到隔离 AppData/Preferences，不能代表开始菜单安装版。此前独立诊断的“凭据存在/HTTP 200”不构成真实表单成功证据。已通过本机命名管道把精确 Site 访问材料交给目标安装版，由系统安全存储保存，真实配对同步成功；不复制数据库、不记录明文凭据。
-- **未验证边界。** 新 MSI 升级安装、真实 Windows 托盘关闭/最小化/恢复与开机重启、连续半小时/睡眠恢复、iPhone ChatGPT 完整查询正确性、第二真实用户部署、Apple 原生构建；当前功能仅 Windows 提供远程常驻，macOS 保留本机 Agent。既有聊天工具缺失记录不再代表所有新聊天；用户已能在 ChatGPT 测试插件，但不能据此宣称无漏项。
+- **Agent Remote 基本实现（`agent-remote`）。** 上一轮实现与证据见 `docs/agent/windows-local-verification-2026-10-21.md`；Site https://bjtuss-private-remote.ardent-rice-3928.chatgpt.site 仍是旧模板 0.2.0，需要按新提示词升级后才能与新电脑端配合。未验证：新 MSI 升级安装、连续半小时/睡眠恢复、第二真实用户部署、Apple 原生构建；远程常驻仅 Windows。
+- **main 已前进到 1.8.6-KMP（图书馆借阅等），本分支未合并 main。**
 
 ## 当前痛点
 
@@ -48,7 +52,7 @@
 
 ## 接下来
 
-- Agent Remote：先定位用户反馈的物理在线 DDL 漏项，严格沿用已处理的日期时间；再验收新 MSI 升级、托盘与开机启动、手机完整查询、连续周期与睡眠恢复、第二用户独立部署。继续在主目录 `agent-remote` 开发。
+- Agent：Windows 实机验证托盘中文与开机启动；按新提示词把私人 Site 升级到模板 0.3.0 后，用手机 ChatGPT 复测“本周 DDL”（核对物理在线、CITEL 与 24:00 截止）；合入前合并 main。
 
 1. 在真机已有版本（SideStore 保留扩展）上验证小组件共享容器与各尺寸显示。
 2. 下次发版时核对版本号清单（见 `AGENTS.md`）、发布说明与测试矩阵；版本与发版由用户决定。

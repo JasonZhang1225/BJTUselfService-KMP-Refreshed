@@ -71,7 +71,7 @@ export async function pairDevice(site, overrides = {}) {
 
 export function snapshotFor(device, overrides = {}) {
   return {
-    ...fixture("snapshot-v1.json"),
+    ...fixture("snapshot-v2.json"),
     deviceId: device.deviceId,
     accountBindingId: device.accountBindingId,
     ...overrides,

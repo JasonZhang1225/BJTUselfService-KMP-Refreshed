@@ -1,20 +1,20 @@
 package team.bjtuss.bjtuselfservice.shared.agent
 
-import kotlinx.datetime.LocalDate
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.time.Instant
-import team.bjtuss.bjtuselfservice.shared.domain.calendar.parseExamCalendarTime
-import team.bjtuss.bjtuselfservice.shared.domain.homework.typeLabel
-import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentSource
 import team.bjtuss.bjtuselfservice.shared.feature.citel.completed
-import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabEnrollment
 
 // 输出格式：JSON 给 agent 解析，Markdown 给人看。只输出业务数据，不输出凭据、Cookie 或内部链接参数。
 
@@ -23,21 +23,7 @@ internal fun isoTime(epochSeconds: Long): String {
     return "${t.date}T${t.hour.pad()}:${t.minute.pad()}:00+08:00"
 }
 
-private fun shortTime(epochSeconds: Long): String {
-    val t = Instant.fromEpochSeconds(epochSeconds).toLocalDateTime(AGENT_TIME_ZONE)
-    return "${t.date} ${t.hour.pad()}:${t.minute.pad()}"
-}
-
-private fun clock(epochSeconds: Long): String {
-    val t = Instant.fromEpochSeconds(epochSeconds).toLocalDateTime(AGENT_TIME_ZONE)
-    return "${t.hour.pad()}:${t.minute.pad()}"
-}
-
 private fun Int.pad(): String = toString().padStart(2, '0')
-
-private fun JsonObjectBuilder.putTime(key: String, epochSeconds: Long?) {
-    if (epochSeconds != null) put(key, isoTime(epochSeconds))
-}
 
 private fun JsonObjectBuilder.putIfNotNull(key: String, value: String?) {
     if (value != null) put(key, value)
@@ -47,247 +33,7 @@ private fun JsonObjectBuilder.putIfNotNull(key: String, value: String?) {
 internal fun maskStudentId(id: String): String =
     if (id.length <= 4) "*".repeat(id.length) else id.take(2) + "*".repeat(id.length - 4) + id.takeLast(2)
 
-private val WEEKDAYS = listOf("一", "二", "三", "四", "五", "六", "日")
-
-private fun weekday(date: LocalDate): String = "周" + WEEKDAYS[date.dayOfWeek.ordinal]
-
-// region status
-
-internal fun statusJson(ready: AgentSnapshotResult.Ready): JsonElement {
-    val s = ready.snapshot
-    return buildJsonObject {
-        put("appVersion", ready.appVersion)
-        put("account", maskStudentId(s.studentId))
-        put("currentWeek", s.currentWeek)
-        put("academicCalendar", if (s.academicWeeksInferred) "inferred" else "cached")
-        put("counts", buildJsonObject {
-            put("courses", s.courses.count { !it.isCurrentSemester })
-            put("exams", s.exams.size)
-            put("coursePlatformHomework", s.homework.size)
-            put("phyvlabActivities", s.phyVlab?.activities?.size ?: 0)
-            put("citelTasks", s.citelTasks.size)
-            put("physicsLabBookings", s.physicsLabs?.size ?: 0)
-            put("physicsDemoBookings", s.physicsDemos?.size ?: 0)
-        })
-        put("sources", buildJsonObject {
-            put("phyvlab", s.phyVlabEnabled)
-            put("citel", s.citelEnabled)
-            put("physicsLab", s.physicsLabs != null)
-            put("physicsDemo", s.physicsDemos != null)
-            put("grades", ready.gradesAllowed)
-        })
-        s.phyVlab?.savedAtEpochMillis?.takeIf { it > 0 }?.let { putTime("phyvlabSavedAt", it / 1000) }
-        putIfNotNull("citelLastSync", s.citelLastSync)
-    }
-}
-
-internal fun statusMarkdown(ready: AgentSnapshotResult.Ready): String {
-    val s = ready.snapshot
-    return buildString {
-        appendLine("# 交大自由行 · 缓存状态")
-        appendLine()
-        appendLine("- 版本：${ready.appVersion}")
-        appendLine("- 账号：${maskStudentId(s.studentId)}")
-        appendLine("- 当前教学周：${s.currentWeek.takeIf { it > 0 } ?: "未知"}" +
-            if (s.academicWeeksInferred) "（校历未缓存，日期按当前周推算）" else "")
-        appendLine("- 课程 ${s.courses.count { !it.isCurrentSemester }} 条，考试 ${s.exams.size} 条，课程平台作业 ${s.homework.size} 条")
-        appendLine("- 物理在线：${if (s.phyVlabEnabled) "${s.phyVlab?.activities?.size ?: 0} 个活动" else "未启用"}")
-        appendLine("- CITEL：${if (s.citelEnabled) "${s.citelTasks.size} 个任务" else "未启用"}")
-        appendLine("- 物理实验约课：${s.physicsLabs?.let { "${it.size} 个" } ?: "未启用"}")
-        appendLine("- 成绩：${if (ready.gradesAllowed) "已允许读取" else "未允许 Agent 读取"}")
-    }
-}
-
-// endregion
-
-// region calendar
-
-internal const val MIDNIGHT_NOTE = "北京时间 00:00 截止的作业算前一天 24:00 截止（与 App 首页一致）：agendaDate 是归属日，start/dueTime 是实际时刻；提醒用户时请按前一天说。"
-
-internal fun calendarJson(items: List<AgentCalendarItem>, range: Pair<LocalDate, LocalDate>, snapshot: AgentSnapshot): JsonElement =
-    buildJsonObject {
-        put("from", range.first.toString())
-        put("to", range.second.toString())
-        put("academicCalendar", if (snapshot.academicWeeksInferred) "inferred" else "cached")
-        put("notes", buildJsonArray { add(JsonPrimitive(MIDNIGHT_NOTE)) })
-        put("availableFilters", availableFilters(snapshot))
-        put("items", JsonArray(items.map { item ->
-            buildJsonObject {
-                put("kind", item.kind.wire)
-                put("title", item.title)
-                put("agendaDate", item.agendaDate.toString())
-                putTime("start", item.start)
-                putTime("end", item.end)
-                if (item.midnightDeadline) put("midnightDeadline", true)
-                putIfNotNull("location", item.location)
-                putIfNotNull("teacher", item.teacher)
-                putIfNotNull("courseName", item.courseName)
-                putIfNotNull("source", item.source)
-                item.done?.let { put("done", it) }
-                item.week?.let { put("week", it) }
-            }
-        }))
-    }
-
-internal fun calendarMarkdown(items: List<AgentCalendarItem>, range: Pair<LocalDate, LocalDate>): String = buildString {
-    appendLine("# 日程 ${range.first} ~ ${range.second}")
-    if (items.isEmpty()) {
-        appendLine()
-        appendLine("（没有安排）")
-        return@buildString
-    }
-    items.groupBy { it.agendaDate }.forEach { (date, dayItems) ->
-        appendLine()
-        appendLine("## $date ${weekday(date)}")
-        dayItems.forEach { item ->
-            val time = when {
-                item.midnightDeadline -> "24:00"
-                item.end != null -> "${clock(item.start)}–${clock(item.end)}"
-                else -> clock(item.start)
-            }
-            val label = when (item.kind) {
-                AgentCalendarKind.CLASS -> "课程"
-                AgentCalendarKind.LAB -> "实验"
-                AgentCalendarKind.EXAM -> "考试"
-                AgentCalendarKind.ASSIGNMENT_OPEN -> "作业开放"
-                AgentCalendarKind.ASSIGNMENT_DISCOUNT -> "开始折扣"
-                AgentCalendarKind.ASSIGNMENT_DUE -> "作业截止"
-            }
-            val detail = listOfNotNull(item.location, item.teacher, item.courseName,
-                item.done?.let { if (it) "已提交" else "未提交" },
-                if (item.midnightDeadline) "即次日 00:00" else null).joinToString(" · ")
-            appendLine("- $time [$label] ${item.title}" + if (detail.isNotEmpty()) " — $detail" else "")
-        }
-    }
-}
-
-/** 告诉调用方可以按什么筛：来源、课程名、日程类型，以及 App 里存的筛选是否生效。 */
-internal fun availableFilters(snapshot: AgentSnapshot): JsonElement = buildJsonObject {
-    put("source", buildJsonArray { AssignmentSource.entries.forEach { add(JsonPrimitive(it.wire)) } })
-    put("kind", buildJsonArray { AgentCalendarKind.entries.forEach { add(JsonPrimitive(it.wire)) } })
-    val courses = buildList {
-        addAll(snapshot.courses.filter { !it.isCurrentSemester }.map { it.courseName.trim() })
-        addAll(snapshot.homework.map { it.courseName })
-        snapshot.phyVlab?.courses?.forEach { add(it.name) }
-        addAll(snapshot.citelTasks.map { it.courseName })
-    }.filter(String::isNotBlank).distinct().sorted()
-    put("course", buildJsonArray { courses.forEach { add(JsonPrimitive(it)) } })
-    put("appFilterActive", snapshot.assignmentFilters.active)
-}
-
-// endregion
-
-// region homework
-
-internal fun homeworkJson(items: List<AgentHomeworkItem>, snapshot: AgentSnapshot): JsonElement = buildJsonObject {
-    put("physicsLabBookingsAvailable", snapshot.physicsLabs != null)
-    put("notes", buildJsonArray {
-        add(JsonPrimitive(MIDNIGHT_NOTE))
-        add(JsonPrimitive("物理实验课只列出与约课结果匹配上的实验（enrollment=booked）；没约的默认隐藏，--all 可显示。enrollment=unverified 表示没有约课缓存，无法判断。"))
-    })
-    put("availableFilters", availableFilters(snapshot))
-    put("items", JsonArray(items.map { item ->
-        val a = item.assignment
-        buildJsonObject {
-            put("source", a.source.wire)
-            put("courseName", a.courseName)
-            put("title", item.title)
-            put("submitted", a.submitted)
-            putTime("openTime", item.openTime)
-            putTime("dueTime", a.dueTime)
-            a.dueTime?.let { due ->
-                put("dueAgendaDate", deadlineAgendaDate(due).toString())
-                if (isMidnightDeadline(due)) put("midnightDeadline", true)
-            }
-            a.citel?.let { citel ->
-                put("programming", citel.programming)
-                // 编程题只有判题 AC 才算 submitted；原始判题状态一并给出，避免把“已提交未通过”误读成“没交”。
-                putIfNotNull("judgeStatus", citel.status.ifBlank { null })
-                putTime("discountTime", citel.discountTime?.takeIf { it != a.dueTime })
-                citel.discount?.let { put("discount", it) }
-                citel.allowLate?.let { put("allowLate", it) }
-                putIfNotNull("grade", citel.grade)
-                put("url", citel.url)
-            }
-            a.homework?.let { hw ->
-                put("type", hw.typeLabel())
-                put("submittedCount", hw.submitCount)
-                put("totalCount", hw.allCount)
-                if (hw.score.isNotBlank()) put("score", hw.score)
-                if (hw.content.isNotBlank()) put("content", hw.content)
-            }
-            a.physical?.let { put("url", it.activityUrl) }
-            if (item.enrollment != PhyVlabEnrollment.NOT_APPLICABLE) {
-                put("enrollment", item.enrollment.name.lowercase())
-                putIfNotNull("matchedBooking", item.matchedBooking)
-            }
-        }
-    }))
-}
-
-internal fun homeworkMarkdown(items: List<AgentHomeworkItem>): String = buildString {
-    appendLine("# 作业（${items.size} 项）")
-    items.forEach { item ->
-        val a = item.assignment
-        appendLine()
-        appendLine("## ${item.title}")
-        appendLine("- 来源：${a.source.label} · ${a.courseName}")
-        appendLine("- 状态：${if (a.submitted) "已提交" else "未提交"}")
-        a.citel?.status?.takeIf { it.isNotBlank() }?.let { appendLine("- 判题：$it") }
-        item.openTime?.let { appendLine("- 开放：${shortTime(it)}") }
-        a.dueTime?.let { due ->
-            appendLine("- 截止：" + if (isMidnightDeadline(due)) "${deadlineAgendaDate(due)} 24:00（即次日 00:00）" else shortTime(due))
-        }
-        when (item.enrollment) {
-            PhyVlabEnrollment.BOOKED -> appendLine("- 已约实验：${item.matchedBooking}")
-            PhyVlabEnrollment.UNVERIFIED -> appendLine("- 物理实验：没有约课缓存，无法确认是否需要做")
-            else -> Unit
-        }
-    }
-}
-
-// endregion
-
-// region exams / grades / citel
-
-internal fun examsJson(snapshot: AgentSnapshot): JsonElement = JsonArray(snapshot.exams.map { exam ->
-    val parsed = parseExamCalendarTime(exam.examTimeAndPlace)
-    buildJsonObject {
-        put("courseName", exam.courseName)
-        put("type", exam.examType)
-        put("status", exam.examStatus)
-        put("timeAndPlace", exam.examTimeAndPlace)
-        if (parsed != null) {
-            put("date", parsed.date.toString())
-            put("start", "${parsed.startHour.pad()}:${parsed.startMinute.pad()}")
-            put("end", "${parsed.endHour.pad()}:${parsed.endMinute.pad()}")
-            put("location", parsed.location)
-        }
-    }
-})
-
-internal fun examsMarkdown(snapshot: AgentSnapshot): String = buildString {
-    appendLine("# 考试（${snapshot.exams.size} 项）")
-    snapshot.exams.forEach { exam ->
-        appendLine("- ${exam.courseName}（${exam.examType}）：${exam.examTimeAndPlace} · ${exam.examStatus}")
-    }
-}
-
-internal fun gradesJson(snapshot: AgentSnapshot): JsonElement = JsonArray(snapshot.grades.map { grade ->
-    buildJsonObject {
-        put("courseName", grade.courseName)
-        put("teacher", grade.courseTeacher)
-        put("score", grade.courseScore)
-        put("credits", grade.courseCredits)
-        put("year", grade.courseYear)
-        put("semester", grade.semester)
-    }
-})
-
-internal fun gradesMarkdown(snapshot: AgentSnapshot): String = buildString {
-    appendLine("# 成绩（${snapshot.grades.size} 门）")
-    snapshot.grades.forEach { appendLine("- ${it.courseYear} ${it.semester} ${it.courseName}：${it.courseScore}（${it.courseCredits} 学分）") }
-}
+// region citel
 
 internal fun citelJson(snapshot: AgentSnapshot): JsonElement = buildJsonObject {
     put("enabled", snapshot.citelEnabled)
@@ -302,9 +48,9 @@ internal fun citelJson(snapshot: AgentSnapshot): JsonElement = buildJsonObject {
                 put("submitted", task.completed)
                 putIfNotNull("status", task.status.ifBlank { null })
                 putIfNotNull("grade", task.grade)
-                putTime("openTime", task.openTime)
-                putTime("discountTime", task.discountTime)
-                putTime("dueTime", task.dueTime)
+                task.openTime?.let { put("open", agentTimePoint(it, deadline = false).text) }
+                task.discountTime?.let { put("discountFrom", agentTimePoint(it, deadline = false).text) }
+                put("due", task.dueTime?.let { agentTimePoint(it, deadline = true).text } ?: "无截止时间")
                 task.discount?.let { put("discount", it) }
                 task.allowLate?.let { put("allowLate", it) }
                 put("url", task.url)
@@ -320,8 +66,92 @@ internal fun citelMarkdown(snapshot: AgentSnapshot): String = buildString {
     }
     appendLine("# CITEL 任务（${snapshot.citelTasks.size} 个）")
     snapshot.citelTasks.sortedWith(compareBy({ it.dueTime ?: Long.MAX_VALUE }, { it.title })).forEach { task ->
-        val due = task.dueTime?.let { "截止 ${shortTime(it)}" } ?: "无截止时间"
+        val due = task.dueTime?.let { "截止 ${agentTimePoint(it, deadline = true).text}" } ?: "无截止时间"
         appendLine("- [${task.id}] ${task.courseName} · ${task.title}（${if (task.programming) "编程" else "书面"}，$due，${if (task.completed) "已提交" else "未提交"}）")
+    }
+}
+
+// endregion
+
+// region Markdown：把统一查询结果渲染成给人看的文字（JSON 才是给 agent 的）
+
+private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+private fun JsonObject.array(key: String): List<JsonObject> = (this[key] as? JsonArray)?.map { it.jsonObject }.orEmpty()
+
+internal fun agentResultMarkdown(result: JsonObject): String = buildString {
+    result["error"]?.jsonObject?.let { error ->
+        appendLine(error.text("message").orEmpty())
+        return@buildString
+    }
+    val freshness = result["freshness"]?.jsonObject
+    val stale = freshness?.array("sources").orEmpty().filter { row ->
+        freshness?.get("stale")?.jsonArray?.any { it.jsonPrimitive.content == row.text("source") } == true
+    }
+    if (stale.isNotEmpty()) {
+        appendLine("> 缓存可能不是最新：" + stale.joinToString("、") { "${it.text("label")}（${it.text("age")}）" } + "。可先刷新后再查看。")
+        appendLine()
+    }
+    val summary = result["summary"]?.jsonObject ?: JsonObject(emptyMap())
+    when (result.text("command")) {
+        AgentQueryCommand.HOMEWORK -> {
+            appendLine("# 作业（${summary.text("shown")} 项）")
+            appendLine()
+            appendLine(summary.array("bySource").joinToString("；") { row ->
+                if (row.text("enabled") == "false") "${row.text("label")}：未启用"
+                else "${row.text("label")}：未交 ${row.text("pending")}、已截止 ${row.text("overdue")}、已交 ${row.text("submitted")}"
+            })
+            result.array("items").forEach { item ->
+                appendLine()
+                appendLine("- **${item.text("title")}**（${item.text("sourceLabel")} · ${item.text("course")}）")
+                appendLine("  截止 ${item.text("due")} · ${item.text("statusLabel")}" + (item.text("remaining")?.let { " · $it" } ?: ""))
+                item.text("judgeStatus")?.let { appendLine("  判题：$it") }
+            }
+        }
+        AgentQueryCommand.CALENDAR -> {
+            val query = result["query"]?.jsonObject
+            appendLine("# 日程 ${query?.text("from")} ~ ${query?.text("to")}")
+            result.array("days").forEach { day ->
+                appendLine()
+                appendLine("## ${day.text("date")} ${day.text("weekday")}" + (day.text("week")?.let { "（第 $it 周）" } ?: ""))
+                val items = day.array("items")
+                if (items.isEmpty()) appendLine("（没有安排）")
+                items.forEach { item ->
+                    val detail = listOfNotNull(item.text("course"), item.text("location"), item.text("teacher"), item.text("statusLabel"))
+                        .joinToString(" · ")
+                    appendLine("- ${item.text("time")} [${item.text("kindLabel")}] ${item.text("title")}" + if (detail.isNotEmpty()) " — $detail" else "")
+                }
+            }
+        }
+        AgentQueryCommand.EXAMS -> {
+            appendLine("# 考试（${summary.text("shown")} 项）")
+            result.array("items").forEach { item ->
+                val time = item.text("date")?.let { "$it（${item.text("weekday")}）${item.text("time").orEmpty()}" } ?: item.text("raw")
+                appendLine("- ${item.text("course")}（${item.text("type")}）：$time" + (item.text("location")?.let { " · $it" } ?: "") + " · ${item.text("status")}")
+            }
+        }
+        AgentQueryCommand.GRADES -> {
+            appendLine("# 成绩（${summary.text("shown")} 门）")
+            result.array("items").forEach { appendLine("- ${it.text("year")} ${it.text("semester")} ${it.text("course")}：${it.text("score")}（${it.text("credits")} 学分）") }
+        }
+        AgentQueryCommand.MAIL -> {
+            appendLine("# 收件箱（显示 ${summary.text("shown")} 封，未读 ${summary.text("unread")} 封）")
+            result.array("items").forEach { item ->
+                appendLine("- ${if (item.text("unread") == "true") "● " else ""}${item.text("subject")} — ${item.text("from")} · ${item.text("received") ?: "时间未知"}")
+            }
+        }
+        else -> {
+            appendLine("# 交大自由行 · 缓存状态")
+            result.text("appVersion")?.let { appendLine("- 版本：$it") }
+            result.text("account")?.let { appendLine("- 账号：$it") }
+            result.text("currentWeek")?.let { appendLine("- 当前教学周：$it") }
+            freshness?.array("sources")?.forEach { row ->
+                appendLine("- ${row.text("label")}：${row.text("syncedAt")?.let { "$it 同步（${row.text("age")}）" } ?: "同步时间未知"}")
+            }
+        }
+    }
+    result["notes"]?.jsonArray?.takeIf { it.isNotEmpty() }?.let { notes ->
+        appendLine()
+        notes.forEach { appendLine("> ${it.jsonPrimitive.content}") }
     }
 }
 

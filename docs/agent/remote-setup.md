@@ -1,7 +1,7 @@
-# Windows 本地开发与私人 Site 搭建（模板 0.2.0 / 协议 1）
+# Windows 本地开发与私人 Site 搭建（模板 0.3.0 / 协议 1 / 快照 schema 2）
 
 维护源：`multiplatform/remote-site-template/`。该目录与 Gradle 工程独立，无第三方 Node 依赖，要求 Node ≥22.5。
-当前远程 Skill 与 MCP 写法、用法快照见同目录 `remote-skill-mcp-export-20261021/`。
+MCP 工具、Skill 与本机 CLI 共用的查询参数和返回结构见同目录 `agent-query-contract.md`；工具与 Skill 的唯一维护源是模板的 `src/mcp.js` 与 `plugin/skills/bjtuss-remote/SKILL.md`，不要另存副本。
 
 ## Windows 本地开发
 
@@ -9,7 +9,7 @@
 所有示例均为虚构数据，数据库在内存中，重启重置。它不读取 App 的真实缓存、DPAPI 或学校账号。
 预览拥有者鉴权由回环开发服务器处理；此服务器不能用作线上部署入口。
 
-`plugin/` 为本地开发插件。使用目标宿主支持的本地插件导入流程选择该目录后，应能发现 6 个工具。
+`plugin/` 为本地开发插件。使用目标宿主支持的本地插件导入流程选择该目录后，应能发现 11 个工具。
 也可用 JSONL 向 `node plugin/server/stdio.mjs` 输入 `initialize`、`tools/list` 和 `tools/call` 验证。
 默认连接本地虚构预览；仅在需要受控远程调试时，在进程环境配置 `BJTU_REMOTE_SITE_URL`、
 `BJTU_REMOTE_OWNER_TOKEN`、`BJTU_REMOTE_PLATFORM_ACCESS`。凭据不能放入插件包或命令参数。
@@ -29,8 +29,8 @@ Windows 打包：在 `multiplatform/` 用 JDK 21 运行 `gradlew.bat :windowsApp
 
 ## 一句话创建入口
 
-电脑 App 的入口为 **应用 → Agent 和 ChatGPT 插件**，其中“远程查询”提供说明、文档链接和“复制提示词”。
-把提示词发送到 ChatGPT Work，要求根据 Agent Remote 文档和模板创建私人 Site、自动生成的插件与一次性配对码。
+电脑 App 的入口为 **应用 → Agent 和 ChatGPT 插件**，其中“远程查询”的“设置方法”框里只有一个“复制提示词”按钮。
+把提示词发送到 ChatGPT Work，要求按模板（README 与查询契约）创建私人 Site、自动生成的插件与一次性配对码；已有旧版 Site 的在原 Site 上升级到 0.3.0。
 搭建助手需要先验证私人 Site 的电脑访问并完成安全连接配置，不得只给出配对码就声称链路已通。
 
 拿到地址和配对码后，在同一页填写，选择允许上云的数据、确认同意，再点击“配对并开启”。

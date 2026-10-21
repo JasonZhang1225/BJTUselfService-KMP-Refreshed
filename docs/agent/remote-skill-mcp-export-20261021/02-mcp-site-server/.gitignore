@@ -1,8 +1,0 @@
-dist/
-.env
-.env.*
-!.env.example
-.dev.vars
-.sites/
-node_modules/
-*.sqlite*

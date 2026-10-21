@@ -6,7 +6,7 @@ import {
   bad, requireId, requireInt, requireObject, requireProtocol,
   validatePairRequest, validateScopes, validateSnapshot, validateTaskRequest, validateTaskResult,
 } from "./protocol.js";
-import { permittedSources, withoutGlobalFilterMetadata } from "./query.js";
+import { commandAllowed, permittedSources } from "./query.js";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const PAIR_FAILURE_WINDOW_SECONDS = 10 * 60;
@@ -295,11 +295,8 @@ export class RemoteService {
     const device = await this.activeDevice();
     if (!device) throw new ProtocolError(409, "no_device", "还没有绑定电脑");
     const scopes = parseJson(device.scopes_json, DEFAULT_SCOPES);
-    if (input.operation === "query" && (input.arguments.sources ?? []).some(s => !permittedSources(scopes).includes(s))) {
-      throw new ProtocolError(403, "scope_denied", "查询超出设备授权范围");
-    }
-    if (input.operation === "citel_problem" && !scopes.includes("assignments")) {
-      throw new ProtocolError(403, "scope_denied", "用户没有允许作业数据上云");
+    if (!taskAllowed(input.operation, input.arguments, scopes)) {
+      throw new ProtocolError(403, "scope_denied", "查询超出设备授权范围，请在电脑端“允许上云的数据”里开启");
     }
     const now = this.now();
     const requestId = `req_${randomId(12)}`;
@@ -325,8 +322,7 @@ export class RemoteService {
     if (!device || row.device_id !== device.device_id) return { ...taskView({ ...row, result_json: null }), status: "revoked" };
     const scopes = parseJson(device.scopes_json, []);
     const args = parseJson(row.arguments_json, {});
-    if ((row.operation === "citel_problem" && !scopes.includes("assignments")) ||
-        (row.operation === "query" && (args.sources ?? []).some(s => !permittedSources(scopes).includes(s)))) throw new ProtocolError(403, "scope_denied", "任务数据范围已撤销");
+    if (!taskAllowed(row.operation, args, scopes)) throw new ProtocolError(403, "scope_denied", "任务数据范围已撤销");
     return taskView(row);
   }
 
@@ -339,8 +335,7 @@ export class RemoteService {
     if (!row) return { device: this.deviceView(device), snapshot: null };
     const body = parseJson(row.body_json, null);
     const allowed = parseJson(device.scopes_json, DEFAULT_SCOPES);
-    const data = Object.fromEntries(Object.entries(body?.data ?? {}).filter(([key]) => allowed.includes(key))
-      .map(([key, value]) => [key, withoutGlobalFilterMetadata(value)]));
+    const data = Object.fromEntries(Object.entries(body?.data ?? {}).filter(([key]) => allowed.includes(key)));
     return {
       device: this.deviceView(device),
       snapshot: { ...body, scopes: (body?.scopes ?? []).filter((s) => allowed.includes(s)), data,
@@ -431,3 +426,11 @@ export class RemoteService {
 }
 
 export { bad };
+
+/** 即时任务在当前授权下是否允许（与 KMP remoteTaskAllowed 一致）。 */
+function taskAllowed(operation, args, scopes) {
+  if (operation === "query") return commandAllowed(args?.command, scopes);
+  if (operation === "citel_problem") return scopes.includes("assignments");
+  if (operation === "mail_message") return scopes.includes("mail");
+  return true;
+}

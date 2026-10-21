@@ -26,6 +26,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.course.Course
 import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
 import team.bjtuss.bjtuselfservice.shared.domain.grade.Grade
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
+import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailSummary
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AggregateAssignmentFilters
@@ -45,105 +46,109 @@ class AgentCommandTest {
     fun calendarMergesClassesLabsExamsAndDeadlinesInTimeOrder() {
         val output = run("calendar", "--today", "--json")
         assertEquals(AgentExit.OK, output.exitCode, output.stderr)
-        val data = parse(output).getValue("data").jsonObject
-        assertEquals("cached", data.str("academicCalendar"))
-        val items = data.getValue("items").jsonArray.map { it.jsonObject }
-        val summary = items.map { it.str("kind") + "|" + it.str("title") + "|" + it.str("start") }
+        val result = parse(output)
+        assertEquals("local_cache", result.str("origin"))
+        val day = result.getValue("days").jsonArray.single().jsonObject
+        assertEquals("2026-11-12", day.str("date"))
+        assertEquals("周四", day.str("weekday"))
+        assertEquals("10", day.str("week"))
+        val items = day.getValue("items").jsonArray.map { it.jsonObject }
+        val summary = items.map { it.str("time").substringBefore("-") + "|" + it.str("kind") + "|" + it.str("title") }
         assertEquals(
             listOf(
-                "class|数据结构|2026-11-12T08:00:00+08:00",
+                "08:00|class|数据结构",
                 // 第二节在逸夫教学楼：错峰 10:30。
-                "class|计算机网络|2026-11-12T10:30:00+08:00",
-                "lab|光纤特性和光信号传输（实验）|2026-11-12T13:00:00+08:00",
-                "exam|离散数学（考试）|2026-11-12T14:00:00+08:00",
-                "assignment_due|栈与队列|2026-11-12T23:59:00+08:00",
-                "assignment_due|零点截止的作业|2026-11-13T00:00:00+08:00",
+                "10:30|class|计算机网络",
+                "13:00|lab|光纤特性和光信号传输（实验）",
+                "14:00|exam|离散数学",
+                "23:59|assignment_due|栈与队列",
+                "24:00|assignment_due|零点截止的作业",
             ),
             summary,
         )
-        assertEquals("citel", items[items.size - 2].str("source"))
+        assertEquals("CITEL", items[items.size - 2].str("sourceLabel"))
     }
 
     @Test
-    fun homeworkAggregatesThreeSourcesAndSkipsUnbookedExperiments() {
-        val output = run("homework", "--json")
-        val items = parse(output).getValue("data").jsonObject.getValue("items").jsonArray.map { it.jsonObject }
+    fun homeworkReturnsAllSourcesInOneQuery() {
+        val result = parse(run("homework", "--json"))
+        val items = result.getValue("items").jsonArray.map { it.jsonObject }
         val titles = items.map { it.str("source") + ":" + it.str("title") }
         assertTrue("course_platform:实验报告一" in titles)
         assertTrue("citel:栈与队列" in titles)
         assertTrue("phyvlab:34 光纤特性和光信号传输" in titles)
         assertTrue("phyvlab:第一章作业" in titles, "非物理实验课不过滤")
         assertFalse(titles.any { "光栅光谱仪" in it }, "没约的实验不算")
+        assertFalse(titles.any { "零点截止的作业" in it }, "默认只列未交且未截止的")
+        val summary = result.getValue("summary").jsonObject
+        assertEquals(listOf("course_platform", "phyvlab", "citel"),
+            summary.getValue("bySource").jsonArray.map { it.jsonObject.str("source") })
+        assertEquals("1", summary.str("hiddenUnbooked"))
+        assertEquals(items.size.toString(), summary.str("shown"))
         val citel = items.first { it.str("title") == "栈与队列" }
-        assertEquals("false", citel.str("submitted"))
+        assertEquals("pending", citel.str("status"))
         assertEquals("WA: Wrong Answer", citel.str("judgeStatus"))
+        assertEquals("2026-11-12（周四）23:59", citel.str("due"))
+        assertEquals("还剩 14 小时 59 分钟", citel.str("remaining"))
         val booked = items.first { it.str("title") == "34 光纤特性和光信号传输" }
         assertEquals("booked", booked.str("enrollment"))
         assertEquals("光纤特性和光信号传输", booked.str("matchedBooking"))
 
-        val all = run("homework", "--all", "--json")
-        val allTitles = parse(all).getValue("data").jsonObject.getValue("items").jsonArray.map { it.jsonObject.str("title") }
-        assertTrue(allTitles.any { "光栅光谱仪" in it })
-    }
-
-    @Test
-    fun appFilterIsOptInAndAgentFiltersAreExposed() {
-        fun titles(vararg args: String) = parse(run(*args, "--json")).getValue("data").jsonObject.getValue("items").jsonArray
+        val all = parse(run("homework", "--status", "all", "--include-unbooked", "--json")).getValue("items").jsonArray
             .map { it.jsonObject.str("title") }
-        assertTrue("被隐藏的课的作业" in titles("homework"), "默认不套用 App 作业页筛选")
-        assertFalse("被隐藏的课的作业" in titles("homework", "--app-filter"))
-        assertEquals(listOf("实验报告一"), titles("homework", "--pending", "--source", "course", "--course", "甲"))
-        assertEquals(listOf("栈与队列"), titles("homework", "--source", "citel,course", "--course", "乙"))
-
-        val filters = parse(run("homework", "--json")).getValue("data").jsonObject.getValue("availableFilters").jsonObject
-        assertTrue(filters.getValue("course").jsonArray.any { it.jsonPrimitive.content == "物理实验II_(2026秋)" })
-        assertEquals("true", filters.getValue("appFilterActive").jsonPrimitive.content)
+        assertTrue(all.any { "光栅光谱仪" in it })
+        assertTrue("零点截止的作业" in all)
     }
 
     @Test
-    fun midnightDeadlineBelongsToPreviousDay() {
-        val data = parse(run("calendar", "--today", "--kind", "assignment_due", "--json")).getValue("data").jsonObject
-        val items = data.getValue("items").jsonArray.map { it.jsonObject }
+    fun sourceAndCourseFiltersUseSharedParameters() {
+        fun titles(vararg args: String) = parse(run(*args, "--json")).getValue("items").jsonArray.map { it.jsonObject.str("title") }
+        assertEquals(listOf("实验报告一"), titles("homework", "--pending", "--source", "course", "--course", "甲"))
+        assertEquals(listOf("栈与队列"), titles("homework", "--sources", "citel,course_platform", "--course", "乙"))
+        assertEquals(listOf("栈与队列"), titles("homework", "--range", "today"))
+    }
+
+    @Test
+    fun midnightDeadlineIsWrittenAsPreviousDay24() {
+        val result = parse(run("calendar", "--today", "--kinds", "assignment_due", "--json"))
+        val items = result.getValue("days").jsonArray.single().jsonObject.getValue("items").jsonArray.map { it.jsonObject }
         val midnight = items.single { it.str("title") == "零点截止的作业" }
-        assertEquals("2026-11-12", midnight.str("agendaDate"))
-        assertEquals("2026-11-13T00:00:00+08:00", midnight.str("start"))
-        assertEquals("true", midnight.str("midnightDeadline"))
+        assertEquals("24:00", midnight.str("time"))
+        assertEquals("2026-11-12（周四）24:00", midnight.str("due"))
         // 23:59 截止排在 24:00 之前。
         assertEquals(listOf("栈与队列", "零点截止的作业"), items.map { it.str("title") })
-        assertTrue(data.getValue("notes").jsonArray.single().jsonPrimitive.content.contains("00:00"))
+        assertTrue(result.getValue("notes").jsonArray.any { it.jsonPrimitive.content == AGENT_DUE_NOTE })
 
-        val tomorrow = parse(run("calendar", "--tomorrow", "--kind", "assignment_due", "--json")).getValue("data").jsonObject
-        assertTrue(tomorrow.getValue("items").jsonArray.none { it.jsonObject.str("title") == "零点截止的作业" })
+        val homework = run("homework", "--status", "all", "--json").stdout
+        assertTrue("2026-11-12（周四）24:00" in homework)
+        assertFalse("2026-11-13" in homework, "不输出次日日期，避免被理解成 13 日或 12 日 0 点")
 
-        val markdown = run("calendar", "--today").stdout
-        assertTrue("24:00 [作业截止] 零点截止的作业" in markdown)
-        assertTrue("即次日 00:00" in markdown)
+        val tomorrow = parse(run("calendar", "--tomorrow", "--kinds", "assignment_due", "--json"))
+        assertTrue(tomorrow.getValue("days").jsonArray.single().jsonObject.getValue("items").jsonArray.isEmpty())
+
+        assertTrue("24:00 [作业截止] 零点截止的作业" in run("calendar", "--today").stdout)
     }
 
     @Test
     fun kindAndCourseFiltersApplyToCalendar() {
-        val items = parse(run("calendar", "--today", "--kind", "class", "--course", "网络", "--json"))
-            .getValue("data").jsonObject.getValue("items").jsonArray.map { it.jsonObject.str("title") }
+        val items = parse(run("calendar", "--today", "--kinds", "class", "--course", "网络", "--json"))
+            .getValue("days").jsonArray.single().jsonObject.getValue("items").jsonArray.map { it.jsonObject.str("title") }
         assertEquals(listOf("计算机网络"), items)
-        assertEquals(AgentExit.USAGE, run("calendar", "--kind", "party").exitCode)
+        assertEquals(AgentExit.USAGE, run("calendar", "--kinds", "party").exitCode)
         assertEquals(AgentExit.USAGE, run("homework", "--course").exitCode)
+        assertEquals(AgentExit.USAGE, run("calendar", "--today", "--date", "2026-11-12").exitCode)
     }
 
     @Test
     fun freshnessFlagsSourcesOlderThanFourHours() {
         val homework = parse(run("homework", "--json")).getValue("freshness").jsonObject
         assertEquals(listOf("homework"), homework.getValue("stale").jsonArray.map { it.jsonPrimitive.content })
-        assertEquals("6.0", homework.getValue("sources").jsonObject.getValue("homework").jsonObject.str("ageHours"))
-        // 物理在线快照没写 savedAt、CITEL 没有 lastSync：同步时间未知。
-        assertEquals(listOf("phyvlab", "citel"), homework.getValue("unknown").jsonArray.map { it.jsonPrimitive.content })
-
-        val courses = parse(run("courses", "--json")).getValue("freshness").jsonObject
-        assertTrue(courses.getValue("stale").jsonArray.isEmpty())
-        assertTrue(courses.getValue("unknown").jsonArray.isEmpty())
-        assertFalse(run("courses").stdout.startsWith(">"), "数据都新时不加提示")
-
-        val markdown = run("homework").stdout
-        assertTrue(markdown.startsWith("> 缓存可能不是最新：课程平台作业（6 小时前）"))
+        val row = homework.getValue("sources").jsonArray.map { it.jsonObject }.first { it.str("source") == "homework" }
+        assertEquals("6 小时前", row.str("age"))
+        assertEquals("2026-11-12（周四）03:00", row.str("syncedAt"))
+        // 物理实验约课、CITEL、物理在线都没有同步时间记录。
+        assertEquals(listOf("physicsLab", "citel", "phyvlab"), homework.getValue("unknown").jsonArray.map { it.jsonPrimitive.content })
+        assertTrue(run("homework").stdout.startsWith("> 缓存可能不是最新：课程平台作业（6 小时前）"))
     }
 
     @Test
@@ -151,6 +156,7 @@ class AgentCommandTest {
         val denied = run("grades", "--json")
         assertEquals(AgentExit.NOT_ALLOWED, denied.exitCode)
         assertFalse("线性代数" in denied.stdout)
+        assertEquals("not_allowed", parse(denied).getValue("error").jsonObject.str("code"))
 
         val allowed = run("grades", "--json", gradesAllowed = true)
         assertEquals(AgentExit.OK, allowed.exitCode)
@@ -158,10 +164,25 @@ class AgentCommandTest {
     }
 
     @Test
+    fun mailListsCachedInboxSummary() {
+        val output = run("mail", "--unread", "--json") { store ->
+            saveAgentMailInbox(store, student, listOf(
+                MailSummary("m1", 1, "教务处", "期中考试通知", "第 11 周考试", "2026-11-11 09:00:00", "2026-11-11 09:00:05", 100, false, true),
+                MailSummary("m2", 1, "测试老师", "作业说明", "", "2026-11-10 10:00:00", "", 100, true, false),
+            ))
+        }
+        assertEquals(AgentExit.OK, output.exitCode, output.stderr)
+        val result = parse(output)
+        val item = result.getValue("items").jsonArray.single().jsonObject
+        assertEquals("期中考试通知", item.str("subject"))
+        assertEquals("2026-11-11（周三）09:00", item.str("received"))
+        assertEquals("2", result.getValue("summary").jsonObject.str("cached"))
+    }
+
+    @Test
     fun statusMasksStudentIdAndNeverPrintsProfileName() {
         val output = run("status", "--json")
-        val data = parse(output).getValue("data").jsonObject
-        assertEquals("20****01", data.str("account"))
+        assertEquals("20****01", parse(output).str("account"))
         assertFalse(student in output.stdout)
         assertFalse("测试同学" in output.stdout)
     }
@@ -176,13 +197,13 @@ class AgentCommandTest {
         var loads = 0
         val counting = AgentSnapshotProvider { loads++; AgentSnapshotResult.Unavailable("x") }
         listOf(listOf("calendar", "--from", "2026-13-01"), listOf("homework", "--source", "mail"),
-            listOf("calendar", "--week", "x"), listOf("homework", "--bogus")).forEach { args ->
+            listOf("calendar", "--week", "x"), listOf("homework", "--bogus"), listOf("homework", "--status", "done")).forEach { args ->
             assertEquals(AgentExit.USAGE, runAgentCommand(args, counting, now).exitCode, args.toString())
         }
         assertEquals(0, loads)
         val missing = runAgentCommand(listOf("calendar", "--json"), { AgentSnapshotResult.Unavailable("没有缓存") }, now)
         assertEquals(AgentExit.NO_DATA, missing.exitCode)
-        assertEquals("没有缓存", parse(missing).str("error"))
+        assertEquals("没有缓存", parse(missing).getValue("error").jsonObject.str("message"))
     }
 
     @Test
@@ -190,16 +211,20 @@ class AgentCommandTest {
         val direct = run("exams", "--json").stdout
         val alias = run("cache", "read", "exams", "--json").stdout
         assertEquals(direct, alias)
-        val exam = parse(run("exams", "--json")).getValue("data").jsonArray.single().jsonObject
+        val exam = parse(run("exams", "--json")).getValue("items").jsonArray.single().jsonObject
         assertEquals("2026-11-12", exam.str("date"))
-        assertEquals("14:00", exam.str("start"))
+        assertEquals("14:00-16:00", exam.str("time"))
+        assertEquals("0", exam.str("daysLeft"))
     }
 
     @Test
     fun weekOptionUsesCachedAcademicCalendar() {
-        val data = parse(run("calendar", "--week", "11", "--json")).getValue("data").jsonObject
-        assertEquals("2026-11-16", data.str("from"))
-        assertEquals("2026-11-22", data.str("to"))
+        val query = parse(run("calendar", "--week", "11", "--json")).getValue("query").jsonObject
+        assertEquals("2026-11-16", query.str("from"))
+        assertEquals("2026-11-22", query.str("to"))
+        val courses = parse(run("courses", "--json")).getValue("query").jsonObject
+        assertEquals("2026-11-09", courses.str("from"))
+        assertEquals(listOf("class", "lab"), courses.getValue("kinds").jsonArray.map { it.jsonPrimitive.content })
     }
 
     @Test
@@ -207,13 +232,14 @@ class AgentCommandTest {
         val output = run("calendar", "--today")
         assertTrue("\n# 日程 2026-11-12 ~ 2026-11-12\n" in output.stdout)
         assertTrue(output.stdout.startsWith("> 缓存可能不是最新"))
-        assertTrue("10:30–12:20 [课程] 计算机网络" in output.stdout)
+        assertTrue("10:30-12:20 [课程] 计算机网络" in output.stdout)
+        assertTrue("课程平台：未交" in run("homework").stdout)
     }
 
     // region fixture
 
-    private fun run(vararg args: String, gradesAllowed: Boolean = false): AgentOutput {
-        val store = fixtureStore()
+    private fun run(vararg args: String, gradesAllowed: Boolean = false, prepare: (CacheStore) -> Unit = {}): AgentOutput {
+        val store = fixtureStore().also(prepare)
         return runAgentCommand(args.toList(), { today ->
             AgentSnapshotResult.Ready(loadAgentSnapshot(store, student, today), gradesAllowed, "test")
         }, now)

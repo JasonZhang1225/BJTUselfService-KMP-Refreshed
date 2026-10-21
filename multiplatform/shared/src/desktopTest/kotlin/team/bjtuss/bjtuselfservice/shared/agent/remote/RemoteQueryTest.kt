@@ -12,28 +12,32 @@ import team.bjtuss.bjtuselfservice.shared.cache.openDesktopCacheStore
 class RemoteQueryTest {
     private fun args(text: String) = remoteJson.parseToJsonElement(text).jsonObject
 
-    @Test fun explicitSourcesAndPermissionAreRequired() {
-        assertFails { parseRemoteQuery(args("{}"), RemoteScope.DEFAULT) }
-        assertFails { parseRemoteQuery(args("""{"sources":["grades"],"freshness":"latest"}"""), RemoteScope.DEFAULT) }
-        assertFails { parseRemoteQuery(args("""{"sources":["courses"],"url":"https://example.com"}"""), RemoteScope.DEFAULT) }
-        assertFails { parseRemoteQuery(args("""{"sources":["courses"],"date":"2026-02-30"}"""), RemoteScope.DEFAULT) }
-        val query = parseRemoteQuery(args("""{"sources":["citel"],"taskId":"9265","freshness":"latest"}"""), RemoteScope.DEFAULT)
-        assertEquals(setOf(RefreshSource.CITEL), query.sources)
-        assertTrue(query.latest)
-        assertEquals("9265", query.taskId)
+    @Test fun liveQueryUsesTheSameParametersAsTheQueryTools() {
+        assertFailsWith<IllegalArgumentException> { parseRemoteLiveQuery(args("{}"), RemoteScope.DEFAULT) }
+        assertEquals("scope_denied", assertFailsWith<IllegalArgumentException> {
+            parseRemoteLiveQuery(args("""{"command":"grades","freshness":"latest"}"""), RemoteScope.DEFAULT)
+        }.message)
+        assertEquals("bad_request", assertFailsWith<IllegalArgumentException> {
+            parseRemoteLiveQuery(args("""{"command":"homework","url":"https://example.com"}"""), RemoteScope.DEFAULT)
+        }.message)
+        assertFailsWith<IllegalArgumentException> { parseRemoteLiveQuery(args("""{"command":"calendar","date":"2026-02-30"}"""), RemoteScope.DEFAULT) }
+        assertFailsWith<IllegalArgumentException> { parseRemoteLiveQuery(args("""{"command":"homework","freshness":"soon"}"""), RemoteScope.DEFAULT) }
+        val live = parseRemoteLiveQuery(args("""{"command":"homework","sources":["citel"],"status":"all","freshness":"latest"}"""), RemoteScope.DEFAULT)
+        assertTrue(live.latest)
+        assertEquals("homework", live.query.command)
+        assertEquals(listOf("citel"), live.query.sources)
+        assertEquals("all", live.query.status)
     }
 
-    @Test fun queryPreservesMidnightAgendaAndExcludesOtherSourcesAndScopes() {
-        val data = args("""{"assignments":{"homework":{"notes":["午夜归前日"],"items":[
-          {"source":"citel","courseName":"示例课程","dueTime":"2026-10-23T00:00:00+08:00","dueAgendaDate":"2026-10-22","midnightDeadline":true},
-          {"source":"course","courseName":"示例课程","dueAgendaDate":"2026-10-22"}
-        ]}},"grades":{"grades":[{"courseName":"示例课程","score":"90"}]}}""")
-        val query = parseRemoteQuery(args("""{"sources":["citel"],"course":"示例","date":"2026-10-22"}"""), RemoteScope.DEFAULT)
-        val result = projectRemoteQuery(data, query)
-        assertFalse("grades" in result)
-        val items = result.getValue("assignments").jsonObject.getValue("homework").jsonObject.getValue("items").jsonArray
-        assertEquals(1, items.size)
-        assertTrue(items.single().jsonObject.getValue("midnightDeadline").jsonPrimitive.boolean)
+    @Test fun calendarNeedsAnyScheduleLikeScopeAndRefreshesOnlyAllowedSources() {
+        val onlyExams = setOf(RemoteScope.EXAMS)
+        assertEquals("calendar", parseRemoteLiveQuery(args("""{"command":"calendar"}"""), onlyExams).query.command)
+        assertEquals(setOf(RefreshSource.EXAMS), remoteRefreshSources("calendar", onlyExams))
+        assertEquals(setOf(RefreshSource.HOMEWORK, RefreshSource.PHYVLAB, RefreshSource.CITEL, RefreshSource.PHYSICS_LAB),
+            remoteRefreshSources("homework", RemoteScope.DEFAULT))
+        assertFalse(remoteTaskAllowed(RemoteOperation.MAIL_MESSAGE, args("""{"messageId":"1:abc"}"""), RemoteScope.DEFAULT))
+        assertTrue(remoteTaskAllowed(RemoteOperation.MAIL_MESSAGE, args("""{"messageId":"1:abc"}"""), RemoteScope.DEFAULT + RemoteScope.MAIL))
+        assertFalse(remoteTaskAllowed(RemoteOperation.MAIL_MESSAGE, args("""{"messageId":"../x y"}"""), RemoteScope.DEFAULT + RemoteScope.MAIL))
     }
 
     @Test fun queryTaskIsDeduplicatedAndStoredResultCannotBypassRevokedScope() = runBlocking {
@@ -54,7 +58,7 @@ class RemoteQueryTest {
             val client = FakeSiteClient()
             val runner = RemoteAgentRunner(config, { client }, executor, RemoteAgentStore(cache), { 100L })
             val task = RemoteTask("req_queryTest01", "dev_queryTest01", "bind_queryTest01", "query",
-                args("""{"sources":["grades"],"freshness":"local"}"""), 1, 500, "running", 1, "lease_queryTest01", 220)
+                args("""{"command":"grades","freshness":"local"}"""), 1, 500, "running", 1, "lease_queryTest01", 220)
             runner.handleTask(client, task)
             runner.handleTask(client, task.copy(leaseId = "lease_queryTest02"))
             assertEquals(1, queries)

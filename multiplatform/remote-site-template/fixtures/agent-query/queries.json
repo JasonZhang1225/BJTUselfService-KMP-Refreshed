@@ -1,0 +1,19 @@
+[
+  { "name": "作业默认：全部来源、只列未交未截止", "command": "homework", "args": {} },
+  { "name": "作业全部状态，含未约实验与详情", "command": "homework", "args": { "status": "all", "includeUnbooked": true, "detail": true } },
+  { "name": "本周截止的作业（含 00:00 截止归前一天 24:00）", "command": "homework", "args": { "range": "this_week" } },
+  { "name": "只看 CITEL 所有未交", "command": "homework", "args": { "sources": ["citel"], "status": "unsubmitted" } },
+  { "name": "按课程筛作业", "command": "homework", "args": { "course": "物理", "status": "all" } },
+  { "name": "日程默认未来 7 天", "command": "calendar", "args": {} },
+  { "name": "周日当天：24:00 截止在当天", "command": "calendar", "args": { "date": "2026-10-25" } },
+  { "name": "第 9 周只看课程与实验", "command": "calendar", "args": { "week": 9, "kinds": ["class", "lab"] } },
+  { "name": "超出快照课表范围", "command": "calendar", "args": { "from": "2026-12-14", "to": "2026-12-20" } },
+  { "name": "即将到来的考试", "command": "exams", "args": {} },
+  { "name": "全部考试", "command": "exams", "args": { "status": "all" } },
+  { "name": "成绩按学期", "command": "grades", "args": { "term": "第一学期" } },
+  { "name": "未读邮件", "command": "mail", "args": { "unread": true } },
+  { "name": "总体状态", "command": "status", "args": {} },
+  { "name": "非法状态值", "command": "homework", "args": { "status": "done" }, "parseError": true },
+  { "name": "范围参数冲突", "command": "calendar", "args": { "range": "today", "date": "2026-10-22" }, "parseError": true },
+  { "name": "不存在的教学周", "command": "calendar", "args": { "week": 30 } }
+]

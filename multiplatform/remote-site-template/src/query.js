@@ -1,60 +1,64 @@
-import { ProtocolError, SOURCES, requireObject } from "./protocol.js";
+import { ProtocolError } from "./protocol.js";
+import { AgentQueryError, COMMANDS, agentQueryError, parseAgentQuery, runAgentQuery } from "./agent-query.js";
 
 export const SCOPE_SOURCES = Object.freeze({
   schedule: ["courses", "physicsLab", "physicsDemo"], exams: ["exams"],
-  assignments: ["homework", "phyvlab", "citel", "physicsLab", "physicsDemo"],
+  assignments: ["homework", "phyvlab", "citel", "physicsLab"],
   grades: ["grades"], mail: ["mailUnread"],
 });
 
-export function validateQuery(args = {}) {
-  requireObject(args, "query");
-  if (Object.keys(args).some(k => !["sources", "course", "date", "taskId"].includes(k))) throw new ProtocolError(400, "bad_request", "未知查询参数");
-  if (args.sources !== undefined && (!Array.isArray(args.sources) || !args.sources.length || args.sources.some(s => !SOURCES.includes(s)))) throw new ProtocolError(400, "bad_request", "sources 无效");
-  for (const key of ["course", "taskId"]) if (args[key] !== undefined && (typeof args[key] !== "string" || !args[key].trim() || args[key].length > 128)) throw new ProtocolError(400, "bad_request", `${key} 无效`);
-  if (args.date !== undefined && (typeof args.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(args.date) || !Number.isFinite(Date.parse(args.date)) || new Date(args.date).toISOString().slice(0, 10) !== args.date)) throw new ProtocolError(400, "bad_request", "date 无效");
-  return args;
-}
+/** 每个查询至少需要其中一个上云范围（与 KMP remoteCommandScopes 一致）。 */
+export const COMMAND_SCOPES = Object.freeze({
+  status: ["schedule", "exams", "assignments", "grades", "mail"],
+  calendar: ["schedule", "exams", "assignments"],
+  homework: ["assignments"], exams: ["exams"], grades: ["grades"], mail: ["mail"],
+});
 
 export function permittedSources(scopes) {
   return [...new Set(scopes.flatMap(s => SCOPE_SOURCES[s] ?? []))];
 }
 
-/** 旧客户端的全局筛选元数据可能包含其他范围的课程名，不能随某一个范围返回。 */
-export function withoutGlobalFilterMetadata(value) {
-  if (Array.isArray(value)) return value.map(withoutGlobalFilterMetadata);
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => key !== "availableFilters").map(([key, nested]) => [key, withoutGlobalFilterMetadata(nested)]));
-  return value;
+export function commandAllowed(command, scopes) {
+  return (COMMAND_SCOPES[command] ?? []).some(scope => scopes.includes(scope));
 }
 
-// 只过滤业务记录数组，保留 notes、时间范围等解释字段。无匹配字段的记录不误报为匹配。
-function project(value, args) {
-  if (Array.isArray(value)) return value.filter(item => {
-    if (!item || typeof item !== "object") return true;
-    const source = ["course", "course_platform"].includes(item.source) ? "homework" : item.source;
-    if (args.sources && source && !args.sources.includes(source)) return false;
-    if (args.course && !(item.courseName ?? item.course ?? item.name ?? item.title ?? "").toLowerCase().includes(args.course.toLowerCase())) return false;
-    if (args.taskId && String(item.id ?? item.taskId ?? "") !== args.taskId) return false;
-    const due = item.dueTime ?? item.dueAt;
-    const dueDate = due?.includes("T00:00:00+08:00") ? new Date(Date.parse(due.slice(0, 10)) - 86400000).toISOString().slice(0, 10) : due?.slice(0, 10);
-    if (args.date && (item.agendaDate ?? item.dueAgendaDate ?? item.date ?? item.start?.slice(0, 10) ?? dueDate) !== args.date) return false;
-    return true;
-  });
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).filter(([k]) => k !== "citel" || !args.sources || args.sources.includes("citel")).map(([k, v]) => [k, project(v, args)]));
-  return value;
+/** 校验查询参数；错误统一转成协议错误（400）。 */
+export function validateAgentQuery(command, args) {
+  if (!COMMANDS.includes(command)) throw new ProtocolError(400, "bad_request", `未知查询：${command}`);
+  try {
+    return parseAgentQuery(command, args ?? {});
+  } catch (error) {
+    if (error instanceof AgentQueryError) throw new ProtocolError(400, error.code, error.message);
+    throw error;
+  }
 }
 
-export function querySnapshot(payload, input = {}) {
-  const args = validateQuery(input);
-  const allowed = payload.device?.scopes ?? [];
-  const allowedSources = permittedSources(allowed);
-  if (args.sources?.some(s => !allowedSources.includes(s))) throw new ProtocolError(403, "scope_denied", "查询超出设备授权范围");
-  if (!payload.snapshot) return { ...payload, freshness: "snapshot", query: args };
-  const selected = allowed.filter(scope => !args.sources || SCOPE_SOURCES[scope].some(s => args.sources.includes(s)));
-  const snapshot = payload.snapshot;
-  return { ...payload, freshness: "snapshot", query: args, snapshot: { ...snapshot,
-    scopes: snapshot.scopes.filter(s => selected.includes(s)),
-    sources: Object.fromEntries(Object.entries(snapshot.sources ?? {}).filter(([s]) => permittedSources(selected).includes(s) && (!args.sources || args.sources.includes(s)))),
-    data: Object.fromEntries(Object.entries(snapshot.data ?? {}).filter(([s]) => selected.includes(s)).map(([s, v]) => [s, project(withoutGlobalFilterMetadata(v), args)])),
-  } };
+const clock = (epoch) => {
+  if (epoch == null) return null;
+  const d = new Date((epoch + 8 * 3600) * 1000);
+  return `${d.toISOString().slice(0, 10)} ${d.toISOString().slice(11, 16)}`;
+};
+
+/**
+ * 用云端快照执行查询（get_homework 等工具）：数据与本机 CLI 同一结构，查询引擎同构。
+ * payload 来自 service.latestSnapshot()（已按设备当前授权过滤）；now 为 Unix 秒。
+ */
+export function querySnapshot(payload, command, args, now) {
+  const query = validateAgentQuery(command, args);
+  const scopes = payload.device?.scopes ?? [];
+  if (!commandAllowed(command, scopes)) throw new ProtocolError(403, "scope_denied", "这类数据没有授权上云；请在电脑端“允许上云的数据”里开启");
+  const remote = {
+    device: payload.device ? { name: payload.device.deviceName, lastSeen: clock(payload.device.lastSeenAt) } : null,
+    snapshotReceived: clock(payload.snapshot?.receivedAt),
+    snapshotScopes: payload.snapshot?.scopes ?? [],
+  };
+  if (!payload.snapshot) {
+    return { ...agentQueryError(null, command, now, "cloud_snapshot", "no_snapshot", "电脑还没有上传过快照：请确认电脑上的交大自由行已登录并开启远程同步。"), remote };
+  }
+  if (payload.snapshot.schemaVersion !== 2) {
+    return { ...agentQueryError(null, command, now, "cloud_snapshot", "schema_mismatch", "电脑端版本与 Site 模板不一致，请更新电脑上的交大自由行。"), remote };
+  }
+  const sources = Object.fromEntries(Object.entries(payload.snapshot.sources ?? {})
+    .map(([name, s]) => [name, { fetchedAt: s.fetchedAt ?? null, status: s.status ?? null, reason: s.reason ?? null }]));
+  return { ...runAgentQuery(payload.snapshot.data ?? {}, sources, query, now, "cloud_snapshot"), remote };
 }

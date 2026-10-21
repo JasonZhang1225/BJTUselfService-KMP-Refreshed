@@ -204,7 +204,7 @@ test("任务参数只接受白名单 DTO；成绩未授权时拒绝", async () =
     assert.equal(response.status, 400, JSON.stringify(body));
   }
   const grades = await site.call("POST", "/api/v1/owner/tasks", {
-    owner: true, body: { operation: "query", idempotencyKey: "idem_bad000005", arguments: { freshness: "latest", sources: ["grades"] } },
+    owner: true, body: { operation: "query", idempotencyKey: "idem_bad000005", arguments: { command: "grades", freshness: "latest" } },
   });
   assert.equal(grades.status, 403);
   assert.equal(grades.body.error.code, "scope_denied");

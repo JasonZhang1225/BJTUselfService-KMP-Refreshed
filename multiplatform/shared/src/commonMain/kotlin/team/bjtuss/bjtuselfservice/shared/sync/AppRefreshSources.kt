@@ -3,6 +3,7 @@ package team.bjtuss.bjtuselfservice.shared.sync
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
+import team.bjtuss.bjtuselfservice.shared.agent.saveAgentMailInbox
 import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.cache.SyncSource
@@ -67,7 +68,10 @@ fun appRefreshAdapters(models: AppRefreshModels): List<RefreshSourceAdapter> = w
             private var probed = false
             override suspend fun refresh() {
                 probed = mailboxModel.refreshUnreadInboxCount()
-                if (probed) recordSyncTime(cache, accountScope, source, nowEpochSeconds())
+                if (probed) {
+                    mailboxModel.lastInboxProbe?.let { saveAgentMailInbox(cache, accountScope, it) }
+                    recordSyncTime(cache, accountScope, source, nowEpochSeconds())
+                }
             }
             override fun sessionExpired() = when (val current = mailboxModel.state.value) {
                 MailboxUiState.SessionUnavailable -> true

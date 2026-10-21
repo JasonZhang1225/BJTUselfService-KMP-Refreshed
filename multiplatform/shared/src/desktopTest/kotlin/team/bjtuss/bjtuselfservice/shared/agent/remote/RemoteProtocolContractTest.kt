@@ -20,7 +20,7 @@ class RemoteProtocolContractTest {
 
     @Test
     fun snapshotFixtureRoundTripsWithoutLosingFields() {
-        val text = fixture("snapshot-v1.json")
+        val text = fixture("snapshot-v2.json")
         val snapshot = remoteJson.decodeFromString(RemoteSnapshot.serializer(), text)
         assertEquals(REMOTE_SNAPSHOT_SCHEMA_VERSION, snapshot.schemaVersion)
         assertEquals(42, snapshot.sequence)
@@ -37,7 +37,7 @@ class RemoteProtocolContractTest {
         RefreshSource.entries.forEach { assertTrue("\"${it.wire}\"" in protocol, "Site 模板缺少来源 ${it.wire}") }
         RefreshStatus.entries.forEach { assertTrue("\"${it.wire}\"" in protocol, "Site 模板缺少状态 ${it.wire}") }
         RemoteScope.entries.forEach { assertTrue("\"${it.wire}\"" in protocol, "Site 模板缺少范围 ${it.wire}") }
-        listOf(RemoteOperation.QUERY, RemoteOperation.REFRESH_ALL, RemoteOperation.CITEL_PROBLEM)
+        listOf(RemoteOperation.QUERY, RemoteOperation.REFRESH_ALL, RemoteOperation.CITEL_PROBLEM, RemoteOperation.MAIL_MESSAGE)
             .forEach { assertTrue("\"$it\"" in protocol) }
         assertTrue("PROTOCOL_VERSION = $REMOTE_PROTOCOL_VERSION;" in protocol)
         assertTrue("SNAPSHOT_SCHEMA_VERSION = $REMOTE_SNAPSHOT_SCHEMA_VERSION;" in protocol)

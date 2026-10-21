@@ -35,15 +35,13 @@ test("旧客户端快照不能隐式扩大授权，新的明确范围版本可�
     body: snapshotFor(device, { scopesRevision: 3 }) })).status, 200);
 });
 
-test("范围撤销后，旧快照的全局筛选提示不能旁路泄露课程名", async () => {
+test("范围撤销后，旧快照中该范围的数据立即不可读", async () => {
   const site = createSite();
   const device = await pairDevice(site);
-  const snapshot = snapshotFor(device);
-  snapshot.data.schedule.calendar = { items: [], availableFilters: { course: ["仅作业范围的示例课程"] } };
-  await site.call("PUT", "/api/v1/device/snapshot", { token: device.deviceToken, body: snapshot });
+  await site.call("PUT", "/api/v1/device/snapshot", { token: device.deviceToken, body: snapshotFor(device) });
   await site.call("PUT", "/api/v1/device/scopes", { token: device.deviceToken, body: { scopes: ["schedule"], scopesRevision: 2 } });
   const result = await site.call("GET", "/api/v1/owner/snapshot", { owner: true });
   assert.equal(result.status, 200);
-  assert.equal(JSON.stringify(result.body).includes("仅作业范围的示例课程"), false);
-  assert.deepEqual(result.body.snapshot.data.schedule.calendar.items, []);
+  assert.equal(JSON.stringify(result.body).includes("实验 3 链表"), false);
+  assert.deepEqual(Object.keys(result.body.snapshot.data), ["schedule"]);
 });

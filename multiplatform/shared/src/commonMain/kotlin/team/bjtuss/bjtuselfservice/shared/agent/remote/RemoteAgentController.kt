@@ -13,7 +13,13 @@ import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.*
 import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
 import team.bjtuss.bjtuselfservice.shared.agent.AGENT_TIME_ZONE
+import team.bjtuss.bjtuselfservice.shared.agent.AgentSourceState
+import team.bjtuss.bjtuselfservice.shared.agent.AgentWeek
+import team.bjtuss.bjtuselfservice.shared.agent.agentMailMessageJson
+import team.bjtuss.bjtuselfservice.shared.agent.agentScheduleWindow
+import team.bjtuss.bjtuselfservice.shared.agent.buildAgentDataset
 import team.bjtuss.bjtuselfservice.shared.agent.loadAgentSnapshot
+import team.bjtuss.bjtuselfservice.shared.agent.runAgentQuery
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshReport
@@ -65,19 +71,28 @@ class AppSessionRemoteExecutor(
                     put("problem", remoteJson.encodeToJsonElement(problem.problem))
                 })
             }
-            val query = parseRemoteQuery(task.arguments, scopes)
-            val report = if (query.latest) session.refreshCoordinator?.refresh(RefreshRequest(sources = query.sources, origin = RefreshOrigin.REMOTE)) else null
+            if (task.operation == RemoteOperation.MAIL_MESSAGE) {
+                val messageId = parseRemoteMailMessage(task.arguments, scopes)
+                val message = session.mailboxModel.fetchMessageForAgent(messageId)
+                if (currentAccountScope() != account) return failure("account_mismatch")
+                return RemoteQueryOutcome(RemoteTaskStatus.SUCCEEDED, agentMailMessageJson(message))
+            }
+            val live = parseRemoteLiveQuery(task.arguments, scopes)
+            val refreshSources = remoteRefreshSources(live.query.command, scopes)
+            val report = if (live.latest) session.refreshCoordinator?.refresh(RefreshRequest(sources = refreshSources, origin = RefreshOrigin.REMOTE)) else null
             if (currentAccountScope() != account) return failure("account_mismatch")
             return withContext(Dispatchers.Default) {
                 val instant = now()
                 val snapshot = loadAgentSnapshot(cache, account, instant.toLocalDateTime(AGENT_TIME_ZONE).date)
                 val states = report?.results?.associate { it.source.wire to RemoteSourceState(it.status.wire, it.fetchedAtEpochSeconds, it.reason) }.orEmpty()
-                val content = buildRemoteSnapshotContent(snapshot, scopes, states, { cachedSourceSyncTime(cache, account, it) }, instant, query.date, query.sources)
-                RemoteQueryOutcome(if (report?.allSucceeded == false) RemoteTaskStatus.PARTIAL else RemoteTaskStatus.SUCCEEDED, buildJsonObject {
-                    put("freshness", if (query.latest) "latest" else "local")
-                    put("data", projectRemoteQuery(content.data, query))
-                    put("sources", remoteJson.encodeToJsonElement(content.sources.filterKeys { key -> query.sources.any { it.wire == key } }))
-                })
+                val sources = remoteSourceStates(scopes, states) { cachedSourceSyncTime(cache, account, it) }
+                    .filterKeys { key -> refreshSources.any { it.wire == key } }
+                    .mapValues { (_, state) -> AgentSourceState(state.fetchedAt, if (report == null) null else state.status, if (report == null) null else state.reason) }
+                val weeks = snapshot.academicWeeks.map { AgentWeek(it.week, it.startDate.toString()) }
+                val (from, to) = agentScheduleWindow(live.query, weeks, instant.epochSeconds)
+                val dataset = buildAgentDataset(snapshot, remoteDatasetParts(scopes), from, to, instant, gradesAllowed = true)
+                val result = runAgentQuery(dataset, sources, live.query, instant.epochSeconds, if (live.latest) "live_latest" else "live_local")
+                RemoteQueryOutcome(if (report?.allSucceeded == false) RemoteTaskStatus.PARTIAL else RemoteTaskStatus.SUCCEEDED, result)
             }
         } catch (cancel: CancellationException) { throw cancel
         } catch (error: IllegalArgumentException) { return failure(if (error.message == "scope_denied") "scope_denied" else "bad_request")

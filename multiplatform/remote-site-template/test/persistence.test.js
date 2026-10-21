@@ -16,7 +16,7 @@ test("重建服务对象并重新打开数据库后，绑定、快照、任务�
     const device = await pairDevice(first);
     await first.call("PUT", "/api/v1/device/snapshot", { token: device.deviceToken, body: snapshotFor(device) });
     const queued = await first.call("POST", "/api/v1/owner/tasks", { owner: true,
-      body: { operation: "query", idempotencyKey: "restart_test001", arguments: { sources: ["courses"], freshness: "local" } } });
+      body: { operation: "query", idempotencyKey: "restart_test001", arguments: { command: "calendar", freshness: "local" } } });
     const leased = await first.call("POST", "/api/v1/device/poll", { token: device.deviceToken });
     db.raw.close(); db = null;
 
