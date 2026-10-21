@@ -45,6 +45,9 @@ internal fun AgentAssistantCard(
     integration: AgentIntegration,
     gradesAllowed: Boolean,
     onGradesAllowed: (Boolean) -> Unit,
+    showStatus: Boolean = true,
+    statusRefreshKey: Int = 0,
+    onStatusChange: (AgentIntegrationStatus?) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -55,8 +58,9 @@ internal fun AgentAssistantCard(
 
     suspend fun refresh() {
         status = withContext(Dispatchers.Default) { runCatching { integration.status() }.getOrNull() }
+        onStatusChange(status)
     }
-    LaunchedEffect(integration) { refresh() }
+    LaunchedEffect(integration, statusRefreshKey) { refresh() }
 
     fun run(action: () -> AgentInstallResult) {
         if (busy) return
@@ -77,7 +81,7 @@ internal fun AgentAssistantCard(
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("AI 助手", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                status?.let { StatusChip(it) }
+                if (showStatus) status?.let { StatusChip(it) }
             }
             Text(
                 "让本机的 Claude Code、Codex 等 AI 助手读取课表、日程、作业和考试（只读，App 关着也能用）。" +
@@ -113,7 +117,7 @@ internal fun AgentAssistantCard(
                     color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (current?.installed == true) {
-                Text(
+                if (showStatus) Text(
                     "Skill：${current.skillPath}\n" + when (current.claude) {
                         ClaudeSkillLink.SHARED, ClaudeSkillLink.LINKED -> "Claude Code 可直接使用。"
                         ClaudeSkillLink.NOT_LINKED -> "Claude Code 未链接（~/.claude/skills 下已有同名目录）。"

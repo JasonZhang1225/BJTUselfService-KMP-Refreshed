@@ -16,6 +16,25 @@ permissions:
   contents: read
 
 jobs:
+  remote-site-template:
+    name: Remote site template tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: multiplatform/remote-site-template
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run template tests (real migration SQL on node:sqlite, fictional fixtures)
+        run: npm test
+
   android:
     name: Android compile security check
     runs-on: ubuntu-24.04

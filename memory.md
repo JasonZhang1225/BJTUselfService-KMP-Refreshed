@@ -1,25 +1,25 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-21。
-> 当前分支：`fix/ios-sheet-dismissal`（PR #35，已合入最新 mine/main@eff3629，包含已合并 PR #34；#35 待用户合并）。
-> KMP 源码版本：`1.8.5-EmergencyFix2` / Build 40；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。`history_full.md` 尚无 EmergencyFix2 发版条目。
-> 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
-> 已完成工作的细节见 `history_full.md` 末尾日志。
-> 认证现状（2026-10-20，PR #29/#30 已纳入 main）：MIS 走统一身份认证 sso.bjtu.edu.cn（SM2 加密密码、默认免验证码）；物理在线用独立账号密码（设置 → 物理在线账号设置）；智慧教学仍卡在学校的旧 CAS 跳转。
-
-> 最近只读操作：2026-10-14 使用已安装 bjtuss 完成本机作业缓存导出；产物仅放 `.artifacts/`，未修改源码、未联网刷新，保留原有暂存与未提交改动。
+> 开发位置：主目录 `C:/Users/zjg/BJTUselfService-KMP-Refreshed` 的本地 `agent-remote`，按用户要求将原 11 个功能提交与后续实现整理为一个基本实现提交；不再使用开发工作树。本轮不推送、不建 PR、不合并 main。
+> 压缩前源码、补丁、原提交 bundle 和旧工作树残留均备份于 `.artifacts/agent-remote-consolidation-20261021/`；原迁移备份和 Git stash 保留。宣传图分支 `claude/project-thread-a8br6t@5b165e4` 本地/远端保留。
+> 工作树清理：两个旧版 Temp 工作树已由 Git 自带命令删除，Git 仅登记主目录。`.artifacts/agent-windows` 已不是 Git 工作树；其递归残留清理被自动策略拒绝（blocked by policy），未绕过，完整残留已另存 669036652 字节归档。
+> 实际 `origin` 指向用户仓库 `JasonZhang1225/BJTUselfService-KMP-Refreshed`，无 `mine`，与 AGENTS.md 的旧远端命名不同。压缩基线为已知 `origin/main@f454d3a`；不改写 main 和远端。
+> 版本仍为 `1.8.5-EmergencyFix2` / Build 40；最新已核验 Release 为 `v1.8.5-EmergencyFix2`。本地 MSI 为 `.artifacts/交大自由行 KMP-1.8.5-agent-plugins.msi`（116428800 字节，SHA256 D5D0E73E3E004448414EF1DDA4701E9FF10FDFA34AFC0837DEA2463178965C36），未安装。只读 ProductCode={8E7A3023-9F2E-43E2-BBE0-3B22932EEF8A}，UpgradeCode 保留；行政提取 /a 返回 1619，未验证包内提取和实际升级。
+> Computer Use 已恢复：旧 CODEX_CLI_PATH 指向已不存在的 bin/d0097be4feba73d0/codex.exe，当前程序在 bin/6257d9e8f63c0f2b/codex.exe。已为旧目录建立 Junction，重置后 @oai/sky 可列出并读取安装版窗口；未改写程序。以后移除只删 Junction 本身，不递归删除目标。
 
 ## 进行中
 
-- iOS 课程详情关闭后卡片无响应（PR #35，`fix/ios-sheet-dismissal`）：用户确认首次详情通过右上角关闭按钮收起；6 秒录屏中课程卡片仍有按压反馈，课表/周数弹层可正常开关，未证明主线程整体卡死。原生弹层宿主被所有 `AppleSheet` 共用，内容、关闭回调和动画状态存在串用风险。
-  - 修复：每个 `AppleSheet` 组合通过 `createPresentation()` 持有独立 iOS 呈现对象；旧组合的释放/关闭动画不能清空后一个弹层。原生 dismissal delegate 绑定具体控制器，忽略过期回调，并在发起 present 前绑定 delegate。
-  - 验证：真实 `AppleSheet` + 可延迟关闭完成的测试宿主，3 项离屏集成测试通过（重叠弹层独立释放、关闭后快速重开、重组保留呈现对象并更新回调）；`./gradlew :shared:desktopTest --no-configuration-cache` 完整共享测试 935 项全部通过（含新增 3 项）。Linux 无 Xcode/iOS 模拟器，原生编译与 iOS 测试交给 PR CI，未做 iPhone 实机复测，未修改版本号或发版。
-- PR #34 已由用户合入 main（eff3629），完成细节移入 `history_full.md`。本次将 main 合入 #35，只解决 `memory.md` 冲突，保留两项修复的源码原样。
-- Package 记录：PR #34 的 `935d5ba` → run `39522324933`；PR #35 原独立提交 `5430eb8` → run `39522327270`。两次打包均已成功，使用各自原提交；当前 #35 合入 main 后的提交包含两项修复，未额外触发打包；未改版本或创建 Release。
+- **Agent Remote 基本实现已收口，等待合入与剩余验收。** 包含公共刷新服务、App/CLI 同一执行者、Windows DPAPI 配对/常驻/托盘/开机启动、私人 Site 持久快照与任务、6 个 MCP 工具、本地开发插件与查询 Skill、应用页“Agent 和 ChatGPT 插件”入口及搭建向导。最小化到托盘独立保存，默认开启，系统无托盘时不隐藏。现有 App/Site 日期处理逻辑没有因 DDL 纠错改动。
+- **验证证据。** JDK 21，`-I .artifacts/emergencyfix2-checks.gradle :shared:desktopTest :shared:compileAndroidMain :desktopApp:compileKotlin :windowsApp:compileKotlinWindows` 成功，996 项共享测试通过（沿用 Windows 既有 5 项排除）；Windows 既往 9 项通过/1 在线项跳过。Node `npm test` 36/36、`node scripts/build.mjs` 通过。浅深色和 1.5 倍文字合成 UI 已检查；`:windowsApp:packageMsi` 成功（45 秒）。本轮整理 Git 不重复构建。更多证据见 `docs/agent/windows-local-verification-2026-10-21.md` 与 `.artifacts/`。
+- **真实链路。** Site https://bjtuss-private-remote.ardent-rice-3928.chatgpt.site 仍 owner-private；当前网站源 f02ebf048cd4774836a5f4e1af3182bac38a3ef4、部署 appgdep_6ad8bec4564c819181112b3ff776d5e9 succeeded。真实安装版配对、心跳、快照同步通过，浏览器一次刷新 21:20:44→21:21:01，17 秒自动显示完成并更新来源时间。网页已去掉周期说明并同步新入口。
+- **插件日期规则。** canonical 插件 ID `plugin_asdk_app_sites_9c8cc6038e1c8191885c65089da2a0ef`，1.0.2 / pluginrel_6ad8c1212c848191baf033854407cbb5。只改技能日期解释及版本，回读验证 App 绑定和受众保持：以拉取结果的已处理日期时间为准，归属日 25 日 + 24:00 就按 25 日显示，不能再前移/后移。原始次日 00:00 不覆盖已处理日期。用户“本周DDL整理”测试反馈的物理在线漏项尚未定位，不擅自改过滤逻辑。引用对话正文无法加载，只读到用户纠错与思考概要；未另发聊天验收消息。
+- **安装版存储隔离。** Codex 启动的诊断进程读到隔离 AppData/Preferences，不能代表开始菜单安装版。此前独立诊断的“凭据存在/HTTP 200”不构成真实表单成功证据。已通过本机命名管道把精确 Site 访问材料交给目标安装版，由系统安全存储保存，真实配对同步成功；不复制数据库、不记录明文凭据。
+- **未验证边界。** 新 MSI 升级安装、真实 Windows 托盘关闭/最小化/恢复与开机重启、连续半小时/睡眠恢复、iPhone ChatGPT 完整查询正确性、第二真实用户部署、Apple 原生构建；当前功能仅 Windows 提供远程常驻，macOS 保留本机 Agent。既有聊天工具缺失记录不再代表所有新聊天；用户已能在 ChatGPT 测试插件，但不能据此宣称无漏项。
 
 ## 当前痛点
 
-- 智慧教学（课程平台作业/课件，MIS module 28）仍被学校跳到已下线的 `cas.bjtu.edu.cn/o/authorize`，浏览器同样 404，属学校侧问题；待学校改到 SSO 后再适配 `SmartPlatformEndpoint` 握手白名单。
+- 智慧教学旧直连入口（首页 29 / module 28）仍落到旧 CAS 空白页面；已发布的 Fix 2 加入首页 11 的本科平台回退。该链仍依赖学校本科平台可用性，上传/提交与真实附件下载本轮未执行。
 - 同步卡顿：Beta3 已到可接受范围。剩余长帧为同步详情 sheet 弹出（约 50ms）、进入作业页（约 49ms）和原生滚动带来的导航栏布局；`checkSession` 改后台后未复采；壳层随任一状态流整体重组（约 0.4 秒/次同步），彻底解决需拆分壳层。
 - 小组件：PR #8 的 ad-hoc 签名后，侧载包的小组件共享容器是否可读尚未在真机确认；周视图、中号两栏、脚注只经 CI 编译，未在模拟器浅/深色下查看，小屏 iPhone 周视图可能偏挤；“正在上/还剩 N 分钟”未在上课时段实机观察。
 - 首页物理在线/CITEL 日程项进入二级详情只在代码层实现，模拟器只验证了演示实验。
@@ -44,8 +44,18 @@
 
 ## 接下来
 
-- 后续开发统一从最新 `main` 建分支，PR 以 `main` 为目标。
+- Agent Remote：先定位用户反馈的物理在线 DDL 漏项，严格沿用已处理的日期时间；再验收新 MSI 升级、托盘与开机启动、手机完整查询、连续周期与睡眠恢复、第二用户独立部署。继续在主目录 `agent-remote` 开发。
 
 1. 在真机已有版本（SideStore 保留扩展）上验证小组件共享容器与各尺寸显示。
-2. 华为 HBN-AL10（HarmonyOS 4.2）装含 PR #32/#33 的新包：确认课表小组件尺寸（logcat `CourseWidget` 标签）与教务不可达时不再闪退。
-3. 下次发版时核对版本号清单（见 `AGENTS.md`）、发布说明与测试矩阵；版本与发版由用户决定。
+2. 下次发版时核对版本号清单（见 `AGENTS.md`）、发布说明与测试矩阵；版本与发版由用户决定。
+
+## 更新前保留的本地笔记（历史快照）
+1. 等 CI 四端产物和 GitHub Release。
+2. 需要热修时再开 `1.8.3-KMP-A` 或下一版本。
+
+## 2026-10-11 工作区：演示实验只读接入
+
+- 已加入独立账号配置、已预约查询、普通缓存清理保留配置、完整清理安全存储、首页/课表同步与按实际日期显示，以及“包含演示实验”的日历导出开关。课表配色沿用物理实验，演示实验详情保持独立类型。
+- 用户明确SelfService只需查询/课表/导出；持续监控、Qwen OCR、自动预约均留在 `C:\Users\zjg\bjtu-phy-lab-ele` 的独立TUI，后台继续每轮后等30秒。
+- 最终793项共享/JVM回归通过，Android共享库及应用Kotlin编译、Windows编译通过；实际Kotlin登录并重复查询校园网预约结果成功（0条）。17张Compose合成图复核浅深色及放大字体。
+- iOS/macOS原生编译和系统日历实机写入待Mac验证。未提交、未推送、未打包发布，版本保持1.8.3-KMP / 29。记录见 `docs/migration/physics-demo-result-2026-10-11.md`。

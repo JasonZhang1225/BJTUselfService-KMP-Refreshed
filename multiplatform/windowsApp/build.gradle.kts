@@ -34,6 +34,7 @@ kotlin {
                 implementation(project(":shared"))
                 implementation(libs.compose.desktop.windows.x64)
                 implementation(libs.kotlinx.coroutines.core)
+                implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.jna)
                 implementation(libs.jna.platform)
                 implementation(libs.ktor.client.cio)
@@ -45,6 +46,7 @@ kotlin {
         val windowsTest by getting {
             dependencies {
                 implementation(kotlin("test"))
+                implementation(libs.kotlinx.serialization.json)
             }
         }
     }
@@ -144,6 +146,23 @@ afterEvaluate {
                 val dest = File(resourcesDir)
                 dest.mkdirs()
                 overrideWxs.copyTo(File(dest, "main.wxs"), overwrite = true)
+            }
+            if (taskName == "packageMsi") {
+                val rewrite = file("packaging/rewrite-msi-product-code.ps1")
+                doLast {
+                    val rewriteOutput = providers.exec {
+                        commandLine(
+                            "powershell.exe",
+                            "-NoProfile",
+                            "-ExecutionPolicy", "Bypass",
+                            "-File", rewrite.absolutePath,
+                            layout.buildDirectory.file("compose/binaries/main/msi/$windowsPackageDisplayName-1.8.5.msi").get().asFile.absolutePath,
+                        )
+                    }
+                    val rewriteResult = rewriteOutput.result.get()
+                    if (rewriteResult.exitValue != 0) logger.error(rewriteOutput.standardError.asText.get())
+                    rewriteResult.assertNormalExitValue()
+                }
             }
         }
     }

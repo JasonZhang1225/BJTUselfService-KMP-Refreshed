@@ -68,6 +68,8 @@ class AuthenticatedSession(
     val aggregateFilterStore: team.bjtuss.bjtuselfservice.shared.feature.assignment.AggregateAssignmentFilterStore? = null,
     val physicsDemoModel: team.bjtuss.bjtuselfservice.shared.feature.phydemo.PhysicsDemoModel? = null,
     val phyVlabAccountModel: team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabAccountModel? = null,
+    /** 全局刷新的公共执行者（App、CLI、后台任务共用）；预览/探针会话可为 null，由应用壳临时装配。 */
+    val refreshCoordinator: team.bjtuss.bjtuselfservice.shared.sync.AppRefreshCoordinator? = null,
 ) {
     private val appResumeGenerationState = MutableStateFlow(0L)
     private val appForegroundGenerationState = MutableStateFlow(0L)

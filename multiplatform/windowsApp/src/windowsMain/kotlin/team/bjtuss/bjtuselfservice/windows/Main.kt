@@ -1,6 +1,21 @@
 package team.bjtuss.bjtuselfservice.windows
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
+import androidx.compose.ui.window.Tray
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
+import team.bjtuss.bjtuselfservice.shared.agent.remote.AppSessionRemoteExecutor
+import team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteAgentController
+import team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteAgentStore
+import team.bjtuss.bjtuselfservice.shared.feature.settings.LocalRemoteAgentController
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -70,24 +85,84 @@ fun main(args: Array<String>) {
             }
         }
     }
+    // 已有窗口进程（可能在后台运行远程同步）：请它显示窗口后本进程退出，不建立第二个会话。
+    if (BACKGROUND_ARGUMENT !in args &&
+        team.bjtuss.bjtuselfservice.shared.agent.host.AppRefreshHost.showExistingWindow(windowsAgentCliPlatform().cacheDirectory)
+    ) {
+        captchaRecognizer.close()
+        return
+    }
     val accountSecurityStore = createWindowsAccountSecurityStore()
     val cacheStoreHandle = createWindowsCacheStore()
-    // 告诉命令行“App 正在运行”：此时 agent 的 cache update 会让用户在 App 里刷新。
-    appRunningLock = team.bjtuss.bjtuselfservice.shared.agent.holdAgentAppLock(windowsAgentCliPlatform().cacheDirectory)
+    // 刷新执行者：持锁并开放本机 IPC，命令行 `cache update` 交给当前会话执行，避免两边各登录一次互相顶掉会话。
+    // 后台命令行正在刷新时先请它交出执行权（最多等几秒），拿不到也照常启动。
+    val currentSession = java.util.concurrent.atomic.AtomicReference<AuthenticatedSession?>(null)
+    val showRequests = MutableStateFlow(0L)
+    appRunningLock = team.bjtuss.bjtuselfservice.shared.agent.host.AppRefreshHost.start(
+        windowsAgentCliPlatform().cacheDirectory,
+        sessionProvider = currentSession::get,
+        onShowRequest = { showRequests.update { it + 1 } },
+    )
+
+    // 远程查询（手机）：默认关闭；开启后两个计时器在后台运行，关闭主窗口不停止，明确退出才停止。
+    val remoteScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val remoteController = RemoteAgentController(
+        store = RemoteAgentStore(cacheStoreHandle.store),
+        secrets = WindowsRemoteSecretStore(),
+        executor = AppSessionRemoteExecutor(currentSession::get, cacheStoreHandle.store),
+        scope = remoteScope,
+        host = WindowsRemoteHost(),
+    )
+    remoteController.start()
+    // 开机启动以后台模式运行；若远程同步已关闭，就照常显示窗口，不留无窗口进程。
+    val traySupported = remoteController.host?.traySupported == true
+    val startHidden = BACKGROUND_ARGUMENT in args && remoteController.keepRunningInBackground && traySupported
 
     try {
         application {
             val state = rememberWindowState(width = 1080.dp, height = 720.dp)
+            var windowVisible by remember { mutableStateOf(!startHidden) }
+            val remoteConfig by remoteController.config.collectAsState()
+            LaunchedEffect(state.isMinimized, remoteConfig.minimizeToTray) {
+                if (state.isMinimized && remoteConfig.minimizeToTray && traySupported) {
+                    windowVisible = false
+                    state.isMinimized = false
+                }
+            }
+            LaunchedEffect(Unit) {
+                showRequests.collect { if (it > 0) windowVisible = true }
+            }
+            if (traySupported && (remoteConfig.minimizeToTray || remoteConfig.runnable || !windowVisible)) {
+                Tray(
+                    icon = remember { appWindowIcon() ?: ColorPainter(Color(0xFF1F6FEB)) },
+                    tooltip = if (remoteConfig.runnable) "交大自由行 KMP（远程查询运行中）" else "交大自由行 KMP",
+                    onAction = { windowVisible = true },
+                    menu = {
+                        Item("打开交大自由行", onClick = { windowVisible = true })
+                        Item("退出（停止远程查询）", onClick = ::exitApplication)
+                    },
+                )
+            }
             val appCommandBus = remember { AppCommandBus() }
             val shellSubscribers by appCommandBus.subscriptionCount.collectAsState()
             val authenticatedSession = remember { mutableStateOf<AuthenticatedSession?>(null) }
 
             Window(
-                onCloseRequest = ::exitApplication,
+                // 托盘偏好与上云授权独立；没有系统托盘时绝不隐藏成无法恢复的进程。
+                onCloseRequest = {
+                    if (remoteConfig.minimizeToTray && traySupported) windowVisible = false else exitApplication()
+                },
+                visible = windowVisible,
                 title = "交大自由行 KMP",
                 state = state,
                 icon = appWindowIcon(),
             ) {
+                LaunchedEffect(windowVisible) {
+                    if (windowVisible) {
+                        window.toFront()
+                        window.requestFocus()
+                    }
+                }
                 LaunchedEffect(Unit) {
                     window.minimumSize = Dimension(720, 520)
                     applyWindowsDarkTitleBar(window.windowHandle)
@@ -113,6 +188,7 @@ fun main(args: Array<String>) {
                     onDispose { toolkit.removeAWTEventListener(clickListener) }
                 }
                 val homeworkFileGateway = remember { WindowsHomeworkFileGateway() }
+                CompositionLocalProvider(LocalRemoteAgentController provides remoteController) {
                 App(
                     accountSecurityStore = accountSecurityStore,
                     cacheStoreHandle = cacheStoreHandle,
@@ -120,11 +196,19 @@ fun main(args: Array<String>) {
                     coursewareDirectoryGateway = homeworkFileGateway,
                     appCommandBus = appCommandBus,
                     captchaRecognizer = captchaRecognizer,
-                    onAuthenticatedSessionChanged = { authenticatedSession.value = it },
+                    onAuthenticatedSessionChanged = {
+                            authenticatedSession.value = it
+                            currentSession.set(it)
+                        },
                 )
+                }
             }
         }
     } finally {
+        // 先停 IPC、删端点再释放锁；异常退出时由系统释放锁，残留端点会因连不上被忽略。
+        runCatching { appRunningLock?.close() }
+        remoteController.close()
+        remoteScope.cancel()
         captchaRecognizer.close()
         cacheStoreHandle.store.close()
     }

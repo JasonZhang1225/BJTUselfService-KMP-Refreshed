@@ -134,7 +134,8 @@ class MailboxScreenModel(
      * 轻量探测收件箱未读数供首页徽标使用（Coremail 无未读计数字段，只能拉一页消息数未读）。
      * 会话失效或网络错误时保留上一次成功值，不清零，避免首页在偶发失败时回退到误导数字。
      */
-    suspend fun refreshUnreadInboxCount() {
+    /** 只探测收件箱前几封的未读数；返回是否成功取得（失败时保留上次的计数）。 */
+    suspend fun refreshUnreadInboxCount(): Boolean {
         val summary = runCatching {
             val page = remote.listMessages(
                 folderId = INBOX_FOLDER_ID,
@@ -146,6 +147,7 @@ class MailboxScreenModel(
             MailboxUnreadSummary(count = unread, capped = unread >= UNREAD_PROBE_LIMIT)
         }.getOrNull()
         if (summary != null) _unreadSummary.value = summary
+        return summary != null
     }
 
     suspend fun refresh() {
