@@ -79,10 +79,13 @@ cd multiplatform
 
 ## 验证记录（2026-10-21）
 
-- `:shared:compileKotlinDesktop` 通过。
-- `:shared:desktopTest`：973 项测试，5 项失败均为本机 macOS 专属测试（`DesktopAgentIntegrationTest`、`MacUninstallCleanerTest`）；图书馆新增 34 项测试全部通过。
-- `:androidApp:compileDebugKotlin`、`:windowsApp:compileKotlinWindows`：见 `.artifacts/library-verification.md`。
-- 未做：真机安装、真实账号登录/续借、iOS/macOS 构建。
+- 本机 Windows（JDK 21，Gradle 9.3.1）：`:androidApp:assembleDebug`、`:windowsApp:compileKotlinWindows` 通过；
+  `:shared:desktopTest` 975 项，5 项失败均为 macOS 专属旧测试（`DesktopAgentIntegrationTest` 3、`MacUninstallCleanerTest` 2），
+  图书馆 36 项（协议 6、数据层 16、模型 13、真实链路 1）全部通过。
+- 真实账号：已完成读取（读者信息、当前借阅、借阅历史）与 Android 真机续借验证；续借成功后界面误显示“失败原因”的问题已修复并补回归测试。
+- 评审修复后（Linux，JDK 21）：`:shared:desktopTest` 976 项全部通过，图书馆 37 项（数据层新增 1 项：剔除无效/重复 loanId）。
+  该环境没有凭据文件，`LibraryLiveTest` 按“缺凭据跳过”处理，未重新跑真实链路。
+- 未做：iOS/macOS 本机构建（交给 CI 打包）。
 
 ## 验证清单
 

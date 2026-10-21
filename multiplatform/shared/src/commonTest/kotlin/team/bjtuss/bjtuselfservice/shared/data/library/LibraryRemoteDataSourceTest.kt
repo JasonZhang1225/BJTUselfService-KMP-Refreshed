@@ -391,6 +391,25 @@ class LibraryRemoteDataSourceTest {
         body = body.encodeToByteArray(),
     )
 
+    @Test
+    fun repositoryDropsCurrentLoansWithoutUsableIdAndDeduplicates() = runBlocking {
+        fun loan(id: Long) = LibraryLoan(loanId = id, title = "合成数据", loanDate = "2026-03-01", dueDate = "2026-04-01")
+        val remote = LambdaRemote(
+            onLoans = {
+                LibraryLoanPage(
+                    loans = listOf(loan(0L), loan(5001L), loan(0L), loan(5001L), loan(5002L)),
+                    total = 5,
+                    page = 1,
+                    rows = 100,
+                )
+            },
+        )
+
+        val page = DefaultLibraryRepository(remote, RecordingAuthenticator()).loadLoans()
+
+        assertEquals(listOf(5001L, 5002L), page.loans.map(LibraryLoan::loanId))
+    }
+
     private fun samplePage(): LibraryLoanPage = LibraryLoanPage(
         loans = listOf(
             LibraryLoan(

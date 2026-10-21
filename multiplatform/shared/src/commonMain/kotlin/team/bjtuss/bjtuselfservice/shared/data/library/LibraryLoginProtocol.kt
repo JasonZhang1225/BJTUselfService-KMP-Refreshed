@@ -18,6 +18,7 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.network.SchoolNetworkException
+import team.bjtuss.bjtuselfservice.shared.network.parseOffMain
 
 /** 回调页内嵌的登录参数；`data`/`enc` 是学校每次登录现场生成的一次性值。 */
 internal data class LibraryCallbackParams(
@@ -140,7 +141,9 @@ class LibraryLoginProtocol(
             "&enc=" + callback.enc +
             "&displayName=" + callback.displayName.encodeURLParameter() +
             "&userRole=3"
-        val exchanged = transport.execute(
+        // 不自动跟随重定向：一次性 data/time/enc 只能发给图书馆主机；这里只接受 2xx JSON，
+        // 任何 3xx 都按失败处理，避免被带去 followAllowed 白名单以外的站点。
+        val exchanged = transport.executeWithoutRedirects(
             SchoolHttpRequest(
                 method = SchoolHttpMethod.GET,
                 url = loginUrl,
@@ -184,7 +187,7 @@ class LibraryLoginProtocol(
 
     private suspend fun loginWithStoredCredentials(loginPage: SchoolHttpResponse): SchoolHttpResponse? {
         ssoFailure = null
-        val parsed = parseSsoLoginPage(loginPage.bodyText())
+        val parsed = parseOffMain { parseSsoLoginPage(loginPage.bodyText()) }
         val page = (parsed as? ParseResult.Success)?.value
         if (page == null) {
             ssoFailure = LibraryFailure(LibraryFailureKind.MALFORMED_RESPONSE)
@@ -240,7 +243,7 @@ class LibraryLoginProtocol(
             submitted
         }
         if (landing.finalUrl.startsWith(LibraryEndpoints.SSO_ORIGIN)) {
-            val error = (parseSsoLoginPage(landing.bodyText()) as? ParseResult.Success)?.value?.error
+            val error = (parseOffMain { parseSsoLoginPage(landing.bodyText()) } as? ParseResult.Success)?.value?.error
             ssoFailure = when {
                 error == null -> LibraryFailure(LibraryFailureKind.MALFORMED_RESPONSE)
                 error.requiresCaptcha -> LibraryFailure(LibraryFailureKind.CAPTCHA_REQUIRED)

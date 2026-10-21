@@ -9,6 +9,7 @@ import team.bjtuss.bjtuselfservice.shared.data.library.SchoolLibraryRemoteDataSo
 import team.bjtuss.bjtuselfservice.shared.network.createSchoolHttpTransport
 import kotlin.test.Test
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 /**
  * 图书馆真实链路联调（默认跳过，只在本机存在 `MisSecret.env` 时运行）。
@@ -40,9 +41,9 @@ class LibraryLiveTest {
         try {
             runBlocking {
                 val failure = protocol.ensureSession()
+                // 只有缺凭据才跳过；已有凭据却登录失败必须让用例失败，否则 CI 会把回归记为通过。
                 if (failure != null) {
-                    println("[LibraryLiveTest] 登录未完成（不含凭据）：kind=${failure.kind}")
-                    return@runBlocking
+                    fail("[LibraryLiveTest] 已提供凭据但登录未完成（不含凭据）：kind=${failure.kind}")
                 }
                 val user = repository.loadUser()
                 val loans = repository.loadLoans()

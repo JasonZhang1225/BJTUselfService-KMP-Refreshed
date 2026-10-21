@@ -166,7 +166,7 @@ class SchoolLibraryRemoteDataSource(
     }
 
     private fun parseLoan(raw: JsonObject): LibraryLoan = LibraryLoan(
-        // 历史记录偶尔没有 loanId；退回 recordId，再退回 0，续借时界面按 0 过滤。
+        // 历史记录偶尔没有 loanId；退回 recordId，再退回 0（无效 id）。当前借阅由仓库层剔除 0 并去重。
         loanId = raw.longOrNull("loanId") ?: raw.longOrNull("recordId") ?: 0L,
         recordId = raw.longOrNull("recordId"),
         itemId = raw.longOrNull("itemId"),

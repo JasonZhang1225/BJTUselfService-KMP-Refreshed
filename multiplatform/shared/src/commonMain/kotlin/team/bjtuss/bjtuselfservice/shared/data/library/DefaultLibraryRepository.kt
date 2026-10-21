@@ -19,7 +19,7 @@ class DefaultLibraryRepository(
         retryOnSessionExpired { remote.userInfo() }
 
     override suspend fun loadLoans(page: Int, rows: Int): LibraryLoanPage =
-        retryOnSessionExpired { remote.loans(page, rows) }
+        retryOnSessionExpired { remote.loans(page, rows) }.withRenewableLoansOnly()
 
     override suspend fun loadHistory(page: Int, rows: Int): LibraryLoanPage =
         retryOnSessionExpired { remote.history(page, rows) }
@@ -41,4 +41,14 @@ class DefaultLibraryRepository(
         // 不会再经过本方法的重登判断，因此不会无限重试。
         block()
     }
+}
+
+/**
+ * 当前借阅会被勾选、续借并以 loanId 作为列表 key：缺少 loanId/recordId 的记录解析为 0，
+ * 不能续借，多条时还会造成 LazyColumn 重复 key 崩溃。这里剔除无效 id，并按 loanId 去重。
+ * total 保持服务器口径不动。
+ */
+internal fun LibraryLoanPage.withRenewableLoansOnly(): LibraryLoanPage {
+    val valid = loans.filter { it.loanId > 0L }.distinctBy { it.loanId }
+    return if (valid.size == loans.size) this else copy(loans = valid)
 }

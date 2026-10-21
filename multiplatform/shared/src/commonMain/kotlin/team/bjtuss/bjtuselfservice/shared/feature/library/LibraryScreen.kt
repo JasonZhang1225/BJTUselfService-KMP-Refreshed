@@ -93,7 +93,8 @@ fun LibraryWorkspace(
     val listState = rememberLazyListState()
     var pendingRenew by remember { mutableStateOf<PendingRenew?>(null) }
 
-    LaunchedEffect(Unit) {
+    // 以 holdNetwork 为 key：静默登录期间先不发请求，登录结束后重新触发；initialize 本身幂等。
+    LaunchedEffect(holdNetwork) {
         if (!holdNetwork) model.initialize()
     }
     // 切 tab 后从列表顶部重新看，避免沿用上一个列表的滚动位置。
