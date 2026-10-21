@@ -19,6 +19,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
@@ -232,23 +233,25 @@ class RemoteAgentRunnerTest {
 
     @Test
     fun loopsRunIndependentlyAndIntervalChangeDoesNotDuplicateLoops() = runBlocking {
-        config.value = config.value.copy(pollIntervalSeconds = 1, uploadIntervalSeconds = 60)
-        // 用真实时钟驱动（1 秒 = 10 毫秒）。
+        // 上报周期取上限：慢机器上也只会在启动时到期一次，断言不依赖墙钟速度。
+        config.value = config.value.copy(pollIntervalSeconds = 1, uploadIntervalSeconds = RemoteIntervals.UPLOAD_RANGE.last)
+        // 用真实时钟驱动（1 秒 = 10 毫秒）；只断言“至少”与“不再增加”，不卡固定时间窗内的次数。
         val start = System.currentTimeMillis()
         val realRunner = RemoteAgentRunner(config, { client }, executor, store, { (System.currentTimeMillis() - start) / 10 + now },
             Random(1), secondMillis = 10)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         realRunner.start(scope)
         realRunner.start(scope)
-        delay(400)
-        val polls = client.polls.get()
-        assertTrue(polls in 10..60, "5 秒轮询压缩后约 40 次，实际 $polls")
+        withTimeout(20_000) { while (client.polls.get() < 5 || executor.refreshes.get() < 1) delay(10) }
         assertEquals(1, executor.refreshes.get(), "启动时到期只上报一轮，空轮询不刷新")
+        assertEquals(1, client.snapshots.size)
+        // 改成 300 秒（压缩后 3 秒）：旧频率的循环必须立即失效，也不能多出第二个循环。
         config.value = config.value.copy(pollIntervalSeconds = 300)
-        delay(150)
+        delay(200)
         val afterChange = client.polls.get()
-        delay(300)
+        delay(1_000)
         assertTrue(client.polls.get() - afterChange <= 1, "改间隔后不能保留旧频率的循环")
+        assertEquals(1, executor.refreshes.get())
         realRunner.stop()
         scope.cancel()
     }
