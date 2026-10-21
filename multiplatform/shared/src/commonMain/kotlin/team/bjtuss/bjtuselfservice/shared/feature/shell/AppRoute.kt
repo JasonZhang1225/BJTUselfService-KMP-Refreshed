@@ -200,6 +200,7 @@ internal enum class AppSection(
     CLASSROOM_OCCUPANCY("教室查询"),
     CLASSROOMS("教室人数估计"),
     MAILBOX("邮箱"),
+    LIBRARY("图书馆"),
     PHYVLAB("物理在线", "物理在线（仅能在校园网下访问）"),
     PHYSICS_LAB("物理实验同步"),
     CITEL("CITEL 作业"),
@@ -242,8 +243,14 @@ internal fun bottomNavSections(preferences: team.bjtuss.bjtuselfservice.shared.c
     return listOf(AppSection.HOME) + selected + AppSection.MORE
 }
 
+/**
+ * 「应用」目录页展示的入口：所有可用功能（不含首页/应用自身）。
+ *
+ * 即使某个入口已被用户加到底栏，也仍保留在应用目录里——底栏是快捷方式，
+ * 不是"从目录里移走"。用户反馈过：把课程表/作业等加到底栏后，应用页里消失了。
+ */
 internal fun applicationSections(preferences: team.bjtuss.bjtuselfservice.shared.cache.AppPreferences): List<AppSection> =
-    bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled, preferences.isCitelEnabled, preferences.aggregateAssignments).filter { it !in bottomNavSections(preferences) }
+    bottomNavigationCandidates(preferences.isPhyVlabEnabled, preferences.isPhysicsLabEnabled, preferences.isCitelEnabled, preferences.aggregateAssignments)
 
 /** 在底部导航中归属“更多”高亮的入口。 */
 internal val MoreGroupSections = setOf(
@@ -252,6 +259,7 @@ internal val MoreGroupSections = setOf(
     AppSection.CLASSROOMS,
     AppSection.CLASSROOM_OCCUPANCY,
     AppSection.MAILBOX,
+    AppSection.LIBRARY,
     AppSection.PHYSICS_LAB,
     AppSection.CITEL,
     AppSection.ASSIGNMENTS,

@@ -65,6 +65,8 @@ class AuthenticatedSession(
     val probeSession: (suspend () -> Boolean)? = null,
     val physicsLabModel: team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabModel? = null,
     val citelModel: team.bjtuss.bjtuselfservice.shared.feature.citel.CitelModel? = null,
+    /** 图书馆（opac）借阅：随会话存活，登录态/借阅数据仅内存保存。 */
+    val libraryModel: team.bjtuss.bjtuselfservice.shared.feature.library.LibraryModel,
     val aggregateFilterStore: team.bjtuss.bjtuselfservice.shared.feature.assignment.AggregateAssignmentFilterStore? = null,
     val physicsDemoModel: team.bjtuss.bjtuselfservice.shared.feature.phydemo.PhysicsDemoModel? = null,
     val phyVlabAccountModel: team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabAccountModel? = null,
