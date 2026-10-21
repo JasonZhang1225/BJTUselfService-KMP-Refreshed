@@ -11,10 +11,10 @@
 
 ## 进行中
 
-- Android 原生详情页点击失效排查（`fix/android-native-navigation-session`）：用户提供 HarmonyOS 4.2 / AOSP 12 录屏；页面入口无跳转但校园网/校园卡弹窗可打开，后台往返未恢复；用户回忆底栏似乎仍能切换，未确定。
+- Android 原生详情页点击失效排查（PR #34，`fix/android-native-navigation-session`）：用户提供 HarmonyOS 4.2 / AOSP 12 录屏；页面入口无跳转但校园网/校园卡弹窗可打开，后台往返未恢复；用户回忆底栏似乎仍能切换，未确定。
   - 修复：`NativeSessionHandoff` 按根宿主令牌保护会话，旧宿主的清理不能覆盖新宿主；MainActivity 使用固定发布回调；Android 点击原生入口时同步重新交接当前会话并直接跳转，避开壳层协程延迟。debug `NativeNavigation` 仅记录路由/会话是否存在，不记录账号或 Cookie。
   - 已验证：隔离 Gradle 工程直接编译仓库中的 `NativeSessionHandoff.kt` / `NativeSessionHandoffTest.kt`，4 项通过；用旧 Registry 无条件清理语义作对照，2 项保护测试失败。`git diff --check` 通过。
-  - 验证中：`:shared:desktopTest`；Android 完整构建与 Apple 编译/测试交给 PR CI。当前 Linux 环境没有 Android SDK/项目签名与 Apple 工具链。
+  - 完整共享验证：`./gradlew :shared:desktopTest --no-configuration-cache`，936 项全部通过（含新增 4 项）；首轮 22 项渲染测试因 Skia 缓存目录只读失败，指定可写 Java 用户目录后通过。代码提交 `c6eb350` 的 Android CI（`:shared:compileAndroidMain :androidApp:compileDebugKotlin`）已通过；Apple CI 仍在执行。当前 Linux 环境没有 Android SDK/项目签名与 Apple 工具链，未做 APK 打包/真机验证。
   - 边界：只修复已识别的会话生命周期风险和异步跳转依赖；没有华为真机或 logcat，无法证明录屏仅由该路径触发，也未做华为实机验收。未改版本、未合并、未发版。
 
 ## 当前痛点
