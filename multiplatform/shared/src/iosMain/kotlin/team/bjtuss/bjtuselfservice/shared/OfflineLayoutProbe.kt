@@ -58,6 +58,7 @@ fun OfflineLayoutBootstrap(onReady: (AuthenticatedSession) -> Unit): UIViewContr
             settingsModel = source.settingsModel, loginSyncPreferences = preferences,
             mailboxModel = source.mailboxModel, phyVlabModel = source.phyVlabModel,
             homeModel = source.homeModel, homeChangeFeed = source.homeChangeFeed,
+            libraryModel = source.libraryModel,
             homeworkFileGateway = source.homeworkFileGateway, coursewareDirectoryGateway = source.coursewareDirectoryGateway,
             systemCalendarGateway = source.systemCalendarGateway, onLogout = {},
         ).also { it.legacyHttpWarningDismissed = true }
