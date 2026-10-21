@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-21。
-> 当前分支：`fix/ios-sheet-dismissal`（PR #35，已合入最新 mine/main@eff3629，包含已合并 PR #34；#35 待用户合并）。
+> 当前分支：本地 `agent-remote`，基于最新 `main@f454d3a5cf15`（PR #34/#35 均已合入）；本次仅新增 Agent Remote 计划并更新工作记忆/日志；文档交付分支为 `agent-remote`，尚未实现功能或创建实际 PR。
 > KMP 源码版本：`1.8.5-EmergencyFix2` / Build 40；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。`history_full.md` 尚无 EmergencyFix2 发版条目。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
@@ -11,11 +11,11 @@
 
 ## 进行中
 
-- iOS 课程详情关闭后卡片无响应（PR #35，`fix/ios-sheet-dismissal`）：用户确认首次详情通过右上角关闭按钮收起；6 秒录屏中课程卡片仍有按压反馈，课表/周数弹层可正常开关，未证明主线程整体卡死。原生弹层宿主被所有 `AppleSheet` 共用，内容、关闭回调和动画状态存在串用风险。
-  - 修复：每个 `AppleSheet` 组合通过 `createPresentation()` 持有独立 iOS 呈现对象；旧组合的释放/关闭动画不能清空后一个弹层。原生 dismissal delegate 绑定具体控制器，忽略过期回调，并在发起 present 前绑定 delegate。
-  - 验证：真实 `AppleSheet` + 可延迟关闭完成的测试宿主，3 项离屏集成测试通过（重叠弹层独立释放、关闭后快速重开、重组保留呈现对象并更新回调）；`./gradlew :shared:desktopTest --no-configuration-cache` 完整共享测试 935 项全部通过（含新增 3 项）。Linux 无 Xcode/iOS 模拟器，原生编译与 iOS 测试交给 PR CI，未做 iPhone 实机复测，未修改版本号或发版。
-- PR #34 已由用户合入 main（eff3629），完成细节移入 `history_full.md`。本次将 main 合入 #35，只解决 `memory.md` 冲突，保留两项修复的源码原样。
-- Package 记录：PR #34 的 `935d5ba` → run `39522324933`；PR #35 原独立提交 `5430eb8` → run `39522327270`。两次打包均已成功，使用各自原提交；当前 #35 合入 main 后的提交包含两项修复，未额外触发打包；未改版本或创建 Release。
+- Agent Remote 需求与分期计划：见 `docs/agent/agent-remote-plan.md`。本次只做计划，不实现；用户将逐个指定计划 PR 1–7。
+  - 默认 Windows 每 30 分钟全量刷新并上报快照、每 5 秒仅轮询即时指令，两周期独立且可改；Site 普通查询优先快照，不频繁触发学校刷新。
+  - App/CLI/后台任务共用全量刷新服务；App 开着时代理给 App 执行，App 关着时无窗口执行，避免双会话。
+  - 每用户独立私人 Site 与插件；提供可分发干净模板和一句话搭建向导；私人 Site 的机器鉴权/配对先实测。
+  - 已验证分支基线、计划结构和文档差异；没有运行构建、连接校园系统、创建 Site 或更改后台设置。
 
 ## 当前痛点
 
@@ -44,8 +44,9 @@
 
 ## 接下来
 
-- 后续开发统一从最新 `main` 建分支，PR 以 `main` 为目标。
+- Agent Remote 按计划逐期实施，工作 PR 目标为集成分支 `agent-remote`，最后由用户决定合入 main；其他工作继续从最新 main 建分支。
 
 1. 在真机已有版本（SideStore 保留扩展）上验证小组件共享容器与各尺寸显示。
 2. 华为 HBN-AL10（HarmonyOS 4.2）装含 PR #32/#33 的新包：确认课表小组件尺寸（logcat `CourseWidget` 标签）与教务不可达时不再闪退。
-3. 下次发版时核对版本号清单（见 `AGENTS.md`）、发布说明与测试矩阵；版本与发版由用户决定。
+3. iPhone 实机复测 PR #35：课程详情关闭后可再次进入；合并不等于已完成实机验收。
+4. 下次发版时核对版本号清单（见 `AGENTS.md`）、发布说明与测试矩阵；版本与发版由用户决定。
