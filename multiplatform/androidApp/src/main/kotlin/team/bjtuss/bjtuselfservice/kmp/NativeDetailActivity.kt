@@ -2,6 +2,7 @@ package team.bjtuss.bjtuselfservice.kmp
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
@@ -20,9 +21,11 @@ class NativeDetailActivity : ComponentActivity() {
         val routeId = intent.getStringExtra(EXTRA_ROUTE_ID)
         val session = AndroidAuthenticatedSessionRegistry.session
         if (routeId == null || !isNativeDetailRoute(routeId) || session == null) {
+            if (BuildConfig.DEBUG) Log.d("NativeNavigation", "Detail rejected routeValid=${routeId != null && isNativeDetailRoute(routeId)} sessionReady=${session != null}")
             finish()
             return
         }
+        if (BuildConfig.DEBUG) Log.d("NativeNavigation", "Detail opened route=$routeId")
 
         val fileGateway = AndroidHomeworkFileGateway(this)
         setContent {
