@@ -12,7 +12,10 @@ import kotlinx.coroutines.flow.update
 import team.bjtuss.bjtuselfservice.shared.agent.remote.AppSessionRemoteExecutor
 import team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteAgentController
 import team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteAgentStore
+import team.bjtuss.bjtuselfservice.shared.feature.settings.LocalAppStartupHost
 import team.bjtuss.bjtuselfservice.shared.feature.settings.LocalRemoteAgentController
+import team.bjtuss.bjtuselfservice.shared.system.BACKGROUND_LAUNCH_ARGUMENT
+import team.bjtuss.bjtuselfservice.shared.system.shouldStartHidden
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -83,7 +86,7 @@ fun main(args: Array<String>) {
         }
     }
     // 已有窗口进程（可能在后台运行远程同步）：请它显示窗口后本进程退出，不建立第二个会话。
-    if (BACKGROUND_ARGUMENT !in args &&
+    if (BACKGROUND_LAUNCH_ARGUMENT !in args &&
         team.bjtuss.bjtuselfservice.shared.agent.host.AppRefreshHost.showExistingWindow(windowsAgentCliPlatform().cacheDirectory)
     ) {
         captchaRecognizer.close()
@@ -111,9 +114,10 @@ fun main(args: Array<String>) {
         host = WindowsRemoteHost(),
     )
     remoteController.start()
-    // 开机启动以后台模式运行；若远程同步已关闭，就照常显示窗口，不留无窗口进程。
+    // 开机启动时按“静默启动”决定是否只留在托盘；没有托盘时总是显示窗口，不留无窗口进程。
+    val startupHost = WindowsStartupHost()
     val traySupported = remoteController.host?.traySupported == true
-    val startHidden = BACKGROUND_ARGUMENT in args && remoteController.keepRunningInBackground && traySupported
+    val startHidden = shouldStartHidden(args, startupHost.isSilentStart(), canReopen = traySupported)
 
     try {
         application {
@@ -190,7 +194,7 @@ fun main(args: Array<String>) {
                     onDispose { toolkit.removeAWTEventListener(clickListener) }
                 }
                 val homeworkFileGateway = remember { WindowsHomeworkFileGateway() }
-                CompositionLocalProvider(LocalRemoteAgentController provides remoteController) {
+                CompositionLocalProvider(LocalRemoteAgentController provides remoteController, LocalAppStartupHost provides startupHost) {
                 App(
                     accountSecurityStore = accountSecurityStore,
                     cacheStoreHandle = cacheStoreHandle,

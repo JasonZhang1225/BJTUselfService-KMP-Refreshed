@@ -25,11 +25,12 @@ internal fun AiAssistantSettingsScreen(model: SettingsScreenModel, platform: Pla
         if (platform.family == PlatformFamily.MacOS) platformAgentIntegration() else null
     }
     val remote = LocalRemoteAgentController.current
+    val startup = LocalAppStartupHost.current
     var localStatus by remember(integration) { mutableStateOf<AgentIntegrationStatus?>(null) }
     var localLoading by remember(integration) { mutableStateOf(integration != null) }
     var statusRefreshKey by remember { mutableStateOf(0) }
 
-    val settings = remember(integration, remote, model) { movableContentOf {
+    val settings = remember(integration, remote, startup, model) { movableContentOf {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         integration?.let {
             AgentAssistantCard(it, preferences.preferences.agentGradesAllowed, model::setAgentGradesAllowed,
@@ -37,6 +38,7 @@ internal fun AiAssistantSettingsScreen(model: SettingsScreenModel, platform: Pla
                 onStatusChange = { status -> localStatus = status; localLoading = false })
         }
         remote?.let { RemoteAgentCard(it, showStatus = false) }
+        startup?.let { StartupSection(it, remote) }
         if (integration == null && remote == null) {
             Text("当前平台暂不提供本机 AI 接入或远程同步设置。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

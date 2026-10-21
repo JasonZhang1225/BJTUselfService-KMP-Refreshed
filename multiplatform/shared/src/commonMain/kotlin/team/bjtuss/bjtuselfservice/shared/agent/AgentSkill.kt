@@ -38,7 +38,7 @@ $cliCommand <命令> [选项] --json
 
 | 用户在问 | 命令 |
 |---|---|
-| 有什么作业 / DDL / 还有什么没交 | `homework`，**运行一次即可**：结果已包含课程平台、物理在线、CITEL 全部来源。不要按来源分开查 |
+| 这周的 DDL / 有什么作业 / 还有什么没交 | `homework`（问某段时间就带范围，如 `--range this_week`），**运行一次即可**：结果已包含课程平台、物理在线、CITEL 全部来源。不要按来源分开查 |
 | 今天 / 明天 / 这周 / 下周有什么课、有什么安排 | `calendar --range today`（或 `tomorrow`、`this_week`、`next_week`）；具体日期 `--date YYYY-MM-DD` 或 `--from … --to …`，第 N 教学周 `--week N` |
 | 只看课程与实验 | `courses`（默认本周，范围选项同上） |
 | 考试 | `exams`（默认只列今天及以后；`--status all` 全部） |
@@ -47,7 +47,7 @@ $cliCommand <命令> [选项] --json
 | 数据新不新、哪些数据可用 | `status` |
 | CITEL 题面 | `citel show <id>`（`id` 是作业 id 的数字部分，`citel:9265` → `9265`）；`citel export <id> --out <新目录>` 导出 problem.md 和 tests/N.in、N.out |
 
-`homework` 的 `--status`：默认 `pending`（未交且未截止）；用户问“还有什么没交（包括过期的）”用 `unsubmitted`；问“交了哪些”用 `submitted`；`all` 全部。按截止日筛选用范围选项。其他：`--course 关键词`、`--sources course_platform,phyvlab,citel`（一般不要传）、`--include-unbooked`（含没约的物理实验）、`--detail`（含作业说明与链接）。`calendar` 可用 `--kinds class,lab,exam,assignment_due,assignment_discount,assignment_open`。
+`homework` 默认 `--status all`：已交、未交、已截止的都列出，每项带 `status`/`statusLabel`。用户问“这周的 DDL”“这周有什么作业”时，带上范围（如 `--range this_week`）查全部，回答时**每一项都列出**并标明已交/未交/已截止；不带范围会返回整学期。只有用户明确问“还有什么没交”时才用 `--status unsubmitted`（含已截止）或 `pending`（未交且未截止）；问“交了哪些”用 `submitted`。其他：`--course 关键词`、`--sources course_platform,phyvlab,citel`（一般不要传）、`--include-unbooked`（含没约的物理实验）、`--detail`（含作业说明与链接）。`calendar` 可用 `--kinds class,lab,exam,assignment_due,assignment_discount,assignment_open`。
 
 ## 回答规则（必须遵守）
 

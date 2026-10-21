@@ -1,6 +1,219 @@
 [
   {
-    "name": "作业默认：全部来源、只列未交未截止",
+    "name": "作业默认：全部来源、全部状态",
+    "result": {
+      "schemaVersion": 2,
+      "command": "homework",
+      "origin": "cloud_snapshot",
+      "generatedAt": "2026-10-21（周三）22:30",
+      "today": "2026-10-21",
+      "timeZone": "Asia/Shanghai",
+      "currentWeek": 8,
+      "query": {
+        "status": "all",
+        "sources": [
+          "course_platform",
+          "phyvlab",
+          "citel"
+        ],
+        "includeUnbooked": false,
+        "detail": false
+      },
+      "freshness": {
+        "staleAfterHours": 4,
+        "sources": [
+          {
+            "source": "homework",
+            "label": "课程平台作业",
+            "syncedAt": "2026-10-21（周三）21:55",
+            "age": "35 分钟前",
+            "status": "success"
+          },
+          {
+            "source": "physicsLab",
+            "label": "物理实验",
+            "syncedAt": "2026-10-21（周三）21:55",
+            "age": "35 分钟前",
+            "status": "success"
+          },
+          {
+            "source": "citel",
+            "label": "CITEL",
+            "syncedAt": "2026-10-21（周三）15:00",
+            "age": "7 小时前",
+            "status": "failed",
+            "reason": "network"
+          },
+          {
+            "source": "phyvlab",
+            "label": "物理在线",
+            "syncedAt": "2026-10-21（周三）15:00",
+            "age": "7 小时前",
+            "status": "success"
+          }
+        ],
+        "stale": [
+          "citel",
+          "phyvlab"
+        ],
+        "unknown": [],
+        "failed": [
+          "citel"
+        ]
+      },
+      "summary": {
+        "available": true,
+        "total": 7,
+        "pending": 5,
+        "overdue": 1,
+        "submitted": 1,
+        "shown": 7,
+        "hiddenUnbooked": 1,
+        "bySource": [
+          {
+            "source": "course_platform",
+            "label": "课程平台",
+            "enabled": true,
+            "total": 3,
+            "pending": 1,
+            "overdue": 1,
+            "submitted": 1,
+            "shown": 3
+          },
+          {
+            "source": "phyvlab",
+            "label": "物理在线",
+            "enabled": true,
+            "total": 2,
+            "pending": 2,
+            "overdue": 0,
+            "submitted": 0,
+            "shown": 2
+          },
+          {
+            "source": "citel",
+            "label": "CITEL",
+            "enabled": true,
+            "total": 2,
+            "pending": 2,
+            "overdue": 0,
+            "submitted": 0,
+            "shown": 2
+          }
+        ]
+      },
+      "items": [
+        {
+          "id": "course_platform:88002",
+          "source": "course_platform",
+          "sourceLabel": "课程平台",
+          "course": "高等数学 A(I)",
+          "title": "第 5 次作业",
+          "status": "overdue",
+          "statusLabel": "已截止未提交",
+          "due": "2026-10-18（周日）23:59",
+          "dueDate": "2026-10-18",
+          "open": "2026-10-11（周日）08:00",
+          "type": "作业",
+          "submittedCount": 98,
+          "totalCount": 120
+        },
+        {
+          "id": "course_platform:88003",
+          "source": "course_platform",
+          "sourceLabel": "课程平台",
+          "course": "程序设计基础",
+          "title": "实验报告 2",
+          "status": "submitted",
+          "statusLabel": "已提交",
+          "due": "2026-10-21（周三）08:10",
+          "dueDate": "2026-10-21",
+          "type": "实验报告",
+          "score": "95",
+          "submittedCount": 110,
+          "totalCount": 112
+        },
+        {
+          "id": "phyvlab:501",
+          "source": "phyvlab",
+          "sourceLabel": "物理在线",
+          "course": "大学物理（下）",
+          "title": "第 5 章在线测验",
+          "status": "pending",
+          "statusLabel": "未提交",
+          "due": "2026-10-23（周五）23:59",
+          "dueDate": "2026-10-23",
+          "remaining": "还剩 2 天 1 小时"
+        },
+        {
+          "id": "citel:9265",
+          "source": "citel",
+          "sourceLabel": "CITEL",
+          "course": "数据结构",
+          "title": "实验 3 链表",
+          "status": "pending",
+          "statusLabel": "未提交",
+          "due": "2026-10-25（周日）24:00",
+          "dueDate": "2026-10-25",
+          "remaining": "还剩 4 天 1 小时",
+          "open": "2026-10-15（周四）08:00",
+          "type": "编程题",
+          "judgeStatus": "WA 7/10",
+          "discountFrom": "2026-10-24（周六）12:00",
+          "discount": "0.8",
+          "allowLate": true
+        },
+        {
+          "id": "phyvlab:502",
+          "source": "phyvlab",
+          "sourceLabel": "物理在线",
+          "course": "物理实验",
+          "title": "分光计的调节 预习报告",
+          "status": "pending",
+          "statusLabel": "未提交",
+          "due": "2026-10-28（周三）23:59",
+          "dueDate": "2026-10-28",
+          "remaining": "还剩 7 天 1 小时",
+          "enrollment": "booked",
+          "matchedBooking": "分光计的调节（第 9 周周二）"
+        },
+        {
+          "id": "course_platform:88001",
+          "source": "course_platform",
+          "sourceLabel": "课程平台",
+          "course": "高等数学 A(I)",
+          "title": "第 6 次作业",
+          "status": "pending",
+          "statusLabel": "未提交",
+          "due": "2026-10-30（周五）18:00",
+          "dueDate": "2026-10-30",
+          "remaining": "还剩 8 天 19 小时",
+          "type": "作业",
+          "submittedCount": 30,
+          "totalCount": 120
+        },
+        {
+          "id": "citel:9300",
+          "source": "citel",
+          "sourceLabel": "CITEL",
+          "course": "离散数学",
+          "title": "书面作业 4",
+          "status": "pending",
+          "statusLabel": "未提交",
+          "due": "无截止时间",
+          "type": "书面作业"
+        }
+      ],
+      "notes": [
+        "due 是已换算好的北京时间截止，回答时直接照抄原文（例如“2026-10-25（周日）24:00”）。24:00 表示当天结束：不要改写成次日 0 点或当天 0 点，也不要再加减一天。",
+        "summary.bySource 列出全部作业来源（课程平台、物理在线、CITEL）。回答时逐一核对每个来源，不要漏掉物理在线和 CITEL；enabled=false 表示用户没有在 App 启用该来源，不代表没有作业。",
+        "已隐藏 1 个没有预约的物理实验作业（includeUnbooked=true 可查看）。",
+        "CITEL 编程题只有判题 AC 才算已提交；有 judgeStatus 但未提交表示交过但没有全部通过。"
+      ]
+    }
+  },
+  {
+    "name": "只看未交且未截止",
     "result": {
       "schemaVersion": 2,
       "command": "homework",
@@ -412,7 +625,7 @@
     }
   },
   {
-    "name": "本周截止的作业（含 00:00 截止归前一天 24:00）",
+    "name": "本周截止的全部作业（含已交，00:00 截止归前一天 24:00）",
     "result": {
       "schemaVersion": 2,
       "command": "homework",
@@ -422,7 +635,7 @@
       "timeZone": "Asia/Shanghai",
       "currentWeek": 8,
       "query": {
-        "status": "pending",
+        "status": "all",
         "sources": [
           "course_platform",
           "phyvlab",
@@ -482,7 +695,7 @@
         "pending": 2,
         "overdue": 0,
         "submitted": 1,
-        "shown": 2,
+        "shown": 3,
         "hiddenUnbooked": 0,
         "bySource": [
           {
@@ -493,7 +706,7 @@
             "pending": 0,
             "overdue": 0,
             "submitted": 1,
-            "shown": 0
+            "shown": 1
           },
           {
             "source": "phyvlab",
@@ -518,6 +731,21 @@
         ]
       },
       "items": [
+        {
+          "id": "course_platform:88003",
+          "source": "course_platform",
+          "sourceLabel": "课程平台",
+          "course": "程序设计基础",
+          "title": "实验报告 2",
+          "status": "submitted",
+          "statusLabel": "已提交",
+          "due": "2026-10-21（周三）08:10",
+          "dueDate": "2026-10-21",
+          "type": "实验报告",
+          "score": "95",
+          "submittedCount": 110,
+          "totalCount": 112
+        },
         {
           "id": "phyvlab:501",
           "source": "phyvlab",

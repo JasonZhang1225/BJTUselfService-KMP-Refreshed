@@ -50,7 +50,7 @@ sealed interface AgentSnapshotResult {
 val AGENT_USAGE = """
     用法: bjtu <命令> [选项] [--json]
       status                       数据可用情况与各来源同步时间
-      homework [筛选]              作业：一次返回课程平台、物理在线、CITEL 全部来源（默认只列未交且未截止的）
+      homework [筛选]              作业：一次返回课程平台、物理在线、CITEL 全部来源（默认已交/未交全部列出）
       calendar [范围] [筛选]       按天列出课程、实验、考试、作业截止（默认未来 7 天）
       courses [范围]               只看课程与实验（默认本周）
       exams [--status upcoming|all] [--course 关键词]
@@ -66,7 +66,7 @@ val AGENT_USAGE = """
       --range today|tomorrow|this_week|next_week|next_7_days   （--today/--tomorrow/--week/--next-week 是简写）
       --date YYYY-MM-DD | --from YYYY-MM-DD --to YYYY-MM-DD | --week N（第 N 教学周）
     筛选:
-      --status pending|unsubmitted|overdue|submitted|all   homework，默认 pending（未交且未截止）
+      --status pending|unsubmitted|overdue|submitted|all   homework，默认 all（全部，每项带状态）
       --sources course_platform,phyvlab,citel               homework，默认全部
       --kinds class,lab,exam,assignment_due,assignment_discount,assignment_open   calendar
       --course 关键词   --include-unbooked（含没约的物理实验）  --detail（含作业说明与链接）

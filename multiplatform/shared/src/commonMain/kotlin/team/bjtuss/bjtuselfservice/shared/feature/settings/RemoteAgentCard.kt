@@ -42,7 +42,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.datetime.toLocalDateTime
 import team.bjtuss.bjtuselfservice.shared.agent.AGENT_TIME_ZONE
 import team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteAgentController
-import team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteHostPlatform
 import team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteIntervals
 import team.bjtuss.bjtuselfservice.shared.agent.remote.RemotePhase
 import team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteScope
@@ -54,7 +53,7 @@ val LocalRemoteAgentController = staticCompositionLocalOf<RemoteAgentController?
 /**
  * 应用页“Agent 和 ChatGPT 插件”的远程部分：两张卡片。
  * - 远程查询：说明 → 设置方法（框起来的步骤，只留“复制提示词”）→ 配对表单或同步设置。
- * - 后台运行（Windows）：开机启动、最小化到托盘。
+ * 开机启动、静默启动与托盘在 [StartupSection]。
  * 默认关闭；开启前必须明确同意上云内容可被 Site 与 ChatGPT 读取。
  */
 @Composable
@@ -137,7 +136,6 @@ internal fun RemoteAgentCard(controller: RemoteAgentController, showStatus: Bool
                     color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        controller.host?.let { host -> BackgroundSection(controller, host, config.minimizeToTray) }
     }
 }
 
@@ -229,37 +227,6 @@ internal fun remoteScopeDetail(scope: RemoteScope): String = when (scope) {
 }
 
 @Composable
-private fun BackgroundSection(controller: RemoteAgentController, host: RemoteHostPlatform, minimizeToTray: Boolean) {
-    val scope = rememberCoroutineScope()
-    var autostart by remember(host) { mutableStateOf(false) }
-    var loaded by remember(host) { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(host) {
-        autostart = withContext(Dispatchers.Default) { host.isAutostartEnabled() }
-        loaded = true
-    }
-    SettingsSection("后台运行", "远程查询需要 App 在后台保持运行。") {
-        SwitchRow("开机启动", if (host.autostartSupported) "登录 Windows 后自动在后台启动（默认关闭）。"
-            else "只有安装版支持开机启动，当前运行环境无法设置。", autostart,
-            enabled = !busy && loaded && host.autostartSupported) { enabled ->
-            busy = true
-            error = null
-            scope.launch {
-                val success = withContext(Dispatchers.Default) { host.setAutostart(enabled) }
-                autostart = withContext(Dispatchers.Default) { host.isAutostartEnabled() }
-                if (!success || autostart != enabled) error = "开机启动设置未生效：无法写入当前用户的启动项。"
-                busy = false
-            }
-        }
-        SwitchRow("最小化到托盘", if (host.traySupported) "最小化或关闭窗口时留在托盘中继续运行；从托盘菜单选择“退出”才会结束 App。"
-            else "当前系统不支持托盘，关闭窗口会退出应用。", minimizeToTray,
-            enabled = host.traySupported, onChange = controller::setMinimizeToTray)
-        error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-    }
-}
-
-@Composable
 private fun PairingForm(
     busy: Boolean,
     onPair: (String, String, Set<RemoteScope>, Boolean) -> Unit,
@@ -302,7 +269,7 @@ private fun IntervalFields(uploadSeconds: Int, pollSeconds: Int, onApply: (Int, 
 }
 
 @Composable
-private fun SwitchRow(title: String, detail: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+internal fun SwitchRow(title: String, detail: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)

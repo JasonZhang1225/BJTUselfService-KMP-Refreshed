@@ -26,13 +26,10 @@ import team.bjtuss.bjtuselfservice.shared.sync.RefreshReport
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshRequest
 import team.bjtuss.bjtuselfservice.shared.sync.cachedSourceSyncTime
 
-/** 宿主平台能力：开机启动（默认关闭，由用户选择）与设备显示名。 */
+/** 宿主平台能力：设备显示名与托盘（开机启动见 AppStartupHost）。 */
 interface RemoteHostPlatform {
     val deviceName: String
-    val autostartSupported: Boolean
     val traySupported: Boolean get() = false
-    fun isAutostartEnabled(): Boolean
-    fun setAutostart(enabled: Boolean): Boolean
 }
 
 /**

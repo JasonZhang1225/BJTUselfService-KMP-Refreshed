@@ -19,6 +19,7 @@
   - 插件页重排：远程与本机卡片统一标题/说明/分组字号；“设置方法”框起来，提示词不展开只留“复制提示词”，去掉“查看文档”；提示词改指向 main 上的模板（`REMOTE_TEMPLATE_URL`，合入前联调需临时改分支）。
   - Windows：开机启动改用 JNA 注册表 API（原 reg.exe 读回 GBK 输出、中文安装路径校验必失败）；托盘改为 AWT 托盘并指定中文字体，jlink 加 `jdk.charsets`、`jdk.localedata`（推测方框乱码来自缺 GBK 编码器，未实机验证）。
   - CI 修复：`RemoteAgentCard` 的 `Dispatchers.IO`（commonMain 在 iOS 不可用）；`packageMsi` 的 doLast 引用脚本对象破坏配置缓存。
+  - 第二轮（用户反馈）：`homework` 默认改为 `status: all`（问“这周 DDL”带范围全部列出并标状态，问“没交的”才筛）。开机启动改为可被系统管理：Windows 读取 `StartupApproved\Run`（任务管理器禁用后如实显示关闭），按钮可打开“设置 → 应用 → 启动”；macOS 新增 LaunchAgent 登录项（`MacLaunchAgentStartupHost`，卸载清理一并删除）。新增“静默启动”（默认开，Java Preferences），只对带 `--background` 的开机启动生效。开机启动/静默/托盘移到独立卡片 `StartupSection`（Windows 与 macOS 都显示）。macOS 登录项与静默启动、Windows 任务管理器交互均未实机验证。
   - 删除 `docs/agent/remote-skill-mcp-export-20261021/` 副本；Skill/MCP 唯一维护源是模板 `src/mcp.js` 与 `plugin/skills/bjtuss-remote/SKILL.md`，本机 Skill 在 `AgentSkill.kt`，两者规则同文。
   - 验证与未验证边界见本次交付说明；Windows 托盘/开机启动、iOS 编译、真实 ChatGPT 问答需实机或 CI 验证。
 

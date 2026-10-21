@@ -267,7 +267,7 @@ function homeworkStatusLabel(item, status) {
 
 function homeworkBody(dataset, query, now) {
   const range = resolveRange(query, dataset, now, false);
-  const status = query.status ?? "pending";
+  const status = query.status ?? "all";
   const wanted = query.sources ?? [...ASSIGNMENT_SOURCES];
   const data = dataset.assignments ?? null;
   const inScope = (data?.items ?? [])

@@ -79,7 +79,11 @@ class AgentCommandTest {
         assertTrue("phyvlab:34 光纤特性和光信号传输" in titles)
         assertTrue("phyvlab:第一章作业" in titles, "非物理实验课不过滤")
         assertFalse(titles.any { "光栅光谱仪" in it }, "没约的实验不算")
-        assertFalse(titles.any { "零点截止的作业" in it }, "默认只列未交且未截止的")
+        val submitted = items.single { it.str("title") == "零点截止的作业" }
+        assertEquals("submitted", submitted.str("status"), "默认已交、未交都列出")
+        assertEquals("已提交", submitted.str("statusLabel"))
+        val pending = parse(run("homework", "--status", "pending", "--json")).getValue("items").jsonArray.map { it.jsonObject.str("title") }
+        assertFalse("零点截止的作业" in pending)
         val summary = result.getValue("summary").jsonObject
         assertEquals(listOf("course_platform", "phyvlab", "citel"),
             summary.getValue("bySource").jsonArray.map { it.jsonObject.str("source") })
@@ -94,18 +98,18 @@ class AgentCommandTest {
         assertEquals("booked", booked.str("enrollment"))
         assertEquals("光纤特性和光信号传输", booked.str("matchedBooking"))
 
-        val all = parse(run("homework", "--status", "all", "--include-unbooked", "--json")).getValue("items").jsonArray
+        val all = parse(run("homework", "--include-unbooked", "--json")).getValue("items").jsonArray
             .map { it.jsonObject.str("title") }
         assertTrue(all.any { "光栅光谱仪" in it })
-        assertTrue("零点截止的作业" in all)
     }
 
     @Test
     fun sourceAndCourseFiltersUseSharedParameters() {
         fun titles(vararg args: String) = parse(run(*args, "--json")).getValue("items").jsonArray.map { it.jsonObject.str("title") }
         assertEquals(listOf("实验报告一"), titles("homework", "--pending", "--source", "course", "--course", "甲"))
+        assertEquals(listOf("实验报告一", "零点截止的作业"), titles("homework", "--source", "course", "--course", "甲").sorted())
         assertEquals(listOf("栈与队列"), titles("homework", "--sources", "citel,course_platform", "--course", "乙"))
-        assertEquals(listOf("栈与队列"), titles("homework", "--range", "today"))
+        assertEquals(listOf("栈与队列", "零点截止的作业"), titles("homework", "--range", "today"))
     }
 
     @Test

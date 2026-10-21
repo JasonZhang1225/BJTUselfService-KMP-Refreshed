@@ -327,7 +327,7 @@ private fun homeworkStatusLabel(item: AgentAssignment, status: String): String =
 
 private fun homeworkBody(dataset: AgentDataset, query: AgentQuery, now: Long): Body {
     val range = resolveRange(query, dataset, now, required = false)
-    val status = query.status ?: "pending"
+    val status = query.status ?: "all"
     val wanted = query.sources ?: AGENT_ASSIGNMENT_SOURCES
     val data = dataset.assignments
     val inScope = data?.items.orEmpty()

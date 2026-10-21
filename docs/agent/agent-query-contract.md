@@ -55,9 +55,9 @@
 
 ### 作业（`homework`）
 
-一次返回课程平台、物理在线、CITEL 全部来源。`summary` 给出 `total/pending/overdue/submitted/shown/hiddenUnbooked` 与 `bySource`（每个来源的 `enabled` 与各状态数量）。
+一次返回课程平台、物理在线、CITEL 全部来源，默认不按提交状态筛选（`status: all`）。`summary` 给出 `total/pending/overdue/submitted/shown/hiddenUnbooked` 与 `bySource`（每个来源的 `enabled` 与各状态数量）。
 
-每项：`id`（`course_platform:…`/`phyvlab:…`/`citel:…`）、`source`、`sourceLabel`、`course`、`title`、`status`（`pending` 未交未截止、`overdue` 已截止未交、`submitted`）、`statusLabel`、`due`、`dueDate`、`remaining`（仅 pending），以及按来源出现的 `open`、`type`、`judgeStatus`、`score`、`discountFrom`、`discount`、`allowLate`、`submittedCount`、`totalCount`、`enrollment`、`matchedBooking`；`detail=true` 时附 `content`、`url`。
+每项：`id`（`course_platform:…`/`phyvlab:…`/`citel:…`）、`source`、`sourceLabel`、`course`、`title`、`status`（`pending` 未交未截止、`overdue` 已截止未交、`submitted`；查询参数 `status` 默认 `all`，全部列出）、`statusLabel`、`due`、`dueDate`、`remaining`（仅 pending），以及按来源出现的 `open`、`type`、`judgeStatus`、`score`、`discountFrom`、`discount`、`allowLate`、`submittedCount`、`totalCount`、`enrollment`、`matchedBooking`；`detail=true` 时附 `content`、`url`。
 
 ### 日期规则（只在电脑端换算一次）
 

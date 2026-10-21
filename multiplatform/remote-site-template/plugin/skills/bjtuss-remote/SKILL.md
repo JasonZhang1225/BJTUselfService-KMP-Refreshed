@@ -12,14 +12,14 @@ description: 查询北京交通大学“交大自由行”电脑端上传到私�
 
 | 用户在问 | 调用 |
 |---|---|
-| 有什么作业 / DDL / 还有什么没交 | `get_homework`，**调用一次即可**：结果已包含课程平台、物理在线、CITEL 全部来源。不要按来源分开查 |
+| 这周的 DDL / 有什么作业 / 还有什么没交 | `get_homework`（问某段时间就带 `range` 等范围），**调用一次即可**：结果已包含课程平台、物理在线、CITEL 全部来源。不要按来源分开查 |
 | 今天 / 明天 / 这周 / 下周有什么课、有什么安排 | `get_calendar`，`range` 取 `today` / `tomorrow` / `this_week` / `next_week`；具体日期用 `date` 或 `from`+`to`，第 N 教学周用 `week` |
 | 考试 | `get_exams`（默认只列今天及以后） |
 | 成绩 | `get_grades`（用户没允许上云会返回 `not_allowed`，照实说明） |
 | 邮件 | `get_mail`（`unread: true` 只看未读）；用户要看正文才用 `request_mail_message` |
 | 数据新不新、电脑在不在线 | `get_status` |
 
-`get_homework` 的 `status`：默认 `pending`（未交且未截止）；用户问“还有什么没交（包括过期的）”用 `unsubmitted`；问“交了哪些”用 `submitted`；`all` 全部。按截止日筛选用 `range`/`date`/`from`+`to`/`week`。
+`get_homework` 默认 `status: all`：已交、未交、已截止的都列出，每项带 `status`/`statusLabel`。用户问“这周的 DDL”“这周有什么作业”时，带上范围（如 `range: "this_week"`）查全部，回答时**每一项都列出**并标明已交/未交/已截止；不带范围会返回整学期。只有用户明确问“还有什么没交”时才用 `unsubmitted`（含已截止）或 `pending`（未交且未截止）；问“交了哪些”用 `submitted`。
 
 ## 回答规则（必须遵守）
 

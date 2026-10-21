@@ -27,7 +27,7 @@ for (const [index, q] of queries.entries()) {
 }
 
 test("作业一次返回全部来源，00:00 截止写作前一天 24:00", () => {
-  const result = runAgentQuery(dataset.data, dataset.sources, parseAgentQuery("homework", {}), dataset.now, "cloud_snapshot");
+  const result = runAgentQuery(dataset.data, dataset.sources, parseAgentQuery("homework", { status: "pending" }), dataset.now, "cloud_snapshot");
   assert.deepEqual([...new Set(result.items.map(i => i.source))].sort(), ["citel", "course_platform", "phyvlab"]);
   const citel = result.items.find(i => i.id === "citel:9265");
   assert.equal(citel.due, "2026-10-25（周日）24:00");
