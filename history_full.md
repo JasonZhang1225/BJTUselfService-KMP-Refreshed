@@ -900,3 +900,10 @@
 - 改动：`linkAcademicSystem()` 网络异常返回 false、`CancellationException` 仍抛出，自动登录、`SchoolSessionRecovery`、`AgentSync` 三处调用方同时受益。按用户要求，教务关联失败不再阻止登录：`finishLogin` 照常进入主界面，课表/成绩/考试保留缓存并在同步详情就地显示“本轮同步失败”，之后刷新经 `SchoolSessionRecovery` 重新关联。曾试加“教务系统暂时无法连接”弹窗，与升级说明、物理在线关闭弹窗叠加，已撤掉。`SchoolLoginProtocolTest` 新增拒绝连接、MIS 模块请求失败、取消传播 3 个用例。
 - 验证：`./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosSimulatorArm64` BUILD SUCCESSFUL，合入 #31/#32 后 932 测试零失败；签名模拟器 xcodebuild（iPhone 17 Pro，Debug）BUILD SUCCEEDED。iOS 模拟器：教务真实断开时进入主界面且手动登录就地报错不崩；教务恢复后用临时传输层拦截 aa（未提交、已撤销）验证最终版，主界面正常、同步详情仅成绩/课程表与校历周数/考试安排失败、进程持续存活；教务正常时同步全部完成。原始崩溃日志在 `.artifacts/crash-HBN/`。
 - 未验证：华为实机未安装新包复测；macOS/Windows 仅编译；`AgentSync.login` 关联失败仍返回 `Network`（未改为放行），按需再议。
+
+## 2026-10-21 Android 原生导航会话交接修复（PR #34，合并提交 eff3629）
+
+- 改动：会话登记按根宿主令牌隔离，旧 Activity 的延迟清理不能覆盖新宿主；发布回调固定；Android 点击原生入口时重新交接当前会话并直接跳转，移除对壳层协程延迟调度的依赖。debug `NativeNavigation` 仅记录路由与会话是否存在。
+- 原因：HarmonyOS 4.2 / AOSP 12 录屏中多个页面入口无跳转，但校园网/校园卡弹窗仍能打开；详情 Activity 缺少会话时会立即 finish，会话桥的全局清理存在旧宿主覆盖新宿主的风险。尚不能证明这是录屏的唯一根因。
+- 验证：修复分支 `./gradlew :shared:desktopTest --no-configuration-cache`，936 项全部通过；新增 4 项会话交接测试在隔离工程通过，以旧无条件清理语义对照时 2 项保护测试失败。代码提交 c6eb350 的 Android CI 编译通过。Package run 39522324933 使用独立提交 935d5ba。
+- 未验证：未在华为真机复现或验收；未改版本号、未发 Release。PR #35 的 iOS 弹层修复仍独立待合并。

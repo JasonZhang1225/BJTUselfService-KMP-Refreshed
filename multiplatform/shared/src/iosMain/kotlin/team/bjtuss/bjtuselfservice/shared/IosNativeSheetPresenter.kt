@@ -30,9 +30,9 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalNativeSheetContentB
 
 /**
  * Presents shared Compose content through UIKit's real sheet presentation
- * controller. The presenter is intentionally host-owned: the shared screen
- * only describes content and dismissal, while UIKit owns the sheet chrome and
- * interactive transition.
+ * controller. The host supplies an owner; each AppleSheet lifetime gets an
+ * independent presenter so content, dismissal and pending transitions cannot
+ * be overwritten by another sheet. UIKit owns the chrome and transition.
  */
 @OptIn(
     ExperimentalForeignApi::class,
@@ -42,6 +42,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalNativeSheetContentB
 class IosNativeSheetPresenter(
     private val owner: () -> UIViewController,
 ) : NativeSheetPresenter {
+    override fun createPresentation(): NativeSheetPresenter = IosNativeSheetPresenter(owner)
+
     private var scrollableBody = false
 
     override fun setScrollableBody(enabled: Boolean) {
@@ -166,10 +168,11 @@ class IosNativeSheetPresenter(
         BJTUConfigureSheetPresentation(sheet, needsFullHeight)
         fittedContentHeight?.let { BJTUSetSheetFittedHeight(sheet, it.toDouble()) }
 
-        val delegate = SheetDelegate { handleDismissed() }
+        val delegate = SheetDelegate { handleDismissed(sheet) }
         sheetDelegate = delegate
         sheetController = sheet
         presentingSheet = sheet
+        BJTUAttachSheetPresentationDelegate(sheet, delegate)
         owner().presentViewController(sheet, animated = true) {
             if (presentingSheet === sheet) presentingSheet = null
             BJTUInstallNativeSheetMaterial(sheet)
@@ -179,6 +182,7 @@ class IosNativeSheetPresenter(
                 dismiss()
             }
         }
+        // 适配呈现可能选择另一 presentation controller，再对实际控制器确认绑定。
         BJTUAttachSheetPresentationDelegate(sheet, delegate)
         if (sheet.presentingViewController == null) {
             // 宿主正被别的转场占用（例如其他弹窗正在关闭），present 被拒绝：稍后重试，不让入口失效。
@@ -252,7 +256,10 @@ class IosNativeSheetPresenter(
         }
     }
 
-    private fun handleDismissed() {
+    private fun handleDismissed(sheet: UIViewController) {
+        // UIKit 的旧 delegate 可能在程序关闭/后续呈现之后才回调。
+        // 只处理它所属的控制器，不能清空新控制器或调用新页面的 dismissRequest。
+        if (sheetController !== sheet) return
         fittedContentHeight = null
         sheetController = null
         sheetDelegate = null

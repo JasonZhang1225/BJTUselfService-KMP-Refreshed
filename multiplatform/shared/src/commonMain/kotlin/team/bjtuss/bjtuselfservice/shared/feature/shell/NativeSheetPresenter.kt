@@ -11,6 +11,9 @@ import androidx.compose.runtime.compositionLocalOf
  * sheet chrome, detents, grabber, blur and dismissal gesture.
  */
 interface NativeSheetPresenter {
+    /** 每个 AppleSheet 组合独占自己的内容、回调与关闭过程，宿主仅提供创建入口。 */
+    fun createPresentation(): NativeSheetPresenter = this
+
     /** Scrollable sheets own their bottom inset inside the scroll content. */
     fun setScrollableBody(enabled: Boolean) {}
 

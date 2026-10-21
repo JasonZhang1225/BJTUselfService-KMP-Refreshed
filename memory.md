@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-21。
-> 当前分支：`fix/android-native-navigation-session`（基于 mine/main@c94d18a，尚未合入；PR #31/#32/#33 均已合入）；已整合原 `feat/ai-agent-dev`、`fix/mis-sso-auth` 与原 main 的全部历史；本地和 mine 只保留 `main` 与 `claude/宣传图制作`（2026-10-20 已删除 #31–#33 的已合并分支）。分支清理备份见 `.artifacts/branch-cleanup-20261020/before-cleanup.bundle`。
+> 当前分支：`fix/ios-sheet-dismissal`（PR #35，已合入最新 mine/main@eff3629，包含已合并 PR #34；#35 待用户合并）。
 > KMP 源码版本：`1.8.5-EmergencyFix2` / Build 40；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。`history_full.md` 尚无 EmergencyFix2 发版条目。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
@@ -11,11 +11,11 @@
 
 ## 进行中
 
-- Android 原生详情页点击失效排查（PR #34，`fix/android-native-navigation-session`）：用户提供 HarmonyOS 4.2 / AOSP 12 录屏；页面入口无跳转但校园网/校园卡弹窗可打开，后台往返未恢复；用户回忆底栏似乎仍能切换，未确定。
-  - 修复：`NativeSessionHandoff` 按根宿主令牌保护会话，旧宿主的清理不能覆盖新宿主；MainActivity 使用固定发布回调；Android 点击原生入口时同步重新交接当前会话并直接跳转，避开壳层协程延迟。debug `NativeNavigation` 仅记录路由/会话是否存在，不记录账号或 Cookie。
-  - 已验证：隔离 Gradle 工程直接编译仓库中的 `NativeSessionHandoff.kt` / `NativeSessionHandoffTest.kt`，4 项通过；用旧 Registry 无条件清理语义作对照，2 项保护测试失败。`git diff --check` 通过。
-  - 完整共享验证：`./gradlew :shared:desktopTest --no-configuration-cache`，936 项全部通过（含新增 4 项）；首轮 22 项渲染测试因 Skia 缓存目录只读失败，指定可写 Java 用户目录后通过。代码提交 `c6eb350` 的 Android CI（`:shared:compileAndroidMain :androidApp:compileDebugKotlin`）已通过；Apple CI 仍在执行。当前 Linux 环境没有 Android SDK/项目签名与 Apple 工具链，未做 APK 打包/真机验证。
-  - 边界：只修复已识别的会话生命周期风险和异步跳转依赖；没有华为真机或 logcat，无法证明录屏仅由该路径触发，也未做华为实机验收。未改版本、未合并、未发版。
+- iOS 课程详情关闭后卡片无响应（PR #35，`fix/ios-sheet-dismissal`）：用户确认首次详情通过右上角关闭按钮收起；6 秒录屏中课程卡片仍有按压反馈，课表/周数弹层可正常开关，未证明主线程整体卡死。原生弹层宿主被所有 `AppleSheet` 共用，内容、关闭回调和动画状态存在串用风险。
+  - 修复：每个 `AppleSheet` 组合通过 `createPresentation()` 持有独立 iOS 呈现对象；旧组合的释放/关闭动画不能清空后一个弹层。原生 dismissal delegate 绑定具体控制器，忽略过期回调，并在发起 present 前绑定 delegate。
+  - 验证：真实 `AppleSheet` + 可延迟关闭完成的测试宿主，3 项离屏集成测试通过（重叠弹层独立释放、关闭后快速重开、重组保留呈现对象并更新回调）；`./gradlew :shared:desktopTest --no-configuration-cache` 完整共享测试 935 项全部通过（含新增 3 项）。Linux 无 Xcode/iOS 模拟器，原生编译与 iOS 测试交给 PR CI，未做 iPhone 实机复测，未修改版本号或发版。
+- PR #34 已由用户合入 main（eff3629），完成细节移入 `history_full.md`。本次将 main 合入 #35，只解决 `memory.md` 冲突，保留两项修复的源码原样。
+- Package 记录：PR #34 的 `935d5ba` → run `39522324933`；PR #35 原独立提交 `5430eb8` → run `39522327270`。两次打包均已成功，使用各自原提交；当前 #35 合入 main 后的提交包含两项修复，未额外触发打包；未改版本或创建 Release。
 
 ## 当前痛点
 

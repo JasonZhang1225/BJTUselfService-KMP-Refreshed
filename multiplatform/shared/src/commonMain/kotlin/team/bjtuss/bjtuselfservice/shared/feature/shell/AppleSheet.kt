@@ -34,6 +34,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -73,8 +74,10 @@ fun AppleSheet(
     showDismissButton: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val isIos = currentPlatform().family == PlatformFamily.IOS
-    val presenter = if (isIos) LocalNativeSheetPresenter.current else null
+    val hostPresenter = LocalNativeSheetPresenter.current
+    // 宿主可能同时拥有正在关闭的课程详情和刚打开的周数选择器。
+    // 不能让旧组合的 onDispose 或原生关闭回调操作后一个弹层。
+    val presenter = remember(hostPresenter) { hostPresenter?.createPresentation() }
 
     if (presenter != null) {
         // The UIKit sheet is a separate Compose root, so inherited MaterialTheme
