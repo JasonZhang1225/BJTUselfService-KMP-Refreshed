@@ -1071,3 +1071,12 @@
 - 发布：Sites 独立源码提交 `495efffe69c9be461bd9636fb1ff458227562472`，保存版本 `appgprj_6ad9b56e35188191a19f3988ced54e6d~appgver_f17879ad54c08191837e72f50f41ec6e`；部署 `appgdep_6ad9dd84586c81919364bf7f048ad8dc` 最终返回 `succeeded`、`has_mcp=true`。源仓库通过 Sites source helper 隐藏 stdin 传入短时凭据，未把机密写入源码或日志。
 - 验证：独立目录 `/Users/zjg/BJTU-remote-site-deploy-20261022` 执行 `npm test` 66/66 通过，`npm run build` 成功；源同步与部署归档由 site-workflow helper 生成；`node scripts/package-template.mjs` 验证无部署身份的模板分发包通过。此前本地浏览器使用虚构数据检查手机宽度、浅/深色、放大文字及手机/电脑混合设备状态。本次平台部署状态确认为成功，未重新读取真实学校数据。
 - 未验证：更新后的手机 App 与线上 Site 完整配对、双设备真实上传和原生 UI；App 配套修复仍保留在本地分支，没有安装新 App。私人 Site 的部署不表示公用模板 main 或 App 发布版本已更新。
+
+## 2026-10-22 完整长码 App 配对与公共模板进入 main（27efa42b、9de3eade、08b9286b；PR #54 关闭）
+
+- 改动：App 现有远程配对入口（Android/iOS/Windows）只填 `bjtuss-pair-v1:…` 完整长码，移除手动地址与短码入口，直接从长码读取并校验 HTTPS 地址、一次性码、有效期和授权；机密仍只存系统安全存储。同步共享配对表单、控制器、搭建提示词、公共模板网页和操作文档。macOS 仍为原本的本机 Agent 接入，未新增远程宿主。
+- 公共模板：列出全部活跃设备及同步方式，手机刷新后上传、不轮询；只有可承接任务的电脑存在时启用即时刷新。补充 iOS/Android 从网页长码到配对、上传及只向电脑分流任务的回归测试，无 schema 或协议迁移。私人 Site 同一网页变更的部署记录见上一条。
+- 原因/交付：所有者先要求本地提交，后授权部署私人 Site、推送公共模板并开 PR #54，随后明确改为关闭 PR、直接把全部修改推送 main。核对远端 `95c9ce99` 是本地 HEAD 祖先后，以精确 `--force-with-lease` 将 main 推至 `08b9286b`；GitHub 按所有者授权绕过 PR 要求，原历史未删除。PR #54 已关闭，未通过 PR 合并；另一个模板分支提交 `0c61359e` 的四文件内容已包含于 `27efa42b`。本机唯一 origin 与独立仓库状态同步记录于 memory.md。
+- 验证（本机 JBR 25）：`multiplatform/` 下 `./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64` 成功，1080 项测试零失败；`./gradlew :shared:desktopTest --tests '*AgentPluginsRenderTest'` 成功，核对手机/电脑宽度浅色、深色、1.5 倍字体离屏截图。模板 `npm test` 66 项通过，`npm run build` 成功；虚构数据浏览器检查 390px、浅/深色、放大文字及混合设备状态，无横向溢出/console 错误。
+- iOS 验证：`xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,id=6857828A-CCEA-47D0-B26A-93462734DD91' -derivedDataPath ../.artifacts/pairing-ios-build ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES DEVELOPMENT_TEAM=34S53DC6T6 build` 成功，`codesign --verify --deep --strict` 通过。generic 首次请求未支持的 x86_64，改用本机 arm64 目标通过，未修改工程架构配置。
+- 未验证：真实手机 App 与线上 Site 完整配对、双设备真实上传、原生容器交互、新签名包 Keychain 往返、Windows 实机。未打标签、发版或安装替换 App。主干推送后的 CI 状态与已验证的本地结果分别看待；证据保存在忽略目录 `.artifacts/`。

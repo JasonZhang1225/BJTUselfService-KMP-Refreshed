@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-22。
-> 当前任务分支：`fix/unified-pairing-info`（基于目标仓库 `origin/main@95c9ce99`）；统一长码配对已本地实现并验证，App 修复按用户要求仅本地提交；私人 Site 已部署成功，公共模板已按后续授权单独推送并开 PR #54，待所有者合并。2026-10-22 按用户要求将目标仓库设为唯一 `origin`，移除旧上游配置，原 `mine` 的分支跟踪关系已迁移到 `origin`；`git fetch origin` 和 `git remote set-head origin -a` 成功，默认分支为 `main`。用户已确认 GitHub 仓库脱离 fork。
+> 当前分支：`main`。2026-10-22 所有者明确授权将本次全部修改直接推送 main：完整长码 App 配对、公共模板及文档提交 `27efa42b` / `9de3eade` / `08b9286b` 已进入主干；以 `--force-with-lease` 推送，保留原有历史。模板 PR #54 已关闭。私人 Site 已部署成功（源码 `495efffe`、`has_mcp=true`）。本机唯一远端 `origin` = `JasonZhang1225/BJTUselfService-KMP-Refreshed`，GitHub 已脱离 fork。验证与交付细节见日志；未打包发版或替换已安装 App。
 > 上次任务分支：`docs/agent-setup-main`（基于 `main@9c7eb55a`；Agent 搭建入口改 main，按用户授权直接推送；验证见日志）。PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次、#46 课程实时动态（Android Live Updates + 双端课前准点出现）均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`、`aac1816`）；#45 验证码模型移除与安装包瘦身（合并提交 `a58e7c6`）、#48 iOS 作业上传修复与上传页统一（合并提交 `ad2a082`）均经所有者实测后合并（2026-10-22），合并后主干安全检查 #179 与打包 #113 见日志；#50 AI Agent 与 ChatGPT 私人远程查询（合并提交 `a18369d`）已合入；#51 v1.8.6 发布说明（`docs/releases/v1.8.6.md`，合并提交 `7513348`）已合入；#52 启动弹窗合并与 1.8.6-Beta 版本号待所有者合并。细节见 `history_full.md`。远端另保留 `claude/宣传图制作`。
 > KMP 源码版本：`1.8.6-Beta` / Build 42（已推 `debug-1.8.6-Beta` 标签打包，尚未发版）；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。iOS 最低系统 18.0。
 > 2026-10-22 仓库清理：冻结原 Android 工程（`app/` 与根 Gradle 工程、`release.yml`/`debug.yml`）与验证码 torch 模型（含 Windows `BJTUCaptcha.pt`、DJL）已移除，存档于标签 `archive/legacy-android-and-captcha-model`（`8189baf`）；Windows 验证码改为手动输入。只保留 `origin` = `JasonZhang1225/BJTUselfService-KMP-Refreshed`；所有者已确认在 GitHub 解除 fork 关系，本机远端配置也已对齐。
@@ -9,14 +9,6 @@
 > 已完成工作的细节见 `history_full.md` 末尾日志。
 
 ## 进行中
-
-- 统一完整长码配对（`fix/unified-pairing-info`，本地提交待合入）：
-  - App 现有远程配对入口（Android/iOS/Windows）只填 `bjtuss-pair-v1:…` 完整长码，移除地址输入和短码入口；从长码读取并校验 HTTPS 地址、一次性码、有效期和授权，机密仍只存系统安全存储。同步更新共享表单、控制器、搭建提示词和操作文档；macOS 仍为现有本机 Agent 接入，本次只验证共享代码编译，未新增远程宿主。
-  - 网页模板显示所有活跃设备及 `mobile`/`desktop` 的同步方式；只有手机时禁用“请求电脑全量刷新”，手机刷新后上传、不轮询。服务端原已支持多设备与任务分流，本次新增 iOS/Android 从网页长码生成到配对、上传和只向电脑派任务的回归用例，无 schema/协议迁移。
-  - 验证（本机 JBR 25）：在 `multiplatform/` 执行 `./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64` 成功，1080 项共享测试零失败；再执行 `./gradlew :shared:desktopTest --tests '*AgentPluginsRenderTest'` 成功，核对电脑/手机宽度浅色、深色、1.5 倍字体离屏截图。模板目录 `npm test` 66 项全过，`npm run build` 成功；浏览器用本地虚构数据核对 390px、浅/深色和放大文字无横向溢出，手机不轮询提示及电脑刷新按钮分流正确，无 console 错误。
-  - iOS：`xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,id=6857828A-CCEA-47D0-B26A-93462734DD91' -derivedDataPath ../.artifacts/pairing-ios-build ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES DEVELOPMENT_TEAM=34S53DC6T6 build` 成功，`codesign --verify --deep --strict` 通过。首次 generic 模拟器构建请求未支持的 x86_64，改用具体 arm64 目标通过，未改工程架构配置。
-  - 证据：`.artifacts/unified-pairing-*.log`、`.artifacts/unified-pairing-desktop-test-summary.txt`、`.artifacts/agent-plugins-ui/`。私人 Site 已于后续授权下部署成功（详情见 history_full.md 末尾）；未安装/替换应用、未改版本号；未验证真机完整配对、原生容器交互、此次签名包的 Keychain 往返、Windows 实机。App 修复仍仅本地提交，未推送。
-  - 公用模板单独 PR #54（`fix/remote-template-pairing@0c61359e`）：仅网页、SETUP、操作文档及多设备回归四个文件；已用 JasonZhang1225 身份推送，待所有者审批合并，main 入口在合并前仍是旧说明。PR 模板 CI 已通过，其余平台 CI 仍在运行（本次记录时）。不自行合并。
 
 - 已合入功能的待真机验证（不阻塞）：
   - 灵动岛/实时活动：收起态最终版截图（等实际上课时）；开课时“即将上课”切“正在上课”；两个实时活动并存时的最小态小圆环；Live 菜单读屏自定义操作。
@@ -26,6 +18,7 @@
   - 作业搜索：iOS 系统搜索按钮展开/取消动画、搜索中进详情再返回；Android 返回键收起搜索；上课时段教室当前节次光晕与空闲/占用标签（浅/深色）。
   - Windows：移除 torch 模型后，遇到验证码时手动输入路径未在 Windows 真机走过；PR #45 原生库裁剪后的 MSI 启动与本地缓存（SQLite）读写、DPAPI 凭据读取未实机验证（Windows 冒烟未在最终提交上运行）。
   - 作业上传（PR #48）：CITEL 上传与编程题单文件提交未真机实测；Android/桌面上传由对话框改为底部 sheet，未实机查看；sheet 内保存面板（日历导出）与快速查看的真机表现未点验。
+  - 完整长码配对（main@08b9286b）：真实手机与线上 Site 的配对、手机/电脑同时上传、原生容器交互、此次签名包的 Keychain 往返、Windows 实机未验证；已安装 App 需更新后才有单输入框。
   - AI Agent / ChatGPT 插件（PR #50）：手机 ChatGPT 端到端查询（卡在插件补授权，需在手机上重新连接后验证新工具目录）；电脑与手机同时配对的实机验收；Windows 托盘在混合 DPI 多屏下的位置与退出回调。
   - 1.8.6 版本说明弹窗（PR #52）：新装/升级各走一遍，确认后不再出现；Android 版本说明后接通知权限说明的顺序。
   - PR #45 登录收紧：需要验证码时的手动输入弹窗、静默自动登录失败后的引导弹窗、Android release（R8）包的签名覆盖安装，均未真机走过。
