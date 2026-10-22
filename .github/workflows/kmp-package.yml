@@ -14,6 +14,17 @@ on:
   # 不再响应 pull_request：此前 iOS 任务未排除 PR，修改 iosApp/** 的 PR 会打 iOS IPA。
   # 需要打包时推 debug-* 标签或手动 workflow_dispatch。
   workflow_dispatch:
+    inputs:
+      mirror_tag:
+        description: 仅重试已有Release的Gitee镜像（留空则正常四端打包）
+        required: false
+        default: ""
+        type: string
+      promote_test:
+        description: 仅将完整Gitee测试镜像改为v2.0.0
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: kmp-package-${{ github.ref }}
@@ -31,7 +42,7 @@ env:
 jobs:
   android:
     name: Android arm64 release APK
-    if: ${{ github.event_name != 'pull_request' && (github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0') }}
+    if: ${{ !inputs.mirror_tag && github.event_name != 'pull_request' && (github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -116,7 +127,7 @@ jobs:
 
   windows:
     name: Windows MSI
-    if: ${{ github.event_name != 'pull_request' && (github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0') }}
+    if: ${{ !inputs.mirror_tag && github.event_name != 'pull_request' && (github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0') }}
     runs-on: windows-latest
     defaults:
       run:
@@ -198,7 +209,7 @@ jobs:
 
   macos:
     name: macOS DMG
-    if: ${{ github.event_name != 'pull_request' && (github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0') }}
+    if: ${{ !inputs.mirror_tag && github.event_name != 'pull_request' && (github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0') }}
     runs-on: macos-15
     timeout-minutes: 60
     defaults:
@@ -261,7 +272,7 @@ jobs:
     # Duo / 系统栏用了 iOS 27.1 API（axisBehavior、verticalBarEdge、
     # navigationBarMinimization）。macos-26 默认 Xcode 26.6 / iPhoneOS 26.5，
     # `#available` 挡不住编译。必须用 xcode-27 镜像并选 27.1+ SDK。
-    if: ${{ github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0' }}
+    if: ${{ !inputs.mirror_tag && (github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0') }}
     runs-on: xcode-27
     timeout-minutes: 90
     defaults:
@@ -441,10 +452,11 @@ jobs:
     # The reusable workflow keeps normal mirrors read-only, but its exact hidden-test job needs draft access.
     permissions:
       contents: write
-    if: ${{ needs.release.result == 'success' }}
+    if: ${{ always() && (needs.release.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.mirror_tag != '')) }}
     uses: ./.github/workflows/gitee-release-mirror.yml
     with:
-      tag: ${{ github.ref_name }}
-      best_effort: true
+      tag: ${{ inputs.mirror_tag || github.ref_name }}
+      best_effort: ${{ !inputs.mirror_tag }}
+      promote_test: ${{ inputs.promote_test || false }}
     secrets:
       GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
