@@ -1,8 +1,8 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-21。
-> 当前分支：`fix/ios-sheet-dismissal`（PR #35，已合入最新 mine/main@eff3629，包含已合并 PR #34；#35 待用户合并）。
-> KMP 源码版本：`1.8.5-EmergencyFix2` / Build 40；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。`history_full.md` 尚无 EmergencyFix2 发版条目。
+> 当前分支：`claude/amazing-mccarthy-sfljuw`（基于 `feat/library@4238374`，即 PR [#40](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/40) 头部；PR #38 已关闭，由 #40 重新合入 main，待用户合并）。
+> KMP 源码版本：`1.8.6-Alpha` / Build 41（PR #40 内已改版本号，尚未发版）；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。`history_full.md` 尚无 EmergencyFix2 发版条目。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
 > 认证现状（2026-10-20，PR #29/#30 已纳入 main）：MIS 走统一身份认证 sso.bjtu.edu.cn（SM2 加密密码、默认免验证码）；物理在线用独立账号密码（设置 → 物理在线账号设置）；智慧教学仍卡在学校的旧 CAS 跳转。
@@ -11,11 +11,25 @@
 
 ## 进行中
 
-- iOS 课程详情关闭后卡片无响应（PR #35，`fix/ios-sheet-dismissal`）：用户确认首次详情通过右上角关闭按钮收起；6 秒录屏中课程卡片仍有按压反馈，课表/周数弹层可正常开关，未证明主线程整体卡死。原生弹层宿主被所有 `AppleSheet` 共用，内容、关闭回调和动画状态存在串用风险。
-  - 修复：每个 `AppleSheet` 组合通过 `createPresentation()` 持有独立 iOS 呈现对象；旧组合的释放/关闭动画不能清空后一个弹层。原生 dismissal delegate 绑定具体控制器，忽略过期回调，并在发起 present 前绑定 delegate。
-  - 验证：真实 `AppleSheet` + 可延迟关闭完成的测试宿主，3 项离屏集成测试通过（重叠弹层独立释放、关闭后快速重开、重组保留呈现对象并更新回调）；`./gradlew :shared:desktopTest --no-configuration-cache` 完整共享测试 935 项全部通过（含新增 3 项）。Linux 无 Xcode/iOS 模拟器，原生编译与 iOS 测试交给 PR CI，未做 iPhone 实机复测，未修改版本号或发版。
-- PR #34 已由用户合入 main（eff3629），完成细节移入 `history_full.md`。本次将 main 合入 #35，只解决 `memory.md` 冲突，保留两项修复的源码原样。
-- Package 记录：PR #34 的 `935d5ba` → run `39522324933`；PR #35 原独立提交 `5430eb8` → run `39522327270`。两次打包均已成功，使用各自原提交；当前 #35 合入 main 后的提交包含两项修复，未额外触发打包；未改版本或创建 Release。
+- 图书馆 iOS 顶/底栏与 PR #40 评审修复（`claude/amazing-mccarthy-sfljuw`，2026-10-21）：
+  - 顶栏：图书馆页由 `staticTopBar` 改为 `scrollUnderTopBar`，账户卡与 tab 作为列表首项随内容滚动，内容滚进 iOS 原生液态玻璃顶栏（与考试/作业页一致），横屏不再有固定头部挤压和顶部实心空带。
+  - 续借栏：整条 Material 底栏 + 底部透明净空（横屏露出黑条）改为浮在列表上方的胶囊（最宽 560dp、避开水平安全区，底边 = 真实底部安全区 + 10dp），列表末尾按胶囊实测高度让位；当前借阅为空时不显示。
+  - 评审：`firstReferer` 改为精确校验 https + `opac.bjtu.edu.cn` + 默认端口（新增 `libraryFinishUrl` 及 2 个测试），`followAllowed` 起始地址也过白名单；`LibraryLoginProtocol`/`LibraryModel` 以学号为 remember key，换账号不沿用旧借阅与 loanId。
+  - 云环境（Mine）：Maven Central 对容器出口 429；用户已在 Mine 的 Setup script 里写入 Gradle 镜像 init 脚本（Google 的 Maven Central 镜像）、Android SDK（`/opt/android-sdk`，platform 36、build-tools 36.0.0）与仅云容器用的一次性调试签名（随机口令，非共享 upload key，APK 不能覆盖安装正式包）；`ANDROID_HOME` 写在环境变量。
+  - 已验证（云容器 Linux，JDK 21）：`:shared:compileKotlinDesktop`、`:windowsApp:compileKotlinWindows`、`:androidApp:assembleDebug` BUILD SUCCESSFUL；`:shared:desktopTest` 978 项仅 `DesktopAgentIntegrationTest` 1 项失败（macOS 专属，Linux 返回 127），图书馆 39 项全过。iOS 交给 PR CI。
+  - 未验证：iOS 模拟器/真机实际观感（本环境为 Linux，无 Xcode）；横屏顶栏高度若仍明显高于其他页，需用 `--layout-metrics` 采宿主上报的 `top=`。
+- 图书馆借阅功能（PR [#40](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/40)，待合并；#38 已关闭）：新增 `data/library/`（模型、endpoints、SSO OAuth2 登录协议、remote、repository）、`feature/library/`（LibraryModel、LibraryScreen）、`AppSection.LIBRARY` + 应用页磁贴 + 底栏自定义候选 + 首页到期提醒卡片；续借支持单本/全选批量并带确认弹窗，不做离线缓存。
+  - 协议证据（2026-10-21 真实抓包）：SSO 会话有效时授权页直接回 `opac.bjtu.edu.cn/OAuth2/bjtu/index?code=...`；回调页 HTML 内一次性 `data/time/enc`；`/OAuth2/bjtu/login` 返回 `{"status":true}` 并写 opac Cookie（`p_auth_token` 等）；`/find/*` 只靠 Cookie 鉴权（不带 SPA 动态 JWT 头也能读取，已实测）。
+  - 已验证（本机 Windows，JDK 21，仓库 Gradle 9.3.1）：`:androidApp:assembleDebug`、`:windowsApp:compileKotlinWindows` BUILD SUCCESSFUL；`:shared:desktopTest` 975 项中 5 项失败均为 macOS 专属旧测试（`DesktopAgentIntegrationTest` 3、`MacUninstallCleanerTest` 2，Windows 上本来就会失败），图书馆 36 项（协议 6、数据层 16、模型 13、真实链路 1）全部通过。IDE 自动改的 Gradle 9.8.0 wrapper / daemon JVM / tooling.parallel / `.idea` 已全部还原，wrapper 保持 9.3.1 并保留 SHA256 校验。
+  - 本机构建准备：生成了仅测试用 keystore `~/.android/bjtu-kmp-upload.keystore`（alias `bjtu-kmp-local`，口令属本机环境信息，未记录在仓库），`multiplatform/local.properties` 写入 sdk.dir；对应本地签名口令写在用户级 `~/.gradle/gradle.properties`（均被 gitignore/仓库外，不提交）。AGP 已自动安装 SDK Platform 36。
+  - 顺手修复 Android Studio 同步失败：`desktopApp/build.gradle.kts` 的 `resolveDesktopPackageJavaHome()` 在无 `JAVA_HOME` 的 IDE 守护进程里直接 error，导致整仓 sync 失败；已加 `System.getProperty("java.home")` 兜底（打包仍要求完整 JDK）。另注意 `multiplatform/gradle/wrapper/gradle-wrapper.properties` 被 Android Studio 改成 Gradle 9.8.0（未提交，需用户决定保留或还原 9.3.1）。
+  - 待办：Android 真机验证（用户用 Android Studio 打包）；续借为写操作尚未真实执行。
+  - 真实链路联调（`LibraryLiveTest`，用户凭据，2026-10-21）：登录 + 用户信息 + 当前借阅 1 条 + 历史 8 条读取成功（`cardStatus=1`）。关键修复：`/OAuth2/bjtu/login` 返回 `status:true` 后还必须跟随 `find/sso/login/bjtu/0?data/time/enc`，这一步才写入 API 鉴权所需的 `SESSION` Cookie；只做到 login 会得到 401。
+  - 真机续借验证（2026-10-21）：续借成功但界面一度显示"失败原因 · 2026-11-20 17:50:25"。根因：续借响应 `data.result` 是 loanId→值，`fail==0` 时值是**新应还日期**、`fail>0` 时才是失败原因；已按 fail 区分，成功时展示"新的应还日期"，并把新日期带进成功文案；补了 2 个回归测试（数据层 16 项、模型 13 项全过），APK 已重打。
+  - UI 反馈修复（2026-10-21）：整张借阅卡可点选（复选框/续借按钮仍独立响应）；借出/应还改为 FlowRow，放不下时整段换行避免"应还日期"被拆两行；已重编译 APK 与 Windows 源码运行。
+  - Windows 标题栏修复（2026-10-21）：`windowsApp/Main.kt` 原无条件设置 `DWMWA_USE_IMMERSIVE_DARK_MODE=1`，浅色系统下标题栏纯黑；改为按注册表 `AppsUseLightTheme` 设置 0/1，并在窗口生命周期内每 2s 在 IO 线程轮询（实测单次 JNA 读注册表 ≈40µs，CPU 占用 ≈0.002%），运行中切换 Windows 应用深浅色也能跟随（未用 WndProc 子类化，避免 JNA 回调风险）。
+  - 应用目录修复（2026-10-21）：`applicationSections` 原来是"候选 − 底栏"，把已加到底栏的入口从「应用」页移除；改为返回全部功能入口（底栏只是快捷方式），更新 `NewMigrationNavigationTest` 断言，APK 与 Windows 源码实例已重打。
+- iOS 课程详情关闭后卡片无响应（PR #35）：已合入 main（`f454d3a`），修复细节见 `history_full.md` 待补日志。
 
 ## 当前痛点
 
@@ -49,3 +63,4 @@
 1. 在真机已有版本（SideStore 保留扩展）上验证小组件共享容器与各尺寸显示。
 2. 华为 HBN-AL10（HarmonyOS 4.2）装含 PR #32/#33 的新包：确认课表小组件尺寸（logcat `CourseWidget` 标签）与教务不可达时不再闪退。
 3. 下次发版时核对版本号清单（见 `AGENTS.md`）、发布说明与测试矩阵；版本与发版由用户决定。
+
