@@ -7,4 +7,6 @@
     <string name="widget_week_label">本周课表</string>
     <string name="widget_week_description">按大节显示本周一到周日的课程，配色与课程表页一致。</string>
     <string name="widget_loading">正在读取课表…</string>
+    <string name="live_update_channel_name">课程实时动态</string>
+    <string name="live_update_channel_description">课前在状态栏显示下一节课的倒计时，上课时显示距下课的时间。</string>
 </resources>

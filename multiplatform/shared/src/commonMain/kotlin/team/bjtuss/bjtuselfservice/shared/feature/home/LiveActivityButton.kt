@@ -28,7 +28,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.course.tones
 import team.bjtuss.bjtuselfservice.shared.feature.widget.compactWidgetPlace
 
 /**
- * 首页“正在上/下一节”卡片对应的一项日程，交给系统实时活动（iOS 灵动岛）显示。
+ * 首页“正在上/下一节”卡片对应的一项日程，交给系统实时活动（iOS 灵动岛、Android 实时动态）显示。
  * 字段与课程小组件快照一致，iOS 宿主按 [id] 在快照里找到同一项；找不到时用这里的内容兜底。
  */
 data class LiveActivityTarget(
@@ -70,7 +70,7 @@ internal fun HomeNowSession.liveActivityTarget(date: LocalDate, category: Course
 
 /**
  * 卡片状态胶囊下方的 Live 按钮：点开菜单可重新开启或关闭这一项的实时活动；课前 10 或 20 分钟（菜单里选）会自动出现。
- * 只有 iOS 有实时活动，其余平台不占位置。
+ * iOS 为实时活动（灵动岛），Android 16+ 为实时动态（Live Updates）；其余平台不占位置。
  */
 @Composable
 internal expect fun LiveActivityButton(target: LiveActivityTarget, modifier: Modifier = Modifier)

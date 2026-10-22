@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-22。
-> 当前分支：`main`。PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`），细节见 `history_full.md`。远端另保留 `claude/宣传图制作`、`feat/chatgpt-agent-remote`（AI Agent，开发中）。
+> 当前分支：`feat/Android-LiveUpdates`（未提交，基于 `main` `9e7b4a7`；本地其余分支已于 2026-10-22 清理）。PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`），细节见 `history_full.md`。远端另保留 `claude/宣传图制作`、`feat/chatgpt-agent-remote`（AI Agent，开发中）。
 > KMP 源码版本：`1.8.6-Alpha` / Build 41（尚未发版）；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。iOS 最低系统 18.0。
 > 2026-10-22 仓库清理：冻结原 Android 工程（`app/` 与根 Gradle 工程、`release.yml`/`debug.yml`）与验证码 torch 模型（含 Windows `BJTUCaptcha.pt`、DJL）已移除，存档于标签 `archive/legacy-android-and-captcha-model`（`8189baf`）；Windows 验证码改为手动输入。只保留 `origin` 远端；GitHub 上仍是 `HFDLYS/BJTUselfService` 的 fork，由所有者在 Settings 解除。
 > 认证现状（2026-10-20）：MIS 走统一身份认证 sso.bjtu.edu.cn（SM2 加密密码、默认免验证码）；物理在线用独立账号密码；智慧教学仍卡在学校的旧 CAS 跳转。
@@ -9,6 +9,11 @@
 
 ## 进行中
 
+- Android 实时动态（`feat/Android-LiveUpdates`，未提交）：用 Android 16 原生 Live Updates（`setRequestPromotedOngoing` + `POST_PROMOTED_NOTIFICATIONS`，不用小米焦点通知）复用 iOS 灵动岛规则。规则抽到 shared `LiveActivityPlan.kt`（`planLiveActivity`，对应 Swift `desiredState`/`nextBoundary`，有 `LiveActivityPlanTest`）；宿主 `androidApp/.../live/CourseLiveUpdates.kt`；卡片 Live 胶囊 + 下拉菜单在 `LiveActivityButton.android.kt`，Android 16 以下不显示。首次点“允许通知并开启”才申请通知权限。debug 包有 `LiveUpdateSmokeActivity`（虚构课程）。
+  - 已验证（小米平板 HyperOS 4.0 / API 37，targetSdk 仍为 35）：`PROMOTED_ONGOING` 生效，状态栏胶囊显示“13:14下课”/“12:58开始”，通知顶部进度条逐分钟走，“关闭”与划掉都记入不再自动出现；`:shared:desktopTest`、iOS 模拟器/桌面/Windows 编译、`:androidApp:assembleDebug` 通过。
+  - 外观（用户把平板时间改到上课时段实测后调整）：小图标按课程类别换成课本/烧瓶/试卷/跑步（`res/drawable/ic_live_kind_*.xml`），灵动岛展开态左侧与状态栏胶囊都用它；去掉标题旁跳秒的系统计时，第二行改为“正在上课 · 距下课 N 小时 N 分钟”（逐分钟更新），第三行“时间 · 地点 · 教师”。试过的取舍：大图标会在 HyperOS 灵动岛右侧重复一个，已去掉；推广通知的颜色/加粗 span 被 HyperOS 去掉，已不用；进度条跟随图标像滑块，已去掉。通知中心左侧固定是 App 图标，改不了。
+  - 已实测：用户经首页 Live 菜单授予通知权限（USER_SET），真实课程“工业产品创新设计”在上课时段自动出现。
+  - 未验证：课前 10/20 分钟自动出现与课间接力的准点程度、息屏后闹钟延迟、浅色模式、标准 Android 16（非 HyperOS）上的样式。
 - AI Agent（`feat/chatgpt-agent-remote`）：开发中，约七八成；合入后再清理 main 里经紧急修复带进来的半成品 AI 代码。
 - 已合入功能的待真机验证（不阻塞）：
   - 灵动岛/实时活动：收起态最终版截图（等实际上课时）；开课时“即将上课”切“正在上课”；两个实时活动并存时的最小态小圆环；Live 菜单读屏自定义操作。
