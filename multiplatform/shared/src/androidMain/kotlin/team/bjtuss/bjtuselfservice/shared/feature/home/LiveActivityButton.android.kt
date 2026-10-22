@@ -48,6 +48,12 @@ interface AndroidLiveActivityHost {
     fun setLeadMinutes(minutes: Int)
     /** 通知或实时动态被关时：申请通知权限，或前往系统设置；允许后开启这一项。 */
     fun requestEnable(target: LiveActivityTarget)
+    /** 首次进入主界面时是否该说明用途并申请通知权限（还没授权，且说明框、系统授权框都没出现过）。 */
+    fun shouldOfferPermissionIntro(): Boolean
+    /** 说明框已答复（允许或暂不），以后不再主动问。 */
+    fun markPermissionIntroShown()
+    /** 说明框里点了“允许”：弹系统授权框。 */
+    fun requestPermissionFromIntro()
 }
 
 private var liveActivityHost: AndroidLiveActivityHost? = null
@@ -55,6 +61,26 @@ private var liveActivityHost: AndroidLiveActivityHost? = null
 /** 由 androidApp 在 Application/Activity 创建时调用，重复调用无副作用。 */
 fun installAndroidLiveActivityHost(host: AndroidLiveActivityHost) {
     liveActivityHost = host
+}
+
+@Composable
+internal actual fun rememberLiveActivityPermissionIntro(): LiveActivityPermissionIntro? {
+    val host = liveActivityHost ?: return null
+    var visible by remember { mutableStateOf(host.shouldOfferPermissionIntro()) }
+    if (!visible) return null
+    return remember(host) {
+        LiveActivityPermissionIntro(
+            onAllow = {
+                visible = false
+                host.markPermissionIntroShown()
+                host.requestPermissionFromIntro()
+            },
+            onLater = {
+                visible = false
+                host.markPermissionIntroShown()
+            },
+        )
+    }
 }
 
 @Composable
