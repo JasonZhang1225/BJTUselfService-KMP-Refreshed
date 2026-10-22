@@ -409,3 +409,26 @@ jobs:
           body_path: docs/releases/${{ github.ref_name }}.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  gitee-mirror:
+    name: Gitee Release mirror (best effort)
+    needs: release
+    if: ${{ needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    # A mirror/quota/credential failure must never invalidate the GitHub release.
+    continue-on-error: true
+    timeout-minutes: 30
+    concurrency:
+      group: gitee-release-mirror
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Mirror notes, tag and all four installers; verify anonymous downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/mirror-gitee-release.py
