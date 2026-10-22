@@ -141,6 +141,10 @@ class HomeChangeFieldTest {
     fun submittedAndPostponedDeadlineAreFavorable() {
         assertTrue(HomeChangeField("状态", "未提交", "已提交").isFavorableChange())
         assertFalse(HomeChangeField("状态", "已提交", "未提交").isFavorableChange())
+        // 物理在线与 CITEL 用“未完成/已完成”。
+        assertTrue(HomeChangeField("状态", "未完成", "已完成").isFavorableChange())
+        assertTrue(HomeChangeField("完成情况", "未完成", "已完成").isFavorableChange())
+        assertFalse(HomeChangeField("完成情况", "已完成", "未完成").isFavorableChange())
         assertTrue(HomeChangeField("截止时间", "2026-10-11 24:00", "2026-10-25 24:00").isFavorableChange())
         assertTrue(HomeChangeField("截止时间", "2026-10-11 23:00", "2026-10-11 24:00").isFavorableChange())
         assertFalse(HomeChangeField("截止时间", "2026-10-25 24:00", "2026-10-11 24:00").isFavorableChange())

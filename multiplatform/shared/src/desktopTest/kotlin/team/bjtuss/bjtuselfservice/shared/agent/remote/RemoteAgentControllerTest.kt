@@ -91,6 +91,23 @@ class RemoteAgentControllerTest {
     }
 
     @Test
+    fun turningOffBackgroundSyncStopsTimersButKeepsRefreshUploads() = runBlocking {
+        assertNull(controller.pair(pairingFixture("https://site.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, consent = true))
+        controller.setBackgroundSync(false)
+        assertFalse(RemoteAgentStore(cache).loadConfig().backgroundSync, "设置持久化")
+        assertFalse(controller.keepRunningInBackground, "不定时同步时关闭窗口不必常驻")
+        controller.start()
+        kotlinx.coroutines.delay(300)
+        assertEquals(0, client.polls.get(), "不检查手机请求")
+        assertTrue(client.snapshots.isEmpty(), "没有定时上传")
+        val report = team.bjtuss.bjtuselfservice.shared.sync.RefreshReport("20990001",
+            team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin.APP, 10, 20, emptyList())
+        kotlin.test.assertIs<RemoteUploadOutcome.Uploaded>(controller.uploadAfterRefresh(report))
+        assertEquals(1, client.snapshots.size)
+        assertTrue(controller.uploadNow().startsWith("已上传"), "手动同步照常可用")
+    }
+
+    @Test
     fun scopesIntervalsAndUnpair() = runBlocking {
         controller.pair(pairingFixture("https://site.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, consent = true)
         assertNull(controller.setScopes(setOf(RemoteScope.SCHEDULE, RemoteScope.GRADES)))

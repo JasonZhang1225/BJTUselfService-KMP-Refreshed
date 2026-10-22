@@ -93,6 +93,9 @@ fun main(args: Array<String>) {
         },
     )
     if (cacheStoreHandle.state == team.bjtuss.bjtuselfservice.shared.cache.CacheOpenState.OPENED) remoteController.start()
+    // 关闭“后台定时同步”时，像手机端一样在每次 App 内刷新完成后上传。
+    val sessionUpdates = kotlinx.coroutines.flow.MutableStateFlow<AuthenticatedSession?>(null)
+    remoteController.followAppRefreshes(sessionUpdates)
 
     // 开机登录项带 --background 启动：用户开了静默启动就不弹窗口，点程序坞图标再打开（同一个窗口）。
     val startupHost = MacLaunchAgentStartupHost()
@@ -216,6 +219,7 @@ fun main(args: Array<String>) {
                         onAuthenticatedSessionChanged = {
                             authenticatedSession.value = it
                             currentSession.set(it)
+                            sessionUpdates.value = it
                         },
                     )
                     }

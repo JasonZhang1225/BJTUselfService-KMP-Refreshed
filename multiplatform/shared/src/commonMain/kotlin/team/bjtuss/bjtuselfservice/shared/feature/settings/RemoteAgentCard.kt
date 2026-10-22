@@ -104,7 +104,10 @@ internal fun RemoteAgentCard(controller: RemoteAgentController, showStatus: Bool
                 }
             } else {
                 if (showStatus) {
-                    Text(remotePhaseText(status.phase), style = MaterialTheme.typography.bodyMedium)
+                    val phaseText = if (!mobile && !config.backgroundSync && status.phase == RemotePhase.RUNNING) {
+                        "已开启：只在 App 内刷新或点“立即同步”时上传。"
+                    } else remotePhaseText(status.phase)
+                    Text(phaseText, style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "最近上传 ${formatRemoteTime(status.lastUploadAt)} · 最近连接 ${formatRemoteTime(status.lastSeenAt)}",
                         style = MaterialTheme.typography.bodySmall,
@@ -114,18 +117,30 @@ internal fun RemoteAgentCard(controller: RemoteAgentController, showStatus: Bool
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     }
                 }
+                // 同步开关与频率放在一起，范围在后。
                 SwitchRow("开启远程同步", "关闭后不再上传与轮询，本机正常使用不受影响。", config.enabled) { enabled ->
                     controller.setEnabled(enabled)
+                }
+                if (!mobile) {
+                    SwitchRow(
+                        "后台定时同步",
+                        if (config.backgroundSync) "按下面的频率定时刷新上报，并检查手机发来的即时查询。"
+                        else "已关闭：像手机端一样，只在 App 内刷新或点“立即同步”时上传；不接收即时查询。",
+                        config.backgroundSync,
+                        enabled = config.enabled,
+                    ) { controller.setBackgroundSync(it) }
+                    if (config.backgroundSync) {
+                        GroupLabel("同步频率")
+                        IntervalFields(config.uploadIntervalSeconds, config.pollIntervalSeconds) { upload, poll ->
+                            val effective = controller.setIntervals(upload, poll)
+                            message = "实际生效：每 ${effective.uploadIntervalSeconds / 60} 分 ${effective.uploadIntervalSeconds % 60} 秒刷新上报，" +
+                                "每 ${effective.pollIntervalSeconds} 秒检查手机请求。" to false
+                        }
+                    }
                 }
                 GroupLabel("允许上云的数据")
                 ScopeChecklist(config.scopeSet, enabled = !busy) { next ->
                     launchAction { controller.setScopes(next)?.let { it to true } }
-                }
-                GroupLabel("同步频率")
-                if (!mobile) IntervalFields(config.uploadIntervalSeconds, config.pollIntervalSeconds) { upload, poll ->
-                    val effective = controller.setIntervals(upload, poll)
-                    message = "实际生效：每 ${effective.uploadIntervalSeconds / 60} 分 ${effective.uploadIntervalSeconds % 60} 秒刷新上报，" +
-                        "每 ${effective.pollIntervalSeconds} 秒检查手机请求。" to false
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(onClick = { launchAction { controller.uploadNow() to false } }, enabled = !busy && config.enabled,
