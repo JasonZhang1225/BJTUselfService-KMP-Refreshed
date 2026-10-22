@@ -1097,3 +1097,10 @@
 - 部署：现有 owner-private Site 权限保持不变；Sites source `b1d646460b020e16f868d866e5f92240868c2b0f`，saved version `appgprj_6ad9b56e35188191a19f3988ced54e6d~appgver_a8db7715c8788191a2b737e056fd1143`，deployment `appgdep_6ad9ed00cc048191af0f756b95df9318`，终态 succeeded、has_mcp=true；URL https://bjtu-agent-remote-baizhou-2026.ardent-rice-3928.chatgpt.site 。
 - 验证：Site `npm test` 68项通过，构建与归档成功；IAB 使用纯虚构三台设备验证各自状态/快照时间，截图 `.artifacts/beta2-site-device-status.png`。部署使用 Sites 技能指定 source helper，源码与归档一致。
 - 边界：没有操作真实设备配对/撤销或学校数据；公共模板的相同改动尚在本地任务分支，未推主仓库、未打 tag。
+
+## 2026-10-22 iOS ChatGPT 插件页顶栏液态玻璃与安全检查 CI 竞态修复（直接推送 main）
+
+- 改动：`AiAssistantSettingsScreen` 把顶/底栏让位从滚动容器外移到 `AssistantPane` 滚动内容内边距，内容可滑入原生顶栏液态玻璃下，去掉顶部白条与底部多余安全区留白。`AppRefreshCoordinatorTest.waiterCancellationDoesNotCancelSharedWork` 两个等待方改为 `CoroutineStart.UNDISPATCHED` 启动，保证都挂上同一份在途工作后才放行 gate。随同推送此前本地提交的 Beta2 整合与模板版本兼容修复（`1f22599b`）。
+- 原因/决策：main@2cb49216 的 KMP security checks（run 39766309625）只失败这一个测试——慢机上 patient 晚于 gate 放行才加入、另起一次刷新导致 calls=2；属测试竞态，与“禁止异常删库”无关，保留不删库逻辑，不改工作流。
+- 验证：`./gradlew :shared:desktopTest` 1091 测试 0 失败；`--tests '*AppRefreshCoordinatorTest' --rerun` 连跑 5 次通过；iOS 签名模拟器 `xcodebuild … CODE_SIGNING_ALLOWED=YES … build` 成功，`:desktopApp:compileKotlin :androidApp:compileDebugKotlin` 通过；用户已用 Xcode 真机确认 ChatGPT 插件页顶栏/底部正常。
+- 未验证：推送后的远端 CI 结果以 Actions 为准。

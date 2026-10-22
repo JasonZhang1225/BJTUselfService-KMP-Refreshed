@@ -7,6 +7,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -195,8 +196,10 @@ class AppRefreshCoordinatorTest {
         val gate = CompletableDeferred<Unit>()
         val grades = FakeAdapter(RefreshSource.GRADES, gate = gate)
         val coordinator = coordinator(listOf(grades))
-        val impatient = async(Dispatchers.Default) { coordinator.refresh(request(RefreshSource.GRADES)) }
-        val patient = async(Dispatchers.Default) { coordinator.refresh(request(RefreshSource.GRADES)) }
+        // UNDISPATCHED：两个等待方都在这里同步挂上同一份在途工作后才继续，
+        // 避免慢机上 patient 晚于 gate 放行才加入、另起一次刷新。
+        val impatient = async(start = CoroutineStart.UNDISPATCHED) { coordinator.refresh(request(RefreshSource.GRADES)) }
+        val patient = async(start = CoroutineStart.UNDISPATCHED) { coordinator.refresh(request(RefreshSource.GRADES)) }
         waitUntil { grades.calls.get() == 1 }
         impatient.cancel()
         gate.complete(Unit)
