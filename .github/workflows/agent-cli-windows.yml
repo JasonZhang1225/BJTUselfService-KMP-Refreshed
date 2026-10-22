@@ -69,7 +69,7 @@ jobs:
           $status = Invoke-Cli "agent status --json"
           if ($status.Code -ne 2) { throw "expected exit 2 without cache" }
           $json = $status.Out | ConvertFrom-Json
-          if ($json.schemaVersion -ne 1 -or -not $json.error) { throw "unexpected JSON" }
+          if ($json.schemaVersion -ne 2 -or -not $json.error) { throw "unexpected JSON" }
           $bad = Invoke-Cli "agent calendar --from 2026-13-01"
           if ($bad.Code -ne 64) { throw "expected usage exit 64" }
           # 全量刷新：没有 App 在运行、也没有缓存时，在联网前就以退出码 2 结束，并且不留下 IPC 端点。
@@ -95,7 +95,7 @@ jobs:
           $json = & $cmd status --json | Out-String
           Write-Host "bjtu.cmd status exit=$LASTEXITCODE`n$json"
           if ($LASTEXITCODE -ne 2) { throw "expected exit 2 through bjtu.cmd" }
-          if (($json | ConvertFrom-Json).schemaVersion -ne 1) { throw "bad JSON through bjtu.cmd" }
+          if (($json | ConvertFrom-Json).schemaVersion -ne 2) { throw "bad JSON through bjtu.cmd" }
           & $exe agent uninstall | Out-String | Write-Host
           if ((Test-Path $cmd) -or (Test-Path $skill)) { throw "uninstall left files" }
           exit 0
