@@ -1016,3 +1016,42 @@
   - 安全检查 #170（`e6c67fb`，手动触发：该次推送未触发 PR 工作流）Android、Windows、Apple 三项通过；本地 Linux `:windowsApp:createDistributable`（开启配置缓存）镜像内只剩 Windows x64 原生库，JNA 124 / sqlite-jdbc 129 个类与原 jar 一致；CI 断言用 #107 的 DMG 回放会失败（各含 24/28 个平台原生库），证明断言有效。
   - 用户在 Mac 上实测 #111 的 DMG 通过。
 - 未验证：Windows MSI 的启动、本地缓存读写与 DPAPI；Agent CLI smoke（Windows）未在最终提交上运行（只由 PR 事件触发）；需要验证码时的手动弹窗与静默登录失败引导；Android release 包签名覆盖安装。
+
+## 2026-10-22 iOS 作业上传文件选择器修复与上传页统一（PR #48，`claude/jolly-lamport-bsie9k`，提交 `50e72b5`、`d348f6c`，合并提交 `ad2a082`）
+
+- 改动：
+  - iOS 文件网关（`shared/src/iosMain/.../files/IosHomeworkFileGateway.kt`）改为从最上层、且不在关闭动画中的控制器呈现文件选择器、保存面板和快速查看。上传页本身是 UIKit sheet，原先从根控制器 present 会被 UIKit 静默拒绝：选择器不出现，协程挂起；再点一次就因已有活动选择器返回 UNAVAILABLE，界面误报“无法读取所选文件”。sheet 内的保存面板（如日历导出）同样受益。
+  - 是否呈现成功以 present 完成回调为准，2 秒内仍未呈现才复位并报错。
+  - `feature/assignment/AssignmentUi.kt` 新增统一上传 sheet（`AssignmentUploadSheet`，含选择区、分组文件列表、就地反馈、底部主操作），课程平台作业、物理在线、CITEL 共用；iOS 正文补上左右边距与底部安全区。选择失败区分“选择器打不开”与“文件读不出来”；同名文件以后选的为准。
+  - 删除物理在线未接线的 `PhyVlabUploadDialog` 及确认弹窗。
+  - 新增 `AssignmentUploadUiTest`（合并/文案/大小格式单元测试，以及浅/深色离线渲染）。
+- 原因/决策：
+  - 首版（`50e72b5`）在 present 后同步检查 `presentingViewController`，但系统文件选择器是远程界面，此时仍为空，被误判为“被拒”。结果是选择器已弹出却立即报红，回调也被断开，选完文件无反应（打包 #109 真机复现），由 `d348f6c` 修正。
+  - Android/桌面上传由 AlertDialog 改为与其他来源一致的底部 sheet。
+  - 用户要求：后续修改不等 PR 安全检查，改完告知、经批准后直接跑 KMP 打包。
+- 验证：
+  - 本地 Linux `:shared:desktopTest` 995 项中 1 项失败（`DesktopAgentIntegrationTest`，退出码 127，未改动的 main 上同样失败，与本改动无关）；`:shared:compileAndroidMain :androidApp:compileDebugKotlin :desktopApp:compileKotlin` 通过。
+  - 安全检查 #169（`50e72b5`）通过；打包 #109（`50e72b5`）、#112（`d348f6c`）四端成功。
+  - 用户用 #112 的 IPA 真机实测上传通过。
+- 未验证：CITEL 上传与编程题单文件提交；Android/桌面新上传 sheet 实机外观；sheet 内保存面板（日历导出）与快速查看的真机表现。
+
+## 2026-10-22 PR #45、#48 合入后的主干验证（`main` `ad2a082`）
+
+- 改动：无代码改动。PR #45 合并提交为 `a58e7c6`（其日志条目未写合并提交，此处补记），PR #48 为 `ad2a082`。
+- 验证：所有者手动触发安全检查 #179 与打包 #113，均基于 `ad2a082`；结果：#179 三项（Android debug/R8 release 检查、iOS 编译与 macOS/iOS 共享测试、Windows 应用镜像检查）全部通过；#113 Android APK、macOS DMG、Windows MSI、iOS 侧载 IPA 四端打包成功，Release 按设计跳过。
+- 未验证：#113 产物未在真机安装复核（#48 的真机验证用的是合并前的 #112）。
+
+
+## 2026-10-22 AI Agent 与 ChatGPT 私人远程查询合入 main（PR #50，`feat/chatgpt-agent-remote`，合并提交 `a18369d`）
+
+- 改动：本机 Agent CLI 与私人 Site（MCP 插件）共用查询层（`AgentQuery.kt` / `remote-site-template/src/agent-query.js`，契约 `docs/agent/agent-query-contract.md`，数据集 schema 2）；电脑与手机可配对并上传快照到用户自己的私人 Site（模板 0.5.0、11 个 MCP 工具，远程同步默认关闭）；App 运行时命令行 `cache update` 经本机 IPC 交给 App 会话执行；Android/iOS 启用 ChatGPT 插件；插件页重排、开机启动管理与静默启动；Windows 托盘中文与定位修复、MSI ProductCode 改写不再写死文件名。开发期细节见本文件 Agent Remote 相关条目与 `docs/agent/*`。
+- 原因/决策：同步 main（`ad2a082`）时冲突处理：桌面 `Main.kt` 去掉已删除的 Core ML 验证码识别；`AgentCacheUpdate` 登录失败提示改用 #45 不暗示密码错误的措辞。Windows 冒烟脚本 `agent-cli-windows.yml` 仍断言 `schemaVersion 1`（run #49、#60 必然失败），`31f3b64` 改为 2。首轮 `RemoteAgentRunnerTest.loopsRunIndependentlyAndIntervalChangeDoesNotDuplicateLoops` 在 Windows runner 失败一次，重跑通过，判为真实时钟压缩测试的时序抖动。所有者授权在 CI 通过后由代理合并，合并后不在新 main 上再跑 CI。
+- 验证：PR 检查（`31f3b64`）Android、iOS 编译与 macOS/iOS 测试、Windows 应用镜像、Windows CLI 冒烟、Site 模板测试全部通过；本地 Linux 桌面/Windows/Android 编译通过，`:shared:desktopTest` 1079 项仅上述环境性失败 1 项。
+- 未验证：手机 ChatGPT 端到端查询（插件补授权）；电脑+手机多设备同时配对；混合 DPI 多屏托盘；合并后的 iOS/macOS 包未在真机安装。
+
+## 2026-10-22 启动弹窗合并为 1.8.6 版本说明、登录文案与版本号 1.8.6-Beta（PR #52，`chore/release-1.8.6-beta`）
+
+- 改动：启动时的 1.8.5 紧急修复、物理在线已自动关闭、1.8.3、1.8.4 四个弹窗合并为一个“1.8.6 版本说明”（`ReleaseGuideDialog.kt` 的 `Release186GuideDialog`，偏好 `release_186_guide_acknowledged`），新装与升级都只看一次；物理在线一段仅在升级时自动关闭过才出现；确认后旧弹窗标记一并置为已读。启动弹窗最多为：版本说明 →（Android）通知权限说明，更新提示只在有新版本时出现。登录页去掉“验证码将自动识别”等过时文案。版本号同步为 1.8.6-Beta / Build 42（Android、macOS、Windows、iOS 宿主与小组件、`CURRENT_VERSION` 与测试）。同时补记 PR #48、#50 的日志。
+- 原因/决策：用户反馈启动弹窗太多，由代理决定合并方式。验证码调研结论：各端（含命令行与后台刷新）都只用 `UnavailableCaptchaRecognizer`，登录页手动输入、静默登录转引导框、无窗口刷新直接停下且不重放密码；使用中会话过期又需要验证码时无法就地输入，用户决定暂不处理（记入 memory 已知限制）。所有者要求合并后直接推 `debug-1.8.6-Beta` 打包，不等 PR 检查。
+- 验证：本地 `:shared:desktopTest`（SettingsScreenModelTest、AppUpdateCheckerTest、CacheStoreTest、DuoBugFixVisualTest、登录与上传相关）通过，`:androidApp:compileDebugKotlin :desktopApp:compileKotlin :windowsApp:compileKotlinWindows` 通过；1.8.6 说明弹窗浅/深色离线渲染正常，超出高度可滚动。
+- 未验证：iOS 编译仅由 `debug-1.8.6-Beta` 打包验证；新装/升级两种路径的弹窗未在真机走过。

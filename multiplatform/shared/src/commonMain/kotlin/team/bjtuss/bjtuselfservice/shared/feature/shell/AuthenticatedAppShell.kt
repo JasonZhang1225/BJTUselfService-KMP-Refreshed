@@ -1077,17 +1077,10 @@ fun AuthenticatedAppShell(
     // 「前往下载」，不依赖用户停留在设置页（设置页内按钮触发的结果也走同一弹窗）。
     val showGuideOnThisHost = !entryLoggingIn &&
         (forcedRouteId == null || forcedRouteId == AppSection.HOME.name)
-    // 紧急修复说明关系到能否正常使用，排在旧版本功能介绍之前。
-    val showEmergencyFix185Notice = showGuideOnThisHost &&
-        !settingsState.preferences.emergencyFix185NoticeAcknowledged
-    val showPhyVlabAccountNotice = showGuideOnThisHost && !showEmergencyFix185Notice &&
-        settingsState.preferences.phyVlabAccountNoticePending
-    val urgentNoticeVisible = showEmergencyFix185Notice || showPhyVlabAccountNotice
-    val showRelease183Guide = showGuideOnThisHost && !urgentNoticeVisible &&
-        settingsState.preferences.release183GuidePending
-    val showRelease184Guide = showGuideOnThisHost && !urgentNoticeVisible && !showRelease183Guide &&
-        !settingsState.preferences.release184GuideAcknowledged
-    val blockingGuideVisible = urgentNoticeVisible || showRelease183Guide || showRelease184Guide
+    // 启动弹窗最多两个：1.8.6 版本说明（新装与升级都只看一次）→ Android 通知权限说明，
+    // 之后才是发现新版本时的更新提示。旧的 1.8.3/1.8.4/1.8.5/物理在线说明已并入 1.8.6 说明。
+    val showRelease186Guide = showGuideOnThisHost && !settingsState.preferences.release186GuideAcknowledged
+    val blockingGuideVisible = showRelease186Guide
     // 实时活动的通知权限说明（只有 Android 有）：版本说明都确认后再问，排在更新提示前，一次只弹一个。
     val liveActivityPermissionIntro = if (showGuideOnThisHost && !blockingGuideVisible) {
         rememberLiveActivityPermissionIntro()
@@ -1095,16 +1088,11 @@ fun AuthenticatedAppShell(
         null
     }
     when {
-        showEmergencyFix185Notice -> EmergencyFix185NoticeDialog(
-            settingsState.saveFailed,
-            settingsModel::acknowledgeEmergencyFix185Notice,
+        showRelease186Guide -> Release186GuideDialog(
+            phyVlabDisabledOnUpgrade = settingsState.preferences.phyVlabAccountNoticePending,
+            saveFailed = settingsState.saveFailed,
+            onConfirm = settingsModel::acknowledgeRelease186Guide,
         )
-        showPhyVlabAccountNotice -> PhyVlabAccountNoticeDialog(
-            settingsState.saveFailed,
-            settingsModel::acknowledgePhyVlabAccountNotice,
-        )
-        showRelease183Guide -> Release183GuideDialog(settingsState.saveFailed, settingsModel::acknowledgeRelease183Guide)
-        showRelease184Guide -> Release184GuideDialog(settingsState.saveFailed, settingsModel::acknowledgeRelease184Guide)
         liveActivityPermissionIntro != null -> LiveActivityPermissionIntroDialog(liveActivityPermissionIntro)
         else -> AppUpdateResultDialog(settingsState.updateCheck, settingsModel::dismissUpdateCheck, settingsModel::postponeUpdate)
     }
