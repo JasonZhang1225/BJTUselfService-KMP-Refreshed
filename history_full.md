@@ -948,3 +948,24 @@
 - 原因/决策：用户决定。旧数字算式验证码已不再出现，新的字母验证码通常不出现且 torch 模型识别不了；冻结工程不再作参考。仓库在 GitHub 上仍是 `HFDLYS/BJTUselfService` 的 fork，需所有者在 Settings → Leave fork network 解除，本地只保留 `origin`。
 - 验证：见 PR 描述（`:shared:desktopTest`、`:windowsApp:compileKotlinWindows`/`compileTestKotlinWindows`）。
 - 未验证：Windows 真机遇到验证码时的手动输入路径。
+
+## 2026-10-22 课程实时动态：Android 16 Live Updates 与双端课前准点出现（PR #46，`feat/Android-LiveUpdates`，提交 `8108fcd`、`e549885`，合并提交 `aac1816`）
+
+- 改动：
+  - Android 端复用 iOS 灵动岛规则做“课程实时动态”，只用 Android 16 原生 Live Updates（常驻通知写 `android.requestPromotedOngoing` extra，即 `setRequestPromotedOngoing`；权限 `POST_PROMOTED_NOTIFICATIONS`），不用小米焦点通知（需上架小米商店并进白名单）。Android 16 以下不显示 Live 按钮、不发通知。
+  - 规则抽到 shared `LiveActivityPlan.kt`（`planLiveActivity`/`liveActivityNextBoundary`，对应 Swift `desiredState`/`nextBoundary`，`LiveActivityPlanTest` 9 项）：课前 10/20 分钟出现、课间 30 分钟内接力、关闭/划掉不再自动出现、手动开启优先。
+  - 宿主 `androidApp/.../live/CourseLiveUpdates.kt` 读课程小组件快照发通知；首页 Live 胶囊 + 下拉菜单（`LiveActivityButton.android.kt`），首次点“允许通知并开启”才申请通知权限。外观：小图标按类别为课本/烧瓶/试卷/跑步（`ic_live_kind_*.xml`），胶囊短文字“12:58开始”“12:20下课”，第二行“正在上课 · 距下课 N 小时 N 分钟”，第三行“时间 · 地点 · 教师”，ProgressStyle 类别色进度条逐分钟更新，到下课 `setTimeoutAfter` 自动消失。
+  - 定时：课前 N 分钟、开课、下课、零点用 `setExactAndAllowWhileIdle` + `USE_EXACT_ALARM`（安装即授予），每次只约下一个；逐分钟刷新为非唤醒 RTC。
+  - iOS 26+：前台对齐时用 `Activity.request(…, alertConfiguration:, start:)` 预约下一项需要新开实时活动的日程（今天和明天，课前 N 分钟），系统准点启动并以默认提示音提醒，至多一个预约；重叠或紧挨（出现时刻在当前项结束后 30 分钟内，沿接力链）的日程由同一个实时活动接上，不另约；关掉的不约；提前时间、课表、关闭、退出登录变化时取消重约。iOS 18–25 不变。
+  - debug 测试入口：Android `LiveUpdateSmokeActivity`（虚构课程），iOS 启动参数 `-BJTULiveActivityScheduleTest <秒>`。
+- 原因/决策：
+  - 外观取舍：HyperOS 去掉推广通知的颜色/加粗 span；大图标会在灵动岛右侧重复一个，已去掉；进度条跟随图标像滑块，已去掉；系统秒级计时（标题旁跳秒）改为按分钟的文字；通知中心左侧固定为 App 图标，无法改。
+  - `setAndAllowWhileIdle` 实测窗口达 1 小时，不够准，改用精确闹钟（GitHub Release 分发，不受 Play 对 `USE_EXACT_ALARM` 的限制）。
+  - CI 镜像的 android-36 平台缺 `setRequestPromotedOngoing`，改为直接写同名 extra，实测仍推广。
+  - iOS 没有“到点拉起 App”的机制；iOS 26 预约启动不需要推送服务器或开发者账号，SideStore 包可用。AlarmKit 是带铃声的系统闹钟，不用于课前提醒。
+- 验证：
+  - 命令：`:shared:desktopTest`、`:shared:compileKotlinIosSimulatorArm64`、`:desktopApp:compileKotlin`、`:windowsApp:compileKotlinWindows`、`:androidApp:assembleDebug` 通过；iOS 签名模拟器 `xcodebuild … -sdk iphonesimulator CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES DEVELOPMENT_TEAM=34S53DC6T6 … build` BUILD SUCCEEDED；PR CI（Android compile security check、iOS compile and macOS security tests）在 `e549885` 上通过。
+  - 小米平板（HyperOS 4.0，API 37，targetSdk 35）：`PROMOTED_ONGOING` 生效；状态栏胶囊、灵动岛展开态、通知中心正常；“关闭”与划掉记入不再自动出现；用户经 Live 菜单授予通知权限；真实课程在上课时段自动出现；浅色模式外观无变化（用户实测）；进程被杀（非强停）+ 息屏，精确闹钟 10:20:00.3 准点拉起并显示“即将上课”；HyperOS 自启动关闭（MIUIOP 10008=ignore）不影响自家闹钟。
+  - iOS 模拟器（iPhone 17 Pro / iOS 27.1）：真实课表下预约到次日第一节课前 10 分钟；用 debug 参数预约后杀掉 App，系统在 14:10:51 启动实时活动并弹提醒（`liveactivitiesd` 日志 “Starting delayed activity”），随后后台拉起 App。
+- 未验证：iOS 真机提醒声音与灵动岛展开效果、重叠/紧挨日程实际表现、划掉系统启动的一项后不再出现；非 HyperOS 原生 Android 16 样式；长时间不打开 App 后待机分组对闹钟的影响；最近任务未加锁时划掉 App（强停）的表现（按规则推断会清掉闹钟和通知）。
+
