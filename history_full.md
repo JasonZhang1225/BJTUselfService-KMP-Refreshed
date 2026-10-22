@@ -1041,3 +1041,17 @@
 - 验证：所有者手动触发安全检查 #179 与打包 #113，均基于 `ad2a082`；结果：#179 三项（Android debug/R8 release 检查、iOS 编译与 macOS/iOS 共享测试、Windows 应用镜像检查）全部通过；#113 Android APK、macOS DMG、Windows MSI、iOS 侧载 IPA 四端打包成功，Release 按设计跳过。
 - 未验证：#113 产物未在真机安装复核（#48 的真机验证用的是合并前的 #112）。
 
+
+## 2026-10-22 AI Agent 与 ChatGPT 私人远程查询合入 main（PR #50，`feat/chatgpt-agent-remote`，合并提交 `a18369d`）
+
+- 改动：本机 Agent CLI 与私人 Site（MCP 插件）共用查询层（`AgentQuery.kt` / `remote-site-template/src/agent-query.js`，契约 `docs/agent/agent-query-contract.md`，数据集 schema 2）；电脑与手机可配对并上传快照到用户自己的私人 Site（模板 0.5.0、11 个 MCP 工具，远程同步默认关闭）；App 运行时命令行 `cache update` 经本机 IPC 交给 App 会话执行；Android/iOS 启用 ChatGPT 插件；插件页重排、开机启动管理与静默启动；Windows 托盘中文与定位修复、MSI ProductCode 改写不再写死文件名。开发期细节见本文件 Agent Remote 相关条目与 `docs/agent/*`。
+- 原因/决策：同步 main（`ad2a082`）时冲突处理：桌面 `Main.kt` 去掉已删除的 Core ML 验证码识别；`AgentCacheUpdate` 登录失败提示改用 #45 不暗示密码错误的措辞。Windows 冒烟脚本 `agent-cli-windows.yml` 仍断言 `schemaVersion 1`（run #49、#60 必然失败），`31f3b64` 改为 2。首轮 `RemoteAgentRunnerTest.loopsRunIndependentlyAndIntervalChangeDoesNotDuplicateLoops` 在 Windows runner 失败一次，重跑通过，判为真实时钟压缩测试的时序抖动。所有者授权在 CI 通过后由代理合并，合并后不在新 main 上再跑 CI。
+- 验证：PR 检查（`31f3b64`）Android、iOS 编译与 macOS/iOS 测试、Windows 应用镜像、Windows CLI 冒烟、Site 模板测试全部通过；本地 Linux 桌面/Windows/Android 编译通过，`:shared:desktopTest` 1079 项仅上述环境性失败 1 项。
+- 未验证：手机 ChatGPT 端到端查询（插件补授权）；电脑+手机多设备同时配对；混合 DPI 多屏托盘；合并后的 iOS/macOS 包未在真机安装。
+
+## 2026-10-22 启动弹窗合并为 1.8.6 版本说明、登录文案与版本号 1.8.6-Beta（PR #51，`chore/release-1.8.6-beta`）
+
+- 改动：启动时的 1.8.5 紧急修复、物理在线已自动关闭、1.8.3、1.8.4 四个弹窗合并为一个“1.8.6 版本说明”（`ReleaseGuideDialog.kt` 的 `Release186GuideDialog`，偏好 `release_186_guide_acknowledged`），新装与升级都只看一次；物理在线一段仅在升级时自动关闭过才出现；确认后旧弹窗标记一并置为已读。启动弹窗最多为：版本说明 →（Android）通知权限说明，更新提示只在有新版本时出现。登录页去掉“验证码将自动识别”等过时文案。版本号同步为 1.8.6-Beta / Build 42（Android、macOS、Windows、iOS 宿主与小组件、`CURRENT_VERSION` 与测试）。同时补记 PR #48、#50 的日志。
+- 原因/决策：用户反馈启动弹窗太多，由代理决定合并方式。验证码调研结论：各端（含命令行与后台刷新）都只用 `UnavailableCaptchaRecognizer`，登录页手动输入、静默登录转引导框、无窗口刷新直接停下且不重放密码；使用中会话过期又需要验证码时无法就地输入，用户决定暂不处理（记入 memory 已知限制）。所有者要求合并后直接推 `debug-1.8.6-Beta` 打包，不等 PR 检查。
+- 验证：本地 `:shared:desktopTest`（SettingsScreenModelTest、AppUpdateCheckerTest、CacheStoreTest、DuoBugFixVisualTest、登录与上传相关）通过，`:androidApp:compileDebugKotlin :desktopApp:compileKotlin :windowsApp:compileKotlinWindows` 通过；1.8.6 说明弹窗浅/深色离线渲染正常，超出高度可滚动。
+- 未验证：iOS 编译仅由 `debug-1.8.6-Beta` 打包验证；新装/升级两种路径的弹窗未在真机走过。
