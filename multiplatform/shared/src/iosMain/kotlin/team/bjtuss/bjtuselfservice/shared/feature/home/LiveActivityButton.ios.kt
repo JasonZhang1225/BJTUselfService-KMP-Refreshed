@@ -253,3 +253,7 @@ private fun hm(minuteOfDay: Int): String {
     val m = minuteOfDay % 60
     return "${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}"
 }
+
+/** iOS 实时活动有单独的系统开关，不依赖通知权限，不必先问。 */
+@Composable
+internal actual fun rememberLiveActivityPermissionIntro(): LiveActivityPermissionIntro? = null

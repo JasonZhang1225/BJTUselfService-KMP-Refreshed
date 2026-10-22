@@ -7,5 +7,10 @@
             android:name=".SecuritySmokeActivity"
             android:exported="true"
             android:permission="team.bjtuss.bjtuselfservice.kmp.permission.SECURITY_SMOKE" />
+        <!-- 仅 debug：用虚构课程验证实时动态；只显示一条本应用的通知，不读写账号数据。 -->
+        <activity
+            android:name=".LiveUpdateSmokeActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
     </application>
 </manifest>

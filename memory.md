@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-22。
-> 当前分支：`perf/android-release-size`（基于 `main`，各平台验证码移除与 Android 瘦身 PR #45 待合入）。PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`），细节见 `history_full.md`。远端另保留 `claude/宣传图制作`、`feat/chatgpt-agent-remote`（AI Agent，开发中）。
+> 当前分支：`main`。PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次、#46 课程实时动态（Android Live Updates + 双端课前准点出现）均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`、`aac1816`）；#45 验证码模型移除与安装包瘦身由所有者 Mac 实测后合并（2026-10-22）。细节见 `history_full.md`。远端另保留 `claude/宣传图制作`、`feat/chatgpt-agent-remote`（AI Agent，开发中）。
 > KMP 源码版本：`1.8.6-Alpha` / Build 41（尚未发版）；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。iOS 最低系统 18.0。
 > 2026-10-22 仓库清理：冻结原 Android 工程（`app/` 与根 Gradle 工程、`release.yml`/`debug.yml`）与验证码 torch 模型（含 Windows `BJTUCaptcha.pt`、DJL）已移除，存档于标签 `archive/legacy-android-and-captcha-model`（`8189baf`）；Windows 验证码改为手动输入。只保留 `origin` 远端；GitHub 上仍是 `HFDLYS/BJTUselfService` 的 fork，由所有者在 Settings 解除。
 > 认证现状（2026-10-20）：MIS 走统一身份认证 sso.bjtu.edu.cn（SM2 加密密码、默认免验证码）；物理在线用独立账号密码；智慧教学仍卡在学校的旧 CAS 跳转。
@@ -9,13 +9,15 @@
 
 ## 进行中
 
-- 各平台验证码移除与安装包瘦身（`perf/android-release-size`，PR #45，Codex 实现，Claude 接手）：Android 删除 ONNX、Apple 删除 Core ML 与 macOS helper/编译复制链路，Windows 已无模型；各端使用现有手动验证码路径。Android release 开启 R8 与资源缩减，APK 5,893,616 字节（5.62 MiB）。自动登录：仅获取登录挑战最多 3 次，密码 POST 最多 1 次；失败/异常停止，取消向上传递；同批刷新恢复最多 1 次，手动提交防重复。CI 增加 Android release、macOS/Windows app image 构建与模型残留检查。桌面 jlink `--compress=2` 已撤回：打包 #107（未压缩）→ #108（压缩）Actions 归档 DMG 100.56→108.03 MB（+7.4%）、MSI 90.71→97.88 MB（+7.9%），运行时预压缩后 DMG/MSI 容器压缩失效，下载反而变大；同时去掉 CI 的压缩前后双构建（#164 Windows 失败即因 PowerShell 拆分 `-P` 参数）。桌面 jar 原生库裁剪：`multiplatform/gradle/desktop-native-filter.gradle.kts` 用 artifact transform 让 sqlite-jdbc（24 个平台）与 JNA（28 个平台）只保留 macOS arm64 / Windows x64 一份，jar 合计约 16.4 MB→1.1 MB；本地 `:windowsApp:createDistributable`（Linux，开启配置缓存）验证镜像内只剩 Windows x64 原生库、类文件数不变；CI 对两端应用镜像断言；打包 #111（`e6c67fb`）对比 #107：Actions 归档 DMG 100.56→85.26 MB（−15.2%）、MSI 90.71→75.44 MB（−16.8%），IPA/APK 不变；安全检查 #170（手动触发，因该推送未触发 PR 工作流）全绿，Windows 冒烟未覆盖；桌面启动与本地缓存读写待实机。本地未运行 Gradle，撤回后的检查交 PR CI；登录与签名覆盖安装待实机验证。
 - AI Agent（`feat/chatgpt-agent-remote`）：开发中，约七八成；合入后再清理 main 里经紧急修复带进来的半成品 AI 代码。
 - 已合入功能的待真机验证（不阻塞）：
   - 灵动岛/实时活动：收起态最终版截图（等实际上课时）；开课时“即将上课”切“正在上课”；两个实时活动并存时的最小态小圆环；Live 菜单读屏自定义操作。
+  - iOS 26 预约启动（PR #46）：真机上的启动提醒声音与灵动岛展开效果；重叠/紧挨日程的实际表现；划掉系统启动的那一项后不再出现。
+  - Android 实时动态（PR #46）：非 HyperOS 的原生 Android 16 上的样式；长时间不打开 App、系统降低待机分组后闹钟是否仍准点；最近任务未加锁时划掉 App（强停）会清掉闹钟和通知（按规则推断，未实测）。
   - 图书馆：登录流程在 Copilot 修复后改过，需真机重新登录一次；iOS 横屏布局（浮动续借胶囊、顶栏高度）；Android 真机；续借只在早期版本实测过。
   - 作业搜索：iOS 系统搜索按钮展开/取消动画、搜索中进详情再返回；Android 返回键收起搜索；上课时段教室当前节次光晕与空闲/占用标签（浅/深色）。
-  - Windows：移除 torch 模型后，遇到验证码时手动输入路径未在 Windows 真机走过。
+  - Windows：移除 torch 模型后，遇到验证码时手动输入路径未在 Windows 真机走过；PR #45 原生库裁剪后的 MSI 启动与本地缓存（SQLite）读写、DPAPI 凭据读取未实机验证（Windows 冒烟未在最终提交上运行）。
+  - PR #45 登录收紧：需要验证码时的手动输入弹窗、静默自动登录失败后的引导弹窗、Android release（R8）包的签名覆盖安装，均未真机走过。
 
 ## 当前痛点
 
@@ -49,3 +51,4 @@
 2. 华为 HBN-AL10（HarmonyOS 4.2）装含 PR #32/#33 的新包：确认课表小组件尺寸（logcat `CourseWidget` 标签）与教务不可达时不再闪退。
 3. 真机过一遍“进行中”列出的待验证项。
 4. 下次发版时核对版本号清单（见 `AGENTS.md`）、发布说明与测试矩阵；版本与发版由用户决定。
+5. Android 首次打开的通知权限说明（分支 `feat/android-notification-intro`）：Android 16+ 未授权且没问过时，在 `AuthenticatedAppShell` 的启动弹窗队列里弹“允许通知，显示课程实时动态”（版本说明都确认后、更新提示之前，一次只弹一个），点“允许”再弹系统授权框；iOS/桌面返回 null（iOS 实时活动不依赖通知权限）。只经编译验证，未在模拟器/真机走过（之前实测通过的是已删掉的原生说明框版本）。用户决定先保留。**发版前统一处理多余弹窗**：全新安装会连弹 1.8.5 紧急修复、物理在线、1.8.3/1.8.4 旧版本介绍，再加这个说明框和系统框；可选做法是并进 1.8.6 版本说明（确认后直接弹系统授权框）并让新装跳过旧版本介绍。
