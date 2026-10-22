@@ -128,3 +128,43 @@ val SLOT_TIME_RANGES: List<String> = listOf(
     "19:00-20:50",
     "21:00-21:50",
 )
+
+/**
+ * 当前时刻落在哪一大节。区间为左闭右开：09:50 已下课，10:10 才进入第 2 节。
+ * 课间、上课前、最后一节结束后返回 null。
+ */
+fun currentOccupancyPeriod(minuteOfDay: Int): Int? {
+    if (minuteOfDay !in 0 until 24 * 60) return null
+    SLOT_TIME_RANGES.forEachIndexed { index, range ->
+        val start = clockMinute(range.substringBefore('-')) ?: return@forEachIndexed
+        val end = clockMinute(range.substringAfter('-')) ?: return@forEachIndexed
+        if (minuteOfDay in start until end) return index + 1
+    }
+    return null
+}
+
+/** 所选星期、节次上占用为 [OccupancyKind.FREE] 的教室，保持原列表顺序。 */
+fun currentFreeRoomNames(
+    rooms: List<ClassroomOccupancy>,
+    weekday: Int,
+    period: Int,
+): List<String> = rooms
+    .filter { it.kindAt(weekday, period) == OccupancyKind.FREE }
+    .map { it.room }
+
+/** 当前节次的空闲摘要。教室不多时直接点名，多了只报间数，避免顶栏折行。 */
+fun currentFreeSummary(period: Int, freeRooms: List<String>): String = when {
+    freeRooms.isEmpty() -> "当前第${period}节 · 没有空闲教室"
+    freeRooms.size <= 4 -> "当前第${period}节 · 空闲 ${freeRooms.joinToString("、")}"
+    else -> "当前第${period}节 · 空闲 ${freeRooms.size} 间"
+}
+
+private fun clockMinute(hhmm: String): Int? {
+    val parts = hhmm.split(':')
+    if (parts.size != 2) return null
+    val hour = parts[0].toIntOrNull() ?: return null
+    val minute = parts[1].toIntOrNull() ?: return null
+    if (hour !in 0..23 || minute !in 0..59) return null
+    return hour * 60 + minute
+}
+

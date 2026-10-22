@@ -59,6 +59,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.dropShadow
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
@@ -68,10 +73,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.plus
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
 import team.bjtuss.bjtuselfservice.shared.accessibleAlpha
 import team.bjtuss.bjtuselfservice.shared.data.classroomoccupancy.ClassroomOccupancySyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.ClassroomOccupancy
@@ -79,6 +90,9 @@ import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyBui
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyKind
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.SLOT_TIME_RANGES
+import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.currentFreeRoomNames
+import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.currentFreeSummary
+import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.currentOccupancyPeriod
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
@@ -365,6 +379,16 @@ private fun OccupancyDetail(
     }
 
     LaunchedEffect(selected.id) { model.refreshPeople() }
+    val nowLocal = rememberOccupancyNow()
+    val viewingCurrentSchedule = state.selectedSemester == null &&
+        !state.isNonTeachingWeek &&
+        state.selectedWeek == model.currentWeek &&
+        state.selectedWeekday == nowLocal.dayOfWeek.isoDayNumber
+    val currentPeriod = if (viewingCurrentSchedule) {
+        currentOccupancyPeriod(nowLocal.hour * 60 + nowLocal.minute)
+    } else {
+        null
+    }
     // 与其它页一致水平 16.dp；筛选与说明留给列表剩余高度。
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
         Column(
@@ -462,7 +486,29 @@ private fun OccupancyDetail(
                             }
                         }
                     } else {
+                        val freeRooms = if (currentPeriod != null) {
+                            currentFreeRoomNames(query.rooms, state.selectedWeekday, currentPeriod)
+                        } else {
+                            emptyList()
+                        }
                         val listState = rememberLazyListState()
+                        if (viewingCurrentSchedule) {
+                            Text(
+                                if (currentPeriod == null) "当前无进行中的节次" else currentFreeSummary(currentPeriod, freeRooms),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth().semantics {
+                                    contentDescription = if (currentPeriod == null) {
+                                        "当前无进行中的节次"
+                                    } else {
+                                        currentFreeSummary(currentPeriod, freeRooms)
+                                    }
+                                },
+                            )
+                        }
                         LazyColumn(
                             state = listState,
                             modifier = Modifier.weight(1f, fill = true).desktopTouchScroll(listState),
@@ -472,6 +518,7 @@ private fun OccupancyDetail(
                             items(query.rooms, key = ClassroomOccupancy::room) { room ->
                                 ClassroomOccupancyCard(
                                     room = room, weekday = state.selectedWeekday,
+                                    currentPeriod = currentPeriod,
                                     people = matchingRoomPeople(room.room, state.people),
                                     supportsPeople = selected.name in CLASSROOM_BUILDINGS,
                                     peopleLoading = state.peopleLoading,
@@ -962,12 +1009,13 @@ private fun occupancyCellColors(kind: OccupancyKind): Pair<Color, Color> = when 
 
 /** 教室卡片：`SY101 · 90 座` + 所选星期的 7 节占用格（格内含节次号与开始时间）。 */
 @Composable
-private fun ClassroomOccupancyCard(
+internal fun ClassroomOccupancyCard(
     room: ClassroomOccupancy,
     weekday: Int,
     people: team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomCapacity? = null,
     supportsPeople: Boolean = false,
     peopleLoading: Boolean = false,
+    currentPeriod: Int? = null,
     onRefreshPeople: () -> Unit = {},
 ) {
     ElevatedCard(
@@ -996,18 +1044,48 @@ private fun ClassroomOccupancyCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     PeopleTag(onClick = onRefreshPeople, loading = peopleLoading)
                 }
+                currentPeriod?.let { period -> CurrentOccupancyTag(room.kindAt(weekday, period)) }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                (1..7).forEach { period ->
-                    OccupancyCell(
-                        kind = room.kindAt(weekday, period),
-                        period = period,
-                        modifier = Modifier.weight(1f),
-                    )
+            // 光晕直接画在当前格子上并盖住邻格，允许轻轻染到相邻格子。
+            Box {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    (1..7).forEach { period ->
+                        OccupancyCell(
+                            kind = room.kindAt(weekday, period),
+                            period = period,
+                            emphasized = currentPeriod == period,
+                            modifier = Modifier.weight(1f).then(
+                                if (currentPeriod == period) {
+                                    Modifier.zIndex(1f).currentPeriodGlow(room.kindAt(weekday, period))
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+/** 卡片右上角的当前节次状态：空闲 / 占用，配色取当前格子那一套，和发光的格子对得上。未知不标。 */
+@Composable
+private fun CurrentOccupancyTag(kind: OccupancyKind) {
+    if (kind == OccupancyKind.UNKNOWN) return
+    val free = kind == OccupancyKind.FREE
+    val (background, content) = occupancyCellColors(kind)
+    Text(
+        if (free) "空闲" else "占用",
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = content,
+        maxLines = 1,
+        modifier = Modifier
+            .background(background, RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 1.dp)
+            .semantics { contentDescription = if (free) "当前节次空闲" else "当前节次占用" },
+    )
 }
 
 /**
@@ -1018,6 +1096,7 @@ private fun ClassroomOccupancyCard(
 private fun OccupancyCell(
     kind: OccupancyKind,
     period: Int,
+    emphasized: Boolean,
     modifier: Modifier,
 ) {
     val (background, content) = occupancyCellColors(kind)
@@ -1028,7 +1107,12 @@ private fun OccupancyCell(
         shape = RoundedCornerShape(6.dp),
         modifier = modifier
             .height(36.dp)
-            .semantics { contentDescription = "第${period}节 $startTime ${kind.name}" },
+            .semantics {
+                contentDescription = buildString {
+                    append("第${period}节 $startTime ${kind.name}")
+                    if (emphasized) append(" 当前节次")
+                }
+            },
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -1038,19 +1122,76 @@ private fun OccupancyCell(
             Text(
                 "$period",
                 style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                lineHeight = 12.sp,
+                fontWeight = if (emphasized) FontWeight.ExtraBold else FontWeight.SemiBold,
+                fontSize = if (emphasized) 13.sp else 11.sp,
+                lineHeight = 13.sp,
                 maxLines = 1,
             )
             Text(
                 startTime,
                 style = MaterialTheme.typography.labelSmall,
-                fontSize = 9.sp,
+                fontSize = if (emphasized) 9.5.sp else 9.sp,
+                fontWeight = if (emphasized) FontWeight.Bold else FontWeight.Normal,
                 lineHeight = 12.sp,
                 maxLines = 1,
             )
         }
     }
+}
+
+/**
+ * 当前节次的光晕：向四周均匀散开、不偏移、不描边，颜色取格子自身那一套；画在格子上方，会轻微染到邻格。
+ * 浅色主题格子是浅粉/浅绿，同色光在白卡上看不出，改用同色系的深色（格子文字色）半透明发光。
+ * 深色主题保留格子色相、拉高饱和度和亮度，外圈本色柔光，内圈一道偏白的细亮边，红格也能看清边缘。
+ */
+@Composable
+private fun Modifier.currentPeriodGlow(kind: OccupancyKind): Modifier {
+    val (background, content) = occupancyCellColors(kind)
+    val shape = RoundedCornerShape(6.dp)
+    if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) {
+        return dropShadow(shape, Shadow(radius = 10.dp, color = content.copy(alpha = 0.42f), spread = 3.dp))
+    }
+    // 「其他」格是带一点蓝的灰，放大饱和度会变成明显的蓝光，只提亮不加色。
+    val neutral = kind == OccupancyKind.OTHER || kind == OccupancyKind.UNKNOWN
+    val vivid = vividGlowColor(background, neutral)
+    return dropShadow(shape, Shadow(radius = 14.dp, color = vivid.copy(alpha = 0.85f), spread = 2.dp))
+        .dropShadow(shape, Shadow(radius = 4.dp, color = lerp(vivid, Color.White, 0.45f), spread = 1.dp))
+}
+
+/** 保留格子色相，把饱和度和亮度拉高，得到深色背景上“发光”的本色；灰色格子只提亮不加色。 */
+private fun vividGlowColor(base: Color, neutral: Boolean = false): Color {
+    val r = base.red
+    val g = base.green
+    val b = base.blue
+    val max = maxOf(r, g, b)
+    val min = minOf(r, g, b)
+    val delta = max - min
+    val hue = when {
+        delta == 0f -> 0f
+        max == r -> 60f * (((g - b) / delta).mod(6f))
+        max == g -> 60f * ((b - r) / delta + 2f)
+        else -> 60f * ((r - g) / delta + 4f)
+    }
+    val saturation = if (max == 0f) 0f else delta / max
+    return if (neutral || saturation < 0.12f) {
+        Color.hsv(hue, minOf(saturation, 0.08f), 0.85f)
+    } else {
+        Color.hsv(hue, 0.78f, 0.95f)
+    }
+}
+
+@Composable
+private fun rememberOccupancyNow(): LocalDateTime {
+    var now by remember {
+        mutableStateOf(Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()))
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000)
+            now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+        }
+    }
+    return now
 }
 
 /** 去掉年份，只留月日和时间，避免「人数估计由第三方提供」折成两行。 */
