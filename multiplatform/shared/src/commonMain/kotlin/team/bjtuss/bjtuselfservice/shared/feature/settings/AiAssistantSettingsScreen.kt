@@ -55,7 +55,8 @@ internal fun AiAssistantSettingsScreen(model: SettingsScreenModel, platform: Pla
         remote?.let { RemoteAssistantStatus(it) }
         }
     } }
-    BoxWithConstraints(modifier.fillMaxSize().padding(top = LocalTopBarClearance.current, bottom = LocalBottomBarClearance.current)) {
+    // 顶/底栏让位放进滚动内容里，内容才能滑到原生顶栏液态玻璃与底部安全区下面。
+    BoxWithConstraints(modifier.fillMaxSize()) {
         if (maxWidth >= 760.dp) {
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 AssistantPane(Modifier.weight(0.58f).fillMaxHeight()) { settings() }
@@ -75,7 +76,8 @@ internal fun AiAssistantSettingsScreen(model: SettingsScreenModel, platform: Pla
 private fun AssistantPane(modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
     val scroll = rememberScrollState()
     TopScrollColumn(state = scroll, modifier = modifier.desktopTouchScroll(scroll),
-        contentModifier = Modifier.padding(horizontal = 12.dp, vertical = 16.dp),
+        contentModifier = Modifier.padding(horizontal = 12.dp)
+            .padding(top = 16.dp + LocalTopBarClearance.current, bottom = 16.dp + LocalBottomBarClearance.current),
         verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
 }
 

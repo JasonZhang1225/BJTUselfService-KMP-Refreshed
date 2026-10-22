@@ -10,6 +10,8 @@
 
 ## 进行中
 
+- iOS「ChatGPT 插件」页顶栏液态玻璃与底部安全区（2026-10-22，本地提交）：`AiAssistantSettingsScreen` 原把顶/底栏让位加在滚动容器外，内容滑不到原生顶栏玻璃下（顶部白条）、底部留空白；改为放进 `AssistantPane` 的滚动内容内边距。iOS 签名模拟器构建（`.artifacts/ai-glass-ios.log`）、`:desktopApp:compileKotlin :androidApp:compileDebugKotlin` 通过；用户关闭了模拟器，未在模拟器/真机实看，待用户 Xcode 真机确认。
+
 - Beta2 配对版本误判及安装文案（2026-10-22）：用户 Build43 真机截图把已部署 1.8.6-Beta2 判为低于0.4.0；已用原打包 JAR 实际复现纯数字解析器拒绝 Beta 后缀。App 改为解析 SemVer 数字核心、保留旧多设备门槛；安装页/复制提示词/升级提示引用 App 当前版本，清除可见0.5.0硬编码。公共模板 health 为旧 App 返回数字 templateVersion=1.8.6，完整发布 releaseVersion=1.8.6-Beta2 保留于界面/MCP；兼容源码 `0df877a6ab3b7d3cb7f557b958a50515ab5224a7` 已在先前授权下同步私人 Site 源码仓库并归档，尚未部署；用户随后要求先全部本地提交，因此停止后续部署和重新打包。当前线上仍是上一部署 `b1d64646`。Site69项测试通过，原 Build43 JAR 复现后缀解析失败且数字兼容版本可通过（`.artifacts/beta2-installed-parser-check.log`）；`./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64` 成功，1091项测试0失败；日志 `.artifacts/beta2-version-compat-gradle.log`。现有下载包尚不含 App 解析/文案修复；服务端兼容层设计面向已安装 Build43，需后续部署才生效；这次没有重新生成安装包。
 
 
