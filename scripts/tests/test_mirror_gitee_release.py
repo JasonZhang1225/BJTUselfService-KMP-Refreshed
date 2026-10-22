@@ -44,7 +44,7 @@ class MirrorTest(unittest.TestCase):
                 with patch.object(m, 'request', return_value=body), self.assertRaises(m.MirrorError):
                     m.anonymous_verify('https://gitee.com/download', path)
 
-    def run_mirror(self, existing=False, fail_download=False, oversized=False, draft=False, tag="v9.0.0-KMP", promote=False, ready=True):
+    def run_mirror(self, existing=False, fail_download=False, oversized=False, draft=False, tag="v9.0.0-KMP", promote=False, ready=True, already_promoted=False):
         assets = [dict(a, browser_download_url='https://github.com/' + a['name'], url=f'https://api.github.com/repos/{m.GITHUB_REPO}/releases/assets/{index}') for index, a in enumerate(self.assets())]
         if oversized:
             assets[0]['size'] = m.MAX_FILE + 1
@@ -53,7 +53,7 @@ class MirrorTest(unittest.TestCase):
         class Api:
             def pages(self, path):
                 if path == '/releases':
-                    return [dict(id=1, tag_name=tag, created_at='2026-10-22', body=m.READY if ready else '')] if existing else []
+                    return [dict(id=1, tag_name=m.TEST_TARGET_TAG if already_promoted else tag, created_at='2026-10-22', body=(m.READY if ready else '') + (m.TEST_MARKER + m.TEST_SOURCE_TAG if already_promoted else ''))] if existing else []
                 return assets if existing else []
             def call(self, path, method='GET', fields=None, file=None):
                 calls.append((method, path, fields))
@@ -124,6 +124,12 @@ class MirrorTest(unittest.TestCase):
         self.assertTrue(all(method == 'PATCH' for method, _, _ in calls))
         self.assertEqual(m.TEST_TARGET_TAG, calls[-1][2]['tag_name'])
         self.assertIn(m.TEST_MARKER, calls[-1][2]['body'])
+
+    def test_promotion_retry_after_patch_succeeded_resumes_hash_verification(self):
+        calls, _, error = self.run_mirror(tag=m.TEST_SOURCE_TAG, draft=True, existing=True, promote=True, ready=False, already_promoted=True)
+        self.assertIsNone(error)
+        self.assertEqual(m.TEST_TARGET_TAG, calls[-1][2]['tag_name'])
+        self.assertTrue(calls[-1][2]['body'].endswith(m.READY))
 
     def test_arbitrary_releases_cannot_use_test_promotion(self):
         calls, pushed, error = self.run_mirror(existing=True, promote=True)

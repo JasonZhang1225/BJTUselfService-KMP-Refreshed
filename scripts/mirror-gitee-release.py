@@ -147,10 +147,17 @@ def main(promote_test=False):
     releases = api.pages('/releases')
     existing = next((r for r in releases if r['tag_name'] == tag), None)
     if promote_test:
-        if not existing or READY not in existing.get('body', ''):
-            raise MirrorError('The original Gitee test mirror must be complete before retagging')
-        if any(r['tag_name'] == target_tag and r['id'] != existing['id'] for r in releases):
-            raise MirrorError('Target Gitee test tag belongs to another release; nothing overwritten')
+        target = next((r for r in releases if r['tag_name'] == target_tag), None)
+        if existing:
+            if READY not in existing.get('body', ''):
+                raise MirrorError('The original Gitee test mirror must be complete before retagging')
+            if target and target['id'] != existing['id']:
+                raise MirrorError('Target Gitee test tag belongs to another release; nothing overwritten')
+        elif target and TEST_MARKER in target.get('body', '') and TEST_SOURCE_TAG in target.get('body', ''):
+            # A previous PATCH can succeed before a network interruption. Resume its verification.
+            existing = target
+        else:
+            raise MirrorError('The original complete Gitee test mirror was not found')
     all_files = {r['id']: api.pages(f"/releases/{r['id']}/attach_files") for r in releases}
     files = all_files.get(existing['id'], []) if existing else []
     missing = [a for a in assets if not any(f['name'] == a['name'] for f in files)]
