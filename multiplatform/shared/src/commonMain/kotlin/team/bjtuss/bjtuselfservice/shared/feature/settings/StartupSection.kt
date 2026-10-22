@@ -57,7 +57,7 @@ internal fun StartupSection(host: AppStartupHost, remote: RemoteAgentController?
         autostart = withContext(Dispatchers.Default) { host.isAutostartEnabled() }
         loaded = true
     }
-    SettingsSection("启动与后台运行", "远程查询需要 App 在电脑上保持运行。") {
+    SettingsSection("启动与后台运行", "开机启动与关闭窗口后的行为。远程查询需要 App 在电脑上保持运行。") {
         SwitchRow("开机启动", if (host.autostartSupported) "登录电脑后自动启动（默认关闭）。也可以在${host.systemManageHint}里随时关闭。"
             else host.unsupportedReason, autostart,
             enabled = !busy && loaded && host.autostartSupported) { enabled ->
@@ -78,7 +78,7 @@ internal fun StartupSection(host: AppStartupHost, remote: RemoteAgentController?
             val config by remote.config.collectAsState()
             if (remoteHost.usesDockForBackground) {
                 Text("关闭窗口后继续在后台运行；点击 Dock 图标重新打开，选择“退出”才会停止远程服务。", style = MaterialTheme.typography.bodySmall)
-            } else SwitchRow("最小化到托盘", if (remoteHost.traySupported) "最小化或关闭窗口时留在托盘中继续运行；从托盘菜单选择“退出”才会结束 App。"
+            } else SwitchRow("关闭窗口时收进托盘", if (remoteHost.traySupported) "点窗口的关闭按钮时留在托盘中继续运行，最小化按钮照常最小化；从托盘菜单选择“退出”才会结束 App。"
                 else "当前系统不支持托盘，关闭窗口会退出应用。", config.minimizeToTray,
                 enabled = remoteHost.traySupported, onChange = remote::setMinimizeToTray)
         }

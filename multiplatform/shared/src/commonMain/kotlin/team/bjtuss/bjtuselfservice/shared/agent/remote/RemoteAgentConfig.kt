@@ -31,7 +31,12 @@ data class RemoteAgentConfig(
     /** 用户确认“所选数据会上传到自己的 Site，可被 Site 与 ChatGPT 读取”的时间。 */
     val consentAtEpochSeconds: Long? = null,
     val scopesRevision: Long = 1,
-    /** Windows 窗口最小化或关闭后保留托盘；不改变远程同步授权。 */
+    /**
+     * 电脑端后台同步：按 [uploadIntervalSeconds] 定时刷新上报、按 [pollIntervalSeconds] 检查手机请求。
+     * 关闭后像手机端一样，只在 App 内刷新完成或手动“立即同步”时上传，也不领取即时查询。
+     */
+    val backgroundSync: Boolean = true,
+    /** Windows 点窗口关闭按钮后收进托盘；不改变远程同步授权。 */
     val minimizeToTray: Boolean = true,
 ) {
     val paired: Boolean get() = siteUrl != null && deviceId != null && accountBindingId != null && accountScope != null

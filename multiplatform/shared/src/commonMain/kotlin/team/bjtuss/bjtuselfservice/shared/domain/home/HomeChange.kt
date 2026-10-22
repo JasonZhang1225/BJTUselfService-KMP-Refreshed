@@ -141,13 +141,16 @@ fun matchExamChange(
 }
 
 /**
- * 对学生有利的变更：作业由未提交变为已提交，或截止时间延后。界面把这一行标成绿色。
+ * 对学生有利的变更：作业由未提交变为已提交（物理在线、CITEL 为未完成变为已完成），或截止时间延后。界面把这一行标成绿色。
  * 只看单个字段，新增/删除记录由调用方排除。
  */
 fun HomeChangeField.isFavorableChange(): Boolean {
     if (before == after) return false
     return when {
-        label == "状态" -> before.contains("未提交") && after.contains("已提交") && !after.contains("未提交")
+        label == "状态" || label == "完成情况" ->
+            (before.contains("未提交") || before.contains("未完成")) &&
+                (after.contains("已提交") || after.contains("已完成")) &&
+                !after.contains("未提交") && !after.contains("未完成")
         label.contains("截止") -> {
             val old = deadlineSortKey(before) ?: return false
             val new = deadlineSortKey(after) ?: return false

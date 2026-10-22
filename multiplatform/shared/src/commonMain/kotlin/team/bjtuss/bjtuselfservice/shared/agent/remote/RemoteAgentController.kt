@@ -5,9 +5,14 @@ import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.*
@@ -143,8 +148,8 @@ class RemoteAgentController(
     val runner = RemoteAgentRunner(configState, ::client, executor, store, clock, random, secondMillis)
     val status get() = runner.status
 
-    /** 开启了远程同步：关闭主窗口时应留在后台继续运行（明确退出才停止）。 */
-    val keepRunningInBackground: Boolean get() = configState.value.runnable && !mobile
+    /** 开启了远程同步与后台同步：关闭主窗口时应留在后台继续运行（明确退出才停止）。 */
+    val keepRunningInBackground: Boolean get() = configState.value.let { it.runnable && it.backgroundSync } && !mobile
 
     /** 手机/平板：不常驻、不轮询任务，只在 App 每次刷新完成后上传一次快照。 */
     val mobile: Boolean get() = host?.deviceKind == RemoteDeviceKind.MOBILE
@@ -152,6 +157,22 @@ class RemoteAgentController(
     /** 电脑端启动定时上传与任务轮询；手机端什么也不做（改由 [uploadAfterRefresh] 驱动）。 */
     fun start() {
         if (!mobile) runner.start(scope)
+    }
+
+    /**
+     * 电脑端关闭后台同步时，跟随当前会话的刷新：每次 App 内刷新完成（来源 APP）就上传一次，与手机端一致。
+     * 后台同步开着时定时器已负责上报，这里不重复上传。
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun followAppRefreshes(sessions: Flow<AuthenticatedSession?>) {
+        if (mobile) return
+        scope.launch {
+            sessions.flatMapLatest { it?.refreshCoordinator?.completed ?: emptyFlow() }.collect { report ->
+                if (report.origin == RefreshOrigin.APP && !configState.value.backgroundSync) {
+                    runCatching { uploadAfterRefresh(report) }
+                }
+            }
+        }
     }
 
     /** App 完成一次刷新后调用：用这次刷新的逐源结果生成并上传快照（未开启或未配对时直接跳过）。 */
@@ -242,6 +263,10 @@ class RemoteAgentController(
     fun setEnabled(enabled: Boolean) {
         update { it.copy(enabled = enabled && it.consentAtEpochSeconds != null) }
         if (enabled) runner.clearStopped()
+    }
+
+    fun setBackgroundSync(enabled: Boolean) {
+        update { it.copy(backgroundSync = enabled) }
     }
 
     fun setMinimizeToTray(enabled: Boolean) {

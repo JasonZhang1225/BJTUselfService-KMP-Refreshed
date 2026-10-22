@@ -91,6 +91,9 @@ fun main(args: Array<String>) {
         host = WindowsRemoteHost(),
     )
     remoteController.start()
+    // 关闭“后台定时同步”时，像手机端一样在每次 App 内刷新完成后上传。
+    val sessionUpdates = kotlinx.coroutines.flow.MutableStateFlow<AuthenticatedSession?>(null)
+    remoteController.followAppRefreshes(sessionUpdates)
     // 开机启动时按“静默启动”决定是否只留在托盘；没有托盘时总是显示窗口，不留无窗口进程。
     val startupHost = WindowsStartupHost()
     val traySupported = remoteController.host?.traySupported == true
@@ -101,12 +104,6 @@ fun main(args: Array<String>) {
             val state = rememberWindowState(width = 1080.dp, height = 720.dp)
             var windowVisible by remember { mutableStateOf(!startHidden) }
             val remoteConfig by remoteController.config.collectAsState()
-            LaunchedEffect(state.isMinimized, remoteConfig.minimizeToTray) {
-                if (state.isMinimized && remoteConfig.minimizeToTray && traySupported) {
-                    windowVisible = false
-                    state.isMinimized = false
-                }
-            }
             LaunchedEffect(Unit) {
                 showRequests.collect { if (it > 0) windowVisible = true }
             }
@@ -131,6 +128,7 @@ fun main(args: Array<String>) {
             val authenticatedSession = remember { mutableStateOf<AuthenticatedSession?>(null) }
 
             Window(
+                // 最小化按钮照常最小化到任务栏；只有点关闭按钮才按偏好收进托盘。
                 // 托盘偏好与上云授权独立；没有系统托盘时绝不隐藏成无法恢复的进程。
                 onCloseRequest = {
                     if (remoteConfig.minimizeToTray && traySupported) windowVisible = false else exitApplication()
@@ -193,6 +191,7 @@ fun main(args: Array<String>) {
                     onAuthenticatedSessionChanged = {
                             authenticatedSession.value = it
                             currentSession.set(it)
+                            sessionUpdates.value = it
                         },
                 )
                 }

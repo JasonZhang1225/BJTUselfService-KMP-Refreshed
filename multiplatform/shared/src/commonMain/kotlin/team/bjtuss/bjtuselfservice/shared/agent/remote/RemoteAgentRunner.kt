@@ -163,7 +163,7 @@ class RemoteAgentRunner(
         while (true) {
             refreshPhase()
             val config = configFlow.value
-            if (config.runnable && stopped == null) return config
+            if (config.runnable && config.backgroundSync && stopped == null) return config
             // 设置变化即重新判断；登录状态变化没有事件，最多 5 秒复查一次。
             withTimeoutOrNull(5 * secondMillis) { configFlow.first { it != config } }
         }

@@ -245,6 +245,8 @@ fun SettingsWorkspace(
                 BottomNavigationSettings(state.preferences, model)
             }
         }
+        // 电脑端的开机启动、静默启动与托盘：属于 App 本身的设置，不放在插件页里。
+        LocalAppStartupHost.current?.let { StartupSection(it, LocalRemoteAgentController.current) }
 
         // 动态取色设置仅用于支持此能力的平台。
         if (platformSupportsDynamicColor()) {

@@ -97,7 +97,9 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
+import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
+import team.bjtuss.bjtuselfservice.shared.domain.homework.parseSchoolLocalDateTime
 import kotlinx.coroutines.flow.collect
 import kotlin.time.Instant
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
@@ -462,9 +464,9 @@ private fun HomeAgendaSection(
     // 校历确认之前不显示任何周数（含缓存值），统一显示「日程加载中」，
     // 拿到确切结果后一次性显示最终周；这样卡片不会随中间值反复弹跳。
     val weekValueIsPending = !isWeekResolved
-    val dueSoonHomework = remember(homework, exams, phyVlabEvents, today, now, timeZone) {
-        buildHomeAgenda(homework, exams, today, now, timeZone, phyVlabEvents)
-            .dueSoonHomework
+    val dueSoonItems = remember(homework, exams, phyVlabEvents, today, now, timeZone) {
+        val agenda = buildHomeAgenda(homework, exams, today, now, timeZone, phyVlabEvents)
+        dueSoonSummaryItems(agenda.dueSoonHomework, agenda.dueSoonEvents, timeZone)
     }
     val weekSlots = remember(currentWeek, academicWeeks, today) {
         homeAgendaWeekSlots(currentWeek, today, academicWeeks)
@@ -532,7 +534,7 @@ private fun HomeAgendaSection(
         }
     }
 
-    if (dueSoonHomework.isNotEmpty()) {
+    if (dueSoonItems.isNotEmpty()) {
         HomeCard(modifier = Modifier.fillMaxWidth()) {
             if (expanded) {
                 Row(
@@ -540,7 +542,7 @@ private fun HomeAgendaSection(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    DueSoonHomeworkSummary(dueSoonHomework, Modifier.weight(1f))
+                    DueSoonHomeworkSummary(dueSoonItems, Modifier.weight(1f))
                     OutlinedButton(onClick = onOpenHomework) { Text("查看作业") }
                 }
             } else {
@@ -548,7 +550,7 @@ private fun HomeAgendaSection(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    DueSoonHomeworkSummary(dueSoonHomework)
+                    DueSoonHomeworkSummary(dueSoonItems)
                     OutlinedButton(onClick = onOpenHomework, modifier = Modifier.fillMaxWidth()) {
                         Text("查看作业")
                     }
@@ -1195,28 +1197,48 @@ private fun HomeWeekNavigationButton(
     }
 }
 
+/** 首页临近截止提醒的一行：课程平台作业与物理在线 / CITEL 截止事项按截止时间合并排序。 */
+private data class DueSoonSummaryItem(val sortKey: Long, val text: String)
+
+private fun dueSoonSummaryItems(
+    homework: List<Homework>,
+    events: List<PhyVlabEvent>,
+    timeZone: TimeZone,
+): List<DueSoonSummaryItem> {
+    val homeworkItems = homework.map { item ->
+        DueSoonSummaryItem(
+            sortKey = parseSchoolLocalDateTime(item.endTime)?.toInstant(timeZone)?.epochSeconds ?: Long.MAX_VALUE,
+            text = "${displayScheduleCourseName(item.courseName)} · ${item.title} · ${formatSchoolDeadline(item.endTime)}",
+        )
+    }
+    val eventItems = events.map { event ->
+        DueSoonSummaryItem(event.dayTimestamp, "${event.title} · ${formatPhyVlabAgendaDate(event)}")
+    }
+    return (homeworkItems + eventItems).sortedBy(DueSoonSummaryItem::sortKey)
+}
+
 @Composable
 private fun DueSoonHomeworkSummary(
-    homework: List<Homework>,
+    items: List<DueSoonSummaryItem>,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-            "48 小时内有 ${homework.size} 项作业截止",
+            "48 小时内有 ${items.size} 项作业截止",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.error,
             fontWeight = FontWeight.SemiBold,
         )
-        homework.take(3).forEach { item ->
+        items.take(3).forEach { item ->
             Text(
-                "${displayScheduleCourseName(item.courseName)} · ${item.title} · ${formatSchoolDeadline(item.endTime)}",
+                item.text,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (homework.size > 3) {
+        if (items.size > 3) {
             Text(
-                "另有 ${homework.size - 3} 项",
+                "另有 ${items.size - 3} 项",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

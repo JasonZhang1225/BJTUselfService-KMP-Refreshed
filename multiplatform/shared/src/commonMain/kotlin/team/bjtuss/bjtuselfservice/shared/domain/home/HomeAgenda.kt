@@ -39,6 +39,8 @@ data class HomeAgendaDay(
 data class HomeAgenda(
     val days: List<HomeAgendaDay>,
     val dueSoonHomework: List<Homework>,
+    /** 48 小时内截止且未完成的物理在线 / CITEL 事项，与 [dueSoonHomework] 一起组成首页临近截止提醒。 */
+    val dueSoonEvents: List<PhyVlabEvent> = emptyList(),
 ) {
     init {
         require(days.size == 7)
@@ -77,7 +79,18 @@ fun buildHomeAgenda(
     val dueSoon = homework.filter { isHomeworkDueSoon(it, now, timeZone) }
         .sortedWith(compareBy<Homework> { parseSchoolLocalDateTime(it.endTime) == null }
             .thenBy { parseSchoolLocalDateTime(it.endTime) })
-    return HomeAgenda(days, dueSoon)
+    val nowEpochSeconds = now.toInstant(timeZone).epochSeconds
+    val dueSoonEvents = phyVlabEvents
+        .filter { isPhyVlabDeadlineDueSoon(it, nowEpochSeconds) }
+        .sortedWith(compareBy<PhyVlabEvent> { it.dayTimestamp }.thenBy { it.title })
+    return HomeAgenda(days, dueSoon, dueSoonEvents)
+}
+
+/** 与 [isHomeworkDueSoon] 同一窗口：未完成的截止事件，距今 0–48 小时（按整小时计）。 */
+fun isPhyVlabDeadlineDueSoon(event: PhyVlabEvent, nowEpochSeconds: Long): Boolean {
+    if (event.kind != PhyVlabEventKind.DEADLINE || event.submitted) return false
+    val seconds = event.dayTimestamp - nowEpochSeconds
+    return seconds >= 0 && seconds / 3600 <= 48
 }
 
 /**

@@ -10,6 +10,8 @@
 
 ## 进行中
 
+- 小修改合集（2026-10-22，分支 `claude/laughing-ritchie-wmcipz`，PR 待所有者合并）：①变动弹窗里物理在线/CITEL“未完成→已完成”按利好标绿；首页“48 小时内截止”提醒并入未完成的物理在线与 CITEL 截止项；②应用页“设置”固定最后（插件入口插到设置前）；③远程同步卡片改为“开启远程同步 → 后台定时同步（电脑端新开关）→ 同步频率 → 上云范围”，关掉后台定时同步时不轮询、不定时上报，只在 App 内刷新或“立即同步”时上传；④“启动与后台运行”移到设置页；Windows 最小化按钮恢复正常最小化，只有点关闭才收进托盘。验证：`./gradlew :shared:desktopTest`（1093 项，仅已知的 `DesktopAgentIntegrationTest` 容器缺命令失败）、`:desktopApp:compileKotlin :windowsApp:compileKotlinWindows :androidApp:assembleDebug` 成功；iOS 编译与真机/Windows 实机交互仅交给 PR CI / 后续实测。
+
 - Beta2 配对版本误判及安装文案（2026-10-22）：用户 Build43 真机截图把已部署 1.8.6-Beta2 判为低于0.4.0；已用原打包 JAR 实际复现纯数字解析器拒绝 Beta 后缀。App 改为解析 SemVer 数字核心、保留旧多设备门槛；安装页/复制提示词/升级提示引用 App 当前版本，清除可见0.5.0硬编码。公共模板 health 为旧 App 返回数字 templateVersion=1.8.6，完整发布 releaseVersion=1.8.6-Beta2 保留于界面/MCP；兼容源码 `0df877a6ab3b7d3cb7f557b958a50515ab5224a7` 已在先前授权下同步私人 Site 源码仓库并归档，尚未部署；用户随后要求先全部本地提交，因此停止后续部署和重新打包。当前线上仍是上一部署 `b1d64646`。Site69项测试通过，原 Build43 JAR 复现后缀解析失败且数字兼容版本可通过（`.artifacts/beta2-installed-parser-check.log`）；`./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64` 成功，1091项测试0失败；日志 `.artifacts/beta2-version-compat-gradle.log`。现有下载包尚不含 App 解析/文案修复；服务端兼容层设计面向已安装 Build43，需后续部署才生效；这次没有重新生成安装包。
 
 

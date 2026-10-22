@@ -142,6 +142,29 @@ class HomeAgendaTest {
     }
 
     @Test
+    fun dueSoonEventsIncludePendingPhysicsAndCitelDeadlinesWithin48Hours() {
+        val now = LocalDateTime(2026, 10, 22, 10, 0)
+        val nowSeconds = now.toInstant(TimeZone.UTC).epochSeconds
+        val physics = PhyVlabEvent("activity-1-2-due", "大学物理 · Chap-17", "", nowSeconds + 30 * 3600)
+        val citel = PhyVlabEvent("citel-due-3", "CITEL · Lab 3 · 截止", "", nowSeconds + 2 * 3600)
+        val done = PhyVlabEvent("citel-due-4", "CITEL · 已完成", "", nowSeconds + 3600, submitted = true)
+        val far = PhyVlabEvent("citel-due-5", "CITEL · 很远", "", nowSeconds + 72 * 3600)
+        val past = PhyVlabEvent("citel-due-6", "CITEL · 过期", "", nowSeconds - 3600)
+        val start = PhyVlabEvent("citel-start-7", "CITEL · 开始", "", nowSeconds + 3600, kind = PhyVlabEventKind.START)
+
+        val agenda = buildHomeAgenda(
+            homework = emptyList(),
+            exams = emptyList(),
+            today = now.date,
+            now = now,
+            timeZone = TimeZone.UTC,
+            phyVlabEvents = listOf(physics, citel, done, far, past, start),
+        )
+
+        assertEquals(listOf(citel, physics), agenda.dueSoonEvents)
+    }
+
+    @Test
     fun phyVlabMidnightDeadlineMovesToThePreviousDateButStartDoesNot() {
         val deadline = PhyVlabEvent(
             id = "3115",
