@@ -104,6 +104,7 @@ import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.PlatformInfo
 import team.bjtuss.bjtuselfservice.shared.currentPlatform
 import team.bjtuss.bjtuselfservice.shared.data.home.HomeStatusFailure
+import team.bjtuss.bjtuselfservice.shared.data.library.LibraryReminder
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxUnreadSummary
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeKind
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
@@ -138,6 +139,9 @@ fun HomeWorkspace(
     platform: PlatformInfo,
     expanded: Boolean,
     mailboxUnread: MailboxUnreadSummary? = null,
+    /** 图书馆当前借阅提醒；null 表示尚未同步或未登录，不显示卡片。 */
+    libraryReminder: LibraryReminder? = null,
+    onOpenLibrary: () -> Unit = {},
     homework: List<Homework>,
     exams: List<ExamSchedule>,
     phyVlabEvents: List<PhyVlabEvent> = emptyList(),
@@ -268,6 +272,9 @@ fun HomeWorkspace(
                 item(key = "home-status-cards") {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         MailCard(status, mailboxUnread, onOpenMailbox, Modifier.weight(1f))
+                        libraryReminder?.let { reminder ->
+                            LibraryCard(reminder, onOpenLibrary, Modifier.weight(1f))
+                        }
                     }
                 }
             } else {
@@ -295,6 +302,11 @@ fun HomeWorkspace(
                 }
                 item(key = "home-mail-card") {
                     MailCard(status, mailboxUnread, onOpenMailbox, Modifier.fillMaxWidth())
+                }
+                libraryReminder?.let { reminder ->
+                    item(key = "home-library-card") {
+                        LibraryCard(reminder, onOpenLibrary, Modifier.fillMaxWidth())
+                    }
                 }
             }
             item(key = "home-change-feed") {
@@ -370,6 +382,28 @@ private fun MailCard(
         value = value,
         detail = if (hasUnread) "有新邮件，记得查看" else "当前 BJTU 邮箱状态",
         action = "查看邮箱",
+        onClick = onClick,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun LibraryCard(
+    reminder: LibraryReminder,
+    onClick: () -> Unit,
+    modifier: Modifier,
+) {
+    val detail = when {
+        reminder.overdue.isNotEmpty() -> "逾期 ${reminder.overdue.size} 本，建议尽快归还"
+        reminder.dueSoon.isNotEmpty() -> "${reminder.dueSoon.size} 本 7 天内到期"
+        reminder.total > 0 -> "共 ${reminder.total} 本在借"
+        else -> "当前没有在借图书"
+    }
+    StatusCard(
+        title = "图书馆",
+        value = if (reminder.total > 0) "${reminder.total} 本在借" else "暂无借阅",
+        detail = detail,
+        action = "查看借阅",
         onClick = onClick,
         modifier = modifier,
     )
