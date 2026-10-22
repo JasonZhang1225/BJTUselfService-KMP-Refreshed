@@ -19,27 +19,27 @@ class RemotePairingAccessTest {
         override suspend fun clear() { access = null; site = null }
     }
 
-    @Test fun savedAccessIsReusedOnlyForItsExactSiteAndPairFailureIsNotReportedAsRevocation() = runBlocking {
+    @Test fun longCodeReplacesAccessForItsSiteAndPairFailureIsNotReportedAsRevocation() = runBlocking {
         val directory = Files.createTempDirectory("pairing-access").toFile()
         val cache = openDesktopCacheStore(directory, JvmAesCacheValueProtector(ByteArray(32) { 7 })).store
         val secrets = Secrets()
         val client = FakeSiteClient()
         val controller = RemoteAgentController(RemoteAgentStore(cache), secrets, FakeExecutor(),
-            CoroutineScope(SupervisorJob() + Dispatchers.Default), clientFactory = { client })
+            CoroutineScope(SupervisorJob() + Dispatchers.Default), clock = { 1_800_000_000L }, clientFactory = { client })
         try {
             client.pairResponse = RemoteCall.Failure(RemoteFailureKind.UNAUTHORIZED)
-            val message = controller.pair("https://site.example/", "ABCD2345", "", RemoteScope.DEFAULT, true)!!
+            val message = controller.pair(pairingFixture("https://site.example/", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, true)!!
             assertEquals("fixture-access", secrets.access)
-            assertTrue(message.contains("重新生成配对码"))
+            assertTrue(message.contains("重新生成完整配对信息"))
             assertFalse(message.contains("撤销"))
-            controller.pair("https://other.example", "ABCD2345", null, RemoteScope.DEFAULT, true)
-            assertNull(secrets.access, "另一 Site 不能复用预配置凭据")
-            assertNull(secrets.site)
-            controller.pair("https://other.example", "ABCD2345", "replacement", RemoteScope.DEFAULT, true)
+            controller.pair(pairingFixture("https://other.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, true)
+            assertEquals("fixture-access", secrets.access, "只使用新长码的授权")
+            assertEquals("https://other.example", secrets.site)
+            controller.pair(pairingFixture("https://other.example", "ABCD2345", "replacement"), RemoteScope.DEFAULT, true)
             assertEquals("replacement", secrets.access)
             assertEquals("https://other.example", secrets.site)
             client.pairResponse = RemoteCall.Failure(RemoteFailureKind.FORBIDDEN, "platform_auth_required")
-            val accessError = controller.pair("https://other.example", "ABCD2345", null, RemoteScope.DEFAULT, true)!!
+            val accessError = controller.pair(pairingFixture("https://other.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, true)!!
             assertTrue(accessError.contains("登录 Site"))
             assertTrue(accessError.contains("完整配对信息"))
         } finally {

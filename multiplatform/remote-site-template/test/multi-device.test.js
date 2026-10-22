@@ -46,3 +46,34 @@ test("同一台设备重新配对只替换自己的旧绑定；只有手机时�
     deviceName: "x", accountBindingId: "bind_exampleBad001", scopes: ["schedule"], deviceKind: "tablet" } });
   assert.equal(rejected.status, 400);
 });
+
+for (const platform of ['iOS', 'Android']) {
+  test(`${platform} 使用网页完整长码配对并上传，服务端保留来源且不分配轮询任务`, async t => {
+    const site = createSite(); t.after(() => site.env.DB.raw.close());
+    site.env.SITE_DEVICE_ACCESS = 'fixture-platform-access';
+    const desktop = await pairDevice(site, { deviceName: 'fixture desktop' });
+    const generated = await site.call('POST', '/api/v1/owner/connection', { owner: true });
+    assert.equal(generated.status, 200);
+    const info = JSON.parse(generated.body.connectionCode.slice('bjtuss-pair-v1:'.length));
+    assert.equal(info.siteUrl, 'https://site.example');
+    assert.equal(info.platformAccess, site.env.SITE_DEVICE_ACCESS);
+    const response = await site.call('POST', '/api/v1/device/pair', { body: {
+      protocolVersion: 1, pairingCode: info.pairingCode, deviceName: `fixture ${platform}`,
+      deviceKind: 'mobile', accountBindingId: 'bind_fixturePhone01', scopes: ['schedule', 'assignments', 'exams'],
+    } });
+    assert.equal(response.status, 200);
+    const phone = response.body;
+    assert.equal(phone.deviceKind, 'mobile');
+    const upload = await site.call('PUT', '/api/v1/device/snapshot', { token: phone.deviceToken, body: snapshotFor(phone) });
+    assert.equal(upload.status, 200);
+    const status = (await site.call('GET', '/api/v1/owner/status', { owner: true })).body;
+    const registered = status.devices.find(d => d.deviceId === phone.deviceId);
+    assert.equal(registered.deviceName, `fixture ${platform}`);
+    assert.equal(registered.deviceKind, 'mobile');
+    assert.equal(status.taskDeviceId, desktop.deviceId);
+    const task = await rpc(site, 'request_refresh_all', { idempotencyKey: 'long_code_refresh01' });
+    assert.equal(task.deviceId, desktop.deviceId);
+    assert.equal((await site.call('POST', '/api/v1/device/poll', { token: phone.deviceToken })).body.task, null);
+    assert.equal((await site.call('POST', '/api/v1/device/poll', { token: desktop.deviceToken })).body.task.requestId, task.requestId);
+  });
+}

@@ -50,13 +50,13 @@ class MobileRemoteAgentTest {
 
     @Test fun oldSiteTemplateIsRejectedBeforePairing() = runBlocking {
         client.healthResponse = RemoteCall.Ok(RemoteHealth(1, "0.3.0"))
-        val message = controller.pair("https://site.example", "ABCD2345", "access", RemoteScope.DEFAULT, consent = true)
+        val message = controller.pair(pairingFixture("https://site.example", "ABCD2345", "access"), RemoteScope.DEFAULT, consent = true)
         assertTrue(message!!.contains(REMOTE_MULTI_DEVICE_TEMPLATE))
         assertNull(client.lastPair, "旧模板会撤销电脑，不能发出配对请求")
     }
 
     @Test fun pairsAsMobileAndOnlyUploadsAfterRefresh() = runBlocking {
-        assertNull(controller.pair("https://site.example", "ABCD2345", null, RemoteScope.DEFAULT, consent = true))
+        assertNull(controller.pair(pairingFixture("https://site.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, consent = true))
         assertEquals(RemoteDeviceKind.MOBILE, client.lastPair!!.deviceKind)
         assertFalse(controller.keepRunningInBackground)
         controller.start()
@@ -80,7 +80,7 @@ class MobileRemoteAgentTest {
 
     @Test fun healthAuthorizationFailureDoesNotAskForTemplateUpgrade() = runBlocking {
         client.healthResponse = RemoteCall.Failure(RemoteFailureKind.FORBIDDEN, "platform_auth_required")
-        val message = controller.pair("https://site.example", "ABCD2345", null, RemoteScope.DEFAULT, true)!!
+        val message = controller.pair(pairingFixture("https://site.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, true)!!
         assertTrue(message.contains("连接授权"))
         assertFalse(message.contains("升级"))
         assertNull(client.lastPair)

@@ -165,29 +165,19 @@ class RemoteAgentController(
         return next
     }
 
-    /**
-     * 配对：需要已登录（绑定当前学校账号）、https Site 地址、一次性配对码和用户的上云同意。
-     * 成功后设备令牌只存系统安全存储；返回 null 表示成功，否则返回给用户看的原因。
-     */
-    suspend fun pair(siteUrl: String, pairingCode: String, platformAccess: String?, scopes: Set<RemoteScope>, consent: Boolean): String? {
-        val url = normalizeSiteUrl(siteUrl) ?: return "Site 地址必须是 https:// 开头的完整地址。"
-        val input = pairingCode.trim()
-        val info = if (input.startsWith(REMOTE_PAIRING_INFO_PREFIX)) {
-            runCatching { parseRemotePairingInfo(input, url, clock()) }.getOrNull()
-                ?: return "配对信息无效、已过期或属于另一 Site，请登录本站重新生成并完整复制。"
-        } else null
-        val code = info?.pairingCode ?: input.uppercase().filter { it.isLetterOrDigit() }
-        if (!Regex("^[A-Z2-9]{8}$").matches(code)) return "配对码是 8 位字母和数字，请在你的 Site 页面重新生成。"
+    /** 完整配对信息包含地址、一次性码与 Site 授权；敏感材料只存系统安全存储。 */
+    suspend fun pair(pairingInfo: String, scopes: Set<RemoteScope>, consent: Boolean): String? {
+        val info = runCatching { parseRemotePairingInfo(pairingInfo.trim(), clock()) }.getOrNull()
+            ?: return "配对信息无效或已过期，请登录 Site 重新生成并复制完整长码（bjtuss-pair-v1:…），无需填写地址。"
+        val url = info.siteUrl
+        val code = info.pairingCode
         if (!consent) return "请先确认同意：所选数据会上传到你自己的 Site，可被 Site 与 ChatGPT 读取。"
         if (scopes.isEmpty()) return "至少选择一类允许上云的数据。"
         val account = executor.currentAccountScope() ?: return "请先在 App 里登录学校账号，再配对。"
         val bindingId = "bind_${randomToken(random, 20)}"
         return try {
-            val enteredAccess = info?.platformAccess ?: platformAccess?.trim()?.takeIf(String::isNotEmpty)
-            if (enteredAccess != null || secrets.loadPlatformAccessSiteUrl() != url) {
-                secrets.savePlatformAccess(enteredAccess)
-                secrets.savePlatformAccessSiteUrl(if (enteredAccess != null) url else null)
-            }
+            secrets.savePlatformAccess(info.platformAccess)
+            secrets.savePlatformAccessSiteUrl(url)
             val wireScopes = RemoteScope.entries.filter { it in scopes }.map { it.wire }
             val api = clientFactory(url)
             if (mobile) {
@@ -222,11 +212,11 @@ class RemoteAgentController(
                     null
                 }
                 is RemoteCall.Failure -> when (response.code) {
-                    "pairing_invalid" -> "配对码无效、已过期或已使用，请在 Site 重新生成。"
-                    "pairing_locked" -> "配对失败次数过多，请 10 分钟后在 Site 重新生成配对码。"
+                    "pairing_invalid" -> "配对信息无效、已过期或已使用，请在 Site 重新生成。"
+                    "pairing_locked" -> "配对失败次数过多，请 10 分钟后在 Site 重新生成完整配对信息。"
                     "platform_auth_required" -> "本站连接授权无效，请登录 Site 重新生成并复制完整配对信息。"
                     else -> if (response.kind == RemoteFailureKind.UNAUTHORIZED)
-                        "Site 未通过配对身份验证，请重新生成配对码后重试。"
+                        "Site 未通过配对身份验证，请重新生成完整配对信息后重试。"
                     else RemoteAgentRunner.describe(response)
                 }
             }

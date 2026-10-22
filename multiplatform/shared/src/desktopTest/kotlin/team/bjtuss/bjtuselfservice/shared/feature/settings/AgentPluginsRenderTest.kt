@@ -30,6 +30,7 @@ class AgentPluginsRenderTest {
             CacheDatabaseSql.Schema.create(driver)
             val cache = CacheStore(driver)
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            var mobile = false
             val controller = RemoteAgentController(RemoteAgentStore(cache), object : RemoteSecretStore {
                 override suspend fun loadDeviceToken(): String? = null
                 override suspend fun saveDeviceToken(token: String) {}
@@ -41,7 +42,8 @@ class AgentPluginsRenderTest {
                 override suspend fun refreshAll(remote: Boolean): team.bjtuss.bjtuselfservice.shared.sync.RefreshReport? = null
                 override suspend fun snapshotContent(scopes: Set<RemoteScope>, lastStates: Map<String, RemoteSourceState>): RemoteSnapshotContent? = null
             }, scope, host = object : RemoteHostPlatform {
-                override val deviceName = "测试电脑"
+                override val deviceName = "测试设备"
+                override val deviceKind get() = if (mobile) RemoteDeviceKind.MOBILE else RemoteDeviceKind.DESKTOP
                 override val traySupported = true
             })
             val startup = object : AppStartupHost {
@@ -55,8 +57,9 @@ class AgentPluginsRenderTest {
                 override fun setSilentStart(enabled: Boolean) {}
             }
             try {
-                for (name in listOf("apps-light", "apps-dark", "setup-light", "setup-dark", "setup-large")) {
-                    val scene = ImageComposeScene(width = if (name.startsWith("apps")) 1000 else 520,
+                for (name in listOf("apps-light", "apps-dark", "setup-light", "setup-dark", "setup-large", "setup-mobile-light", "setup-mobile-dark", "setup-mobile-large")) {
+                    mobile = name.contains("mobile")
+                    val scene = ImageComposeScene(width = if (name.startsWith("apps")) 1000 else if (mobile) 390 else 520,
                         height = if (name.startsWith("apps")) 850 else 3200,
                         density = Density(1f, if (name.endsWith("large")) 1.5f else 1f), coroutineContext = Dispatchers.Unconfined) {
                         PlatformAppTheme(useDarkTheme = name.endsWith("dark"), dynamicColorEnabled = false) {
@@ -65,7 +68,7 @@ class AgentPluginsRenderTest {
                                     if (name.startsWith("apps")) MoreWorkspace(AppPreferences(), {}, Modifier.fillMaxSize(), onOpenAgentPlugins = {})
                                     else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                                         RemoteAgentCard(controller)
-                                        StartupSection(startup, controller)
+                                        if (!mobile) StartupSection(startup, controller)
                                     }
                                 }
                             }

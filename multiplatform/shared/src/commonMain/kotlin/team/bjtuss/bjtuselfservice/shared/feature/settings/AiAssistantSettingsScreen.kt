@@ -150,7 +150,7 @@ private fun RemoteAssistantStatus(controller: RemoteAgentController) {
             StatusField("允许上云", RemoteScope.entries.filter { it in config.scopeSet }.joinToString("、") { it.label })
             OutlinedButton(onClick = { config.siteUrl?.let(uri::openUri) }) { Text("打开我的 Site") }
         } else {
-            Text("按“设置方法”搭建私人 Site 后，填写地址和配对码完成配对。",
+            Text("按“设置方法”搭建私人 Site 后，粘贴完整配对长码完成配对，无需填写地址。",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         status.lastError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }

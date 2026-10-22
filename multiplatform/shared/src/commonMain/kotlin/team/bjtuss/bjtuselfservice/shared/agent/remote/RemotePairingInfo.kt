@@ -13,12 +13,13 @@ internal class RemotePairingInfo(
     val expiresAt: Long,
 )
 
-internal fun parseRemotePairingInfo(value: String, siteUrl: String, now: Long): RemotePairingInfo {
+internal fun parseRemotePairingInfo(value: String, now: Long): RemotePairingInfo {
     require(value.length <= 16_384)
+    require(value.startsWith(REMOTE_PAIRING_INFO_PREFIX))
     val info = remoteJson.decodeFromString(RemotePairingInfo.serializer(), value.removePrefix(REMOTE_PAIRING_INFO_PREFIX))
-    require(normalizeSiteUrl(info.siteUrl) == siteUrl)
+    val siteUrl = requireNotNull(normalizeSiteUrl(info.siteUrl))
     require(Regex("^[A-Z2-9]{8}$").matches(info.pairingCode))
     require(info.expiresAt > now)
     remotePlatformAuthorization(info.platformAccess)
-    return info
+    return RemotePairingInfo(siteUrl, info.pairingCode, info.platformAccess, info.expiresAt)
 }

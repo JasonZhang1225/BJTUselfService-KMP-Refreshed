@@ -39,8 +39,9 @@ class RemoteAgentControllerTest {
     private val secrets = MemorySecrets()
     private val client = FakeSiteClient()
     private val executor = FakeExecutor()
+    private var requestedSite: String? = null
     private val controller = RemoteAgentController(RemoteAgentStore(cache), secrets, executor,
-        CoroutineScope(SupervisorJob() + Dispatchers.Default), clock = { 1_800_000_000L }, clientFactory = { client })
+        CoroutineScope(SupervisorJob() + Dispatchers.Default), clock = { 1_800_000_000L }, clientFactory = { url -> requestedSite = url; client })
 
     @AfterTest
     fun cleanUp() {
@@ -51,18 +52,19 @@ class RemoteAgentControllerTest {
 
     @Test
     fun pairingRequiresHttpsCodeConsentAndLogin() = runBlocking {
-        assertNotNull(controller.pair("http://site.example", "ABCD2345", null, RemoteScope.DEFAULT, consent = true))
-        assertNotNull(controller.pair("https://site.example", "abc", null, RemoteScope.DEFAULT, consent = true))
-        assertNotNull(controller.pair("https://site.example", "ABCD2345", null, RemoteScope.DEFAULT, consent = false))
+        assertNotNull(controller.pair("ABCD2345", RemoteScope.DEFAULT, consent = true))
+        assertNotNull(controller.pair(pairingFixture("http://site.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, consent = true))
+        assertNotNull(controller.pair(pairingFixture("https://site.example", "abc", "fixture-access"), RemoteScope.DEFAULT, consent = true))
+        assertNotNull(controller.pair(pairingFixture("https://site.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, consent = false))
         executor.account = null
-        assertTrue(controller.pair("https://site.example", "ABCD2345", null, RemoteScope.DEFAULT, consent = true)!!.contains("登录"))
+        assertTrue(controller.pair(pairingFixture("https://site.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, consent = true)!!.contains("登录"))
         assertNull(client.lastPair, "校验失败时不联系 Site")
         assertNull(secrets.token)
     }
 
     @Test
     fun successfulPairingStoresTokenOnlyInSecretsAndEnables() = runBlocking {
-        assertNull(controller.pair("https://site.example/", "abcd-2345", "platform-secret", RemoteScope.DEFAULT, consent = true))
+        assertNull(controller.pair(pairingFixture("https://site.example/", "ABCD2345", "platform-secret"), RemoteScope.DEFAULT, consent = true))
         val request = client.lastPair!!
         assertEquals("ABCD2345", request.pairingCode)
         assertTrue(request.accountBindingId.startsWith("bind_"))
@@ -80,8 +82,9 @@ class RemoteAgentControllerTest {
 
     @Test
     fun ownerCopiedPairingInformationConfiguresPlatformAccessInTheActualPairFlow() = runBlocking {
-        val info = REMOTE_PAIRING_INFO_PREFIX + """{"siteUrl":"https://site.example","pairingCode":"ABCD2345","platformAccess":"fixture-platform-access","expiresAt":1800000600}"""
-        assertNull(controller.pair("https://site.example", info, null, RemoteScope.DEFAULT, consent = true))
+        val info = REMOTE_PAIRING_INFO_PREFIX + """{"siteUrl":"https://site.example/","pairingCode":"ABCD2345","platformAccess":"fixture-platform-access","expiresAt":1800000600}"""
+        assertNull(controller.pair(info, RemoteScope.DEFAULT, consent = true))
+        assertEquals("https://site.example", requestedSite, "无需另填地址，直接使用长码中的 Site")
         assertEquals("ABCD2345", client.lastPair!!.pairingCode)
         assertEquals("fixture-platform-access", secrets.access)
         assertFalse(RemoteAgentStore(cache).loadConfig().toString().contains("fixture-platform-access"))
@@ -89,7 +92,7 @@ class RemoteAgentControllerTest {
 
     @Test
     fun scopesIntervalsAndUnpair() = runBlocking {
-        controller.pair("https://site.example", "ABCD2345", null, RemoteScope.DEFAULT, consent = true)
+        controller.pair(pairingFixture("https://site.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, consent = true)
         assertNull(controller.setScopes(setOf(RemoteScope.SCHEDULE, RemoteScope.GRADES)))
         assertEquals(listOf("schedule", "grades"), client.scopeUpdates.last())
         assertNotNull(controller.setScopes(emptySet()))
