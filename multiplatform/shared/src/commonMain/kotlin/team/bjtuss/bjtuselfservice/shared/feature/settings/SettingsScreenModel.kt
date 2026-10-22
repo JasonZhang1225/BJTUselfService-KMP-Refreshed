@@ -218,7 +218,8 @@ class SettingsScreenModel(
                 return
             }
             // Reserved disposable Gitee test tags must not poison the persisted high-water mark.
-            val disposableTest = result.release.source == UpdateSource.GITEE && result.release.tagName.endsWith("-gitee-test")
+            val disposableTest = result.release.disposableTest ||
+                (result.release.source == UpdateSource.GITEE && result.release.tagName.endsWith("-gitee-test"))
             if (!disposableTest && (highestKnownRelease.isBlank() || AppUpdateChecker.compareVersions(result.release.tagName, highestKnownRelease) > 0)) {
                 highestKnownRelease = result.release.tagName
                 updatePreferences { copy(highestKnownRelease = this@SettingsScreenModel.highestKnownRelease) }

@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.update
 
+import team.bjtuss.bjtuselfservice.shared.PlatformFamily
+import team.bjtuss.bjtuselfservice.shared.PlatformInfo
 import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
@@ -31,6 +33,7 @@ object AppUpdateChecker {
 
     const val GITEE_REPO = "zjg1225/BJTUselfService-KMP-Refreshed"
     const val MIRROR_READY = "<!-- bjtu-mirror-ready:v1 -->"
+    const val MIRROR_TEST = "<!-- bjtu-mirror-test:v1 -->"
 
     private const val RELEASES_URL = "https://api.github.com/repos/$REPO/releases"
 
@@ -46,6 +49,8 @@ object AppUpdateChecker {
         val prerelease: Boolean = false,
         val draft: Boolean = false,
         @Transient val source: UpdateSource = UpdateSource.GITHUB,
+        @Transient val disposableTest: Boolean = false,
+        val assets: List<ReleaseAsset> = emptyList(),
     )
 
     sealed interface Result {
@@ -57,7 +62,7 @@ object AppUpdateChecker {
     }
 
     @Serializable
-    private data class GiteeAsset(val name: String, @SerialName("browser_download_url") val downloadUrl: String)
+    data class ReleaseAsset(val name: String, @SerialName("browser_download_url") val downloadUrl: String)
 
     @Serializable
     private data class GiteeRelease(
@@ -66,7 +71,7 @@ object AppUpdateChecker {
         val body: String? = null,
         @SerialName("created_at") val createdAt: String? = null,
         val prerelease: Boolean = false,
-        val assets: List<GiteeAsset> = emptyList(),
+        val assets: List<ReleaseAsset> = emptyList(),
     )
 
     suspend fun fetchLatest(
@@ -113,9 +118,10 @@ object AppUpdateChecker {
                         // Gitee can reorder releases when an old mirror is retried: compare versions.
                         .maxWithOrNull { a, b -> compareVersions(a.tagName, b.tagName) }
                     latest?.let {
-                        Result.Success(Release(it.tagName, it.name, it.body?.replace(MIRROR_READY, "")?.trim(),
+                        Result.Success(Release(it.tagName, it.name, it.body?.replace(MIRROR_READY, "")?.replace(MIRROR_TEST, "")?.trim(),
                             "https://gitee.com/$GITEE_REPO/releases/tag/${it.tagName}", it.createdAt,
-                            it.prerelease, source = UpdateSource.GITEE))
+                            it.prerelease, source = UpdateSource.GITEE,
+                            disposableTest = it.prerelease && it.body?.contains(MIRROR_TEST) == true, assets = it.assets))
                     } ?: Result.Unavailable
                 }
             } ?: Result.Unavailable
@@ -124,6 +130,26 @@ object AppUpdateChecker {
         } catch (_: Exception) {
             Result.Unavailable
         }
+    }
+
+    /** Stable installer URLs only; never persist an expiring CDN URL or open an arbitrary asset host. */
+    fun installerDownloadUrl(release: Release, platform: PlatformInfo): String? {
+        val extension = when {
+            platform.isWindows -> ".msi"
+            platform.family == PlatformFamily.Android -> ".apk"
+            platform.family == PlatformFamily.IOS -> ".ipa"
+            else -> ".dmg"
+        }
+        if (!release.tagName.matches(Regex("[A-Za-z0-9._-]+"))) return null
+        val base = when (release.source) {
+            UpdateSource.GITHUB -> "https://github.com/$REPO"
+            UpdateSource.GITEE -> "https://gitee.com/$GITEE_REPO"
+            UpdateSource.AUTO -> return null
+        }
+        return release.assets.firstOrNull { asset ->
+            asset.name.endsWith(extension) && asset.name.matches(Regex("[A-Za-z0-9._-]+")) &&
+                asset.downloadUrl == "$base/releases/download/${release.tagName}/${asset.name}"
+        }?.downloadUrl
     }
 
     /** 是否有更新：远端 tag 规范比较后严格高于 [CURRENT_VERSION]。 */

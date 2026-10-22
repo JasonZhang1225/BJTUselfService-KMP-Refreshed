@@ -9,13 +9,13 @@ import kotlin.test.*
 
 class UpdateSourceTest {
     private val github = """[{"tag_name":"v9.0.0-KMP","html_url":"https://github.com/release","prerelease":true}]"""
-    private fun mirror(tag: String = "v9.0.0-KMP", ready: Boolean = true, missing: String = "", unsafe: Boolean = false): String {
+    private fun mirror(tag: String = "v9.0.0-KMP", ready: Boolean = true, missing: String = "", unsafe: Boolean = false, test: Boolean = false): String {
         val files = listOf("apk", "ipa", "dmg", "msi").filter { it != missing }.joinToString(",") { ext ->
             val url = if (unsafe) "https://example.com/app.$ext" else "https://gitee.com/${AppUpdateChecker.GITEE_REPO}/releases/download/$tag/app.$ext"
             """{"name":"app.$ext","browser_download_url":"$url"}"""
         }
-        val body = if (ready) "Notes ${AppUpdateChecker.MIRROR_READY}" else "Notes"
-        return """{"tag_name":"$tag","body":"$body","created_at":"2026-10-22T15:00:00Z","assets":[$files]}"""
+        val body = if (ready) "Notes ${AppUpdateChecker.MIRROR_READY}${if (test) " ${AppUpdateChecker.MIRROR_TEST}" else ""}" else "Notes"
+        return """{"tag_name":"$tag","body":"$body","created_at":"2026-10-22T15:00:00Z","prerelease":$test,"assets":[$files]}"""
     }
     private class Transport(val respond: suspend (SchoolHttpRequest) -> SchoolHttpResponse) : SchoolHttpTransport {
         val urls = mutableListOf<String>()
@@ -27,6 +27,42 @@ class UpdateSourceTest {
         override fun clearSession() = Unit
     }
     private fun response(body: String, status: Int = 200) = SchoolHttpResponse(status, "https://example.com", body = body.encodeToByteArray())
+
+    @Test fun disposableTestMarkerSurvivesRetaggingWithoutLeakingIntoNotes() = runBlocking {
+        val release = assertIs<AppUpdateChecker.Result.Success>(AppUpdateChecker.fetchLatest(
+            Transport { response("[${mirror(tag = "v2.0.0", test = true)}]") }, UpdateSource.GITEE)).release
+        assertTrue(release.disposableTest)
+        assertEquals("Notes", release.body)
+    }
+
+    @Test fun installerLinksMatchAllFourPlatformsAndActualSource() {
+        val platforms = listOf(
+            team.bjtuss.bjtuselfservice.shared.PlatformInfo(team.bjtuss.bjtuselfservice.shared.PlatformFamily.Android, "Android") to ".apk",
+            team.bjtuss.bjtuselfservice.shared.PlatformInfo(team.bjtuss.bjtuselfservice.shared.PlatformFamily.IOS, "iOS") to ".ipa",
+            team.bjtuss.bjtuselfservice.shared.PlatformInfo(team.bjtuss.bjtuselfservice.shared.PlatformFamily.MacOS, "macOS") to ".dmg",
+            team.bjtuss.bjtuselfservice.shared.PlatformInfo(team.bjtuss.bjtuselfservice.shared.PlatformFamily.MacOS, "Windows", isWindows = true) to ".msi",
+        )
+        for (source in listOf(UpdateSource.GITHUB, UpdateSource.GITEE)) {
+            val base = if (source == UpdateSource.GITHUB) "https://github.com/${AppUpdateChecker.REPO}" else "https://gitee.com/${AppUpdateChecker.GITEE_REPO}"
+            val assets = platforms.map { (_, ext) -> AppUpdateChecker.ReleaseAsset("app$ext", "$base/releases/download/v9.0.0/app$ext") }
+            val release = AppUpdateChecker.Release("v9.0.0", htmlUrl = base, source = source, assets = assets)
+            for ((platform, ext) in platforms) {
+                assertEquals("$base/releases/download/v9.0.0/app$ext", AppUpdateChecker.installerDownloadUrl(release, platform))
+                assertNull(AppUpdateChecker.installerDownloadUrl(release.copy(assets = emptyList()), platform))
+                assertNull(AppUpdateChecker.installerDownloadUrl(release.copy(assets = assets.map { it.copy(downloadUrl = "https://example.com/installer") }), platform))
+            }
+        }
+    }
+
+    @Test fun githubAndGiteeResponsesPreserveInstallerAssets() = runBlocking {
+        val gitee = assertIs<AppUpdateChecker.Result.Success>(AppUpdateChecker.fetchLatest(Transport { response("[${mirror()}]") }, UpdateSource.GITEE)).release
+        assertEquals(4, gitee.assets.size)
+        val platform = team.bjtuss.bjtuselfservice.shared.PlatformInfo(team.bjtuss.bjtuselfservice.shared.PlatformFamily.MacOS, "macOS")
+        assertTrue(AppUpdateChecker.installerDownloadUrl(gitee, platform)!!.endsWith("app.dmg"))
+        val withAssets = github.replace("\"prerelease\":true", "\"prerelease\":true,\"assets\":[{\"name\":\"app.dmg\",\"browser_download_url\":\"https://github.com/${AppUpdateChecker.REPO}/releases/download/v9.0.0-KMP/app.dmg\"}]")
+        val gh = assertIs<AppUpdateChecker.Result.Success>(AppUpdateChecker.fetchLatest(Transport { response(withAssets) }, UpdateSource.GITHUB)).release
+        assertTrue(AppUpdateChecker.installerDownloadUrl(gh, platform)!!.contains("github.com"))
+    }
 
     @Test fun automaticUsesGithubAndPreservesEmergencyPrerelease() = runBlocking {
         val transport = Transport { response(github) }

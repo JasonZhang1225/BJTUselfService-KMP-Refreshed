@@ -43,8 +43,8 @@ class SettingsScreenModelTest {
     @Test fun disposableGiteeTestDoesNotBlockNormalUpdatesAfterDeletion() = runBlocking {
         var saved = AppPreferences()
         val test = model(persistPreferences = { saved = it; true }, checkLatestRelease = {
-            AppUpdateChecker.Result.Success(AppUpdateChecker.Release("v2.0.0-gitee-test", htmlUrl = "https://gitee.com/release",
-                source = team.bjtuss.bjtuselfservice.shared.update.UpdateSource.GITEE))
+            AppUpdateChecker.Result.Success(AppUpdateChecker.Release("v2.0.0", htmlUrl = "https://gitee.com/release",
+                source = team.bjtuss.bjtuselfservice.shared.update.UpdateSource.GITEE, disposableTest = true))
         })
         test.checkForUpdate()
         assertTrue(assertIs<UpdateCheckState.Done>(test.state.value.updateCheck).hasUpdate)

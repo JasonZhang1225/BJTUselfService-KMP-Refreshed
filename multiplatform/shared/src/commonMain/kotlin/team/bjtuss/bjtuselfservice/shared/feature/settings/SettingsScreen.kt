@@ -432,7 +432,7 @@ private fun formatPublishedAt(iso: String): String =
 /**
  * 更新检测结果弹窗。应用壳（AuthenticatedAppShell）在 SettingsWorkspace 外层渲染它，
  * 因此自动/手动检查出的新版本提示不依赖用户停留在设置页。
- * 新版本 → 「前往下载」跳实际更新源的发布页；已最新/失败 → 轻量提示；Idle/Checking 不渲染。
+ * 新版本 → 下载当前平台安装包直链；历史发行版没有附件时回到发布页；已最新/失败 → 轻量提示；Idle/Checking 不渲染。
  */
 @Composable
 fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit, onPostpone: () -> Unit = onDismiss) {
@@ -441,13 +441,14 @@ fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit, onPost
     when (check) {
         is UpdateCheckState.Done -> {
             if (check.hasUpdate) {
+                val installerUrl = AppUpdateChecker.installerDownloadUrl(check.release, currentPlatform())
                 AppleSheetOrAlert(
                     onDismissRequest = onPostpone,
                     title = "发现新版本",
-                    confirmLabel = "前往下载",
+                    confirmLabel = if (installerUrl != null) "下载安装包" else "前往发布页",
                     onConfirm = {
                         onDismiss()
-                        uriHandler.openUri(check.release.htmlUrl)
+                        uriHandler.openUri(installerUrl ?: check.release.htmlUrl)
                     },
                     dismissLabel = "暂不更新",
                     needsFullHeight = true,
