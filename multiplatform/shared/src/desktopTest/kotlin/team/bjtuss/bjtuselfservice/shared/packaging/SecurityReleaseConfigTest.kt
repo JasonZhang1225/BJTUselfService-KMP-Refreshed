@@ -45,18 +45,19 @@ class SecurityReleaseConfigTest {
             sha256(root.resolve("multiplatform/gradle/wrapper/gradle-wrapper.jar")),
         )
 
-        listOf("kmp-package.yml", "release.yml", "debug.yml").forEach { workflow ->
+        listOf("kmp-package.yml").forEach { workflow ->
             val text = root.resolve(".github/workflows/$workflow").readText()
             assertTrue(
                 "gradle/actions/wrapper-validation@3f131e8634966bd73d06cc69884922b02e6faf92" in text,
                 "$workflow must validate Gradle wrappers before builds",
             )
         }
-        val legacyRelease = root.resolve(".github/workflows/release.yml").readText()
-        // 冻结根 Android 只打 v1.7.0；其余 v* 标签由 kmp-package.yml 打包。
-        // 不要再要求已删除的 Liquid 字符串守卫，那会让本测试在当前 HEAD 失败。
-        assertTrue("github.ref_name == 'v1.7.0'" in legacyRelease)
-        assertFalse("github.ref_name != 'v1.7.0'" in legacyRelease)
+        // 冻结根 Android 与其 release.yml/debug.yml 已于 1.8.6 移除（存档标签 archive/legacy-android-and-captcha-model）。
+        assertFalse(root.resolve(".github/workflows/release.yml").exists())
+        assertFalse(root.resolve("app").exists())
+        assertFalse(
+            root.resolve("multiplatform/windowsApp/src/windowsMain/resources/BJTUCaptcha.pt").exists(),
+        )
     }
 
     @Test

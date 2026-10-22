@@ -38,8 +38,6 @@ kotlin {
                 implementation(libs.jna.platform)
                 implementation(libs.ktor.client.cio)
                 implementation(libs.sqldelight.sqlite.driver)
-                implementation(libs.djl.pytorch.engine)
-                implementation(libs.djl.pytorch.native.win)
             }
         }
         val windowsTest by getting {
