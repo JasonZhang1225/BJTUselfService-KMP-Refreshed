@@ -426,6 +426,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Verify mirror safety checks
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -v
       - name: Mirror notes, tag and all four installers; verify anonymous downloads
         env:
           GH_TOKEN: ${{ github.token }}

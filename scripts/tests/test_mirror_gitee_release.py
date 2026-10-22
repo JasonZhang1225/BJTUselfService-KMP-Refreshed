@@ -1,4 +1,7 @@
 import importlib.util
+import contextlib
+import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -40,6 +43,61 @@ class MirrorTest(unittest.TestCase):
             for body in [b'<html>login</html>', b'corrupted']:
                 with patch.object(m, 'request', return_value=body), self.assertRaises(m.MirrorError):
                     m.anonymous_verify('https://gitee.com/download', path)
+
+    def run_mirror(self, existing=False, fail_download=False, oversized=False):
+        assets = [dict(a, browser_download_url='https://github.com/' + a['name']) for a in self.assets()]
+        if oversized:
+            assets[0]['size'] = m.MAX_FILE + 1
+        release = dict(tag_name='v9.0.0-KMP', name='Release', body='Notes', prerelease=True, draft=False, assets=assets)
+        calls = []
+        class Api:
+            def pages(self, path):
+                if path == '/releases':
+                    return [dict(id=1, tag_name='v9.0.0-KMP', created_at='2026-10-22')] if existing else []
+                return assets if existing else []
+            def call(self, path, method='GET', fields=None, file=None):
+                calls.append((method, path, fields))
+                return {'id': 1}
+        def download(url, **kwargs):
+            if 'api.github.com' in url:
+                return json.dumps(release).encode()
+            if fail_download and 'gitee.com' in url and url.endswith('.msi'):
+                return b'<html>login</html>'
+            return b'x' * 42
+        with patch.dict(m.os.environ, {'GITEE_TOKEN': 'dummy', 'GH_TOKEN': 'dummy', 'RELEASE_TAG': 'v9.0.0-KMP'}), \
+                patch.object(m, 'Gitee', return_value=Api()), patch.object(m, 'request', side_effect=download), \
+                patch.object(m, 'sync_tag') as push, contextlib.redirect_stdout(io.StringIO()):
+            error = None
+            try:
+                m.main()
+            except m.MirrorError as caught:
+                error = caught
+        return calls, push.call_count, error
+
+    def test_marker_is_last_after_four_verified_uploads(self):
+        calls, pushed, error = self.run_mirror()
+        self.assertIsNone(error)
+        self.assertEqual(1, pushed)
+        self.assertEqual(4, sum(method == 'POST' and path.endswith('/attach_files') for method, path, _ in calls))
+        self.assertTrue(calls[-1][2]['body'].endswith(m.READY))
+        self.assertTrue(all(m.READY not in str(fields) for _, _, fields in calls[:-1]))
+
+    def test_partial_failure_never_marks_complete(self):
+        calls, _, error = self.run_mirror(fail_download=True)
+        self.assertIsInstance(error, m.MirrorError)
+        self.assertTrue(all(m.READY not in str(fields) for _, _, fields in calls))
+
+    def test_retry_verifies_existing_files_without_upload_or_delete(self):
+        calls, _, error = self.run_mirror(existing=True)
+        self.assertIsNone(error)
+        self.assertTrue(all(method == 'PATCH' for method, _, _ in calls))
+        self.assertTrue(calls[-1][2]['body'].endswith(m.READY))
+
+    def test_oversized_assets_fail_before_tag_or_release_mutation(self):
+        calls, pushed, error = self.run_mirror(oversized=True)
+        self.assertIsInstance(error, m.MirrorError)
+        self.assertEqual([], calls)
+        self.assertEqual(0, pushed)
 
 
 if __name__ == '__main__':
