@@ -403,9 +403,29 @@ jobs:
           tag_name: ${{ github.ref_name }}
           # EmergencyFix 标签是紧急修复版：发为 pre-release，应用内更新检查仍能看到（取 releases 列表第一条）。
           name: ${{ github.ref_name }}：交大自由行 KMP ${{ contains(github.ref_name, 'EmergencyFix') && '紧急修复' || '正式版' }}
-          prerelease: ${{ contains(github.ref_name, 'EmergencyFix') }}
+          prerelease: ${{ contains(github.ref_name, 'EmergencyFix') || github.ref_name == 'v1.0.0-gitee-test' }}
           fail_on_unmatched_files: true
           files: dist/*
           body_path: docs/releases/${{ github.ref_name }}.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The owner authorized this one disposable release to be hidden immediately.
+      - name: Immediately return the authorized test release to draft
+        if: ${{ github.ref_name == 'v1.0.0-gitee-test' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release edit "$RELEASE_TAG" --draft --repo "$GH_REPO"
+
+  gitee-mirror:
+    name: Gitee mirror after GitHub Release
+    needs: release
+    if: ${{ needs.release.result == 'success' }}
+    uses: ./.github/workflows/gitee-release-mirror.yml
+    with:
+      tag: ${{ github.ref_name }}
+      best_effort: true
+    secrets:
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
