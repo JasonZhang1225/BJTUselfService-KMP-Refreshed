@@ -16,8 +16,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeKind
 import team.bjtuss.bjtuselfservice.shared.domain.home.*
 import team.bjtuss.bjtuselfservice.shared.feature.home.ChangeDetailCard
 import team.bjtuss.bjtuselfservice.shared.feature.settings.*
-import team.bjtuss.bjtuselfservice.shared.feature.shell.Release183GuideDialog
-import team.bjtuss.bjtuselfservice.shared.feature.shell.Release184GuideDialog
+import team.bjtuss.bjtuselfservice.shared.feature.shell.Release186GuideDialog
 
 /** Production Compose components with synthetic data; these are Windows renders, not iOS screenshots. */
 class DuoBugFixVisualTest {
@@ -73,13 +72,13 @@ class DuoBugFixVisualTest {
     @Test fun renderProductionDialogs() = SwingUtilities.invokeAndWait {
         output.mkdirs()
         listOf(false, true).forEach { dark ->
-            listOf("release183", "release184", "clear").forEach { kind ->
+            listOf("release186", "release186-upgrade", "clear").forEach { kind ->
                 val scene = ImageComposeScene(480, 640, density = Density(1f), coroutineContext = Dispatchers.Unconfined) {
                     PlatformAppTheme(useDarkTheme = dark, dynamicColorEnabled = false) {
                         Surface(Modifier.fillMaxSize()) {
                             when (kind) {
-                                "release183" -> Release183GuideDialog(false, {})
-                                "release184" -> Release184GuideDialog(false, {})
+                                "release186" -> Release186GuideDialog(false, false, {})
+                                "release186-upgrade" -> Release186GuideDialog(true, false, {})
                                 else -> ClearIndependentAccountDialog({}, {})
                             }
                         }

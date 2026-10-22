@@ -56,12 +56,18 @@ class SettingsScreenModel(
     private var postponedUntilMillis = initialPreferences.updatePostponedUntilMillis
 
     /** 1.8.3 合并弹窗覆盖新版导航、CITEL、作业聚合三项，确认一次即全部记为已读。 */
-    fun acknowledgeRelease183Guide() = updatePreferences {
-        copy(redesignGuideAcknowledged = true, citelGuideAcknowledged = true, assignmentAggregateGuideAcknowledged = true)
+    /** 1.8.6 合并说明确认后，旧的四个启动弹窗一并视为已读，不会再补弹。 */
+    fun acknowledgeRelease186Guide() = updatePreferences {
+        copy(
+            release186GuideAcknowledged = true,
+            redesignGuideAcknowledged = true,
+            citelGuideAcknowledged = true,
+            assignmentAggregateGuideAcknowledged = true,
+            release184GuideAcknowledged = true,
+            emergencyFix185NoticeAcknowledged = true,
+            phyVlabAccountNoticePending = false,
+        )
     }
-    fun acknowledgeRelease184Guide() = updatePreferences { copy(release184GuideAcknowledged = true) }
-    fun acknowledgeEmergencyFix185Notice() = updatePreferences { copy(emergencyFix185NoticeAcknowledged = true) }
-    fun acknowledgePhyVlabAccountNotice() = updatePreferences { copy(phyVlabAccountNoticePending = false) }
 
     fun setBottomNavigationItem(routeId: String, enabled: Boolean) {
         val current = mutableState.value.preferences

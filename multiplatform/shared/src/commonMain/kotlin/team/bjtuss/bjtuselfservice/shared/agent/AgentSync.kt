@@ -15,7 +15,7 @@ import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
 
 sealed interface AgentLoginOutcome {
     data object Ok : AgentLoginOutcome
-    /** 自动登录用尽（验证码识别多次失败、密码错误等），需要用户打开 App 手动登录。 */
+    /** 自动登录停下（需要验证码、密码被拒或响应不明确等），需要用户打开 App 手动登录。 */
     data class ManualRequired(val reason: LoginFailure) : AgentLoginOutcome
     data object Network : AgentLoginOutcome
 }
@@ -25,7 +25,7 @@ data class HeadlessLoginResult(val outcome: AgentLoginOutcome, val profile: Stud
 
 /**
  * 无窗口宿主的登录：与 [team.bjtuss.bjtuselfservice.shared.auth.SchoolSessionRecovery] 相同的自动登录流程
- * （验证码自动识别最多 3 次），但保留失败原因，且不清除、不改写任何已保存的凭据。
+ * （需要验证码时直接停下，密码最多提交 1 次），但保留失败原因，且不清除、不改写任何已保存的凭据。
  */
 suspend fun headlessLogin(
     protocol: SchoolLoginProtocol,

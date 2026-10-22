@@ -36,6 +36,8 @@ data class AppPreferences(
     val emergencyFix185NoticeAcknowledged: Boolean = false,
     /** 物理在线改用独立账号后，升级时已自动关闭该功能、尚未向用户说明。 */
     val phyVlabAccountNoticePending: Boolean = false,
+    /** 1.8.6 合并版本说明（取代上面 1.8.3/1.8.4/1.8.5/物理在线四个启动弹窗）。 */
+    val release186GuideAcknowledged: Boolean = false,
     /** null migrates the previous account-scoped physicslab.enabled setting on session creation. */
     val physicsLabEnabled: Boolean? = null,
     val citelEnabled: Boolean? = null,
@@ -424,6 +426,7 @@ class CacheStore(
         release184GuideAcknowledged = booleanSetting(SettingKey.RELEASE_184_GUIDE_ACKNOWLEDGED, false),
         emergencyFix185NoticeAcknowledged = booleanSetting(SettingKey.EMERGENCY_FIX_185_NOTICE_ACKNOWLEDGED, false),
         phyVlabAccountNoticePending = booleanSetting(SettingKey.PHYVLAB_ACCOUNT_NOTICE_PENDING, false),
+        release186GuideAcknowledged = booleanSetting(SettingKey.RELEASE_186_GUIDE_ACKNOWLEDGED, false),
     )
 
     fun savePreferences(preferences: AppPreferences) {
@@ -452,6 +455,7 @@ class CacheStore(
             putSetting(SettingKey.RELEASE_184_GUIDE_ACKNOWLEDGED, preferences.release184GuideAcknowledged.toString())
             putSetting(SettingKey.EMERGENCY_FIX_185_NOTICE_ACKNOWLEDGED, preferences.emergencyFix185NoticeAcknowledged.toString())
             putSetting(SettingKey.PHYVLAB_ACCOUNT_NOTICE_PENDING, preferences.phyVlabAccountNoticePending.toString())
+            putSetting(SettingKey.RELEASE_186_GUIDE_ACKNOWLEDGED, preferences.release186GuideAcknowledged.toString())
         }
     }
 
@@ -650,6 +654,7 @@ private object SettingKey {
     const val EMERGENCY_FIX_185_NOTICE_ACKNOWLEDGED = "emergency_fix_185_notice_acknowledged"
     const val PHYVLAB_STANDALONE_ACCOUNT_MIGRATED = "phyvlab_standalone_account_migrated"
     const val PHYVLAB_ACCOUNT_NOTICE_PENDING = "phyvlab_account_notice_pending"
+    const val RELEASE_186_GUIDE_ACKNOWLEDGED = "release_186_guide_acknowledged"
     const val SHOW_PHYVLAB_IN_BOTTOM_NAV = "show_phyvlab_in_bottom_nav"
 }
 

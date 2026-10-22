@@ -928,7 +928,7 @@ private fun LoginCard(
         ) {
             Text("登录", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(
-                "输入学号和密码，验证码将自动识别。",
+                "输入学号和密码。学校要求验证码时，请看图手动输入。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1216,7 +1216,7 @@ private fun loginFailureMessage(reason: LoginFailure): String = when (reason) {
     LoginFailure.INVALID_CREDENTIALS -> "请完整填写学号和密码。"
     LoginFailure.ACCOUNT_REJECTED -> "学号或密码错误，请检查后重试。"
     LoginFailure.CAPTCHA_REJECTED -> "登录未通过，请手动输入当前验证码。"
-    LoginFailure.CAPTCHA_RECOGNITION_FAILED -> "验证码自动识别未通过，请手动输入当前验证码。"
+    LoginFailure.CAPTCHA_RECOGNITION_FAILED -> "学校要求输入验证码，请看图手动输入。"
     LoginFailure.SESSION_EXPIRED -> "检测到旧会话，但缺少可恢复资料。请清除会话后重试。"
     LoginFailure.MALFORMED_RESPONSE -> "学校页面结构已变化，暂时无法继续登录。"
     LoginFailure.NETWORK -> "无法连接学校登录服务，请检查网络后重试。"

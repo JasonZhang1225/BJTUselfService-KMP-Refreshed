@@ -23,34 +23,28 @@ class SettingsScreenModelTest {
         assertTrue(team.bjtuss.bjtuselfservice.shared.feature.shell.bottomNavSections(stored).any { it.name == "CITEL" })
     }
     @Test
-    fun release183ConfirmationRequiresSuccessfulSaveAndKeepsNavigation() {
+    fun release186ConfirmationRequiresSuccessfulSaveAndRetiresOlderGuides() {
         var canSave = false
-        var stored = AppPreferences(bottomNavigationItems = listOf("MAILBOX", "EXAMS"))
+        var stored = AppPreferences(bottomNavigationItems = listOf("MAILBOX", "EXAMS"), phyVlabAccountNoticePending = true)
         val model = model(initialPreferences = stored, persistPreferences = {
             if (canSave) stored = it
             canSave
         })
-        assertTrue(model.state.value.preferences.release183GuidePending)
-        model.acknowledgeRelease183Guide()
-        assertTrue(model.state.value.preferences.release183GuidePending)
+        assertFalse(model.state.value.preferences.release186GuideAcknowledged)
+        model.acknowledgeRelease186Guide()
+        assertFalse(model.state.value.preferences.release186GuideAcknowledged)
         assertTrue(model.state.value.saveFailed)
         canSave = true
-        model.acknowledgeRelease183Guide()
-        assertTrue(stored.redesignGuideAcknowledged)
-        assertTrue(stored.citelGuideAcknowledged)
-        assertTrue(stored.assignmentAggregateGuideAcknowledged)
+        model.acknowledgeRelease186Guide()
+        assertTrue(stored.release186GuideAcknowledged)
         assertFalse(stored.release183GuidePending)
+        assertTrue(stored.release184GuideAcknowledged)
+        assertTrue(stored.emergencyFix185NoticeAcknowledged)
+        assertFalse(stored.phyVlabAccountNoticePending)
         assertFalse(model.state.value.saveFailed)
         assertEquals(listOf("MAILBOX", "EXAMS"), stored.bottomNavigationItems)
-        assertFalse(stored.release184GuideAcknowledged)
         model.setDynamicColor(false)
-        assertTrue(stored.redesignGuideAcknowledged)
-        model.acknowledgeRelease184Guide()
-        assertTrue(stored.release184GuideAcknowledged)
-        assertFalse(stored.emergencyFix185NoticeAcknowledged)
-        model.acknowledgeEmergencyFix185Notice()
-        assertTrue(stored.emergencyFix185NoticeAcknowledged)
-        assertTrue(stored.release184GuideAcknowledged)
+        assertTrue(stored.release186GuideAcknowledged)
     }
 
     @Test
