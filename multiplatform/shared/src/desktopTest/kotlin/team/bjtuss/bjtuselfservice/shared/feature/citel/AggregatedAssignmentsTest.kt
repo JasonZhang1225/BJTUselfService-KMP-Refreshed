@@ -37,6 +37,11 @@ class AggregatedAssignmentsTest {
         assertEquals(listOf("course:1", "citel:1"), filterAggregateAssignments(items, filters, 100).map { it.key })
         assertEquals(listOf("course:1"), filterAggregateAssignments(items, filters.copy(hideSubmitted = true), 100).map { it.key })
         assertTrue(filterAggregateAssignments(items, filters.copy(hideExpired = true), 200).isEmpty())
+        // 搜索不受筛选影响：物理在线已被筛掉，仍能按来源名搜出来；未输入时没有结果，交给搜索层提示。
+        assertEquals(listOf("phy:1"), searchAggregateAssignments(items, "物理", filters.sortOrder).map { it.key })
+        assertEquals(listOf("citel:1"), searchAggregateAssignments(items, " citel ", filters.sortOrder).map { it.key })
+        assertEquals(listOf("citel:1", "phy:1", "course:1"), searchAggregateAssignments(items, "A", 2).map { it.key })
+        assertTrue(searchAggregateAssignments(items, "  ", 0).isEmpty())
     }
 
     @Test fun filtersAndAggregationSwitchPersistWithoutSavingVisibleResults() {

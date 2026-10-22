@@ -215,6 +215,11 @@ private final class NativeChromeBinding {
     private var pendingAction: NativeBarAction?
     private var hasPendingAction = false
     private var updateScheduled = false
+    private var pageSearch: NativePageSearch?
+    /// 系统搜索框是否展开；与 Compose 的 searchActive 分开，展开当帧就要挪按钮。
+    private var searchPresented = false
+    private var lastSearchPresented = false
+    private var lastAppliedAction: NativeBarAction?
 
     func apply(_ title: String) {
         guard !title.isEmpty else { return }
@@ -413,6 +418,7 @@ private final class NativeChromeBinding {
     private func applyAction(_ action: NativeBarAction?) {
         guard let controller else { return }
         (controller as? SafeAreaComposeHost)?.setScrollController(action?.scrollController)
+        applySearch(action, to: controller)
         guard let action else {
             retainedActionTargets.removeAll()
             actionTargets.removeAll()
@@ -420,6 +426,7 @@ private final class NativeChromeBinding {
             systemActionItems.removeAll()
             lastActionLayoutKey = nil
             lastActionVisualKey = nil
+            lastAppliedAction = nil
             UIView.performWithoutAnimation {
                 controller.navigationItem.leftBarButtonItems = nil
                 controller.navigationItem.leftItemsSupplementBackButton = false
@@ -429,9 +436,10 @@ private final class NativeChromeBinding {
             applyGlassProgress(0)
             return
         }
+        lastAppliedAction = action
         let layoutKey = NativeBarActionLayoutKey(action)
         let vertical = usesSystemBars && nativeBarIsVertical(in: controller.traitCollection)
-        if layoutKey == lastActionLayoutKey && lastActionVertical == vertical {
+        if layoutKey == lastActionLayoutKey && lastActionVertical == vertical && lastSearchPresented == searchPresented {
             // The only expected change here is scroll-driven glass/title progress or a
             // freshly captured Kotlin callback. Keep every UIKit view alive.
             updateActionTargets(action)
@@ -441,6 +449,7 @@ private final class NativeChromeBinding {
         }
         lastActionLayoutKey = layoutKey
         lastActionVertical = vertical
+        lastSearchPresented = searchPresented
         lastActionVisualKey = nil
         retainedActionTargets.removeAll()
         actionTargets.removeAll()
@@ -516,9 +525,25 @@ private final class NativeChromeBinding {
                 leftItems.removeAll()
             }
         }
+        // 收起时搜索按钮放在左侧，和右侧的同步状态、刷新分开。展开期间挪到尾部：
+        // 系统给前部的输入框只有约 180pt，放在尾部才铺满整条栏（其余内容系统会藏起）。
+        var searchItem: UIBarButtonItem?
+        if #available(iOS 26.0, *), !vertical, action.searchPrompt != nil,
+           controller.navigationItem.searchController != nil {
+            searchItem = controller.navigationItem.searchBarPlacementBarButtonItem
+        }
+        let leadingSearchItem = searchPresented ? nil : searchItem
         UIView.performWithoutAnimation {
-            controller.navigationItem.leftItemsSupplementBackButton = !leftItems.isEmpty
-            controller.navigationItem.leftBarButtonItems = leftItems.isEmpty ? nil : leftItems
+            controller.navigationItem.leadingItemGroups = []
+            controller.navigationItem.leftItemsSupplementBackButton = !leftItems.isEmpty || leadingSearchItem != nil
+            if let leadingSearchItem {
+                controller.navigationItem.leftBarButtonItems = nil
+                controller.navigationItem.leadingItemGroups = [
+                    UIBarButtonItemGroup(barButtonItems: [leadingSearchItem] + leftItems, representativeItem: nil)
+                ]
+            } else {
+                controller.navigationItem.leftBarButtonItems = leftItems.isEmpty ? nil : leftItems
+            }
             controller.navigationItem.rightBarButtonItems = items.isEmpty ? nil : items
             if usesSystemBars {
                 let ordered = Array(items.reversed())
@@ -534,9 +559,44 @@ private final class NativeChromeBinding {
                     ]
                 }
             }
+            if let searchItem, searchPresented {
+                controller.navigationItem.trailingItemGroups = [
+                    UIBarButtonItemGroup(barButtonItems: [searchItem], representativeItem: nil)
+                ]
+            }
         }
         ensureTransparentBar()
         applyGlassProgress(CGFloat(action.scrollProgress))
+    }
+
+    /// 本页声明了搜索就挂系统 UISearchController；输入框、展开收起动画与取消都交给系统，
+    /// Compose 只按回传的文字把列表换成结果。页面不再声明搜索时摘掉。
+    private func applySearch(_ action: NativeBarAction?, to controller: UIViewController) {
+        guard let action, action.searchPrompt != nil else {
+            pageSearch?.detach(from: controller)
+            pageSearch = nil
+            (controller.navigationController as? NativeChromeHosting)?.setSearchActive(false, for: controller)
+            return
+        }
+        let search = pageSearch ?? NativePageSearch()
+        if pageSearch == nil {
+            // 输入框展开后占满整条栏，居中标题让位；收起再淡回。
+            search.onActiveChange = { [weak self, weak controller] active in
+                guard let self, let controller else { return }
+                (controller.navigationController as? NativeChromeHosting)?.setSearchActive(active, for: controller)
+                self.setSearchPresented(active)
+            }
+        }
+        pageSearch = search
+        search.update(action)
+        search.attach(to: controller)
+    }
+
+    /// 搜索展开/收起时只重排栏内按钮位置（见 applyAction），不等 Compose 回报。
+    private func setSearchPresented(_ presented: Bool) {
+        guard searchPresented != presented else { return }
+        searchPresented = presented
+        if let lastAppliedAction { applyAction(lastAppliedAction) }
     }
 
     /// Transparent bar background setup (titles only). Assigned on structural changes;
@@ -612,6 +672,7 @@ private struct NativeBarActionLayoutKey: Equatable {
     let hasStatusAction: Bool
     let extraLabel: String?
     let hasExtraAction: Bool
+    let hasSearch: Bool
 
     init(_ action: NativeBarAction) {
         hasStatus = !action.status.isEmpty
@@ -620,6 +681,7 @@ private struct NativeBarActionLayoutKey: Equatable {
         hasStatusAction = action.onStatusClick != nil
         extraLabel = action.extraLabel
         hasExtraAction = action.onExtraClick != nil
+        hasSearch = action.searchPrompt != nil
     }
 }
 
@@ -688,6 +750,83 @@ private final class NativeBarIconButton: UIButton {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+}
+
+/// 页内搜索：iOS 26 起是导航栏里的系统搜索按钮（液态玻璃），点开就地展开成输入框，
+/// 取消后收回；更早系统退回导航栏下方的常驻搜索栏。只把文字和开合事件转给 Compose。
+private final class NativePageSearch: NSObject, UISearchResultsUpdating, UISearchControllerDelegate {
+    let searchController = UISearchController(searchResultsController: nil)
+    private var onOpen: (() -> Void)?
+    private var onQueryChange: ((String) -> Void)?
+    private var onClose: (() -> Void)?
+    /// 系统搜索框展开（true）或收起（false），宿主据此让出居中标题。
+    var onActiveChange: ((Bool) -> Void)?
+    private var lastQuery: String?
+    /// Compose 上一次回报的开合状态。只在它由开变关时收起系统搜索（如离开作业页）：
+    /// 滚动期间排队的旧动作仍带着「未打开」，若按值同步，会把用户刚点开的搜索立刻关掉。
+    private var composeActive = false
+
+    override init() {
+        super.init()
+        searchController.searchResultsUpdater = self
+        searchController.delegate = self
+        // 结果就在原页面里换，不需要系统再盖一层暗色遮罩。
+        searchController.obscuresBackgroundDuringPresentation = false
+        searchController.searchBar.autocapitalizationType = .none
+        searchController.searchBar.returnKeyType = .search
+    }
+
+    func update(_ action: NativeBarAction) {
+        onOpen = action.onSearchOpen
+        onQueryChange = action.onSearchQueryChange
+        onClose = action.onSearchClose
+        if let prompt = action.searchPrompt, searchController.searchBar.placeholder != prompt {
+            searchController.searchBar.placeholder = prompt
+        }
+        let active = action.searchActive
+        if composeActive && !active && searchController.isActive {
+            searchController.isActive = false
+        }
+        composeActive = active
+    }
+
+    func attach(to controller: UIViewController) {
+        let item = controller.navigationItem
+        guard item.searchController !== searchController else { return }
+        // 搜索激活时 push 详情再返回，结果和输入框都还在。
+        controller.definesPresentationContext = true
+        item.hidesSearchBarWhenScrolling = false
+        if #available(iOS 26.0, *) {
+            item.preferredSearchBarPlacement = .integratedButton
+        }
+        item.searchController = searchController
+    }
+
+    func detach(from controller: UIViewController) {
+        if searchController.isActive { searchController.isActive = false }
+        if controller.navigationItem.searchController === searchController {
+            controller.navigationItem.searchController = nil
+        }
+    }
+
+    func updateSearchResults(for searchController: UISearchController) {
+        let text = searchController.searchBar.text ?? ""
+        guard text != lastQuery else { return }
+        lastQuery = text
+        onQueryChange?(text)
+    }
+
+    func willPresentSearchController(_ searchController: UISearchController) {
+        lastQuery = nil
+        onActiveChange?(true)
+        onOpen?()
+    }
+
+    func willDismissSearchController(_ searchController: UISearchController) {
+        lastQuery = nil
+        onActiveChange?(false)
+        onClose?()
     }
 }
 
@@ -1031,6 +1170,7 @@ private final class SafeAreaComposeHost: UIViewController, UIScrollViewDelegate 
 
 private protocol NativeChromeHosting: AnyObject {
     func setNativeTitle(_ title: String)
+    func setSearchActive(_ active: Bool, for owner: UIViewController)
     func refreshNavigationBarVisibility()
 }
 
@@ -1042,6 +1182,8 @@ private final class TabRootNavigationController: UINavigationController, UINavig
     private let selectTab: (String) -> Void
     let usesSystemBars: Bool
     private var centeredTitleLabel: NativeCenteredNavigationTitle?
+    /// 正在展开页内搜索的页面。只在它位于栈顶时藏标题，push 出去的二级页照常显示自己的标题。
+    private weak var searchingOwner: UIViewController?
     private var navigationBarHiddenState: Bool?
     /// 原生导航栏实际占掉的顶部高度（栏底 maxY，含状态栏），推给 Compose 做滚动内容顶边距；
     /// 内容经过横向玻璃，滚动方向驱动 iOS 27 原生栏划出。栏隐藏时推 0。
@@ -1206,7 +1348,7 @@ private final class TabRootNavigationController: UINavigationController, UINavig
             destination.hidesBottomBarWhenPushed = true
         }
         binding.controller = destination
-        setNativeTitle(destinationTitle)
+        setNativeTitle(destinationTitle, for: destination)
         // 先把目的地按最终尺寸 layout 一次，让 Compose 在转场开始前就开始画，
         // 减少滑动过程中 Metal 还没首帧的空窗。
         destination.loadViewIfNeeded()
@@ -1219,7 +1361,33 @@ private final class TabRootNavigationController: UINavigationController, UINavig
 
     // MARK: - NativeChromeHosting
 
+    func setSearchActive(_ active: Bool, for owner: UIViewController) {
+        if active {
+            searchingOwner = owner
+        } else if searchingOwner === owner {
+            searchingOwner = nil
+        } else {
+            return
+        }
+        guard topViewController === owner, let label = centeredTitleLabel else { return }
+        let alpha: CGFloat = active ? 0 : 1
+        guard label.alpha != alpha else { return }
+        UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            label.alpha = alpha
+        }
+    }
+
     func setNativeTitle(_ title: String) {
+        setNativeTitle(title, for: topViewController)
+    }
+
+    private func setNativeTitle(_ title: String, for owner: UIViewController?) {
+        // 搜索框展开时它占满整条栏，标题不能叠在输入框上。
+        let alpha: CGFloat = owner != nil && owner === searchingOwner ? 0 : 1
+        if let centeredTitleLabel, centeredTitleLabel.alpha != alpha {
+            centeredTitleLabel.layer.removeAllAnimations()
+            centeredTitleLabel.alpha = alpha
+        }
         if usesSystemBars && nativeBarIsVertical(in: traitCollection) {
             centeredTitleLabel?.isHidden = true
             return

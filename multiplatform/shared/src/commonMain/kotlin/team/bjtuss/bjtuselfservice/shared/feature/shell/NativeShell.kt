@@ -40,6 +40,16 @@ class NativeBarAction(
     val scrollProgress: Float = 0f,
     /** Optional single-owner native scroller. Offsets are consumed, never estimated by item index. */
     val scrollController: NativeScrollController? = null,
+    /**
+     * 本页支持搜索时的占位文字；非空时宿主给本页挂 UISearchController，输入框与展开/收起动画全由系统负责，
+     * Compose 只按 [onSearchQueryChange] 收到的文字把列表换成结果。
+     */
+    val searchPrompt: String? = null,
+    /** Compose 侧搜索是否打开；为 false 而系统搜索仍处于激活态时宿主把它收起（如离开作业页）。 */
+    val searchActive: Boolean = false,
+    val onSearchOpen: (() -> Unit)? = null,
+    val onSearchQueryChange: ((String) -> Unit)? = null,
+    val onSearchClose: (() -> Unit)? = null,
 )
 
 /** 原生底栏实际承载的一级入口；物理在线开启后与主分支一样是一级 tab。 */
