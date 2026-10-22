@@ -20,6 +20,7 @@ import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import team.bjtuss.bjtuselfservice.kmp.MainActivity
 import team.bjtuss.bjtuselfservice.kmp.R
+import team.bjtuss.bjtuselfservice.kmp.live.CourseLiveUpdates
 import team.bjtuss.bjtuselfservice.shared.feature.widget.CourseWidgetState
 import team.bjtuss.bjtuselfservice.shared.feature.widget.courseWidgetNextRefresh
 import team.bjtuss.bjtuselfservice.shared.feature.widget.courseWidgetState
@@ -57,15 +58,16 @@ class WeekCourseWidgetProvider : CourseWidgetProvider() {
     override val kind = CourseWidgetKind.WEEK
 }
 
-/** 定时重排、系统时间/时区变化、应用更新后都重新排版一次。 */
+/** 定时重排、系统时间/时区变化、应用更新后都重新排版一次；系统时间变化时实时动态也重新对齐。 */
 class CourseWidgetRefreshReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         CourseWidgetUpdater.updateAll(context)
+        if (intent.action != CourseWidgetUpdater.ACTION_REFRESH) CourseLiveUpdates.reconcile(context)
     }
 }
 
 object CourseWidgetUpdater {
-    private const val ACTION_REFRESH = "team.bjtuss.bjtuselfservice.kmp.widget.REFRESH"
+    internal const val ACTION_REFRESH = "team.bjtuss.bjtuselfservice.kmp.widget.REFRESH"
     /** 只记录桌面上报的尺寸（无课表、无账号信息），`adb logcat -s CourseWidget` 可查。 */
     private const val TAG = "CourseWidget"
 
