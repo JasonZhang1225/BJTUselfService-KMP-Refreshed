@@ -33,3 +33,9 @@ GitHub 是发行事实来源。`kmp-package.yml` 的 `release` 任务成功后�
 镜像失败后修复 Token、容量、网络或标签冲突，再手动运行 **Gitee Release mirror** 并输入相同 tag。首次同步若上传一半失败，Release 可见但没有完成标记，App 忽略；原 GitHub Release 可继续下载。回退只需移除 `kmp-package.yml` 中的 `gitee-mirror` 调用，不影响原四端打包和 GitHub 发布。
 
 验证：`python3 -m unittest discover -s scripts/tests -v`。真实写 API、项目四端匿名校验、GitHub Actions 端网络与令牌权限，必须等所有者配置 Secret 后由实际发布/重跑验收；本地测试不代表这些已通过。
+
+## 所有者授权的整链路测试（2026-10-23）
+
+仅 `v1.0.0-gitee-test` 标签发布为预发行版，并在紧接的下一步由 GitHub CLI 将 Release 改回草稿。它使用实际 1.8.6-KMP / Build44 的四端包，不修改 App 版本号。镜像仅允许这个固定测试标签在草稿状态下读取；使用认证的 GitHub Asset API 取包，跨主机重定向时去掉 Authorization/Cookie，不把仓库令牌传给 CDN。其他草稿仍拒绝。
+
+确认 Gitee 初次同名镜像完整、匿名哈希通过后，手动运行 **Gitee Release mirror**：tag 填 `v1.0.0-gitee-test`，勾选 `promote_test`。该模式仅允许把这个已完整测试镜像改为 Gitee `v2.0.0`，不改变 GitHub tag、不覆盖其他 Gitee Release、不删除附件；新 tag 的四端匿名哈希再次通过后才恢复完成标记。说明包含 `<!-- bjtu-mirror-test:v1 -->`，App 据此避免测试用2.0.0污染普通1.x版本的最高版本记录。

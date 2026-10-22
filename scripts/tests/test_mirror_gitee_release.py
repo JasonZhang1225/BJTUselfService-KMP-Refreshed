@@ -44,32 +44,32 @@ class MirrorTest(unittest.TestCase):
                 with patch.object(m, 'request', return_value=body), self.assertRaises(m.MirrorError):
                     m.anonymous_verify('https://gitee.com/download', path)
 
-    def run_mirror(self, existing=False, fail_download=False, oversized=False):
-        assets = [dict(a, browser_download_url='https://github.com/' + a['name']) for a in self.assets()]
+    def run_mirror(self, existing=False, fail_download=False, oversized=False, draft=False, tag="v9.0.0-KMP", promote=False, ready=True):
+        assets = [dict(a, browser_download_url='https://github.com/' + a['name'], url=f'https://api.github.com/repos/{m.GITHUB_REPO}/releases/assets/{index}') for index, a in enumerate(self.assets())]
         if oversized:
             assets[0]['size'] = m.MAX_FILE + 1
-        release = dict(tag_name='v9.0.0-KMP', name='Release', body='Notes', prerelease=True, draft=False, assets=assets)
+        release = dict(tag_name=tag, name='Release', body='Notes', prerelease=True, draft=draft, assets=assets)
         calls = []
         class Api:
             def pages(self, path):
                 if path == '/releases':
-                    return [dict(id=1, tag_name='v9.0.0-KMP', created_at='2026-10-22')] if existing else []
+                    return [dict(id=1, tag_name=tag, created_at='2026-10-22', body=m.READY if ready else '')] if existing else []
                 return assets if existing else []
             def call(self, path, method='GET', fields=None, file=None):
                 calls.append((method, path, fields))
                 return {'id': 1}
         def download(url, **kwargs):
-            if 'api.github.com' in url:
+            if '/releases/tags/' in url:
                 return json.dumps(release).encode()
             if fail_download and 'gitee.com' in url and url.endswith('.msi'):
                 return b'<html>login</html>'
             return b'x' * 42
-        with patch.dict(m.os.environ, {'GITEE_TOKEN': 'dummy', 'GH_TOKEN': 'dummy', 'RELEASE_TAG': 'v9.0.0-KMP'}), \
+        with patch.dict(m.os.environ, {'GITEE_TOKEN': 'dummy', 'GH_TOKEN': 'dummy', 'RELEASE_TAG': tag}), \
                 patch.object(m, 'Gitee', return_value=Api()), patch.object(m, 'request', side_effect=download), \
                 patch.object(m, 'sync_tag') as push, contextlib.redirect_stdout(io.StringIO()):
             error = None
             try:
-                m.main()
+                m.main(promote_test=promote)
             except m.MirrorError as caught:
                 error = caught
         return calls, push.call_count, error
@@ -98,6 +98,47 @@ class MirrorTest(unittest.TestCase):
         self.assertIsInstance(error, m.MirrorError)
         self.assertEqual([], calls)
         self.assertEqual(0, pushed)
+
+    def test_regular_drafts_cannot_be_mirrored(self):
+        calls, pushed, error = self.run_mirror(draft=True)
+        self.assertIsInstance(error, m.MirrorError)
+        self.assertEqual([], calls)
+        self.assertEqual(0, pushed)
+
+    def test_authorized_test_draft_downloads_through_authenticated_asset_api(self):
+        calls, _, error = self.run_mirror(draft=True, tag=m.TEST_SOURCE_TAG)
+        self.assertIsNone(error)
+        self.assertTrue(calls[-1][2]['body'].endswith(m.READY))
+        self.assertIn(m.TEST_MARKER, calls[-1][2]['body'])
+
+    def test_test_promotion_requires_original_complete_mirror(self):
+        for existing, ready in [(False, False), (True, False)]:
+            calls, pushed, error = self.run_mirror(tag=m.TEST_SOURCE_TAG, draft=True, existing=existing, ready=ready, promote=True)
+            self.assertIsInstance(error, m.MirrorError)
+            self.assertEqual([], calls)
+            self.assertEqual(0, pushed)
+
+    def test_test_promotion_keeps_installers_and_updates_only_same_release(self):
+        calls, _, error = self.run_mirror(tag=m.TEST_SOURCE_TAG, draft=True, existing=True, promote=True)
+        self.assertIsNone(error)
+        self.assertTrue(all(method == 'PATCH' for method, _, _ in calls))
+        self.assertEqual(m.TEST_TARGET_TAG, calls[-1][2]['tag_name'])
+        self.assertIn(m.TEST_MARKER, calls[-1][2]['body'])
+
+    def test_arbitrary_releases_cannot_use_test_promotion(self):
+        calls, pushed, error = self.run_mirror(existing=True, promote=True)
+        self.assertIsInstance(error, m.MirrorError)
+        self.assertEqual([], calls)
+        self.assertEqual(0, pushed)
+
+    def test_cdn_redirect_never_forwards_repository_token(self):
+        original = m.urllib.request.Request('https://api.github.com/asset', headers={'Authorization': 'Bearer dummy', 'Cookie': 'dummy'})
+        handler = m.SafeRedirectHandler()
+        redirected = handler.redirect_request(original, None, 302, '', {}, 'https://release-assets.githubusercontent.com/file')
+        self.assertIsNone(redirected.get_header('Authorization'))
+        self.assertIsNone(redirected.get_header('Cookie'))
+        same_host = handler.redirect_request(original, None, 302, '', {}, 'https://api.github.com/other')
+        self.assertEqual('Bearer dummy', same_host.get_header('Authorization'))
 
 
 if __name__ == '__main__':

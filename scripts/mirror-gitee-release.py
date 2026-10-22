@@ -14,6 +14,9 @@ import urllib.request
 GITHUB_REPO = 'JasonZhang1225/BJTUselfService-KMP-Refreshed'
 GITEE_REPO = 'zjg1225/BJTUselfService-KMP-Refreshed'
 READY = '<!-- bjtu-mirror-ready:v1 -->'
+TEST_MARKER = '<!-- bjtu-mirror-test:v1 -->'
+TEST_SOURCE_TAG = 'v1.0.0-gitee-test'
+TEST_TARGET_TAG = 'v2.0.0'
 MAX_FILE = 100_000_000
 # Leave headroom for ordinary repository attachments, which are not listed here.
 RELEASE_BUDGET = 900_000_000
@@ -24,9 +27,20 @@ class MirrorError(Exception):
     pass
 
 
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected and urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
+            # GitHub's authenticated asset endpoint redirects to a signed CDN URL.
+            # Do not forward the repository token (or cookies) to that other host.
+            redirected.remove_header('Authorization')
+            redirected.remove_header('Cookie')
+        return redirected
+
+
 def request(url, data=None, headers=None):
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=headers or {}), timeout=300) as response:
+        with urllib.request.build_opener(SafeRedirectHandler()).open(urllib.request.Request(url, data=data, headers=headers or {}), timeout=300) as response:
             return response.read()
     except urllib.error.HTTPError as error:
         # Do not print request URLs/bodies: Gitee query/form parameters contain a secret.
@@ -101,19 +115,19 @@ def anonymous_verify(url, expected):
         raise MirrorError('Anonymous download differs from GitHub asset (or returned a login/error page)')
 
 
-def sync_tag(tag):
+def sync_tag(tag, target_tag=None):
     # Push only this tag; never force/mirror or rewrite main. Existing conflicting tags fail.
     with tempfile.TemporaryDirectory() as temp:
         askpass = Path(temp) / 'askpass'
         askpass.write_text('#!/bin/sh\ncase "$1" in *Username*) printf "%s" "$GITEE_USERNAME";; *) printf "%s" "$GITEE_TOKEN";; esac\n')
         askpass.chmod(0o700)
         env = dict(os.environ, GITEE_USERNAME=os.environ.get('GITEE_USERNAME') or GITEE_REPO.split('/')[0], GIT_ASKPASS=str(askpass), GIT_TERMINAL_PROMPT='0')
-        result = subprocess.run(['git', 'push', f'https://gitee.com/{GITEE_REPO}.git', f'refs/tags/{tag}:refs/tags/{tag}'], env=env, capture_output=True)
+        result = subprocess.run(['git', 'push', f'https://gitee.com/{GITEE_REPO}.git', f'refs/tags/{tag}:refs/tags/{target_tag or tag}'], env=env, capture_output=True)
         if result.returncode:
             raise MirrorError('Tag sync failed; check token permissions, repository quota and conflicting tags. No force push performed')
 
 
-def main():
+def main(promote_test=False):
     token = os.environ.get('GITEE_TOKEN', '')
     if not token:
         raise MirrorError('Configure GitHub Actions secret GITEE_TOKEN (projects scope)')
@@ -122,13 +136,21 @@ def main():
         raise MirrorError('Only existing production/emergency v* releases may be mirrored')
     gh_headers = {'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + os.environ['GH_TOKEN']}
     release = json.loads(request(f'https://api.github.com/repos/{GITHUB_REPO}/releases/tags/{tag}', headers=gh_headers))
-    if release['draft'] or release['tag_name'] != tag:
+    if (release['draft'] and tag != TEST_SOURCE_TAG) or release['tag_name'] != tag:
         raise MirrorError('GitHub release is unpublished or tag mismatched')
+    if promote_test and tag != TEST_SOURCE_TAG:
+        raise MirrorError('Retagging is restricted to the authorized disposable Gitee test release')
+    target_tag = TEST_TARGET_TAG if promote_test else tag
     assets = release['assets']
     validate_assets(assets)
     api = Gitee(token)
     releases = api.pages('/releases')
     existing = next((r for r in releases if r['tag_name'] == tag), None)
+    if promote_test:
+        if not existing or READY not in existing.get('body', ''):
+            raise MirrorError('The original Gitee test mirror must be complete before retagging')
+        if any(r['tag_name'] == target_tag and r['id'] != existing['id'] for r in releases):
+            raise MirrorError('Target Gitee test tag belongs to another release; nothing overwritten')
     all_files = {r['id']: api.pages(f"/releases/{r['id']}/attach_files") for r in releases}
     files = all_files.get(existing['id'], []) if existing else []
     missing = [a for a in assets if not any(f['name'] == a['name'] for f in files)]
@@ -139,31 +161,42 @@ def main():
         paths = []
         for asset in assets:
             path = Path(temp) / asset['name']
-            path.write_bytes(request(asset['browser_download_url']))
+            if release['draft']:
+                asset_url = asset.get('url', '')
+                if not asset_url.startswith(f'https://api.github.com/repos/{GITHUB_REPO}/releases/assets/'):
+                    raise MirrorError('Draft test asset must use its authenticated GitHub API URL')
+                download_headers = dict(gh_headers, Accept='application/octet-stream')
+                path.write_bytes(request(asset_url, headers=download_headers))
+            else:
+                path.write_bytes(request(asset['browser_download_url']))
             if path.stat().st_size != asset['size']:
                 raise MirrorError('GitHub asset size mismatch')
             paths.append(path)
-        sync_tag(tag)
-        fields = {'tag_name': tag, 'name': release['name'] or tag, 'body': (release['body'] or '').replace(READY, ''), 'prerelease': str(release['prerelease']).lower()}
+        sync_tag(tag, target_tag)
+        fields = {'tag_name': target_tag, 'name': release['name'] or tag, 'body': (release['body'] or '').replace(READY, ''), 'prerelease': str(release['prerelease']).lower()}
+        if tag == TEST_SOURCE_TAG:
+            fields['body'] = fields['body'].replace(TEST_MARKER, '').rstrip() + '\n\n' + TEST_MARKER
+        if promote_test:
+            fields['name'] = '2.0.0 测试版 · Gitee 更新链路验证（安装包实际 1.8.6）'
         if existing:
             api.call(f"/releases/{existing['id']}", 'PATCH', fields)
         else:
-            existing = api.call('/releases', 'POST', dict(fields, target_commitish=tag))
+            existing = api.call('/releases', 'POST', dict(fields, target_commitish=target_tag))
         rid = existing['id']
         for path in paths:
             if not any(f['name'] == path.name for f in files):
                 api.call(f'/releases/{rid}/attach_files', 'POST', file=path)
-            url = f'https://gitee.com/{GITEE_REPO}/releases/download/{tag}/{path.name}'
+            url = f'https://gitee.com/{GITEE_REPO}/releases/download/{target_tag}/{path.name}'
             anonymous_verify(url, path)
             print(f'Anonymous SHA-256 verified: {path.name}')
         # Publish completion marker last. Partial uploads never become app update candidates.
         api.call(f'/releases/{rid}', 'PATCH', dict(fields, body=fields['body'] + '\n\n' + READY))
-        print(f'Mirror ready: {tag}')
+        print(f'Mirror ready: {target_tag}')
 
 
 if __name__ == '__main__':
     try:
-        main()
+        main(promote_test=os.environ.get('PROMOTE_GITEE_TEST', 'false') == 'true')
     except MirrorError as error:
         print(f'::error::{error}')
         raise SystemExit(1)
