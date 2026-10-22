@@ -67,6 +67,7 @@ object CourseLiveUpdates : AndroidLiveActivityHost {
     private const val KEY_PRESENTED = "presentedId"
     private const val KEY_DISMISSED = "dismissedIds"
     private const val KEY_ASKED_PERMISSION = "askedNotificationPermission"
+    private const val KEY_INTRO_SHOWN = "notificationIntroShown"
 
     internal const val ACTION_REFRESH = "team.bjtuss.bjtuselfservice.kmp.live.REFRESH"
     internal const val ACTION_STOP = "team.bjtuss.bjtuselfservice.kmp.live.STOP"
@@ -98,6 +99,38 @@ object CourseLiveUpdates : AndroidLiveActivityHost {
 
     fun attachPermissionRequester(requester: (() -> Unit)?) {
         permissionRequester = requester
+    }
+
+    /**
+     * 首次打开 App 时是否先说明再申请通知权限：Android 16 及以上、还没授权，且说明框和系统授权框都没出现过。
+     * 只问一次；之后仍可在首页卡片的 Live 菜单里“允许通知并开启”。
+     */
+    override fun shouldOfferPermissionIntro(): Boolean = appContext?.let(::shouldShowPermissionIntro) ?: false
+
+    override fun markPermissionIntroShown() {
+        appContext?.let(::markPermissionIntroShown)
+    }
+
+    override fun requestPermissionFromIntro() {
+        appContext?.let(::requestPermissionFromIntro)
+    }
+
+    fun shouldShowPermissionIntro(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) return false
+        if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return false
+        val prefs = prefs(context)
+        return !prefs.getBoolean(KEY_INTRO_SHOWN, false) && !prefs.getBoolean(KEY_ASKED_PERMISSION, false)
+    }
+
+    fun markPermissionIntroShown(context: Context) {
+        prefs(context).edit().putBoolean(KEY_INTRO_SHOWN, true).apply()
+    }
+
+    /** 说明框里点了“允许”：弹系统授权框。系统框只弹这一次，之后被拒绝只能去设置里打开。 */
+    fun requestPermissionFromIntro(context: Context) {
+        val requester = permissionRequester ?: return
+        prefs(context).edit().putBoolean(KEY_ASKED_PERMISSION, true).apply()
+        requester()
     }
 
     fun onPermissionResult(context: Context, granted: Boolean) {
