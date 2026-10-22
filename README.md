@@ -4,12 +4,11 @@
 > 本仓库为 **Kotlin Multiplatform 重构版**（Android / iOS / macOS / Windows）。
 
 [![KMP Release](https://img.shields.io/github/v/release/JasonZhang1225/BJTUselfService-KMP-Refreshed?include_prereleases&style=flat-square&label=KMP%20版本)](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases)
-[![Upstream](https://img.shields.io/github/v/release/HFDLYS/BJTUselfService?style=flat-square&label=原作者安卓)](https://github.com/HFDLYS/BJTUselfService/releases/latest)
 [![Android](https://img.shields.io/badge/Android-9.0%2B-brightgreen?style=flat-square&logo=android)](https://developer.android.com)
-[![iOS](https://img.shields.io/badge/iOS-侧载/开发构建-000000?style=flat-square&logo=apple)](https://developer.apple.com)
+[![iOS](https://img.shields.io/badge/iOS-18.0%2B%20侧载-000000?style=flat-square&logo=apple)](https://developer.apple.com)
 [![macOS](https://img.shields.io/badge/macOS-12%2B%20Apple%20Silicon-000000?style=flat-square&logo=apple)](https://developer.apple.com)
 [![Kotlin](https://img.shields.io/badge/Kotlin-Multiplatform%20%2B%20Compose-7F52FF?style=flat-square&logo=kotlin)](https://kotlinlang.org)
-[![License](https://img.shields.io/github/license/HFDLYS/BJTUselfService?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/github/license/JasonZhang1225/BJTUselfService-KMP-Refreshed?style=flat-square)](LICENSE)
 
 <p align="center"><img src="docs/images/promo.jpg" alt="交大自由行 KMP：北京交通大学校园服务，一个 App 多端同步；功能一览：作业聚合、应用中心、教室查询、按需定制、成绩分析、校内邮箱，更多功能不止于此" width="100%"></p>
 
@@ -17,82 +16,80 @@
 
 **交大自由行** 是一款专为北京交通大学师生打造的校园服务应用。通过自动登录 MIS 系统，将成绩查询、课程表、考试安排、作业管理、邮件查看等常用校园功能整合到一个简洁直观的界面中。
 
-所有数据解析（包括验证码识别）均在**本地完成**，无需上传至第三方服务器，充分保障用户隐私安全。
+登录页解析、密码加密和学校数据解析均在**本地完成**，账号密码不会上传至第三方服务器。
 
 本项目（[BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed)）在原作者 [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService) 安卓版基础上，用 **KMP + Compose Multiplatform** 做多端共享实现。
 
-### 上游原版（Android）现状
+本项目以原版 `v1.7.1` 为迁移基线，此后独立迭代，不再与上游同步。相对迁移基线，KMP 版主要新增：
 
-上游项目是**仅 Android** 的校园客户端，当前最新版本 `v1.8.0`（[Release](https://github.com/HFDLYS/BJTUselfService/releases/latest)，2026-10-21），主要能力：
-
-- **登录**：适配新版 MIS SSO 统一身份认证，本地 SM2 加密密码，本地保存凭据并启动自动登录
-- **学业**：成绩查询（学年筛选、排序、GPA/均分）、课程表（本科/研究生，高亮当前课程）、考试日程（变动提醒、已结束置灰）、作业管理（查看/筛选/排序/上传下载）
-- **信息服务**：原生校内邮箱收件箱（展示最近 30 封，暂不支持发信与附件下载）、校园卡余额、校园网余额
-- **日历与提醒**：日历视图整合作业截止与考试；邮箱订阅自动抓取智慧课程平台作业/报告/实验，剩余时间不足阈值时发邮件提醒
-- **校园工具**：教室人数识别与占用详情（空闲筛选、楼层切换）、校历下载、中英文成绩单下载、应用内更新
-- **技术栈**：Jetpack Compose + Material 3、Dagger Hilt、OkHttp3、Jsoup、Room、Kotlin Serialization / Gson / Moshi、MIS SSO + Bouncy Castle (SM2)、Kizitonwose Calendar、Lottie；仅打包 arm64-v8a，支持 Android 9.0+
-- **隐私**：SSO 登录页解析与密码加密在客户端完成，账号密码仅存本机；学业数据经学校服务查询，教室人数与占用详情经项目服务获取
-
-本 KMP 仓库以 `v1.7.1` 为迁移基线，在下文列出多端与额外能力的差异。
-
-_**相对迁移基线（v1.7.1）在 KMP 版中额外提供/增强的能力（节选；其中部分能力上游 v1.8.0 也已具备）：**_
-
-- _**四端共享：Android / iOS / macOS / Windows**（iOS 现已支持 iPhone Duo 等常规机型）_
-- _**图书馆借阅**（统一认证 SSO 登录、当前借阅/历史、续借、到期提醒）_
-- _**物理在线作业、物理实验与演示实验查询（独立账号体系）**_
-- _**CITEL 作业（书面作业 + 编程练习、报告/代码文件、折扣节点）**_
-- _**课程平台 / 物理在线 / CITEL 三源作业聚合展示**_
-- _**教室占用查询与教室人数估计**_
-- _**成绩按课程性质筛选（必修 / 限选 / 任选 / 体育）**_
-- _**邮箱写信/回复与 HTML 表格展示**_
-- _**应用中心与可自定义底栏**（上游为固定底栏 + 壁纸/玻璃态界面）_
+- **四端共享**：Android / iOS / macOS / Windows 共用业务逻辑与大部分界面
+- **更多作业来源**：物理在线、CITEL（书面作业 + 编程练习），可与课程平台聚合为一个“作业”入口
+- **物理实验与演示实验**、**图书馆借阅**
+- **桌面小组件、灵动岛与实时活动**（iOS 灵动岛 / Android 16 实时动态）
+- **本地 AI 助手与 ChatGPT 插件**：用 AI 工具查询课表、成绩、作业
+- **应用中心与可自定义底栏**
 
 ## 📱 支持平台
 
-- **Android**：arm64-v8a .`apk`（包名 `team.bjtuss.bjtuselfservice.kmp`与原版包名不同，可共存）
-- **iOS**：unsigned `.ipa`（开发/侧载构建，需自行签名安装，可使用 SideStore ，参考 [iOS 自签与安装指南](docs/iOS-sign-guide.md)）
-- **macOS**：Arm64`.dmg`（仅支持 Apple Silicon 芯片 Mac，ad-hoc 签名，未公证，首次打开可能需要在终端执行 `sudo xattr -r -d com.apple.quarantine /Applications/交大自由行\ KMP.app`）
+- **Android**：arm64-v8a `.apk`，Android 9.0 及以上（包名 `team.bjtuss.bjtuselfservice.kmp`，与原版包名不同，可共存）
+- **iOS**：unsigned `.ipa`，iOS 18.0 及以上（需自行签名侧载，可使用 SideStore；签名时须保留 App 扩展，否则小组件无法读取课表。参考 [iOS 自签与安装指南](docs/iOS-sign-guide.md)）
+- **macOS**：arm64 `.dmg`，macOS 12 及以上（仅支持 Apple Silicon 芯片 Mac，ad-hoc 签名，未公证，首次打开可能需要在终端执行 `sudo xattr -r -d com.apple.quarantine /Applications/交大自由行\ KMP.app`）
 - **Windows**：x64 `.msi` 安装包
 - 对于其他系统平台或架构，可以使用源码自行打包对应平台版本
 
 ### 🔐 智能登录
 
-- iOS和Mac可以调用系统密码App，Select password，选择mis系统网页密码填充登录
+- iOS 和 Mac 可以调用系统“密码” App，选择 MIS 网页密码自动填充登录
 - 免验证码自动登录 MIS 系统
 - 学校要求验证码时显示图片，可刷新后手动输入；自动登录只提交一次密码，失败即停下，避免重复提交
 - 登录状态持久化，打开即用
-- 物理实验和CITEL需要单独配置账号密码，支持记住密码和自动登录
+- 物理实验、演示实验、物理在线和 CITEL 需要单独配置账号密码，支持记住密码和自动登录
 
 ### 📚 学业管理
 
 - **成绩查询** — 查看成绩详情，按学年、课程类型（选修/必修等）筛选、排序、计算均分
 - **课程表** — 直观的课程表预览界面，支持本科生与研究生
 - **考试日程** — 考试安排一览，变动自动提醒
-- **物理实验（需单独配置账号密码）** — 获取物理实验选课系统的选课信息，并显示在首页和课程表提醒
-- **智慧课程平台作业管理** — 查看、筛选、排序作业，支持作业上传与下载
+- **物理实验与演示实验（需单独配置账号密码，需校园网）** — 获取物理实验选课信息和已预约的演示实验，并显示在首页和课程表
+- **智慧课程平台作业与课件** — 查看、筛选、排序作业，支持作业上传与下载；课件可单个下载或整课批量导出
 - **物理在线作业管理（需校园网环境）** — 查看课程、作业安排、批改信息和评语；保存作业文件并最终提交
-- **CITEL 作业（需单独配置账号密码）** — 同步书面作业与编程练习，支持报告文件增删替换和代码文件提交；查看折扣倍率及开始/折扣/截止节点
-- **以上三个来源作业可聚合展示** — 可在设置开启作业聚合，将课程平台、物理在线和 CITEL 合为“作业”入口
+- **CITEL 作业（需单独配置账号密码）** — 同步书面作业与编程练习，支持报告文件增删替换和代码文件提交；查看折扣倍率及开始/折扣/截止节点；编程题显示评测结果，题面与测试用例可复制或保存为 Markdown，也可导出为文件夹
+- **作业聚合与搜索** — 课程平台、物理在线和 CITEL 默认合为一个“作业”入口（可在设置中分开）；支持搜索全部作业，不受筛选条件限制
 
 ### 📬 信息服务
 
-- **校内邮箱** — 首页显示未读邮件数量，邮件展示支持 HTML 表格与写信/回复和在浏览器打开
-- **手机版一键跳转完美校园小程序** — 便于一卡通管理
-- **校园网余额充值二维码** — 微信扫描进入校园网充值入口
+- **校内邮箱** — 首页显示未读邮件数量，邮件展示支持 HTML 表格，支持写信/回复、附件查看与保存和在浏览器打开
+- **完美校园与校园网缴费** — 二维码弹窗，可保存二维码后用微信扫一扫进入；Android 另可直接打开完美校园 App
 
 ### 📅 日历与提醒
 
 - 按照校历获取教学周安排，可正确处理国庆等长假导致的教学周变动
 - 课程表页面支持将课程表和物理实验导入手机日历（直接导入仅支持iOS，安卓支持导出为.ics文件）
-- 支持首页展示正在进行的课程、即将进行的课程和即将到期的作业
+- 首页展示正在进行和即将开始的课程，以及 48 小时内截止的作业（含物理在线和 CITEL）；数据变动按来源弹窗提醒
+- 第二节在逸夫教学楼、思源西楼的课按错峰时间（10:30–12:20）显示，可在设置中关闭
+- **桌面小组件**（iOS / Android）：“临近课程”“今日课程”“本周课表”三种，支持浅色/深色
+- **灵动岛与实时活动**：
+  - iOS 上日程可以显示在灵动岛和实时活动里，并支持 Apple Watch 智能叠放。
+  - Android 16 及以上支持课程实时动态（Live Updates），在 HyperOS 等系统上会以灵动岛样式显示。
+  - 课前会准点出现，可以在「正在上课」或「即将上课」卡片上调整出现时间。
 
 ### 🏫 校园工具
 
-- **教室占用查询与人数估计** — 查看教务系统的教室占用和第三方接口的教室人数侦测结果
+- **教室占用查询与人数估计** — 查看教务系统的教室占用和第三方接口的教室人数侦测结果；突出显示当前节次并列出空闲教室
 - **图书馆借阅** — 统一认证登录后查看当前借阅与借阅历史，支持单本/批量续借，首页提供到期与逾期提醒
 - **校历** — 打开公众号文章查看学校最新校历
 - **成绩单下载** — 支持中英文成绩单快捷下载
-- **应用内更新** — 获取本仓库发布的Release和Pre-release版本
+- **应用内更新** — 获取本仓库发布的 Release 和 Pre-release 版本
+
+### 🤖 AI 助手
+
+- **本地 AI 助手** — 可接入 Codex、Claude Code、WorkBuddy 等工具（Skill + CLI），在电脑上让 AI 读取本机缓存的课表、作业、考试、成绩和邮件
+- **ChatGPT 插件** — 借助付费 ChatGPT 账号的 Sites 功能创建私人插件，即可用 ChatGPT 远程查询课表、成绩、作业等信息。数据由你自己的设备上报：手机每次刷新时上报；电脑可在后台定时同步，也可关闭后台同步，只在应用内刷新时上传
+
+### 🖥️ 电脑端
+
+- 支持开机启动、后台运行和静默启动
+- Windows 点关闭按钮可收进托盘，最小化为普通最小化
 
 ## 🔒 隐私与安全
 
@@ -120,7 +117,7 @@ _**相对迁移基线（v1.7.1）在 KMP 版中额外提供/增强的能力（�
 
 ## 🏗️ 技术架构
 
-**原安卓工程（迁移基线 `v1.7.1`）** 已于 1.8.6 从本仓库移除，完整快照存档在标签 [`archive/legacy-android-and-captcha-model`](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/tree/archive/legacy-android-and-captcha-model)；它是上游早期版本：Jetpack Compose + Material 3、Dagger Hilt、Room、OkHttp3 + Jsoup、Bouncy Castle (SM2)。上游仓库已继续更新到 `v1.8.0`（新增原生邮箱、校园卡/校园网余额、日历订阅提醒、教室规划等），其架构与依赖见[上游 README](https://github.com/HFDLYS/BJTUselfService#readme)。
+**原安卓工程（迁移基线 `v1.7.1`）** 已于 1.8.6 从本仓库移除，完整快照存档在标签 [`archive/legacy-android-and-captcha-model`](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/tree/archive/legacy-android-and-captcha-model)；技术栈为 Jetpack Compose + Material 3、Dagger Hilt、Room、OkHttp3 + Jsoup、Bouncy Castle (SM2)。原版后续的架构与依赖见[原版 README](https://github.com/HFDLYS/BJTUselfService#readme)。
 
 **KMP 刷新版（`multiplatform/`）** 共享业务与大部分 UI：
 
@@ -142,22 +139,24 @@ _**相对迁移基线（v1.7.1）在 KMP 版中额外提供/增强的能力（�
 | UI   | Compose Multiplatform + Material 3            |
 | 网络   | Ktor                                          |
 | 本地缓存 | SQLDelight                                    |
-| 凭据   | Android Keystore / Apple Keychain             |
+| HTML 解析 | Ksoup                                       |
+| 序列化  | kotlinx.serialization                         |
+| 凭据   | Android Keystore / Apple Keychain / Windows DPAPI |
 | 宿主   | androidApp · iosApp · desktopApp · windowsApp |
 
 ## 🚀 从源码快速开始
 
 ### 环境要求
 
-- JDK 17+（推荐 Android Studio JBR 21 或本机 Temurin）
-- Android SDK（KMP `androidApp` 当前 compileSdk 见 `multiplatform/`）
-- Xcode（构建 iOS / 相关原生辅助）
+- JDK 21+（推荐 Android Studio 自带 JBR 21 或本机 Temurin）
+- Android SDK（minSdk 28，即 Android 9.0）
+- Xcode（构建 iOS，最低部署版本 iOS 18.0）
 - Apple Silicon macOS（Desktop 当前 arm64 自包含包）
 
 ### 构建步骤（KMP）
 
 ```bash
-# 1. 克隆本 fork
+# 1. 克隆本仓库
 git clone https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed.git
 cd BJTUselfService-KMP-Refreshed
 
@@ -171,16 +170,18 @@ chmod +x gradlew
 # 4. macOS DMG（Apple Silicon）
 ./gradlew :desktopApp:packageDmg
 
-# iOS 请用 Xcode 打开 multiplatform/iosApp，按开发证书签名安装；
-# 或本地打未签名 IPA 后侧载。
+# 5. Windows MSI（需在 Windows x64 上执行）
+./gradlew :windowsApp:packageMsi
+
+# 6. iOS 未签名构建（之后打成 IPA 自签侧载，流程见 .github/workflows/kmp-package.yml）
+xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Release \
+  -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 ```
 
 ### 仓库与发布
 
-| 仓库                                                                                                              | 说明                    |
-| --------------------------------------------------------------------------------------------------------------- | --------------------- |
-| [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService)                                             | 原作者安卓版（当前 `v1.8.0`）   |
-| [JasonZhang1225/BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed) | 本仓库 KMP 版（四端）         |
+- 本仓库：[JasonZhang1225/BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed)（四端发布见 [Releases](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases)，各版本说明见 [docs/releases](docs/releases)）
+- 原版安卓：[HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService)
 
 ## 🤝 贡献者
 

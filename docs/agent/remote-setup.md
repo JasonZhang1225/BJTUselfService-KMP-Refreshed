@@ -1,4 +1,4 @@
-# Windows 本地开发与私人 Site 搭建（模板 1.8.6-Beta2 / 协议 1 / 快照 schema 2）
+# Windows 本地开发与私人 Site 搭建（模板 1.8.6-KMP / 协议 1 / 快照 schema 2）
 
 维护源：[main 分支模板目录](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/tree/main/multiplatform/remote-site-template)，安装指导见其中的 [SETUP.md](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/blob/main/multiplatform/remote-site-template/SETUP.md)。该目录与 Gradle 工程独立，无第三方 Node 依赖，要求 Node ≥22.5。
 MCP 工具、Skill 与本机 CLI 共用的查询参数和返回结构见同目录 `agent-query-contract.md`；工具与 Skill 的唯一维护源是模板的 `src/mcp.js` 与 `plugin/skills/bjtuss-remote/SKILL.md`，不要另存副本。
@@ -37,7 +37,7 @@ Windows 打包：在 `multiplatform/` 用 JDK 21 运行 `gradlew.bat :windowsApp
 
 ## 手机与平板（Android / iOS）
 
-仅在手机 ChatGPT 查询已配对电脑上传的数据时，无需配对手机 App。手机 App 自己需要上传缓存时，登录同一 Site 另生成一份配对信息；模板需为 1.8.6-Beta2 或更高，并使用支持完整配对信息的新客户端。
+仅在手机 ChatGPT 查询已配对电脑上传的数据时，无需配对手机 App。手机 App 自己需要上传缓存时，登录同一 Site 另生成一份配对信息；模板需为 1.8.6-Beta2 或更高（1.8.6-Beta2 与 1.8.6-KMP 的 App、模板可互相连接），并使用支持完整配对信息的新客户端。
 
 手机不定时上传、不心跳、不轮询任务，只在 App 刷新后上传；即时任务由电脑执行。health 认证/网络失败应报告实际错误，只有确实读到旧版才提示升级。
 

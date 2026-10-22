@@ -1,16 +1,21 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-22。
-> 当前分支：`fix/beta2-desktop-agent-classroom`（Beta2 整合、版本兼容修复、iOS ChatGPT 插件页顶栏玻璃修复与 CI 竞态测试修复已于 2026-10-22 按所有者授权推送 main，见日志；App/Site/插件/模板为 1.8.6-Beta2 / Build 43，未推主仓库或 tag）。2026-10-22 按用户授权直接在本地主干提交数据保护修复并推送（禁用自动删库、凭据保护、启动取消后重试；1088 项测试通过，四端相关编译通过；未重新打包），细节见日志。2026-10-22 所有者明确授权将本次全部修改直接推送 main：完整长码 App 配对、公共模板及文档提交 `27efa42b` / `9de3eade` / `08b9286b` 已进入主干；以 `--force-with-lease` 推送，保留原有历史。模板 PR #54 已关闭。私人 Site 已部署成功（源码 `495efffe`、`has_mcp=true`）。本机唯一远端 `origin` = `JasonZhang1225/BJTUselfService-KMP-Refreshed`，GitHub 已脱离 fork。验证与交付细节见日志；本地三端包已生成（源码 `6f4b07d8`，未发版；用户已覆盖安装 IPA，未包含本次数据保护修复）：Release APK 约 5.8 MiB、DMG 约 82.5 MiB、供 SideStore 自签的 Release IPA 约 22.0 MiB，均为 arm64；目录 `~/Downloads/BJTUselfService-1.8.6-Beta-6f4b07d8-20261022/`，含 SHA256SUMS.txt 和构建说明。
+> 当前分支：`fix/beta2-desktop-agent-classroom`（Beta2 整合、版本兼容修复、iOS ChatGPT 插件页顶栏玻璃修复与 CI 竞态测试修复已于 2026-10-22 按所有者授权推送 main，见日志；App/Site/插件/模板为 1.8.6-Beta2 / Build 43；debug-1.8.6-Beta2 已按用户授权推至最新 origin/main@ab3eac6f）。2026-10-22 按用户授权直接在本地主干提交数据保护修复并推送（禁用自动删库、凭据保护、启动取消后重试；1088 项测试通过，四端相关编译通过；未重新打包），细节见日志。2026-10-22 所有者明确授权将本次全部修改直接推送 main：完整长码 App 配对、公共模板及文档提交 `27efa42b` / `9de3eade` / `08b9286b` 已进入主干；以 `--force-with-lease` 推送，保留原有历史。模板 PR #54 已关闭。私人 Site 已部署成功（源码 `495efffe`、`has_mcp=true`）。本机唯一远端 `origin` = `JasonZhang1225/BJTUselfService-KMP-Refreshed`，GitHub 已脱离 fork。验证与交付细节见日志；本地三端包已生成（源码 `6f4b07d8`，未发版；用户已覆盖安装 IPA，未包含本次数据保护修复）：Release APK 约 5.8 MiB、DMG 约 82.5 MiB、供 SideStore 自签的 Release IPA 约 22.0 MiB，均为 arm64；目录 `~/Downloads/BJTUselfService-1.8.6-Beta-6f4b07d8-20261022/`，含 SHA256SUMS.txt 和构建说明。
 > 上次任务分支：`docs/agent-setup-main`（基于 `main@9c7eb55a`；Agent 搭建入口改 main，按用户授权直接推送；验证见日志）。PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次、#46 课程实时动态（Android Live Updates + 双端课前准点出现）均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`、`aac1816`）；#45 验证码模型移除与安装包瘦身（合并提交 `a58e7c6`）、#48 iOS 作业上传修复与上传页统一（合并提交 `ad2a082`）均经所有者实测后合并（2026-10-22），合并后主干安全检查 #179 与打包 #113 见日志；#50 AI Agent 与 ChatGPT 私人远程查询（合并提交 `a18369d`）已合入；#51 v1.8.6 发布说明（`docs/releases/v1.8.6.md`，合并提交 `7513348`）已合入；#52 启动弹窗合并与 1.8.6-Beta 版本号待所有者合并。细节见 `history_full.md`。远端另保留 `claude/宣传图制作`。
-> KMP 源码版本：`1.8.6-Beta2` / Build 43（仅本地提交，未推标签；下载目录已有 Beta2 / Build43 的三端 Release 包，未安装）；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。iOS 最低系统 18.0。
+> 私人 Site 线上仍为 1.8.6-Beta2（部署需 Codex 的 ChatGPT Sites 连接器，Claude Code 会话无此工具）；模板源码已改 1.8.6-KMP，Beta2 App/模板互不拦截（Site 不校验客户端版本，App 只要求模板数字核心 ≥0.4.0）。
+> KMP 源码版本：main 已为 `1.8.6-KMP` / Build 44（2026-10-22 按所有者授权推送，未打标签；正式发版 tag 应为 `v1.8.6-KMP`，发布日期定 2026-10-23，说明 `docs/releases/v1.8.6-KMP.md`）；此前 `1.8.6-Beta2` / Build 43（已推 debug-1.8.6-Beta2 → ab3eac6f，KMP package #39777575554 排队中；下载目录已有 Beta2 / Build43 的三端 Release 包，未安装）；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。iOS 最低系统 18.0。
 > 2026-10-22 仓库清理：冻结原 Android 工程（`app/` 与根 Gradle 工程、`release.yml`/`debug.yml`）与验证码 torch 模型（含 Windows `BJTUCaptcha.pt`、DJL）已移除，存档于标签 `archive/legacy-android-and-captcha-model`（`8189baf`）；Windows 验证码改为手动输入。只保留 `origin` = `JasonZhang1225/BJTUselfService-KMP-Refreshed`；所有者已确认在 GitHub 解除 fork 关系，本机远端配置也已对齐。
 > 认证现状（2026-10-20）：MIS 走统一身份认证 sso.bjtu.edu.cn（SM2 加密密码、默认免验证码）；物理在线用独立账号密码；智慧教学仍卡在学校的旧 CAS 跳转。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
 
 ## 进行中
 
-- 小修改合集（2026-10-22，分支 `claude/laughing-ritchie-wmcipz`，PR 待所有者合并）：①变动弹窗里物理在线/CITEL“未完成→已完成”按利好标绿；首页“48 小时内截止”提醒并入未完成的物理在线与 CITEL 截止项；②应用页“设置”固定最后（插件入口插到设置前）；③远程同步卡片改为“开启远程同步 → 后台定时同步（电脑端新开关）→ 同步频率 → 上云范围”，关掉后台定时同步时不轮询、不定时上报，只在 App 内刷新或“立即同步”时上传；④“启动与后台运行”移到设置页；Windows 最小化按钮恢复正常最小化，只有点关闭才收进托盘。验证：`./gradlew :shared:desktopTest`（1093 项，仅已知的 `DesktopAgentIntegrationTest` 容器缺命令失败）、`:desktopApp:compileKotlin :windowsApp:compileKotlinWindows :androidApp:assembleDebug` 成功；iOS 编译与真机/Windows 实机交互仅交给 PR CI / 后续实测。
+
+- `debug-1.8.6-Beta2` 打包（2026-10-22）：所有者明确要求基于远端最新打标签；目标 `origin/main@ab3eac6f4bf786774ee21e9572dfe4a56da6c43d`，安全检查 run #39774068051 success。远端 annotated tag 已验证 peeled SHA 与目标一致。KMP package run #39777575554 已触发，当前 queued，链接 https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/39777575554 。只打四端包、不创建 Release；尚未验证此次 Actions 最终构建结果。
+
+
+- main@ab3eac6f 本地三端包已交付（未发版/未安装，2026-10-22）：`~/Downloads/BJTUselfService-1.8.6-Beta2-43-ab3eac6f-20261022/`，APK 5.8 MiB、IPA 22.0 MiB（另附 .ipa.zip）、DMG 82.6 MiB，全部 Release / arm64，版本仍 1.8.6-Beta2 / Build 43；含 iOS ChatGPT 插件页顶栏玻璃修复与 App 版本解析兼容（Beta2-43 首包不含）。`./gradlew :androidApp:assembleRelease :desktopApp:packageDmg` 与 `xcodebuild … -configuration Release -destination generic/platform=iOS … CODE_SIGNING_ALLOWED=NO build` 成功；APK 签名证书与首包一致、DMG 挂载/codesign/Build43/Swing 依赖、IPA ad-hoc 签名/App Group/宿主与小组件 Build43/bundle ID 不变/zip 完整性均通过，SHA256SUMS 核对通过；源码清单摘要 `3ec6b470…`。日志 `.artifacts/local-package-ab3eac6f/`。未验证 SideStore 重签后的真机覆盖安装、Keychain 与小组件行为。
 
 - Beta2 配对版本误判及安装文案（2026-10-22）：用户 Build43 真机截图把已部署 1.8.6-Beta2 判为低于0.4.0；已用原打包 JAR 实际复现纯数字解析器拒绝 Beta 后缀。App 改为解析 SemVer 数字核心、保留旧多设备门槛；安装页/复制提示词/升级提示引用 App 当前版本，清除可见0.5.0硬编码。公共模板 health 为旧 App 返回数字 templateVersion=1.8.6，完整发布 releaseVersion=1.8.6-Beta2 保留于界面/MCP；兼容源码 `0df877a6ab3b7d3cb7f557b958a50515ab5224a7` 已在先前授权下同步私人 Site 源码仓库并归档，尚未部署；用户随后要求先全部本地提交，因此停止后续部署和重新打包。当前线上仍是上一部署 `b1d64646`。Site69项测试通过，原 Build43 JAR 复现后缀解析失败且数字兼容版本可通过（`.artifacts/beta2-installed-parser-check.log`）；`./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64` 成功，1091项测试0失败；日志 `.artifacts/beta2-version-compat-gradle.log`。现有下载包尚不含 App 解析/文案修复；服务端兼容层设计面向已安装 Build43，需后续部署才生效；这次没有重新生成安装包。
 
@@ -40,7 +45,7 @@
 
 - iOS 覆盖安装后丢独立密码、设置重置及首页字号/布局异常：用户决定暂按偶发处理，原因未定（SideStore 仅为猜测），停止继续追查。已在主干禁用自动删库并保护凭据；日程等待重启后恢复。若复发再取真机证据；Beta2 / Build43 下载包已包含保护修复；旧 Build42 包仍未替换。
 
-- 智慧教学（课程平台作业/课件，MIS module 28）仍被学校跳到已下线的 `cas.bjtu.edu.cn/o/authorize`，浏览器同样 404，属学校侧问题；待学校改到 SSO 后再适配 `SmartPlatformEndpoint` 握手白名单。
+- 智慧教学（课程平台作业/课件）：直连 module 28 仍被学校跳到已下线 CAS，但 1.8.5-EmergencyFix2 起回退经本科服务平台 `jwcZhjx` 建立会话，作业/课件可正常获取（见日志 2026-10-20）；学校改到 SSO 后可去掉回退。
 - 同步卡顿：Beta3 已到可接受范围。剩余长帧为同步详情 sheet 弹出（约 50ms）、进入作业页（约 49ms）和原生滚动带来的导航栏布局；`checkSession` 改后台后未复采；壳层随任一状态流整体重组（约 0.4 秒/次同步），彻底解决需拆分壳层。
 - 小组件：PR #8 的 ad-hoc 签名后，侧载包的小组件共享容器是否可读尚未在真机确认；周视图、中号两栏、脚注只经 CI 编译，未在模拟器浅/深色下查看，小屏 iPhone 周视图可能偏挤；“正在上/还剩 N 分钟”未在上课时段实机观察。
 - 首页物理在线/CITEL 日程项进入二级详情只在代码层实现，模拟器只验证了演示实验。

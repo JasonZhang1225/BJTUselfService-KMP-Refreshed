@@ -1104,3 +1104,23 @@
 - 原因/决策：main@2cb49216 的 KMP security checks（run 39766309625）只失败这一个测试——慢机上 patient 晚于 gate 放行才加入、另起一次刷新导致 calls=2；属测试竞态，与“禁止异常删库”无关，保留不删库逻辑，不改工作流。
 - 验证：`./gradlew :shared:desktopTest` 1091 测试 0 失败；`--tests '*AppRefreshCoordinatorTest' --rerun` 连跑 5 次通过；iOS 签名模拟器 `xcodebuild … CODE_SIGNING_ALLOWED=YES … build` 成功，`:desktopApp:compileKotlin :androidApp:compileDebugKotlin` 通过；用户已用 Xcode 真机确认 ChatGPT 插件页顶栏/底部正常。
 - 未验证：推送后的远端 CI 结果以 Actions 为准。
+
+
+## 2026-10-22 基于远端最新 main 推送 debug Beta2 标签（debug-1.8.6-Beta2）
+
+- 操作：所有者明确授权后 fetch origin 并核对远端 main，目标 `ab3eac6f4bf786774ee21e9572dfe4a56da6c43d`；新建 annotated tag `debug-1.8.6-Beta2`，仅推该 tag，未推其他分支或文档改动，未创建 Release。
+- 验证：版本 1.8.6-Beta2 / Build43，宿主与 widget 一致；目标提交安全检查 #39774068051 success；`git ls-remote --tags origin` 的 peeled SHA 与目标完全一致。KMP package #39777575554 已触发（queued），https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/39777575554 。
+- 边界：此次仅完成打标签与触发工作流，Actions 构建结果尚未验证。
+
+## 2026-10-22 PR #55 合入：截止提醒补物理在线与 CITEL、应用页与远程同步调整
+
+- 改动：所有者合并 PR #55（main@0668e4fb）：物理在线/CITEL“未完成→已完成”标绿、首页 48 小时截止并入两源、应用页“设置”置末、电脑端“后台定时同步”开关、启动设置移到设置页、Windows 最小化不再进托盘。本地分支快进到该提交。
+- 验证：见 PR 正文；本地合并后全量 `:shared:desktopTest` 1094 项 0 失败。
+
+## 2026-10-22 CITEL 题面去空行与折叠、1.8.6-KMP 版本号、移除 0.4.0 模板门槛、README/发布说明更新（直接推送 main）
+
+- 功能：`citelHtmlToMarkdown` 用占位符保护 `<pre>`，把空白/&nbsp; 行和连续空行压成一个空行；CITEL 详情题面默认收起，四个按钮下新增“点击查看题目/收起题目”（共享 Compose，全端）。手机配对前不再读取 Site 版本并按 0.4.0 拦截（删 `REMOTE_MULTI_DEVICE_TEMPLATE`/`remoteTemplateAtLeast`，配对失败仍按 `platform_auth_required` 等就地提示）。Site 端 health 仍返回数字 `templateVersion=1.8.6`，已安装 Beta2/Build43 App 的旧门槛照常通过。
+- 版本：App 1.8.6-KMP / Build 44（Android versionName/versionCode、iOS 宿主与小组件、桌面 packageBuildVersion、CURRENT_VERSION 与测试；DMG/MSI 数值版本仍 1.8.6）；Site 模板/插件/MCP 版本 1.8.6-KMP。`1.8.6-KMP` 按后缀比较高于 `1.8.6-Beta2`，Beta2 用户可收到更新。
+- 文档：发布说明改名 `docs/releases/v1.8.6-KMP.md`（工作流按 `v*-KMP*` 触发并读同名文件），日期 2026-10-23，对照 EmergencyFix2 以来提交补全；README 去上游版本信息、JDK 21、iOS 18、补 AI/小组件/灵动岛等；模板文档最低要求写为 Beta2 或更高。更正 memory：课程平台作业自 EmergencyFix2 起经回退可用。
+- 验证：`./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64` 成功，1092 项 0 失败；Site `npm test` 69 项通过；此前同改动（版本号前）Release IPA 本地构建成功。
+- 未验证：CITEL 去空行未用真实缓存题面复现，界面仅源码桌面实例打开未截图核对；私人 Site 线上仍为 1.8.6-Beta2（部署需 Codex 的 Sites 连接器）；Windows/iOS 真机未运行。
