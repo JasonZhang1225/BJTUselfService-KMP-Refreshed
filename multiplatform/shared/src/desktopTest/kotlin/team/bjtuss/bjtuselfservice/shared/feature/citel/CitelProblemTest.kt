@@ -146,6 +146,14 @@ class CitelProblemTest {
         assertTrue(citelCodeBlock("```\nfixture").startsWith("````\n"))
     }
 
+    @Test fun markdownCollapsesBlankRunsButKeepsPreformattedBlankLines() {
+        val md = citelHtmlToMarkdown("<div><div><p>题目描述</p>\n  \n</div><p>&nbsp;</p><p> </p><br><br><br><div><p>某停车场</p></div></div><pre>1\n\n\n2</pre><p>输出</p>", task.url)
+        assertFalse(Regex("\n[ \t ]*\n[ \t ]*\n").containsMatchIn(md.substringBefore("```")))
+        assertTrue("题目描述\n\n某停车场" in md)
+        assertTrue("1\n\n\n2" in md)
+        assertTrue(md.endsWith("输出"))
+    }
+
     @Test fun cacheIsAccountScopedAndExportPreservesExactBytes() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         CacheDatabaseSql.Schema.create(driver)

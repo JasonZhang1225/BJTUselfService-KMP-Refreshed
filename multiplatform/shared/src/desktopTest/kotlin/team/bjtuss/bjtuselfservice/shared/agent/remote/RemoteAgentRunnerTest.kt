@@ -43,7 +43,7 @@ internal class FakeSiteClient : RemoteSiteClient {
     var pairResponse: RemoteCall<RemotePairResponse> =
         RemoteCall.Ok(RemotePairResponse(1, "dev_testDevice01", "bjtud_testtokentesttokentesttoken", "bind_x", listOf("schedule")))
     var lastPair: RemotePairRequest? = null
-    var healthResponse: RemoteCall<RemoteHealth> = RemoteCall.Ok(RemoteHealth(1, REMOTE_MULTI_DEVICE_TEMPLATE))
+    var healthResponse: RemoteCall<RemoteHealth> = RemoteCall.Ok(RemoteHealth(1, "1.8.6", "1.8.6-KMP"))
 
     override suspend fun health(): RemoteCall<RemoteHealth> = healthResponse
 

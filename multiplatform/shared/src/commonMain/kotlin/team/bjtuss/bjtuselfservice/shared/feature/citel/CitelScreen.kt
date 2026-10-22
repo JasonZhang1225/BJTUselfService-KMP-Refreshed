@@ -154,6 +154,7 @@ fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, on
     val markdown = remember(task, cachedProblem) { cachedProblem?.let { citelProblemMarkdown(task, it) } }
     var exportBusy by remember(task.id) { mutableStateOf(false) }
     var exportMessage by remember(task.id) { mutableStateOf<String?>(null) }
+    var showProblem by remember(task.id) { mutableStateOf(false) }
     val result = state.programmingResult
     val accepted = result?.accepted ?: isCitelAccepted(task.status)
     val testing = result?.testing ?: isCitelTesting(task.status)
@@ -219,7 +220,10 @@ fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, on
             if (state.problemBusy || exportBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
             state.problemMessage?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
             exportMessage?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-            if (markdown != null) SelectionContainer { Text(markdown, style = MaterialTheme.typography.bodyMedium) }
+            OutlinedButton(enabled = markdown != null, onClick = { showProblem = !showProblem }) {
+                Text(if (showProblem && markdown != null) "收起题目" else "点击查看题目")
+            }
+            if (showProblem && markdown != null) SelectionContainer { Text(markdown, style = MaterialTheme.typography.bodyMedium) }
             HorizontalDivider()
         }
         task.grade?.let { CitelDetailLine(if (task.programming) "题目分值" else "评分", it) }

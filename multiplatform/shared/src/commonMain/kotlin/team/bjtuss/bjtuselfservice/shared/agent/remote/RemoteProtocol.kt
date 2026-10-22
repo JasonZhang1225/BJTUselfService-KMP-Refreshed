@@ -62,7 +62,7 @@ data class RemotePairRequest(
     val deviceName: String,
     val accountBindingId: String,
     val scopes: List<String>,
-    /** desktop：常驻并领取即时任务；mobile：只在刷新后上传快照（模板 0.4.0 起支持多设备）。 */
+    /** desktop：常驻并领取即时任务；mobile：只在刷新后上传快照。 */
     val deviceKind: String = RemoteDeviceKind.DESKTOP,
 )
 
@@ -71,30 +71,12 @@ object RemoteDeviceKind {
     const val MOBILE = "mobile"
 }
 
-/** 支持电脑与手机同时绑定的最低 Site 模板版本；更旧的模板配对新设备会撤销其他设备。 */
-const val REMOTE_MULTI_DEVICE_TEMPLATE = "0.4.0"
-
 @Serializable
 data class RemoteHealth(
     val protocolVersion: Int = 0,
     val templateVersion: String? = null,
     val releaseVersion: String? = null,
 )
-
-/** 能力门槛比较数字主版本；Beta/构建后缀属于发布标识，不应使版本解析失败。 */
-fun remoteTemplateAtLeast(version: String?, minimum: String): Boolean {
-    fun parse(value: String?): List<Int>? {
-        val match = Regex("""^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?$""")
-            .matchEntire(value ?: return null) ?: return null
-        return match.groupValues.drop(1).map { it.toIntOrNull() ?: return null }
-    }
-    val parts = parse(version) ?: return false
-    val want = parse(minimum) ?: return false
-    for (i in parts.indices) {
-        if (parts[i] != want[i]) return parts[i] > want[i]
-    }
-    return true
-}
 
 @Serializable
 data class RemotePairResponse(

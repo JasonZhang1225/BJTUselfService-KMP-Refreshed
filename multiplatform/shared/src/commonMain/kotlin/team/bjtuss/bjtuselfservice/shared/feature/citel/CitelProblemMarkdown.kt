@@ -21,12 +21,17 @@ fun citelHtmlToMarkdown(html: String, baseUrl: String): String {
     fun safeUrl(element: Element, attr: String): String? = element.absUrl(attr).takeIf { value ->
         runCatching { val u = Url(value); u.protocol.name in setOf("http", "https") && u.user == null && u.password == null }.getOrDefault(false)
     }?.replace("(", "%28")?.replace(")", "%29")
+    // <pre> bodies are swapped for placeholders so blank-line cleanup never touches code or sample data.
+    val preBlocks = mutableListOf<String>()
     fun render(node: Node): String {
         if (node is TextNode) return node.getWholeText().replace(Regex("\\s+"), " ")
         if (node !is Element) return node.childNodes().joinToString("") { render(it) }
         val tag = node.tagName().lowercase()
         if (tag in setOf("script", "style", "iframe", "form", "input", "button")) return ""
-        if (tag == "pre") return "\n\n${citelCodeBlock(node.wholeText())}\n\n"
+        if (tag == "pre") {
+            preBlocks += citelCodeBlock(node.wholeText())
+            return "\n\n\u0000${preBlocks.lastIndex}\u0000\n\n"
+        }
         val body = node.childNodes().joinToString("") { render(it) }
         return when (tag) {
             "h1", "h2", "h3", "h4", "h5", "h6" -> "\n\n${"#".repeat(tag.last().digitToInt())} ${body.trim()}\n\n"
@@ -51,8 +56,11 @@ fun citelHtmlToMarkdown(html: String, baseUrl: String): String {
             else -> body
         }
     }
-    // Do not normalize the output globally: that would destroy blank lines in <pre>.
-    return render(Ksoup.parse(html, baseUrl).body()).trim()
+    // Nested div/p, &nbsp; paragraphs and <br> runs collapse to one blank line; <pre> is restored afterwards.
+    return render(Ksoup.parse(html, baseUrl).body())
+        .lines().joinToString("\n") { line -> if (line.all { it.isWhitespace() || it == '\u00a0' }) "" else line.trimEnd(' ', '\t', '\u00a0') }
+        .replace(Regex("\n{3,}"), "\n\n").trim()
+        .replace(Regex("\u0000(\\d+)\u0000")) { preBlocks.getOrNull(it.groupValues[1].toInt()) ?: "" }
 }
 
 fun citelProblemMarkdown(task: CitelTask, cached: CitelCachedProblem): String = buildString {

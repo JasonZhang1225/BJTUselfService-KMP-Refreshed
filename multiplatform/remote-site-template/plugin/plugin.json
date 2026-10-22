@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "bjtuss-remote-local",
-  "version": "1.8.6-Beta2",
+  "version": "1.8.6-KMP",
   "description": "交大自由行远程助手的本地开发插件，默认连接本机虚构数据预览。正式 Site 使用 Sites 自动生成的私人插件。"
 }

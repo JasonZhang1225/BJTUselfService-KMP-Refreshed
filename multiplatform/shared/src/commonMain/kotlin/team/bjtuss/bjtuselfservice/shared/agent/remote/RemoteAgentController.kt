@@ -203,19 +203,6 @@ class RemoteAgentController(
             secrets.savePlatformAccessSiteUrl(url)
             val wireScopes = RemoteScope.entries.filter { it in scopes }.map { it.wire }
             val api = clientFactory(url)
-            if (mobile) {
-                // 旧模板（0.4.0 之前）一个 Site 只认一台设备：手机配对会把电脑顶掉。先确认 Site 已升级。
-                val health = api.health()
-                if (health is RemoteCall.Failure) return if (health.code == "platform_auth_required")
-                    "本站连接授权无效，请登录 Site 重新生成并复制完整配对信息。"
-                else "无法读取 Site 版本，请检查地址和网络后重试：${RemoteAgentRunner.describe(health)}"
-                val healthInfo = (health as RemoteCall.Ok).value
-                val version = healthInfo.releaseVersion ?: healthInfo.templateVersion
-                if (!remoteTemplateAtLeast(version, REMOTE_MULTI_DEVICE_TEMPLATE)) {
-                    return "你的 Site 模板版本是 ${version ?: "未知"}，还不支持电脑和手机同时连接。" +
-                        "请先让 ChatGPT 把 Site 更新为与 App 对应的 $REMOTE_TEMPLATE_RELEASE 模板，再配对手机。"
-                }
-            }
             val response = api.pair(RemotePairRequest(
                 pairingCode = code,
                 deviceName = host?.deviceName?.take(64)?.ifBlank { null } ?: "Windows 电脑",

@@ -4,7 +4,7 @@ import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 const root = fileURLToPath(new URL('..', import.meta.url));
-const destination = resolve(process.argv[2] ?? join(root, '../../.artifacts/bjtuss-remote-template-1.8.6-Beta2.tar.gz'));
+const destination = resolve(process.argv[2] ?? join(root, '../../.artifacts/bjtuss-remote-template-1.8.6-KMP.tar.gz'));
 if (destination.startsWith(root)) throw Error('Archive must be outside the source template');
 const stage = await mkdtemp(join(tmpdir(), 'bjtuss-template-'));
 const target = join(stage, 'bjtuss-remote-template');
