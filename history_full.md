@@ -1049,7 +1049,7 @@
 - 验证：PR 检查（`31f3b64`）Android、iOS 编译与 macOS/iOS 测试、Windows 应用镜像、Windows CLI 冒烟、Site 模板测试全部通过；本地 Linux 桌面/Windows/Android 编译通过，`:shared:desktopTest` 1079 项仅上述环境性失败 1 项。
 - 未验证：手机 ChatGPT 端到端查询（插件补授权）；电脑+手机多设备同时配对；混合 DPI 多屏托盘；合并后的 iOS/macOS 包未在真机安装。
 
-## 2026-10-22 启动弹窗合并为 1.8.6 版本说明、登录文案与版本号 1.8.6-Beta（PR #51，`chore/release-1.8.6-beta`）
+## 2026-10-22 启动弹窗合并为 1.8.6 版本说明、登录文案与版本号 1.8.6-Beta（PR #52，`chore/release-1.8.6-beta`）
 
 - 改动：启动时的 1.8.5 紧急修复、物理在线已自动关闭、1.8.3、1.8.4 四个弹窗合并为一个“1.8.6 版本说明”（`ReleaseGuideDialog.kt` 的 `Release186GuideDialog`，偏好 `release_186_guide_acknowledged`），新装与升级都只看一次；物理在线一段仅在升级时自动关闭过才出现；确认后旧弹窗标记一并置为已读。启动弹窗最多为：版本说明 →（Android）通知权限说明，更新提示只在有新版本时出现。登录页去掉“验证码将自动识别”等过时文案。版本号同步为 1.8.6-Beta / Build 42（Android、macOS、Windows、iOS 宿主与小组件、`CURRENT_VERSION` 与测试）。同时补记 PR #48、#50 的日志。
 - 原因/决策：用户反馈启动弹窗太多，由代理决定合并方式。验证码调研结论：各端（含命令行与后台刷新）都只用 `UnavailableCaptchaRecognizer`，登录页手动输入、静默登录转引导框、无窗口刷新直接停下且不重放密码；使用中会话过期又需要验证码时无法就地输入，用户决定暂不处理（记入 memory 已知限制）。所有者要求合并后直接推 `debug-1.8.6-Beta` 打包，不等 PR 检查。
