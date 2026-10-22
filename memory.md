@@ -9,7 +9,7 @@
 
 ## 进行中
 
-- 各平台验证码移除与安装包瘦身（`perf/android-release-size`，PR #45，Codex 实现，Claude 接手）：Android 删除 ONNX、Apple 删除 Core ML 与 macOS helper/编译复制链路，Windows 已无模型；各端使用现有手动验证码路径。Android release 开启 R8 与资源缩减，APK 5,893,616 字节（5.62 MiB）。自动登录：仅获取登录挑战最多 3 次，密码 POST 最多 1 次；失败/异常停止，取消向上传递；同批刷新恢复最多 1 次，手动提交防重复。CI 增加 Android release、macOS/Windows app image 构建与模型残留检查。桌面 jlink `--compress=2` 已撤回：打包 #107（未压缩）→ #108（压缩）Actions 归档 DMG 100.56→108.03 MB（+7.4%）、MSI 90.71→97.88 MB（+7.9%），运行时预压缩后 DMG/MSI 容器压缩失效，下载反而变大；同时去掉 CI 的压缩前后双构建（#164 Windows 失败即因 PowerShell 拆分 `-P` 参数）。本地未运行 Gradle，撤回后的检查交 PR CI；登录与签名覆盖安装待实机验证。
+- 各平台验证码移除与安装包瘦身（`perf/android-release-size`，PR #45，Codex 实现，Claude 接手）：Android 删除 ONNX、Apple 删除 Core ML 与 macOS helper/编译复制链路，Windows 已无模型；各端使用现有手动验证码路径。Android release 开启 R8 与资源缩减，APK 5,893,616 字节（5.62 MiB）。自动登录：仅获取登录挑战最多 3 次，密码 POST 最多 1 次；失败/异常停止，取消向上传递；同批刷新恢复最多 1 次，手动提交防重复。CI 增加 Android release、macOS/Windows app image 构建与模型残留检查。桌面 jlink `--compress=2` 已撤回：打包 #107（未压缩）→ #108（压缩）Actions 归档 DMG 100.56→108.03 MB（+7.4%）、MSI 90.71→97.88 MB（+7.9%），运行时预压缩后 DMG/MSI 容器压缩失效，下载反而变大；同时去掉 CI 的压缩前后双构建（#164 Windows 失败即因 PowerShell 拆分 `-P` 参数）。桌面 jar 原生库裁剪：`multiplatform/gradle/desktop-native-filter.gradle.kts` 用 artifact transform 让 sqlite-jdbc（24 个平台）与 JNA（28 个平台）只保留 macOS arm64 / Windows x64 一份，jar 合计约 16.4 MB→1.1 MB；本地 `:windowsApp:createDistributable`（Linux，开启配置缓存）验证镜像内只剩 Windows x64 原生库、类文件数不变；CI 对两端应用镜像断言；DMG/MSI 实际降幅待 KMP package，启动与本地缓存读写待实机。本地未运行 Gradle，撤回后的检查交 PR CI；登录与签名覆盖安装待实机验证。
 - AI Agent（`feat/chatgpt-agent-remote`）：开发中，约七八成；合入后再清理 main 里经紧急修复带进来的半成品 AI 代码。
 - 已合入功能的待真机验证（不阻塞）：
   - 灵动岛/实时活动：收起态最终版截图（等实际上课时）；开课时“即将上课”切“正在上课”；两个实时活动并存时的最小态小圆环；Live 菜单读屏自定义操作。

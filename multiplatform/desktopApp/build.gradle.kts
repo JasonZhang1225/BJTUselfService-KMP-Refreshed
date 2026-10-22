@@ -475,6 +475,11 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
 }
 
+// 应用只打 Apple Silicon 包：sqlite-jdbc/JNA 只保留 macOS arm64 原生库。
+extra["desktopNativeFilter.configuration"] = "runtimeClasspath"
+extra["desktopNativeFilter.keep"] = listOf("org/sqlite/native/Mac/aarch64/", "com/sun/jna/darwin-aarch64/")
+apply(from = rootProject.file("gradle/desktop-native-filter.gradle.kts"))
+
 compose.desktop {
     application {
         mainClass = "team.bjtuss.bjtuselfservice.desktop.MainKt"

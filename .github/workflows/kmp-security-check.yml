@@ -140,6 +140,14 @@ jobs:
           assert app.is_dir(), "macOS app image missing"
           obsolete = [p for p in app.rglob("*") if "bjtucaptcha" in p.name.lower()]
           assert not obsolete, f"Obsolete captcha files: {obsolete}"
+          from zipfile import ZipFile
+          suffixes = (".so", ".dylib", ".jnilib", ".dll", ".a")
+          for prefix, keep in (("sqlite-jdbc-", "org/sqlite/native/Mac/aarch64/"), ("jna-5", "com/sun/jna/darwin-aarch64/")):
+              jars = list((app / "Contents" / "app").glob(f"{prefix}*.jar"))
+              assert len(jars) == 1, f"Expected one {prefix} jar, found {jars}"
+              with ZipFile(jars[0]) as jar:
+                  natives = [n for n in jar.namelist() if n.endswith(suffixes)]
+              assert natives and all(n.startswith(keep) for n in natives), f"{jars[0].name} natives: {natives}"
           for part in ("app", "runtime", "Resources"):
               folder = app / "Contents" / part
               size = sum(p.stat().st_size for p in folder.rglob("*") if p.is_file())
@@ -183,6 +191,16 @@ jobs:
           $files = @(Get-ChildItem $apps[0].FullName -Recurse -File)
           $obsolete = @($files | Where-Object { $_.Name -match 'BJTUCaptcha|onnxruntime|pytorch' })
           if ($obsolete.Count -gt 0) { throw "Obsolete captcha files in Windows app image" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          foreach ($pair in @(@("sqlite-jdbc-*.jar", "org/sqlite/native/Windows/x86_64/"), @("jna-5*.jar", "com/sun/jna/win32-x86-64/"))) {
+            $jar = @($files | Where-Object { $_.Name -like $pair[0] })
+            if ($jar.Count -ne 1) { throw "Expected one $($pair[0])" }
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($jar[0].FullName)
+            $natives = @($zip.Entries | Where-Object { $_.FullName -match '\.(so|dylib|jnilib|dll|a)$' } | ForEach-Object { $_.FullName })
+            $zip.Dispose()
+            $foreign = @($natives | Where-Object { -not $_.StartsWith($pair[1]) })
+            if ($natives.Count -eq 0 -or $foreign.Count -gt 0) { throw "$($jar[0].Name) natives: $($natives -join ', ')" }
+          }
           $files | Sort-Object Length -Descending | Select-Object -First 12 @{Name="RelativePath";Expression={$_.FullName.Substring($apps[0].FullName.Length + 1)}}, Length | ConvertTo-Json
           foreach ($part in @("app", "runtime")) {
             $folder = Join-Path $apps[0].FullName $part
