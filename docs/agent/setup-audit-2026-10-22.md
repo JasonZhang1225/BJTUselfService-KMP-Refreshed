@@ -16,11 +16,11 @@
 
 - project_id：`appgprj_6ad9ad4c356081919b7a7c74e6597689`（仅验证记录，不写维护模板）。
 - canonical 插件：`plugin_asdk_app_sites_bd52708922cc819185277e2eecb62912`，1.0.1；查询 Skill 已读回，App 绑定与界面配置保持不变。
-- 最新 Site 源码 commit：`1bb64a14f06d8406300191b9adf7245f8d276fc6`，位于 Sites 专属源码仓库；维护仓库的 setup 修改随本轮提交同步至 `feat/chatgpt-agent-remote`，供新对话读取。
+- 最新 Site 源码 commit：`4855d66d40503c8ef83325364b2918a2e3735f08`，位于 Sites 专属源码仓库；维护仓库的 setup 修改随本轮提交同步至 `feat/chatgpt-agent-remote`，供新对话读取。
 
 验证：模板 `npm test` 64/64；共享端全量 `:shared:desktopTest`、`:desktopApp:compileKotlin`、`:windowsApp:compileKotlinWindows` 通过；后补的 12 个配对/手机回归测试通过；`:androidApp:assembleDebug` 使用云环境已有公开 compile-only 签名 fixture 构建通过，不是正式签名包。`git diff --check` 通过。
 
-边界：Linux 执行 Windows 原生 DPAPI 测试会因缺少 Windows 库失败，故只把 Windows 代码编译计为通过；未在 Windows 安装版或 Apple 真机执行。当前会话未加载新插件工具，不能宣称已完成宿主实际查询。没有生成新版 Windows MSI，旧安装版不能直接解析完整配对信息；用户真实 Site 登录和 App 配对尚未验证。本轮将从远端分支重新取得模板，在独立目录验证其自包含测试、构建及打包；云端创建/发布与客户端完整配对必须分开验收。
+边界：Linux 执行 Windows 原生 DPAPI 测试会因缺少 Windows 库失败，故只把 Windows 代码编译计为通过；未在 Windows 安装版或 Apple 真机执行。当前会话未加载新插件工具，不能宣称已完成宿主实际查询。没有生成新版 Windows MSI，旧安装版不能直接解析完整配对信息；用户真实 Site 登录和 App 配对尚未验证。实现提交 `b70cec6` 已推送；已从 GitHub 重新稀疏检出，匿名 raw SETUP 与源码一致。独立目录执行 64/64 模板测试、build、package:site、package-template 均通过；分发包包含 SETUP、查询契约、两个发布准备脚本且不带 project_id。本站源码 `4855d66` 部署成功为版本 3，env revision 1，has_mcp=true；发布后同一插件仍为 1.0.1，Skill/App 绑定读回保持。云端创建/发布已就绪，客户端完整配对仍须单独验收。
 
 ## 结论
 
