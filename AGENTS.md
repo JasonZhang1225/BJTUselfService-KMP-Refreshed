@@ -43,14 +43,14 @@
 
 ## 仓库事实
 
-- 仓库根部是冻结的原 Android 工程（`:app`，只读参考，旧 CI `release.yml`/`debug.yml` 仍在）。所有实际开发都在独立的 `multiplatform/` Gradle 工程里：`shared`（共享业务与 Compose UI）、`androidApp`、`desktopApp`（macOS）、`windowsApp`、`iosApp`（Xcode 宿主 + `CourseScheduleWidget` 小组件扩展）。
-- 不修改 `app/`、根 `build.gradle.kts`、`settings.gradle.kts`、`gradle/`、Android Manifest、资源或现有测试；不把 KMP 模块 include 到根 `settings.gradle.kts`。
-- 远端：`mine` = `JasonZhang1225/BJTUselfService-KMP-Refreshed`（日常推送、PR、Release 都在这里）；`origin` = 上游 `HFDLYS/BJTUselfService`，**不推送**。
-- 分支流程：`main` 跟踪 `mine/main`。每项改动在 `feat/…`、`fix/…`、`perf/…` 分支开发，用户要求时推到 `mine` 并开 PR 合入 `mine/main`；合并由用户决定。PR 由 `kmp-security-check`（共享测试/编译）和 `kmp-package`（iOS 相关改动时打 Debug IPA）检查。
-- 标签：`debug-*` 只触发 Actions 打包、不建 Release；`v*`（如 `v1.8.3-KMP`）打四端包并发 GitHub Release，发布说明放 `docs/releases/<tag>.md`。
+- 所有开发都在 `multiplatform/` Gradle 工程里：`shared`（共享业务与 Compose UI）、`androidApp`、`desktopApp`（macOS）、`windowsApp`、`iosApp`（Xcode 宿主 + `CourseScheduleWidget` 小组件扩展）。仓库根部不再有 Gradle 工程，Gradle 命令都在 `multiplatform/` 下执行。
+- 冻结的原 Android 工程（`app/`、根 `build.gradle.kts`/`settings.gradle.kts`/`gradle/`/`gradlew`/`local-maven`，原 `v1.7.1` / versionCode 9）、它的旧 CI（`release.yml`、`debug.yml`、`.github/ci/`）以及验证码 torch 模型（`app/.../model.pt`、Windows 的 `BJTUCaptcha.pt` 与 DJL 依赖）已于 1.8.6 从 `main` 移除，完整快照存档在注释标签 `archive/legacy-android-and-captcha-model`（指向 `8189baf`）。需要查阅或取回时用 `git show <标签>:<路径>`，不要把它们加回 `main`。
+- 远端：只有 `origin` = `JasonZhang1225/BJTUselfService-KMP-Refreshed`（推送、PR、Release 都在这里）。已不再配置上游 `HFDLYS/BJTUselfService` 远端，也不跟上游同步或对照；GitHub 上的 fork 关系由仓库所有者在 Settings 中解除。
+- 分支流程：每项改动从最新 `main` 建 `feat/…`、`fix/…`、`perf/…`、`chore/…` 分支，用户要求时推送并开 PR 到 `main`。**只有仓库所有者能合并到 `main` 和发版**：规则集 `protect-main` 要求 PR + 1 个审批、禁止强推和删除；`protect-release-tags` 禁止非管理员创建/修改/删除 `v*` 与 `debug-*` 标签；两条都只允许管理员绕过。代理不得自行以管理员身份合并，除非用户针对该 PR 明确要求。PR 由 `kmp-security-check`（共享测试/编译）检查；手动打包用 Actions → KMP package → Run workflow（只出产物、不建 Release）。
+- 标签：`debug-*` 只触发 Actions 打包、不建 Release；`v*`（如 `v1.8.3-KMP`）由 `kmp-package.yml` 打四端包并发 GitHub Release（含 alpha/beta 的不建 Release），发布说明放 `docs/releases/<tag>.md`。`archive/*` 标签只用于存档，不触发任何工作流。
 - 改版本号要同步修改：`multiplatform/androidApp/build.gradle.kts`（versionName/versionCode）、`desktopApp/build.gradle.kts`（数值版本）、`windowsApp/build.gradle.kts`、`iosApp/iosApp/Info.plist`、`iosApp/CourseScheduleWidget/Info.plist`（版本与 Build 必须与宿主一致），以及 `shared/.../update/AppUpdateChecker.kt` 的 `CURRENT_VERSION` 和 `AppUpdateCheckerTest`。
 - iOS 最低系统为 18.0（实时活动的 Apple Watch 视图与分钟计时依赖 iOS 18）：宿主 `Config.xcconfig` 与小组件 `Widget.xcconfig` 必须一致，由 `kmp-security-check.yml` 与 `SecurityReleaseConfigTest` 断言；调整时三处同步，并在发布说明写明。
-- 技术栈：Kotlin Multiplatform + Compose Multiplatform/Material 3；Ktor；Ksoup 解析 HTML；`kotlinx.serialization`；SQLDelight 缓存；凭据走 Android Keystore / Apple Keychain / macOS `MacOsSecretBag` / Windows DPAPI；验证码 Android/Windows 用 PyTorch 模型，Apple 用 Core ML。
+- 技术栈：Kotlin Multiplatform + Compose Multiplatform/Material 3；Ktor；Ksoup 解析 HTML；`kotlinx.serialization`；SQLDelight 缓存；凭据走 Android Keystore / Apple Keychain / macOS `MacOsSecretBag` / Windows DPAPI；验证码自动识别：Android 用 ONNX Runtime（`BJTUCaptcha.onnx`），iOS/macOS 用 Core ML（`BJTUCaptcha.mlpackage`），这些仍保留；Windows 不再内置模型（`UnavailableCaptchaRecognizer`），需要验证码时手动输入。MIS 统一认证默认免验证码，旧的数字算式验证码已不再出现，新的字母验证码现有模型识别不了。
 - 本机验证产物（截图、导出、诊断日志）放忽略目录 `.artifacts/`，不进 Git。
 
 ## 工作方式
@@ -137,7 +137,7 @@
 ### 验证码模型
 
 - 首版路径永远是“显示图片 → 刷新 → 手动填写”；自动识别失败回到手动，最多 3 次，不无限重试。
-- Apple Core ML 与 Android PyTorch 的预处理（`130×42`、RGB、CHW、`[0,1]`）、输出轴顺序、类别表和 CTC 解码必须对齐；改模型或预处理时，用同一份脱敏测试集逐层比较（像素、输入张量、logits、argmax、解码字符串、算式答案）。
+- Apple Core ML 与 Android ONNX 的预处理（`130×42`、RGB、CHW、`[0,1]`）、输出轴顺序、类别表和 CTC 解码必须对齐；改模型或预处理时，用同一份脱敏测试集逐层比较（像素、输入张量、logits、argmax、解码字符串、算式答案）。
 - 仅能加载或执行模型不等于识别正确，没有正确率证据不得改变默认开关。
 
 ## 网络与安全红线
@@ -228,6 +228,6 @@
 
 - 不使用 `git reset --hard`、`git checkout --` 覆盖用户改动；不修改无关文件，不格式化整个仓库。
 - 用户要求提交时，先给出提交信息草稿和将包含的文件；提交信息用中文，`feat:`/`fix:`/`perf:`/`docs:` 等前缀。
-- 未经明确授权，不 commit、tag、push、force-push、创建 PR、合并或发 Release；不向 `origin` 推送。
+- 未经明确授权，不 commit、tag、push、force-push、创建 PR、合并或发 Release。
 - 发版时单独核对版本号（见“仓库事实”中的清单）、提交范围、测试、构建矩阵和发布说明，等待用户批准。
 - 每次交付说明：完成的行为、修改文件、验证命令、未验证边界和下一步。

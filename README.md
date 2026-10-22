@@ -120,7 +120,7 @@ _**相对迁移基线（v1.7.1）在 KMP 版中额外提供/增强的能力（�
 
 ## 🏗️ 技术架构
 
-**原安卓工程（冻结快照 `v1.7.1`，不再修改）** 为上游早期版本：Jetpack Compose + Material 3、Dagger Hilt、Room、OkHttp3 + Jsoup、Bouncy Castle (SM2)。上游仓库已继续更新到 `v1.8.0`（新增原生邮箱、校园卡/校园网余额、日历订阅提醒、教室规划等），其架构与依赖见[上游 README](https://github.com/HFDLYS/BJTUselfService#readme)。
+**原安卓工程（迁移基线 `v1.7.1`）** 已于 1.8.6 从本仓库移除，完整快照存档在标签 [`archive/legacy-android-and-captcha-model`](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/tree/archive/legacy-android-and-captcha-model)；它是上游早期版本：Jetpack Compose + Material 3、Dagger Hilt、Room、OkHttp3 + Jsoup、Bouncy Castle (SM2)。上游仓库已继续更新到 `v1.8.0`（新增原生邮箱、校园卡/校园网余额、日历订阅提醒、教室规划等），其架构与依赖见[上游 README](https://github.com/HFDLYS/BJTUselfService#readme)。
 
 **KMP 刷新版（`multiplatform/`）** 共享业务与大部分 UI：
 

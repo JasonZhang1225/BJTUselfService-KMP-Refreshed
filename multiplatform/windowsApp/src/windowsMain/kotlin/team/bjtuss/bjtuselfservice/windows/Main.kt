@@ -32,11 +32,9 @@ import javax.imageio.ImageIO
 import kotlinx.coroutines.runBlocking
 import team.bjtuss.bjtuselfservice.shared.App
 import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
-import team.bjtuss.bjtuselfservice.shared.auth.CaptchaRecognitionResult
+import team.bjtuss.bjtuselfservice.shared.auth.UnavailableCaptchaRecognizer
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
 
-private const val CAPTCHA_VERIFICATION_ARGUMENT = "--verify-captcha-model="
-private const val CAPTCHA_LOGITS_ARGUMENT = "--dump-captcha-logits="
 
 /** 进程级持有，防止锁对象被回收；进程退出时系统释放。 */
 private var appRunningLock: AutoCloseable? = null
@@ -48,34 +46,9 @@ fun main(args: Array<String>) {
         val code = team.bjtuss.bjtuselfservice.shared.agent.runAgentCli(args.drop(1), windowsAgentCliPlatform())
         kotlin.system.exitProcess(code)
     }
-    val captchaRecognizer = WindowsTorchCaptchaRecognizer()
-    args.firstOrNull { it.startsWith(CAPTCHA_LOGITS_ARGUMENT) }?.let { argument ->
-        val image = File(argument.removePrefix(CAPTCHA_LOGITS_ARGUMENT))
-        require(image.isFile) { "验证码验证图片不存在：${image.absolutePath}" }
-        val logits = captchaRecognizer.recognizeRawLogits(image.readBytes())
-            ?: error("captcha_logits=failed")
-        println("captcha_logits=${logits.joinToString(",")}")
-        captchaRecognizer.close()
-        return
-    }
-    args.firstOrNull { it.startsWith(CAPTCHA_VERIFICATION_ARGUMENT) }?.let { argument ->
-        val image = File(argument.removePrefix(CAPTCHA_VERIFICATION_ARGUMENT))
-        require(image.isFile) { "验证码验证图片不存在：${image.absolutePath}" }
-        when (val result = runBlocking { captchaRecognizer.recognize(image.readBytes()) }) {
-            is CaptchaRecognitionResult.Success -> {
-                println(
-                    "captcha_model=ready expression=${result.value.expression} " +
-                        "answer=${result.value.answer}",
-                )
-                captchaRecognizer.close()
-                return
-            }
-            is CaptchaRecognitionResult.Failed -> {
-                captchaRecognizer.close()
-                error("captcha_model=failed reason=${result.reason}")
-            }
-        }
-    }
+    // 1.8.6 起 Windows 不再内置验证码模型（旧 torch 模型已存档于 archive/legacy-android-and-captcha-model），
+    // 需要验证码时由用户手动输入。
+    val captchaRecognizer = UnavailableCaptchaRecognizer
     val accountSecurityStore = createWindowsAccountSecurityStore()
     val cacheStoreHandle = createWindowsCacheStore()
     // 告诉命令行“App 正在运行”：此时 agent 的 cache update 会让用户在 App 里刷新。
@@ -142,7 +115,6 @@ fun main(args: Array<String>) {
             }
         }
     } finally {
-        captchaRecognizer.close()
         cacheStoreHandle.store.close()
     }
 }
