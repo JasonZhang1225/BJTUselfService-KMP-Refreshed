@@ -1,7 +1,7 @@
 # 🚄 交大自由行KMP (BJTU Self Service KMP Refreshed)
 
 > 北京交通大学校园服务客户端 —— 让校园生活触手可及  ↩
-> 本仓库为 **Kotlin Multiplatform 重构版**（Android / iOS / macOS / Windows）。迁移基线是原作者安卓项目 `v1.7.1`，上游目前已更新到 `v1.8.0`，本仓库会按需跟进。
+> 本仓库为 **Kotlin Multiplatform 重构版**（Android / iOS / macOS / Windows）。
 
 [![KMP Release](https://img.shields.io/github/v/release/JasonZhang1225/BJTUselfService-KMP-Refreshed?include_prereleases&style=flat-square&label=KMP%20版本)](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases)
 [![Upstream](https://img.shields.io/github/v/release/HFDLYS/BJTUselfService?style=flat-square&label=原作者安卓)](https://github.com/HFDLYS/BJTUselfService/releases/latest)
@@ -19,7 +19,7 @@
 
 所有数据解析（包括验证码识别）均在**本地完成**，无需上传至第三方服务器，充分保障用户隐私安全。
 
-本 fork（[BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed)）在原作者 [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService) 安卓版基础上，用 **KMP + Compose Multiplatform** 做多端共享实现。
+本项目（[BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed)）在原作者 [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService) 安卓版基础上，用 **KMP + Compose Multiplatform** 做多端共享实现。
 
 ### 上游原版（Android）现状
 
@@ -199,7 +199,7 @@ chmod +x gradlew
   - 修复若干 bug
 - [B-Silva20](https://github.com/B-Silva20)
   - 提供了成绩自选课程计算
-  - 适配新版 SSO 统一身份认证登录
+  - 图书馆借阅
 - [wangxiaobo1747](https://github.com/wangxiaobo1747)
   - 提供了自定义壁纸和桌面课程表小组件
 - [Peterloses](https://github.com/Peterloses)
@@ -211,4 +211,4 @@ chmod +x gradlew
 - [Vannnesa](https://github.com/Vannnesa)
   - 重构应用界面，实现原生邮箱与教室规划，新增课程高亮及过期考试样式
 - [JasonZhang1225](https://github.com/JasonZhang1225)
-  - KMP 多端迁移（Android / iOS / macOS / Windows）、物理在线、物理实验、CITEL、图书馆借阅等
+  - KMP 多端迁移（Android / iOS / macOS / Windows）、物理在线、物理实验、CITEL、新版SSO、ChatGPT插件等
