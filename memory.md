@@ -9,7 +9,7 @@
 
 ## 进行中
 
-- 各平台验证码移除与安装包瘦身（`perf/android-release-size`，PR #45，Codex）：Android 删除 ONNX、Apple 删除 Core ML 与 macOS helper/编译复制链路，Windows 已无模型；各端使用现有手动验证码路径。Android release 开启 R8 与资源缩减，首轮 CI 全通过，APK 为 5,893,616 字节（5.62 MiB）。后续提交收紧自动登录：仅获取登录挑战最多 3 次，密码 POST 最多 1 次；失败/异常停止，取消操作向上传递；同批刷新恢复最多 1 次，手动提交防重复，未提交的验证码图片直接交给用户。CI 增加 macOS/Windows app image 构建、模型残留及体积报告。本地 Git 代理不可用，未运行 Gradle；本轮改动与 Apple/Windows 实际体积待 CI，登录与签名覆盖安装待实机验证。
+- 各平台验证码移除与安装包瘦身（`perf/android-release-size`，PR #45，Codex）：Android 删除 ONNX、Apple 删除 Core ML 与 macOS helper/编译复制链路，Windows 已无模型；各端使用现有手动验证码路径。Android release 开启 R8 与资源缩减，首轮 CI 全通过，APK 为 5,893,616 字节（5.62 MiB）。后续提交收紧自动登录：仅获取登录挑战最多 3 次，密码 POST 最多 1 次；失败/异常停止，取消操作向上传递；同批刷新恢复最多 1 次，手动提交防重复，未提交的验证码图片直接交给用户。CI 增加 macOS/Windows app image 构建、模型残留及体积报告。打包 #107 四端成功，Actions 压缩归档约 macOS 100.56 MB、Windows 90.71 MB；Windows 应用镜像 159,439,134 字节（不是 MSI 大小）。检查 #163 因实网诊断测试引用已删除的识别类而编译失败：正在修复，拆分桌面测试编译/执行与 iOS 测试并上传两端报告；macOS/Windows 增加 jlink 运行时压缩，保留现有模块与原生库，并修正 Windows 体积报告截断。本地未运行 Gradle；本轮检查及实际压缩收益待 CI/打包，登录与签名覆盖安装待实机验证。
 - AI Agent（`feat/chatgpt-agent-remote`）：开发中，约七八成；合入后再清理 main 里经紧急修复带进来的半成品 AI 代码。
 - 已合入功能的待真机验证（不阻塞）：
   - 灵动岛/实时活动：收起态最终版截图（等实际上课时）；开课时“即将上课”切“正在上课”；两个实时活动并存时的最小态小圆环；Live 菜单读屏自定义操作。

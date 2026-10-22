@@ -588,3 +588,10 @@ tasks.matching { it.name == "packageDmg" }.configureEach {
 tasks.matching { it.name == "run" }.configureEach {
     dependsOn(compileMacInputSourceHelper, compileMacCalendarHelper)
 }
+
+// Compress the bundled JDK modules while preserving the existing module set and native libraries.
+tasks.withType<org.jetbrains.compose.desktop.application.tasks.AbstractJLinkTask>().configureEach {
+    if (providers.gradleProperty("bjtu.desktop.compressRuntime").orNull != "false") {
+        freeArgs.add("--compress=2")
+    }
+}

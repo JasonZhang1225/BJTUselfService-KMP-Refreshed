@@ -117,17 +117,28 @@ jobs:
               grep -Eq '^[[:space:]]*IPHONEOS_DEPLOYMENT_TARGET = 18\.0$'
           done
 
-      - name: Compile iOS and test macOS security paths
+      - name: Compile desktop test sources
         run: |
           chmod +x ./gradlew
-          ./gradlew :shared:iosSimulatorArm64Test :shared:desktopTest --stacktrace
+          ./gradlew :shared:compileTestKotlinDesktop --stacktrace
+
+      - name: Run macOS security tests
+        run: ./gradlew :shared:desktopTest --stacktrace
+
+      - name: Run iOS shared tests
+        run: ./gradlew :shared:iosSimulatorArm64Test --stacktrace
 
       - name: Build macOS app image without captcha assets
         env:
           DESKTOP_PACKAGE_JAVA_HOME: ${{ env.JAVA_HOME }}
         run: |
           plutil -lint iosApp/iosApp.xcodeproj/project.pbxproj
+          ./gradlew :desktopApp:createDistributable -Pbjtu.desktop.compressRuntime=false --stacktrace
+          du -sk "desktopApp/build/compose/binaries/main/app/BJTUselfServiceKMP.app"
+          echo "Above: uncompressed runtime baseline (KiB on disk)"
           ./gradlew :desktopApp:createDistributable --stacktrace
+          du -sk "desktopApp/build/compose/binaries/main/app/BJTUselfServiceKMP.app"
+          echo "Above: compressed runtime (KiB on disk)"
           python3 - <<'PY'
           from pathlib import Path
           app = Path("desktopApp/build/compose/binaries/main/app/BJTUselfServiceKMP.app")
@@ -140,12 +151,14 @@ jobs:
               print(f"macOS Contents/{part}: {size:,} bytes")
           PY
 
-      - name: Upload iOS test reports
+      - name: Upload shared test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-simulator-test-reports
-          path: multiplatform/shared/build/test-results/iosSimulatorArm64Test/
+          name: apple-shared-test-reports
+          path: |
+            multiplatform/shared/build/test-results/iosSimulatorArm64Test/
+            multiplatform/shared/build/test-results/desktopTest/
           if-no-files-found: warn
 
   windows:
@@ -168,6 +181,10 @@ jobs:
         env:
           WINDOWS_PACKAGE_JAVA_HOME: ${{ env.JAVA_HOME }}
         run: |
+          .\gradlew.bat :windowsApp:createDistributable -Pbjtu.desktop.compressRuntime=false --stacktrace
+          if ($LASTEXITCODE -ne 0) { throw "Windows baseline build failed" }
+          $baseline = (Get-ChildItem "windowsApp/build/compose/binaries/main/app" -Recurse -File | Measure-Object Length -Sum).Sum
+          Write-Host "Windows uncompressed runtime baseline bytes: $baseline"
           .\gradlew.bat :windowsApp:createDistributable --stacktrace
           if ($LASTEXITCODE -ne 0) { throw "Windows app image build failed" }
           $apps = @(Get-ChildItem "windowsApp/build/compose/binaries/main/app" -Directory)
@@ -175,5 +192,10 @@ jobs:
           $files = @(Get-ChildItem $apps[0].FullName -Recurse -File)
           $obsolete = @($files | Where-Object { $_.Name -match 'BJTUCaptcha|onnxruntime|pytorch' })
           if ($obsolete.Count -gt 0) { throw "Obsolete captcha files in Windows app image" }
-          $files | Sort-Object Length -Descending | Select-Object -First 12 FullName, Length | Format-Table -AutoSize
+          $files | Sort-Object Length -Descending | Select-Object -First 12 @{Name="RelativePath";Expression={$_.FullName.Substring($apps[0].FullName.Length + 1)}}, Length | ConvertTo-Json
+          foreach ($part in @("app", "runtime")) {
+            $folder = Join-Path $apps[0].FullName $part
+            $size = (Get-ChildItem $folder -Recurse -File | Measure-Object Length -Sum).Sum
+            Write-Host "Windows ${part}: $size bytes"
+          }
           Write-Host "Windows app image total bytes: $(($files | Measure-Object Length -Sum).Sum)"
