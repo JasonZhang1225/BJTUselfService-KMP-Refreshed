@@ -75,7 +75,11 @@ class IosHomeworkFileGateway(
             delegate = source
         }
         activePreview = source
-        owner().presentViewController(controller, animated = true, completion = null)
+        if (!presentFromTop(controller)) {
+            activePreview = null
+            removeTemporary(temporary.directoryUrl)
+            return HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        }
         return HomeworkFilePreviewResult.Opened
     }
 
@@ -106,7 +110,9 @@ class IosHomeworkFileGateway(
             continuation.invokeOnCancellation {
                 cancel(delegate)
             }
-            owner().presentViewController(picker, animated = true, completion = null)
+            if (!presentFromTop(picker)) {
+                finish(delegate, continuation, HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE))
+            }
         }
     }
 
@@ -140,7 +146,10 @@ class IosHomeworkFileGateway(
                 removeTemporary(temporary.directoryUrl)
                 cancel(delegate)
             }
-            owner().presentViewController(picker, animated = true, completion = null)
+            if (!presentFromTop(picker)) {
+                removeTemporary(temporary.directoryUrl)
+                finish(delegate, continuation, HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE))
+            }
         }
     }
 
@@ -191,8 +200,26 @@ class IosHomeworkFileGateway(
             continuation.invokeOnCancellation {
                 cancel(delegate)
             }
-            owner().presentViewController(picker, animated = true, completion = null)
+            if (!presentFromTop(picker)) {
+                finish(delegate, continuation, CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE))
+            }
         }
+    }
+
+    /**
+     * 上传/保存入口常在 UIKit sheet 里（作业上传、日历导出），宿主控制器此时正呈现那张 sheet，
+     * 直接让它再 present 会被 UIKit 静默拒绝：选择器不出来，协程也永远等不到回调。
+     * 因此从最上层、且不在关闭动画中的控制器呈现；仍被拒绝时返回 false，由调用方复位状态。
+     */
+    private fun presentFromTop(controller: UIViewController): Boolean {
+        var presenter = owner()
+        while (true) {
+            val next = presenter.presentedViewController ?: break
+            if (next.isBeingDismissed()) break
+            presenter = next
+        }
+        presenter.presentViewController(controller, animated = true, completion = null)
+        return controller.presentingViewController != null
     }
 
     private fun readFiles(urls: List<NSURL>): HomeworkFilePickResult {

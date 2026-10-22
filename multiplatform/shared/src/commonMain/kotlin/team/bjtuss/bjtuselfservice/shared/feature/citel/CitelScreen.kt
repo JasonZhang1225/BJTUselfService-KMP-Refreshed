@@ -244,30 +244,27 @@ fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, on
     }
     LaunchedEffect(state.submissionRevision) { showUpload = false }
     LaunchedEffect(accepted, testing) { if (accepted || testing) showUpload = false }
-    if (showUpload) AppleSheet(onDismissRequest = { if (!state.submissionBusy) showUpload = false },
-        title = if (task.programming) "上传代码" else "上传作业", needsFullHeight = true, scrollableBody = true) {
-        val uploadScroll = androidx.compose.foundation.rememberScrollState()
-        Column(Modifier.fillMaxWidth().verticalScroll(uploadScroll).desktopTouchScroll(uploadScroll).padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            state.programmingOptions?.let { options ->
-                var language by remember(task.id, options) { mutableStateOf(options.languages.keys.first()) }
-                Text("编程语言", style = MaterialTheme.typography.titleMedium)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    options.languages.forEach { (value, label) ->
-                        FilterChip(language == value, { language = value }, enabled = !state.submissionBusy, label = { Text(label) })
-                    }
+    if (showUpload) AssignmentUploadSheet(title = if (task.programming) "上传代码" else "上传作业",
+        busy = state.submissionBusy, onDismissRequest = { showUpload = false }) {
+        state.programmingOptions?.let { options ->
+            var language by remember(task.id, options) { mutableStateOf(options.languages.keys.first()) }
+            Text("编程语言", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                options.languages.forEach { (value, label) ->
+                    FilterChip(language == value, { language = value }, enabled = !state.submissionBusy, label = { Text(label) })
                 }
-                AssignmentFilesEditor(emptyList(), fileGateway, state.submissionBusy,
-                    "选择一个代码文件提交评测，平台以最新一次提交为准。", "提交代码",
-                    onSave = { files, _ -> scope.launch { model.submitProgramming(files, language) } }, revision = state.submissionRevision)
             }
-            state.submission?.let { status ->
-                AssignmentFilesEditor(status.files.map { it.name }, fileGateway, state.submissionBusy,
-                    "保存后即已提交，截止前可以添加、替换或移除文件。", "保存文件",
-                    onSave = { added, removed -> scope.launch { model.saveFiles(added, removed) } }, revision = state.submissionRevision)
-            }
-            state.submissionMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+            AssignmentFilesEditor(emptyList(), fileGateway, state.submissionBusy,
+                "选择一个代码文件提交评测，平台以最新一次提交为准。", "提交代码",
+                onSave = { files, _ -> scope.launch { model.submitProgramming(files, language) } },
+                revision = state.submissionRevision, singleFile = true)
         }
+        state.submission?.let { status ->
+            AssignmentFilesEditor(status.files.map { it.name }, fileGateway, state.submissionBusy,
+                "保存后即已提交，截止前可以添加、替换或移除文件。", "保存文件",
+                onSave = { added, removed -> scope.launch { model.saveFiles(added, removed) } }, revision = state.submissionRevision)
+        }
+        state.submissionMessage?.let { AssignmentUploadMessage(it, isError = false) }
     }
 }
 
