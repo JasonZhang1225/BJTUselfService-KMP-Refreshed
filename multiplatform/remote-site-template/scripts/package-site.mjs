@@ -1,0 +1,24 @@
+// Sites 部署归档保留 dist/ 前缀；不能将 dist/server 压成归档根部的 server/。
+import { readFile, access, mkdir } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve, relative, isAbsolute } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import assert from 'node:assert/strict';
+const root = fileURLToPath(new URL('..', import.meta.url));
+const destination = process.argv[2];
+assert.ok(destination && isAbsolute(destination), 'Supply an absolute archive path outside this Site checkout');
+const rel = relative(root, destination);
+assert.ok(rel.startsWith('..') || isAbsolute(rel), 'Archive must be outside the Site checkout');
+const source = JSON.parse(await readFile(resolve(root, '.openai/hosting.json'), 'utf8'));
+const built = JSON.parse(await readFile(resolve(root, 'dist/.openai/hosting.json'), 'utf8'));
+assert.ok(source.project_id, 'Register the instance before packaging');
+assert.deepEqual(built, source, 'Manifest changed after build; rebuild before packaging');
+await access(resolve(root, 'dist/server/index.js'));
+await mkdir(dirname(destination), { recursive: true });
+const result = spawnSync('tar', ['-czf', destination, '-C', root, '.openai/hosting.json', 'dist'], { encoding: 'utf8' });
+assert.equal(result.status, 0, 'Could not package the Site');
+const listing = spawnSync('tar', ['-tzf', destination], { encoding: 'utf8' });
+assert.equal(listing.status, 0);
+assert.ok(listing.stdout.includes('dist/server/index.js'));
+assert.ok(listing.stdout.includes('.openai/hosting.json'));
+console.log(`Verified Sites deployment archive: ${destination}`);

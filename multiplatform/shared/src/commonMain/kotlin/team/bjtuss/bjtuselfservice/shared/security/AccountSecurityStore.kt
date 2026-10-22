@@ -10,6 +10,8 @@ data class AccountSecurityStore(
     val physicsDemoVault: ((String) -> CredentialVault)? = null,
     /** 物理在线（Moodle）独立账号：学校统一认证不再覆盖该站点。 */
     val phyVlabVault: ((String) -> CredentialVault)? = null,
+    /** 手机端 ChatGPT 插件的设备令牌等（每项一个条目）；桌面端各有自己的安全存储，不用这一项。 */
+    val remoteVault: ((String) -> CredentialVault)? = null,
 )
 
 interface AccountPreferences {
@@ -32,6 +34,7 @@ class AccountSecurityCoordinator(
     fun physicsDemoVault(accountScope: String): CredentialVault? = store.physicsDemoVault?.invoke(accountScope)
     fun citelVault(accountScope: String): CredentialVault? = store.citelVault?.invoke(accountScope)
     fun phyVlabVault(accountScope: String): CredentialVault? = store.phyVlabVault?.invoke(accountScope)
+    val remoteVault: ((String) -> CredentialVault)? get() = store.remoteVault
 
     val canStoreCredentials: Boolean get() = store.credentialVault != null
 

@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -45,6 +44,9 @@ internal fun AgentAssistantCard(
     integration: AgentIntegration,
     gradesAllowed: Boolean,
     onGradesAllowed: (Boolean) -> Unit,
+    showStatus: Boolean = true,
+    statusRefreshKey: Int = 0,
+    onStatusChange: (AgentIntegrationStatus?) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -55,8 +57,9 @@ internal fun AgentAssistantCard(
 
     suspend fun refresh() {
         status = withContext(Dispatchers.Default) { runCatching { integration.status() }.getOrNull() }
+        onStatusChange(status)
     }
-    LaunchedEffect(integration) { refresh() }
+    LaunchedEffect(integration, statusRefreshKey) { refresh() }
 
     fun run(action: () -> AgentInstallResult) {
         if (busy) return
@@ -73,77 +76,69 @@ internal fun AgentAssistantCard(
         }
     }
 
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("AI 助手", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                status?.let { StatusChip(it) }
+    SettingsSection(
+        title = "本机 AI 助手（Claude Code、Codex 等）",
+        subtitle = "让本机的 AI 助手读取课表、日程、作业、考试和邮箱摘要（只读，App 关着也能用）。它们读到的内容会发给你所用的 AI 服务商。",
+    ) {
+        if (showStatus) status?.let { StatusChip(it) }
+        val current = status
+        if (current != null && !current.installable) {
+            Text(current.unavailableReason.orEmpty(), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(
+                onClick = { run { integration.install() } },
+                enabled = !busy && current?.installable == true,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(when {
+                    busy -> "处理中…"
+                    current?.installed == true -> "重新安装"
+                    else -> "安装到本机"
+                })
             }
-            Text(
-                "让本机的 Claude Code、Codex 等 AI 助手读取课表、日程、作业和考试（只读，App 关着也能用）。" +
-                    "它们读到的内容会发给你所用的 AI 服务商。",
+            if (current?.installed == true) {
+                OutlinedButton(onClick = { run { integration.uninstall() } }, enabled = !busy, modifier = Modifier.weight(1f)) {
+                    Text("移除")
+                }
+            }
+        }
+        message?.let { (text, error) ->
+            Text(text, style = MaterialTheme.typography.bodySmall,
+                color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (current?.installed == true) {
+            if (showStatus) Text(
+                "Skill：${current.skillPath}\n" + when (current.claude) {
+                    ClaudeSkillLink.SHARED, ClaudeSkillLink.LINKED -> "Claude Code 可直接使用。"
+                    ClaudeSkillLink.NOT_LINKED -> "Claude Code 未链接（~/.claude/skills 下已有同名目录）。"
+                    ClaudeSkillLink.ABSENT -> "Codex 等读取 ~/.agents/skills 的工具可直接使用。"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            val current = status
-            if (current != null && !current.installable) {
-                Text(current.unavailableReason.orEmpty(), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error)
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(
-                    onClick = { run { integration.install() } },
-                    enabled = !busy && current?.installable == true,
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(when {
-                        busy -> "处理中…"
-                        current?.installed == true -> "重新安装"
-                        else -> "安装到本机"
-                    })
-                }
-                if (current?.installed == true) {
-                    OutlinedButton(onClick = { run { integration.uninstall() } }, enabled = !busy, modifier = Modifier.weight(1f)) {
-                        Text("移除")
-                    }
+            Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(AGENT_SETUP_PROMPT, style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f).padding(vertical = 10.dp))
+                    TextButton(onClick = {
+                        clipboard.setText(AnnotatedString(AGENT_SETUP_PROMPT))
+                        copied = true
+                    }) { Text(if (copied) "已复制" else "复制") }
                 }
             }
-            message?.let { (text, error) ->
-                Text(text, style = MaterialTheme.typography.bodySmall,
-                    color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            if (current?.installed == true) {
-                Text(
-                    "Skill：${current.skillPath}\n" + when (current.claude) {
-                        ClaudeSkillLink.SHARED, ClaudeSkillLink.LINKED -> "Claude Code 可直接使用。"
-                        ClaudeSkillLink.NOT_LINKED -> "Claude Code 未链接（~/.claude/skills 下已有同名目录）。"
-                        ClaudeSkillLink.ABSENT -> "Codex 等读取 ~/.agents/skills 的工具可直接使用。"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(AGENT_SETUP_PROMPT, style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f).padding(vertical = 10.dp))
-                        TextButton(onClick = {
-                            clipboard.setText(AnnotatedString(AGENT_SETUP_PROMPT))
-                            copied = true
-                        }) { Text(if (copied) "已复制" else "复制") }
-                    }
-                }
-                Text("新开一个 AI 助手会话，把上面这句话发给它即可。", style = MaterialTheme.typography.bodySmall,
+            Text("新开一个 AI 助手会话，把上面这句话发给它即可。", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("允许读取成绩", style = MaterialTheme.typography.bodyLarge)
+                Text("默认关闭。打开后本机 AI 助手可以读取全部成绩（远程另在“允许上云的数据”里设置）。", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("允许读取成绩")
-                    Text("默认关闭。打开后 AI 助手可以读取全部成绩。", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Switch(checked = gradesAllowed, onCheckedChange = onGradesAllowed)
-            }
+            Switch(checked = gradesAllowed, onCheckedChange = onGradesAllowed)
         }
     }
 }

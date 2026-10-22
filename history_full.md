@@ -908,20 +908,49 @@
 - 验证：修复分支 `./gradlew :shared:desktopTest --no-configuration-cache`，936 项全部通过；新增 4 项会话交接测试在隔离工程通过，以旧无条件清理语义对照时 2 项保护测试失败。代码提交 c6eb350 的 Android CI 编译通过。Package run 39522324933 使用独立提交 935d5ba。
 - 未验证：未在华为真机复现或验收；未改版本号、未发 Release。PR #35 的 iOS 弹层修复仍独立待合并。
 
-## 2026-10-21 iOS 课程详情关闭后卡片无响应修复（PR #35，`fix/ios-sheet-dismissal`，合并提交 f454d3a5）
+## 2026-10-21 PR #35 合并状态收口
 
-- 现象：用户确认首次课程详情通过右上角关闭按钮收起后，课程卡片无法再打开详情；6 秒录屏中卡片仍有按压反馈，课表/周数弹层可正常开关，未证明主线程整体卡死。
-- 原因/改动：原生弹层宿主被所有 `AppleSheet` 共用，内容、关闭回调和动画状态存在串用风险。改为每个 `AppleSheet` 组合通过 `createPresentation()` 持有独立 iOS 呈现对象，旧组合的释放/关闭动画不能清空后一个弹层；原生 dismissal delegate 绑定具体控制器、忽略过期回调，并在发起 present 前绑定。
-- 验证：真实 `AppleSheet` + 可延迟关闭完成的测试宿主，3 项离屏集成测试通过（重叠弹层独立释放、关闭后快速重开、重组保留呈现对象并更新回调）；`./gradlew :shared:desktopTest --no-configuration-cache` 935 项全部通过。原独立提交 `5430eb8` 打包 run 39522327270 成功。合入 main 时只解决 `memory.md` 冲突。
-- 未验证：当时在 Linux 云端会话，原生编译与 iOS 测试交给 PR CI；未做 iPhone 实机复测；未改版本号或发版。
+- 用户已合并 PR #35，最新 main 为 `f454d3a5cf15`，包含 PR #34；下列是合并前工作记忆移入的原记录，其中“待合并/独立”描述保留为当时状态，当前以本条合并事实为准。
+- 本次只核对 Git 历史并整理记录，没有新增源码修改、复跑构建或声称完成 iPhone 实测。
 
+- iOS 课程详情关闭后卡片无响应（PR #35，`fix/ios-sheet-dismissal`）：用户确认首次详情通过右上角关闭按钮收起；6 秒录屏中课程卡片仍有按压反馈，课表/周数弹层可正常开关，未证明主线程整体卡死。原生弹层宿主被所有 `AppleSheet` 共用，内容、关闭回调和动画状态存在串用风险。
+  - 修复：每个 `AppleSheet` 组合通过 `createPresentation()` 持有独立 iOS 呈现对象；旧组合的释放/关闭动画不能清空后一个弹层。原生 dismissal delegate 绑定具体控制器，忽略过期回调，并在发起 present 前绑定 delegate。
+  - 验证：真实 `AppleSheet` + 可延迟关闭完成的测试宿主，3 项离屏集成测试通过（重叠弹层独立释放、关闭后快速重开、重组保留呈现对象并更新回调）；`./gradlew :shared:desktopTest --no-configuration-cache` 完整共享测试 935 项全部通过（含新增 3 项）。Linux 无 Xcode/iOS 模拟器，原生编译与 iOS 测试交给 PR CI，未做 iPhone 实机复测，未修改版本号或发版。
+- PR #34 已由用户合入 main（eff3629），完成细节移入 `history_full.md`。本次将 main 合入 #35，只解决 `memory.md` 冲突，保留两项修复的源码原样。
+- Package 记录：PR #34 的 `935d5ba` → run `39522324933`；PR #35 原独立提交 `5430eb8` → run `39522327270`。两次打包均已成功，使用各自原提交；当前 #35 合入 main 后的提交包含两项修复，未额外触发打包；未改版本或创建 Release。
 
-## 2026-10-20 发布 v1.8.5-EmergencyFix2（标签 `v1.8.5-EmergencyFix2`，提交 `1e159a0`）
+## 2026-10-21 Agent Remote 计划 PR 1–4（PR #36 → `agent-remote`，合并提交 8d36c82）
 
-- 改动：GitHub Release「v1.8.5-EmergencyFix2：交大自由行 KMP 紧急修复」于 2026-10-20 14:11（UTC+8）发布，正式版（非预发布）并设为 Latest。资产：Android `arm64-v8a.apk`、iOS 未签名 IPA、macOS `.dmg`、Windows `.msi`。发布说明 `docs/releases/v1.8.5-EmergencyFix2.md`：包含 EmergencyFix1 全部修复，另有课程平台自动回退（29 入口失败时经 11 本科教学服务平台重建会话）、Android 小窗账号设置修复、小组件配色、首页数据变动补齐 CITEL/物理实验/演示实验。
-- 原因/决策：学校 10 月 20 日起更换 MIS 统一身份认证，旧版本无法登录。
-- 验证：本条只依据 `gh release view` 与标签记录补写，当时的构建矩阵见对应打包 run。
-- 未验证：发布说明“已知问题”所列：新验证码方式、真实作业提交/上传/附件下载。
+- 改动（每个计划 PR 一个提交，按序）：
+  - PR 1 `de9917e`：`shared/.../sync/` 公共全量刷新服务 `AppRefreshCoordinator`（逐源 success/failed/skipped/needs_user_action 与真实同步时间；同源合并、重叠补齐、会话恢复整批合并、单源超时、关闭取消）；`AppDataGraph` 把 Compose 内的 Repository/ScreenModel 装配移到普通 Kotlin；App 全局刷新改走协调器；邮箱未读探测返回是否成功，首页/邮箱未读/物理实验补记同步时间。
+  - PR 2 `a73caf1`：`agent/host/` 本机 IPC（仅 127.0.0.1，令牌写在用户私有端点文件，请求带 ID/截止时间/长度上限/协议版本）；`AppRefreshHost`、`HeadlessRefreshHost`。`cache update` 默认全量（含物理实验、演示实验、CITEL、物理在线），App 开着交给 App，关着无窗口执行，GUI 启动请求交接；新增退出码 7（已交出但无结果）、8（版本不一致），旧版 App 不响应仍为 6；没有缓存时直接返回 2。
+  - PR 3 `fd15a12`：`multiplatform/remote-site-template/`（D1 迁移；配对/快照/租约任务/拥有者管理/有界清理；令牌与配对码只存摘要；Node 测试用 node:sqlite 跑真实迁移 SQL）；`agent/remote/RemoteProtocol.kt` 与模板共用虚构 fixtures 做契约测试；CI 新增模板测试作业。
+  - PR 4 `0b21027`：`agent/remote/` 常驻调度（默认 1800 秒先刷新再上报、5 秒只领任务；退避加抖动、Retry-After、401 停止；只重传不重刷；任务续租与本地结果记录）；设置页“远程查询（手机）”卡片；Windows 托盘、关窗隐藏、`--background`、开机启动（HKCU Run，默认关）、单实例唤出；令牌只进 DPAPI。
+  - 修复 `b008ab4`、`40027ad`：轮询与上报“整份读改写”持久状态互相覆盖，上报尝试时间丢失导致立即再做一次全量刷新（macOS CI 负载下 refreshes=2）；改为同一把锁内只改各自字段，新增交错回归测试（修复前失败）。`b008ab4` 只放宽测试时序，未修到根因。
+- 原因/决策：按 `docs/agent/agent-remote-plan.md` 实施；远程同步默认关闭，需配对与上云同意；拥有者接口暂用部署机密 `OWNER_TOKEN`，未配置一律拒绝。用户选择保留修复提交、不改写历史。
+- 验证：
+  - CI：`de9917e`、`a73caf1`、`fd15a12` 自身运行的检查全部通过；`0b21027`、`b008ab4` 的 iOS compile and macOS security tests 失败（上述竞态）；`40027ad` 四项（Android、iOS/macOS、模板测试、Windows CLI 冒烟与 IPC/远程/DPAPI 单测）全部通过。
+  - 本地 Linux：`LC_ALL=C.UTF-8 ./gradlew :shared:desktopTest` 988 项全过；runner 测试在 CPU 2 倍超载下连续 5 次通过；`:shared:compileAndroidMain :androidApp:compileDebugKotlin :desktopApp:compileKotlin :windowsApp:compileKotlinWindows` 通过；模板 `npm test` 14 项全过。
+- 未验证：owner-private Site 的平台机器访问（未建任何 Site）；真实学校登录下的无窗口刷新；Windows 真机托盘、窗口隐藏后组合是否持续、开机启动、IPC 交接时序；Ktor 客户端对真实 Site 的连通。
+- 环境备注：容器内 `repo.maven.apache.org` 返回 429，用 `~/.gradle/init.d` 改走 Google 镜像（不入库）；不设 `LC_ALL=C.UTF-8` 时 `DesktopAgentIntegrationTest` 因中文路径失败，属环境问题。
+
+## 2026-10-20 独立账号、小组件与课程平台回退（v1.8.5-EmergencyFix2 / Build 40）
+
+- 分支与版本：`android-account-fix`，修复提交 `4046df7`，发布说明提交 `1e159a0`；先推 `debug-1.8.5-EmergencyFix2`，用户测试确认正常后明确授权发布 `v1.8.5-EmergencyFix2`。四端展示版本 1.8.5-EmergencyFix2、构建号 40，桌面安装器数值版本仍为 1.8.5。未合并 main。
+- Android 小窗账号入口：`isNativeDetailRoute` 补齐物理在线账号、演示实验账号及演示实验查询路由。宽屏走内部导航，紧凑窗口走 NativeDetailActivity，缺少路由白名单导致页面立即关闭。API 36 隔离模拟器先复现旧问题，再验证四入口均可输入、物理在线与演示实验真实登录保存；浅深色、130% 字体、窗口变化已检查。新增路由测试 3 项通过。
+- 首页数据变动：CITEL、物理实验、演示实验成功写缓存后记录新增/修改/删除，覆盖列表、评测/文件保存、实验周数覆盖与配置查询；首次同步和账号切换建立基线（含首次同步前重启），失败或未变化不报警，记录可进入对应功能。新增 6 项模型/记录集成测试及 1 项 Compose 渲染测试，浅深色与放大字体合成图已检查。
+- Android 小组件：七类课程使用各自原生彩色 drawable（普通行、紧凑行、竖条），避免桌面对同一白色图形动态着色；清除旧滤镜并始终设置透明度，修正 alpha=255 时不恢复旧透明度的确定缺陷；旧快照非标准颜色保留兼容分支。API 36 RemoteViews 序列化、apply/reapply 共 104 像素检查零错误；Pixel Launcher 添加组件、调尺寸、切浅深色、刷新三次颜色正常。相关 16 项测试及 Android Lint 通过（0 错误，100 既有警告，新颜色代码无新增问题）。未在 AOSP 复现原始 HyperOS 串色，不宣称已由代理在小米真机根治。
+- MIS 课程平台：浏览器实证首页序号 29 对应 module 28、11 对应 module 104；旧直连落到 CAS 空白页。保留原路径优先，失败后经本科服务平台与 `NoMasterJumpPage.aspx?URL=jwcZhjx&FPC=page:jwcZhjx` 建立既有课程会话，作业、课件、当前周复用 `SmartPlatformHandshake.kt`；保留当前周教务兜底。本科 OAuth HTTP 仅升级到已验证 HTTPS，逐跳限定学校主机/端口/路径和既有课程 origin，票据不持久化、不记录。独立 KMP/Ktor 登录后实际回退读取 15 条作业、15 门课程、首课 8 个目录项；新增回退协议测试 10 项，相关回归 48 项及独立真实探针 1 项通过。
+- 发布前验证：JDK 21，`gradlew -p multiplatform -I .artifacts/android-account-debug-signing.gradle -I .artifacts/emergencyfix2-checks.gradle :shared:desktopTest :androidApp:assembleDebug :windowsApp:compileKotlinWindows` 成功，JVM 923 项零失败；本地 init 脚本仅排除 5 项已确认依赖 Unix 脚本/Windows 符号链接权限的既有测试。四端版本元数据、暂存范围、凭据扫描、git diff --check 均通过。本地未修改项目签名配置，产物与证据仅在 `.artifacts/`。
+- 发布结果：debug run `39373265899` 四端成功；正式 run `39377377937` 的 Android APK、iOS IPA、macOS DMG、Windows MSI 与 GitHub Release job 全部 success。2026-10-20 14:15（北京时间）复查四附件 uploaded 且非空，正文与 `docs/releases/v1.8.5-EmergencyFix2.md` 一致；按授权改为非 prerelease Latest，并通过 releases/latest 再次确认。本次 Release 包含 Fix 1 全部说明与 Fix 2 新条目。链接 https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases/tag/v1.8.5-EmergencyFix2 。跟进自动化 `emergencyfix2` 已停用。
+- 验证边界：用户已确认测试正常，未进一步限定测试设备和操作覆盖；代理未执行本轮 Apple 真机安装/Keychain 测试、真实作业提交、文件上传或附件下载，也未制造学校真实数据变更。iOS 原生业务文件未修改，仅同步版本元数据；shared 网络与首页逻辑四端生效。正式打包成功不等于真机各操作全部验证。
+
+## 2026-10-20 全部分支历史合入用户仓库 main
+
+- 用户授权将分支全部合入自己的 main。先快进到远端 `daf7824`，再以 `2ec0866` 合并 `android-account-fix@1e159a0`，以 `b083953` 合并本地保留的 `origin/claude/project-thread-a8br6t@5b165e4`；均无冲突。其他本地/远端跟踪分支均已包含在 main。保留 main 的 macOS 安装命令修正。
+- 已明确推送到 `https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed.git` 的 main；fetch 后本地 HEAD 与 origin/main 均为 `b083953`。实际 origin 指向用户仓库，与 AGENTS.md 的旧命名不同；未修改远端配置，未向上游推送。上游 PR #38 经 API 核对为 CLOSED、mergedAt=null，来源为用户 fork。
+- 验证：全部 refs/heads 和 refs/remotes/origin 逐一执行 `git merge-base --is-ancestor <ref> HEAD` 成功；`git diff --exit-code android-account-fix HEAD -- multiplatform docs/releases` 成功，应用源码与已发布/四端打包成功的 Fix 2 一致；`git diff --check` 通过。本轮未重新构建、安装或实机验证。
+- 备份：`.artifacts/branch-merge-20261020/before-merge.bundle` 与 `local-changes.patch`；合并前暂存并在合并后恢复原有三份未提交文件，本地修复分支保留。未重新创建已删除的远端分支，提交已由 main 保留。本条与 memory 更新继续留在本地未提交文档中。
 
 ## 2026-10-22 图书馆借阅功能（PR #40，`feat/library`，合并提交 `64c24ab`）
 

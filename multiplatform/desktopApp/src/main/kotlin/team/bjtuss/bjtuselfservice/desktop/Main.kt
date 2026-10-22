@@ -27,6 +27,10 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommand
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
 import team.bjtuss.bjtuselfservice.shared.security.createDesktopAccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.system.DesktopWindowHandle
+import team.bjtuss.bjtuselfservice.shared.system.MacLaunchAgentStartupHost
+import team.bjtuss.bjtuselfservice.shared.system.shouldStartHidden
+import team.bjtuss.bjtuselfservice.shared.feature.settings.LocalAppStartupHost
+import androidx.compose.runtime.CompositionLocalProvider
 import team.bjtuss.bjtuselfservice.shared.system.DesktopWindowLifecycle
 import team.bjtuss.bjtuselfservice.shared.DesktopSyncStatusSmoke
 
@@ -63,10 +67,17 @@ fun main(args: Array<String>) {
     }
     val accountSecurityStore = createDesktopAccountSecurityStore()
     val cacheStoreHandle = createDesktopCacheStore()
-    // 告诉命令行“App 正在运行”：此时 agent 的 cache update 会让用户在 App 里刷新，避免两边各登录一次互相顶掉会话。
-    appRunningLock = team.bjtuss.bjtuselfservice.shared.agent.holdAgentAppLock(
+    // 刷新执行者：持锁并开放本机 IPC，命令行 `cache update` 交给当前会话执行，避免两边各登录一次互相顶掉会话。
+    // 后台命令行正在刷新时先请它交出执行权（最多等几秒），拿不到也照常启动。
+    val currentSession = java.util.concurrent.atomic.AtomicReference<AuthenticatedSession?>(null)
+    appRunningLock = team.bjtuss.bjtuselfservice.shared.agent.host.AppRefreshHost.start(
         File(System.getProperty("user.home"), "Library/Application Support/BJTUselfServiceKMP"),
+        sessionProvider = currentSession::get,
     )
+
+    // 开机登录项带 --background 启动：用户开了静默启动就不弹窗口，点程序坞图标再打开（同一个窗口）。
+    val startupHost = MacLaunchAgentStartupHost()
+    val startHidden = shouldStartHidden(args, startupHost.isSilentStart(), canReopen = Desktop.isDesktopSupported())
 
     try {
         application {
@@ -79,9 +90,11 @@ fun main(args: Array<String>) {
                 if (Desktop.isDesktopSupported()) Desktop.getDesktop() else null
             }
             val authenticatedSession = remember { mutableStateOf<AuthenticatedSession?>(null) }
+            val windowVisible = remember { mutableStateOf(!startHidden) }
             val reopenListener = remember(lifecycle) {
                 AppReopenedListener {
-                    lifecycle.reopenWindow()
+                    // 静默启动时窗口内容可能尚未挂上生命周期句柄：改由 Compose 的可见状态显示同一个窗口。
+                    if (!lifecycle.reopenWindow()) windowVisible.value = true
                     authenticatedSession.value?.notifyAppBecameActive()
                 }
             }
@@ -95,6 +108,8 @@ fun main(args: Array<String>) {
                 onCloseRequest = { lifecycle.closeWindow() },
                 title = "交大自由行 KMP",
                 state = state,
+                // 只决定首次是否显示；之后的隐藏/显示仍由 DesktopWindowLifecycle 直接操作这一个窗口。
+                visible = windowVisible.value,
             ) {
                 val windowHandle = remember(window, desktop) {
                     object : DesktopWindowHandle {
@@ -171,6 +186,7 @@ fun main(args: Array<String>) {
                         DesktopHomeworkFileGateway { window }
                     }
                     val systemCalendarGateway = remember { DesktopSystemCalendarGateway() }
+                    CompositionLocalProvider(LocalAppStartupHost provides startupHost) {
                     App(
                         accountSecurityStore = accountSecurityStore,
                         cacheStoreHandle = cacheStoreHandle,
@@ -178,11 +194,17 @@ fun main(args: Array<String>) {
                         coursewareDirectoryGateway = homeworkFileGateway,
                         systemCalendarGateway = systemCalendarGateway,
                         appCommandBus = appCommandBus,
-                        onAuthenticatedSessionChanged = { authenticatedSession.value = it },
+                        onAuthenticatedSessionChanged = {
+                            authenticatedSession.value = it
+                            currentSession.set(it)
+                        },
                     )
+                    }
             }
         }
     } finally {
+        // 先停 IPC、删端点再释放锁；异常退出时由系统释放锁，残留端点会因连不上被忽略。
+        runCatching { appRunningLock?.close() }
         cacheStoreHandle.store.close()
     }
 }

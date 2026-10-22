@@ -203,6 +203,9 @@ import team.bjtuss.bjtuselfservice.shared.feature.home.homeSyncDialogTitle
 import team.bjtuss.bjtuselfservice.shared.webview.openExternalUrl
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommand
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
+import team.bjtuss.bjtuselfservice.shared.sync.AppRefreshCoordinator
+import team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin
+import team.bjtuss.bjtuselfservice.shared.sync.RefreshRequest
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.domain.grade.CourseType
@@ -290,6 +293,8 @@ fun AuthenticatedAppShell(
     val mailboxMessageLoading = (mailboxState as? MailboxUiState.Ready)?.isMessageLoading == true
     val phyVlabState by phyVlabModel.state.collectAsState()
     val settingsState by settingsModel.state.collectAsState()
+    // 电脑端由宿主提供常驻控制器；手机/平板用会话自带的（只在刷新后上传）。
+    val remoteAgent = team.bjtuss.bjtuselfservice.shared.feature.settings.LocalRemoteAgentController.current ?: session.remoteAgent
     val physicsLabEnabled = settingsState.preferences.isPhysicsLabEnabled
     val citelEnabled = settingsState.preferences.isCitelEnabled
     val physicsLabFlow = remember(session) { session.physicsLabModel?.state ?: MutableStateFlow(PhysicsLabState()) }
@@ -540,6 +545,7 @@ fun AuthenticatedAppShell(
         PhysicsDemoRoute -> AppSection.MORE
         PhysicsDemoSettingsRoute -> AppSection.SETTINGS
         PhyVlabSettingsRoute -> AppSection.SETTINGS
+        AiAssistantSettingsRoute -> AppSection.MORE
         is AppSection -> currentRoute
     }
     val popBackStack: () -> Unit = if (forcedRouteId != null) {
@@ -645,68 +651,24 @@ fun AuthenticatedAppShell(
             AssignmentSource.CITEL -> if (citelEnabled) session.citelModel?.refresh()
         }
     }
-    val refreshGlobal: suspend (Boolean) -> Unit = globalRefresh@ { forceReauthenticate ->
-        val sessionRefresh = SessionRefreshCoordinator(reauthenticate = reauthenticateSession,
-            probeSession = session.probeSession, onRecoveryStateChanged = { sessionRecoveryInProgress = it })
-        if (forceReauthenticate && !sessionRefresh.recoverBeforeRefresh()) return@globalRefresh
-        suspend fun refreshModule(operation: suspend () -> Unit, sessionExpired: () -> Boolean) {
-            sessionRefresh.run(operation, sessionExpired)
-        }
+    // 全局刷新统一交给公共刷新服务：与 CLI/后台任务共用同一执行者，同源请求合并、逐源报告。
+    // 正式会话由 AppDataGraph 提供；离线布局探针等没有协调器的会话，全局刷新不访问网络。
+    val refreshCoordinator = remember(session) {
+        session.refreshCoordinator ?: AppRefreshCoordinator(
+            accountScope = profile.studentId,
+            adapters = emptyList(),
+            scope = scope,
+            nowEpochSeconds = { kotlin.time.Clock.System.now().epochSeconds },
+        )
+    }
+    LaunchedEffect(refreshCoordinator) {
+        refreshCoordinator.recoveryInProgress.collect { sessionRecoveryInProgress = it }
+    }
+    val refreshGlobal: suspend (Boolean) -> Unit = { forceReauthenticate ->
         coroutineScope {
-            launch {
-                refreshModule(
-                    operation = homeModel::refresh,
-                    sessionExpired = { homeModel.state.value.failure == HomeStatusFailure.SESSION_EXPIRED },
-                )
-            }
-            launch {
-                sessionRefresh.run(
-                    operation = { mailboxModel.refreshUnreadInboxCount() },
-                    sessionExpired = {
-                        when (val current = mailboxModel.state.value) {
-                            MailboxUiState.SessionUnavailable -> true
-                            is MailboxUiState.Ready -> current.failure == MailboxFailure.SESSION_EXPIRED
-                            else -> false
-                        }
-                    },
-                )
-            }
-            launch {
-                refreshModule(
-                    operation = homeworkModel::refresh,
-                    sessionExpired = { homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED },
-                )
-            }
-            launch {
-                refreshModule(
-                    operation = examScheduleModel::refresh,
-                    sessionExpired = { examScheduleModel.state.value.failure == ExamScheduleSyncFailure.SESSION_EXPIRED },
-                )
-            }
-            launch {
-                refreshModule(
-                    operation = courseScheduleModel::refresh,
-                    sessionExpired = { courseScheduleModel.state.value.failure == CourseScheduleSyncFailure.SESSION_EXPIRED },
-                )
-            }
-            if (physicsLabEnabled) launch { session.physicsLabModel?.refresh() }
-            launch { session.physicsDemoModel?.refresh() }
-            if (citelEnabled) launch { session.citelModel?.refresh() }
-            // 图书馆与学校业务会话独立：全局刷新时一并重取借阅（失败保留旧数据）。
+            launch { refreshCoordinator.refresh(RefreshRequest(origin = RefreshOrigin.APP, forceReauthenticate = forceReauthenticate)) }
+            // 图书馆与学校业务会话独立、不在公共刷新协调器里：全局刷新时一并重取借阅（失败保留旧数据）。
             launch { session.libraryModel.refresh(silent = true) }
-            // 用户主动刷新或后台超过阈值后的全局刷新；关闭的模块不访问网络。
-            if (phyVlabEnabled) {
-                launch { phyVlabModel.refresh() }
-            }
-            launch {
-                refreshModule(
-                    operation = gradeModel::refresh,
-                    sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
-                )
-                if (gradeModel.state.value.courseTypesByCode == null) {
-                    gradeModel.ensureProgramCourseTypes()
-                }
-            }
         }
     }
     val latestGlobalRefresh = rememberUpdatedState(refreshGlobal)
@@ -2073,6 +2035,11 @@ fun AuthenticatedAppShell(
                     physicsDemoConfigured = physicsDemoState.configured,
                     phyVlabConfigured = phyVlabAccountState.configured,
                     onPhyVlabSettings = openPhyVlabSettings,
+                    onAgentPluginEnabled = { enabled ->
+                        settingsModel.setAgentPluginEnabled(enabled)
+                        // 关闭功能同时暂停上云同步，不在入口隐藏后继续悄悄上传。
+                        if (!enabled) remoteAgent?.setEnabled(false)
+                    },
                     physicsDemoEnabled = physicsDemoState.enabled,
                     onPhysicsDemoEnabled = { enabled -> scope.launch { session.physicsDemoModel?.setEnabled(enabled) } },
                     onPhysicsDemoSettings = {
@@ -2223,6 +2190,15 @@ fun AuthenticatedAppShell(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+            AiAssistantSettingsRoute -> DestinationPage(
+                title = team.bjtuss.bjtuselfservice.shared.feature.settings.agentPluginTitle(platform), expanded = expanded, refreshable = false,
+                isRefreshing = false, showBack = true, modifier = modifier, scrollUnderTopBar = true,
+            ) {
+                CompositionLocalProvider(team.bjtuss.bjtuselfservice.shared.feature.settings.LocalRemoteAgentController provides remoteAgent) {
+                    team.bjtuss.bjtuselfservice.shared.feature.settings.AiAssistantSettingsScreen(
+                        settingsModel, platform, Modifier.fillMaxSize())
+                }
+            }
             PhysicsDemoSettingsRoute -> DestinationPage(
                 title = "演示实验账号设置", expanded = expanded, refreshable = false,
                 isRefreshing = physicsDemoState.refreshing, showBack = true,
@@ -2332,6 +2308,12 @@ fun AuthenticatedAppShell(
                 scrollUnderTopBar = true,
             ) {
                 MoreWorkspace(
+                    agentPluginTitle = team.bjtuss.bjtuselfservice.shared.feature.settings.agentPluginTitle(platform),
+                    onOpenAgentPlugins = if (settingsState.preferences.isAgentPluginEnabled &&
+                        (platform.family == PlatformFamily.MacOS || remoteAgent != null)) ({
+                        if (useNativeSecondaryRoutes) onOpenNativeRoute(AI_ASSISTANT_SETTINGS_ROUTE_ID)
+                        else backStack.add(AiAssistantSettingsRoute)
+                    }) else null,
                     preferences = settingsState.preferences,
                     physicsLabModel = session.physicsLabModel,
                     onOpenPhysicsDemo = session.physicsDemoModel?.takeIf { physicsDemoState.enabled }?.let { {
@@ -2457,6 +2439,10 @@ fun AuthenticatedAppShell(
                             modifier = Modifier.fillMaxSize(),
                             usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family),
                         )
+                    }
+                    entry<AiAssistantSettingsRoute> {
+                        SectionDestination(route = AiAssistantSettingsRoute, expanded = false, modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family))
                     }
                     entry<PhysicsDemoSettingsRoute> {
                         SectionDestination(route = PhysicsDemoSettingsRoute, expanded = false, modifier = Modifier.fillMaxSize(),
@@ -2690,6 +2676,10 @@ fun AuthenticatedAppShell(
                             modifier = Modifier.fillMaxSize(),
                             usesLegacySmartTransport = false,
                         )
+                    }
+                    entry<AiAssistantSettingsRoute> {
+                        SectionDestination(route = AiAssistantSettingsRoute, expanded = false, modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family))
                     }
                     entry<PhysicsDemoSettingsRoute> {
                         SectionDestination(route = PhysicsDemoSettingsRoute, expanded = false, modifier = Modifier.fillMaxSize(),

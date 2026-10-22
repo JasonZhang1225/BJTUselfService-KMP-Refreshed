@@ -12,6 +12,7 @@ on:
       - "multiplatform/windowsApp/**"
       - "multiplatform/shared/src/desktopMain/**/agent/**"
       - "multiplatform/shared/src/commonMain/**/agent/**"
+      - "multiplatform/shared/src/commonMain/**/sync/**"
 
 permissions:
   contents: read
@@ -41,6 +42,11 @@ jobs:
           WINDOWS_PACKAGE_NAME: BJTUselfServiceKMP
         run: .\gradlew.bat :windowsApp:createDistributable --stacktrace
 
+      - name: Refresh IPC, coordinator and remote agent tests on Windows
+        # 本机 IPC（回环端口、端点文件权限回退）、公共刷新协调器与远程常驻组件在真实 Windows 上跑一遍；
+        # 远程令牌的 DPAPI 往返只用独立测试节点。
+        run: .\gradlew.bat :shared:desktopTest --tests "*RefreshIpcTest*" --tests "*AppRefreshCoordinatorTest*" --tests "*agent.remote*" --tests "*AgentCacheUpdateTest*" :windowsApp:windowsTest --tests "*WindowsRemoteSecretStoreTest*" --stacktrace
+
       - name: Run CLI with redirected handles (how agents spawn it)
         run: |
           $exe = (Resolve-Path "windowsApp\build\compose\binaries\main\app\BJTUselfServiceKMP\BJTUselfServiceKMP.exe").Path
@@ -63,9 +69,16 @@ jobs:
           $status = Invoke-Cli "agent status --json"
           if ($status.Code -ne 2) { throw "expected exit 2 without cache" }
           $json = $status.Out | ConvertFrom-Json
-          if ($json.schemaVersion -ne 1 -or -not $json.error) { throw "unexpected JSON" }
+          if ($json.schemaVersion -ne 2 -or -not $json.error) { throw "unexpected JSON" }
           $bad = Invoke-Cli "agent calendar --from 2026-13-01"
           if ($bad.Code -ne 64) { throw "expected usage exit 64" }
+          # 全量刷新：没有 App 在运行、也没有缓存时，在联网前就以退出码 2 结束，并且不留下 IPC 端点。
+          $update = Invoke-Cli "agent cache update --json"
+          if ($update.Code -ne 2) { throw "expected cache update exit 2 without cache" }
+          $endpoint = Join-Path $env:LOCALAPPDATA "BJTUselfServiceKMP\agent-ipc.json"
+          if (Test-Path $endpoint) { throw "cache update left an IPC endpoint behind" }
+          $unknown = Invoke-Cli "agent cache update shell"
+          if ($unknown.Code -ne 64) { throw "expected usage exit 64 for unknown source" }
 
       - name: Install skill and call through bjtu.cmd
         run: |
@@ -82,7 +95,7 @@ jobs:
           $json = & $cmd status --json | Out-String
           Write-Host "bjtu.cmd status exit=$LASTEXITCODE`n$json"
           if ($LASTEXITCODE -ne 2) { throw "expected exit 2 through bjtu.cmd" }
-          if (($json | ConvertFrom-Json).schemaVersion -ne 1) { throw "bad JSON through bjtu.cmd" }
+          if (($json | ConvertFrom-Json).schemaVersion -ne 2) { throw "bad JSON through bjtu.cmd" }
           & $exe agent uninstall | Out-String | Write-Host
           if ((Test-Path $cmd) -or (Test-Path $skill)) { throw "uninstall left files" }
           exit 0

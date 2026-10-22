@@ -114,6 +114,8 @@ class SettingsScreenModel(
 
     fun setAgentGradesAllowed(allowed: Boolean) = updatePreferences { copy(agentGradesAllowed = allowed) }
 
+    fun setAgentPluginEnabled(enabled: Boolean) = updatePreferences { copy(agentPluginEnabled = enabled) }
+
     fun setPhyVlabEnabled(enabled: Boolean) = updatePreferences {
         copy(
             autoSyncPhyVlab = enabled,
