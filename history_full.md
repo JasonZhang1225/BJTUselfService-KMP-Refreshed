@@ -1063,3 +1063,11 @@
 - 原因/决策：PR #50 已将模板合入 main，但搭建指导仍指向 feat/chatgpt-agent-remote。用户明确授权使用其身份修改并强推；基于远端 main@9c7eb55a 追加提交，以显式 force-with-lease 保护远端并发更新，不改写已有提交。当前本机用户仓库远端名为 mine（origin 实为旧上游），只向 JasonZhang1225/BJTUselfService-KMP-Refreshed 推送，未修改远端配置。
 - 验证：git diff --check 通过；模板 npm test 64 项通过、0 失败；npm run build 通过；脚本断言提示词 URL 指向 main、main 已有 SETUP.md 与 agent-query-contract.md、两份安装指导无开发分支引用。
 - 未验证：只修改链接字符串与文档，未运行 Gradle/四端构建，未重新打包或替换安装版；已安装 App 的内置旧提示词需更新客户端后才改变。
+
+## 2026-10-22 私人 Site 完整长码说明与多设备展示部署（Site 源码 495efffe）
+
+- 改动：更新用户私人 Site 的连接说明为只复制完整长码、无需手动填写地址；显示全部活跃设备和手机“刷新后上传、不轮询”能力；仅有可承接即时任务的电脑时启用电脑刷新按钮；撤销操作显示对应设备名。更新独立 Site 源码的 SETUP 与多设备回归测试。
+- 站点：<https://bjtu-agent-remote-baizhou-2026.ardent-rice-3928.chatgpt.site>，项目 `appgprj_6ad9b56e35188191a19f3988ced54e6d`。原权限为仅所有者访问，保留 DB、环境 revision 1、设备绑定和令牌；无迁移或凭据轮换。服务端原已支持 mobile/desktop，本次服务逻辑无变化。
+- 发布：Sites 独立源码提交 `495efffe69c9be461bd9636fb1ff458227562472`，保存版本 `appgprj_6ad9b56e35188191a19f3988ced54e6d~appgver_f17879ad54c08191837e72f50f41ec6e`；部署 `appgdep_6ad9dd84586c81919364bf7f048ad8dc` 最终返回 `succeeded`、`has_mcp=true`。源仓库通过 Sites source helper 隐藏 stdin 传入短时凭据，未把机密写入源码或日志。
+- 验证：独立目录 `/Users/zjg/BJTU-remote-site-deploy-20261022` 执行 `npm test` 66/66 通过，`npm run build` 成功；源同步与部署归档由 site-workflow helper 生成；`node scripts/package-template.mjs` 验证无部署身份的模板分发包通过。此前本地浏览器使用虚构数据检查手机宽度、浅/深色、放大文字及手机/电脑混合设备状态。本次平台部署状态确认为成功，未重新读取真实学校数据。
+- 未验证：更新后的手机 App 与线上 Site 完整配对、双设备真实上传和原生 UI；App 配套修复仍保留在本地分支，没有安装新 App。私人 Site 的部署不表示公用模板 main 或 App 发布版本已更新。
