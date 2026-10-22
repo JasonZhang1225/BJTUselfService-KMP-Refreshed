@@ -1,7 +1,7 @@
 # 🚄 交大自由行KMP (BJTU Self Service KMP Refreshed)
 
 > 北京交通大学校园服务客户端 —— 让校园生活触手可及  ↩
-> 本仓库为 **Kotlin Multiplatform重构版**（Android / iOS / macOS / Windows），在原安卓项目功能基线 `v1.7.1` 上迁移与增强，。
+> 本仓库为 **Kotlin Multiplatform 重构版**（Android / iOS / macOS / Windows）。迁移基线是原作者安卓项目 `v1.7.1`，上游目前已更新到 `v1.8.0`，本仓库会按需跟进。
 
 [![KMP Release](https://img.shields.io/github/v/release/JasonZhang1225/BJTUselfService-KMP-Refreshed?include_prereleases&style=flat-square&label=KMP%20版本)](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases)
 [![Upstream](https://img.shields.io/github/v/release/HFDLYS/BJTUselfService?style=flat-square&label=原作者安卓)](https://github.com/HFDLYS/BJTUselfService/releases/latest)
@@ -21,13 +21,31 @@
 
 本 fork（[BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed)）在原作者 [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService) 安卓版基础上，用 **KMP + Compose Multiplatform** 做多端共享实现。
 
-_**相对原版新增/增强的功能（节选）：**_
+### 上游原版（Android）现状
 
-- _**教室占用查询**（教务系统入口功能）_
-- _**成绩按课程性质筛选**（必修 / 限选 / 任选 / 体育）_
-- _**物理在线作业和物理实验查询**_
-- _**邮箱简单的前端壳子**_
-- **_iOS（现已支持iPhone Duo） + Mac OS + Windows 端_**
+上游项目是**仅 Android** 的校园客户端，当前最新版本 `v1.8.0`（[Release](https://github.com/HFDLYS/BJTUselfService/releases/latest)，2026-10-21），主要能力：
+
+- **登录**：适配新版 MIS SSO 统一身份认证，本地 SM2 加密密码，本地保存凭据并启动自动登录
+- **学业**：成绩查询（学年筛选、排序、GPA/均分）、课程表（本科/研究生，高亮当前课程）、考试日程（变动提醒、已结束置灰）、作业管理（查看/筛选/排序/上传下载）
+- **信息服务**：原生校内邮箱收件箱（展示最近 30 封，暂不支持发信与附件下载）、校园卡余额、校园网余额
+- **日历与提醒**：日历视图整合作业截止与考试；邮箱订阅自动抓取智慧课程平台作业/报告/实验，剩余时间不足阈值时发邮件提醒
+- **校园工具**：教室人数识别与占用详情（空闲筛选、楼层切换）、校历下载、中英文成绩单下载、应用内更新
+- **技术栈**：Jetpack Compose + Material 3、Dagger Hilt、OkHttp3、Jsoup、Room、Kotlin Serialization / Gson / Moshi、MIS SSO + Bouncy Castle (SM2)、Kizitonwose Calendar、Lottie；仅打包 arm64-v8a，支持 Android 9.0+
+- **隐私**：SSO 登录页解析与密码加密在客户端完成，账号密码仅存本机；学业数据经学校服务查询，教室人数与占用详情经项目服务获取
+
+本 KMP 仓库以 `v1.7.1` 为迁移基线，在下文列出多端与额外能力的差异。
+
+_**相对迁移基线（v1.7.1）在 KMP 版中额外提供/增强的能力（节选；其中部分能力上游 v1.8.0 也已具备）：**_
+
+- _**四端共享：Android / iOS / macOS / Windows**（iOS 现已支持 iPhone Duo 等常规机型）_
+- _**图书馆借阅**（统一认证 SSO 登录、当前借阅/历史、续借、到期提醒）_
+- _**物理在线作业、物理实验与演示实验查询（独立账号体系）**_
+- _**CITEL 作业（书面作业 + 编程练习、报告/代码文件、折扣节点）**_
+- _**课程平台 / 物理在线 / CITEL 三源作业聚合展示**_
+- _**教室占用查询与教室人数估计**_
+- _**成绩按课程性质筛选（必修 / 限选 / 任选 / 体育）**_
+- _**邮箱写信/回复与 HTML 表格展示**_
+- _**应用中心与可自定义底栏**（上游为固定底栏 + 壁纸/玻璃态界面）_
 
 ## 📱 支持平台
 
@@ -71,6 +89,7 @@ _**相对原版新增/增强的功能（节选）：**_
 ### 🏫 校园工具
 
 - **教室占用查询与人数估计** — 查看教务系统的教室占用和第三方接口的教室人数侦测结果
+- **图书馆借阅** — 统一认证登录后查看当前借阅与借阅历史，支持单本/批量续借，首页提供到期与逾期提醒
 - **校历** — 打开公众号文章查看学校最新校历
 - **成绩单下载** — 支持中英文成绩单快捷下载
 - **应用内更新** — 获取本仓库发布的Release和Pre-release版本
@@ -78,7 +97,9 @@ _**相对原版新增/增强的功能（节选）：**_
 ## 🔒 隐私与安全
 
 - ✅ 验证码通过本地 ONNX/Core ML 模型识别，**不上传任何数据到第三方服务器**
+- ✅ SSO 登录页面解析与密码加密在客户端完成（本地 SM2）
 - ✅ 账号密码仅存储在本地设备
+- ✅ 学业数据通过学校服务查询；教室人数与占用详情通过学校/项目服务获取，不上传账号密码
 - ✅ Android Keystore、Apple Keychain、Windows DPAPI 保存登录凭据
 - ✅ macOS/Windows 离线缓存字段使用系统密钥支持的 AES-256-GCM 加密
 
@@ -99,7 +120,7 @@ _**相对原版新增/增强的功能（节选）：**_
 
 ## 🏗️ 技术架构
 
-**原安卓工程（冻结不再修改）** 仍为 Jetpack Compose + Hilt + Room + OkHttp/Jsoup + PyTorch 验证码。
+**原安卓工程（冻结快照 `v1.7.1`，不再修改）** 为上游早期版本：Jetpack Compose + Material 3、Dagger Hilt、Room、OkHttp3 + Jsoup、Bouncy Castle (SM2)。上游仓库已继续更新到 `v1.8.0`（新增原生邮箱、校园卡/校园网余额、日历订阅提醒、教室规划等），其架构与依赖见[上游 README](https://github.com/HFDLYS/BJTUselfService#readme)。
 
 **KMP 刷新版（`multiplatform/`）** 共享业务与大部分 UI：
 
@@ -159,30 +180,38 @@ chmod +x gradlew
 
 ### 仓库与发布
 
-| 仓库                                                                                                              | 说明      |
-| --------------------------------------------------------------------------------------------------------------- | ------- |
-| [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService)                                             | 原作者安卓版  |
-| [JasonZhang1225/BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed) | 本仓库KMP版 |
+| 仓库                                                                                                              | 说明                    |
+| --------------------------------------------------------------------------------------------------------------- | --------------------- |
+| [HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService)                                             | 原作者安卓版（当前 `v1.8.0`）   |
+| [JasonZhang1225/BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed) | 本仓库 KMP 版（四端）         |
 
 ## 🤝 贡献者
 
-感谢以下所有为本项目做出贡献的朋友们：
+感谢上游项目与以下所有为本项目做出贡献的朋友们：
 
 - [HFDLYS](https://github.com/HFDLYS)
   - 原版开发者，项目起源
-- [optsimauth](https://github.com/optsimauth): 
-  - 重构了整个项目的架构，优化了代码结构
-  - 以及后续若干跟进
+- [optsimauth](https://github.com/optsimauth)
+  - 重构了整个项目的架构，优化了代码结构，以及后续若干跟进
   - 开发 [BJTUselfServiceAIO 社区版](https://github.com/optsimauth/BJTUselfServiceAIO)；本项目首页课表的展示、教室查询整合和可配置底栏的改造，参考了该项目的功能与交互设计
 - [guh0613](https://github.com/guh0613)
   - 提供自动构建与发布
 - [carolyn-sun](https://github.com/carolyn-sun)
   - 优化了工作流配置
-- [NAPHthalene130](https://github.com/NAPHthalene130)
+- [NAPH130](https://github.com/NAPH130)
   - 修复若干 bug
 - [B-Silva20](https://github.com/B-Silva20)
   - 提供了成绩自选课程计算
-- [wangxiaobo1747](https://github.com/wangxiaobo1747) 
+  - 适配新版 SSO 统一身份认证登录
+- [wangxiaobo1747](https://github.com/wangxiaobo1747)
   - 提供了自定义壁纸和桌面课程表小组件
+- [Peterloses](https://github.com/Peterloses)
+  - 优化底部导航、壁纸和玻璃态界面，改进课程表小组件
+- [Dontplay0112](https://github.com/Dontplay0112)
+  - 修复研究生获取课表时崩溃的问题
+- [lsr0LSR](https://github.com/lsr0LSR)
+  - 修复作业上传接口
+- [Vannnesa](https://github.com/Vannnesa)
+  - 重构应用界面，实现原生邮箱与教室规划，新增课程高亮及过期考试样式
 - [JasonZhang1225](https://github.com/JasonZhang1225)
-  - KMP 多端迁移（Android / iOS / macOS / Windows）、物理在线、邮箱前端，教室占用、CITEL等
+  - KMP 多端迁移（Android / iOS / macOS / Windows）、物理在线、物理实验、CITEL、图书馆借阅等

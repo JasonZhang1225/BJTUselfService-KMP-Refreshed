@@ -907,3 +907,10 @@
 - 原因：HarmonyOS 4.2 / AOSP 12 录屏中多个页面入口无跳转，但校园网/校园卡弹窗仍能打开；详情 Activity 缺少会话时会立即 finish，会话桥的全局清理存在旧宿主覆盖新宿主的风险。尚不能证明这是录屏的唯一根因。
 - 验证：修复分支 `./gradlew :shared:desktopTest --no-configuration-cache`，936 项全部通过；新增 4 项会话交接测试在隔离工程通过，以旧无条件清理语义对照时 2 项保护测试失败。代码提交 c6eb350 的 Android CI 编译通过。Package run 39522324933 使用独立提交 935d5ba。
 - 未验证：未在华为真机复现或验收；未改版本号、未发 Release。PR #35 的 iOS 弹层修复仍独立待合并。
+
+## 2026-10-21 iOS 课程详情关闭后卡片无响应修复（PR #35，`fix/ios-sheet-dismissal`，合并提交 f454d3a5）
+
+- 现象：用户确认首次课程详情通过右上角关闭按钮收起后，课程卡片无法再打开详情；6 秒录屏中卡片仍有按压反馈，课表/周数弹层可正常开关，未证明主线程整体卡死。
+- 原因/改动：原生弹层宿主被所有 `AppleSheet` 共用，内容、关闭回调和动画状态存在串用风险。改为每个 `AppleSheet` 组合通过 `createPresentation()` 持有独立 iOS 呈现对象，旧组合的释放/关闭动画不能清空后一个弹层；原生 dismissal delegate 绑定具体控制器、忽略过期回调，并在发起 present 前绑定。
+- 验证：真实 `AppleSheet` + 可延迟关闭完成的测试宿主，3 项离屏集成测试通过（重叠弹层独立释放、关闭后快速重开、重组保留呈现对象并更新回调）；`./gradlew :shared:desktopTest --no-configuration-cache` 935 项全部通过。原独立提交 `5430eb8` 打包 run 39522327270 成功。合入 main 时只解决 `memory.md` 冲突。
+- 未验证：当时在 Linux 云端会话，原生编译与 iOS 测试交给 PR CI；未做 iPhone 实机复测；未改版本号或发版。

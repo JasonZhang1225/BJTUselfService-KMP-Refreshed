@@ -13,6 +13,9 @@ struct iOSApp: App {
         ) { _ in
             WidgetCenter.shared.reloadAllTimelines()
         }
+        // 日程实时活动（灵动岛）：后台刷新任务必须在启动完成前注册。
+        CourseLiveActivityCoordinator.registerBackgroundRefresh()
+        Task { @MainActor in CourseLiveActivityCoordinator.shared.start() }
     }
 
     var body: some Scene {

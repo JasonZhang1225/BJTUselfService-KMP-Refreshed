@@ -43,6 +43,9 @@ import team.bjtuss.bjtuselfservice.shared.data.home.phyvlabChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.data.home.citelChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.data.home.physicsLabChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.data.home.physicsDemoChangeRecorder
+import team.bjtuss.bjtuselfservice.shared.data.library.DefaultLibraryRepository
+import team.bjtuss.bjtuselfservice.shared.data.library.LibraryLoginProtocol
+import team.bjtuss.bjtuselfservice.shared.data.library.SchoolLibraryRemoteDataSource
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferences
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferencesStore
 import team.bjtuss.bjtuselfservice.shared.data.homework.CacheStoreHomeworkLocalDataSource
@@ -65,6 +68,7 @@ import team.bjtuss.bjtuselfservice.shared.cache.markSynced
 import team.bjtuss.bjtuselfservice.shared.feature.course.saveAcademicWeeksIfChanged
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkScreenModel
+import team.bjtuss.bjtuselfservice.shared.feature.library.LibraryModel
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.otherfunction.OtherFunctionScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabScreenModel
@@ -287,6 +291,23 @@ internal fun rememberAuthenticatedSession(
             reauthenticate = sessionRecovery::attempt,
         )
     }
+    // 图书馆（opac）登录不在 CAS/MIS 链路上：它走独立的 OAuth2 授权页，
+    // 但复用同一个统一身份认证会话与内存凭据。数据只保存在内存，不写缓存。
+    // 以学号为 key 按账号隔离：换账号后不沿用上一账号的借阅快照、自动同步标记与 loanId。
+    val libraryLoginProtocol = remember(profile.studentId, transport) {
+        LibraryLoginProtocol(
+            transport = transport,
+            credentialsProvider = { latestCredentials.value.takeIf(Credentials::isValid) },
+        )
+    }
+    val libraryModel = remember(profile.studentId, transport, libraryLoginProtocol) {
+        LibraryModel(
+            repository = DefaultLibraryRepository(
+                remote = SchoolLibraryRemoteDataSource(transport),
+                authenticator = libraryLoginProtocol,
+            ),
+        )
+    }
     val phyVlabRepository = remember {
         DefaultPhyVlabRepository(SchoolPhyVlabRemoteDataSource(transport))
     }
@@ -367,6 +388,7 @@ internal fun rememberAuthenticatedSession(
         physicsDemoModel,
         homeModel,
         homeChangeFeed,
+        libraryModel,
         homeworkFileGateway,
         coursewareDirectoryGateway,
         systemCalendarGateway,
@@ -391,6 +413,7 @@ internal fun rememberAuthenticatedSession(
             physicsDemoModel = physicsDemoModel,
             phyVlabAccountModel = phyVlabAccountModel,
             citelModel = citelModel,
+            libraryModel = libraryModel,
             aggregateFilterStore = team.bjtuss.bjtuselfservice.shared.feature.assignment.AggregateAssignmentFilterStore(cacheStore, profile.studentId),
             homeModel = homeModel,
             homeChangeFeed = homeChangeFeed,

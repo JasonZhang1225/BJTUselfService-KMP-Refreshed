@@ -192,6 +192,8 @@ private fun applicationIconColor(section: AppSection): Color {
             if (dark) Color(0xFF85CBD1) else Color(0xFF267B83)
         AppSection.PHYVLAB ->
             if (dark) Color(0xFFB5ACE5) else Color(0xFF7565AD)
+        AppSection.LIBRARY ->
+            if (dark) Color(0xFFE0B77A) else Color(0xFF8A5A1B)
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 }
