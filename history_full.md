@@ -987,3 +987,27 @@
   - 安全检查 #170（`e6c67fb`，手动触发：该次推送未触发 PR 工作流）Android、Windows、Apple 三项通过；本地 Linux `:windowsApp:createDistributable`（开启配置缓存）镜像内只剩 Windows x64 原生库，JNA 124 / sqlite-jdbc 129 个类与原 jar 一致；CI 断言用 #107 的 DMG 回放会失败（各含 24/28 个平台原生库），证明断言有效。
   - 用户在 Mac 上实测 #111 的 DMG 通过。
 - 未验证：Windows MSI 的启动、本地缓存读写与 DPAPI；Agent CLI smoke（Windows）未在最终提交上运行（只由 PR 事件触发）；需要验证码时的手动弹窗与静默登录失败引导；Android release 包签名覆盖安装。
+
+## 2026-10-22 iOS 作业上传文件选择器修复与上传页统一（PR #48，`claude/jolly-lamport-bsie9k`，提交 `50e72b5`、`d348f6c`，合并提交 `ad2a082`）
+
+- 改动：
+  - iOS 文件网关（`shared/src/iosMain/.../files/IosHomeworkFileGateway.kt`）改为从最上层、且不在关闭动画中的控制器呈现文件选择器、保存面板和快速查看。上传页本身是 UIKit sheet，原先从根控制器 present 会被 UIKit 静默拒绝：选择器不出现，协程挂起；再点一次就因已有活动选择器返回 UNAVAILABLE，界面误报“无法读取所选文件”。sheet 内的保存面板（如日历导出）同样受益。
+  - 是否呈现成功以 present 完成回调为准，2 秒内仍未呈现才复位并报错。
+  - `feature/assignment/AssignmentUi.kt` 新增统一上传 sheet（`AssignmentUploadSheet`，含选择区、分组文件列表、就地反馈、底部主操作），课程平台作业、物理在线、CITEL 共用；iOS 正文补上左右边距与底部安全区。选择失败区分“选择器打不开”与“文件读不出来”；同名文件以后选的为准。
+  - 删除物理在线未接线的 `PhyVlabUploadDialog` 及确认弹窗。
+  - 新增 `AssignmentUploadUiTest`（合并/文案/大小格式单元测试，以及浅/深色离线渲染）。
+- 原因/决策：
+  - 首版（`50e72b5`）在 present 后同步检查 `presentingViewController`，但系统文件选择器是远程界面，此时仍为空，被误判为“被拒”。结果是选择器已弹出却立即报红，回调也被断开，选完文件无反应（打包 #109 真机复现），由 `d348f6c` 修正。
+  - Android/桌面上传由 AlertDialog 改为与其他来源一致的底部 sheet。
+  - 用户要求：后续修改不等 PR 安全检查，改完告知、经批准后直接跑 KMP 打包。
+- 验证：
+  - 本地 Linux `:shared:desktopTest` 995 项中 1 项失败（`DesktopAgentIntegrationTest`，退出码 127，未改动的 main 上同样失败，与本改动无关）；`:shared:compileAndroidMain :androidApp:compileDebugKotlin :desktopApp:compileKotlin` 通过。
+  - 安全检查 #169（`50e72b5`）通过；打包 #109（`50e72b5`）、#112（`d348f6c`）四端成功。
+  - 用户用 #112 的 IPA 真机实测上传通过。
+- 未验证：CITEL 上传与编程题单文件提交；Android/桌面新上传 sheet 实机外观；sheet 内保存面板（日历导出）与快速查看的真机表现。
+
+## 2026-10-22 PR #45、#48 合入后的主干验证（`main` `ad2a082`）
+
+- 改动：无代码改动。PR #45 合并提交为 `a58e7c6`（其日志条目未写合并提交，此处补记），PR #48 为 `ad2a082`。
+- 验证：所有者手动触发安全检查 #179 与打包 #113，均基于 `ad2a082`；结果：@@RESULT@@
+
