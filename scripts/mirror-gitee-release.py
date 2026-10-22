@@ -74,7 +74,9 @@ class Gitee:
             headers['Content-Type'] = f'multipart/form-data; boundary={boundary}'
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=300) as response:
+            # Cross-border uploads of an 86 MB installer took longer than five minutes
+            # in the real Actions runner. Metadata requests retain the shorter bound.
+            with urllib.request.urlopen(req, timeout=1200 if file is not None else 300) as response:
                 return json.load(response)
         except urllib.error.HTTPError as error:
             raise MirrorError(f'Gitee {method} failed: HTTP {error.code}; response omitted') from None
