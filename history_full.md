@@ -1124,3 +1124,30 @@
 - 文档：发布说明改名 `docs/releases/v1.8.6-KMP.md`（工作流按 `v*-KMP*` 触发并读同名文件），日期 2026-10-23，对照 EmergencyFix2 以来提交补全；README 去上游版本信息、JDK 21、iOS 18、补 AI/小组件/灵动岛等；模板文档最低要求写为 Beta2 或更高。更正 memory：课程平台作业自 EmergencyFix2 起经回退可用。
 - 验证：`./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64` 成功，1092 项 0 失败；Site `npm test` 69 项通过；此前同改动（版本号前）Release IPA 本地构建成功。
 - 未验证：CITEL 去空行未用真实缓存题面复现，界面仅源码桌面实例打开未截图核对；私人 Site 线上仍为 1.8.6-Beta2（部署需 Codex 的 Sites 连接器）；Windows/iOS 真机未运行。
+
+
+## 2026-10-23 Gitee 独立自动镜像工作流（PR #56）
+
+- 改动：PR #56 已按所有者本次明确授权合入 main（3387673410d53b5d9f06399ccbba4a97e60d0ce8）。GitHub Release 成功后显式调用独立 gitee-release-mirror.yml；自动失败不影响原发布，支持现有 tag 手动重试。同步标签、说明、四端包，按100MB/900MB预算预检，匿名SHA-256全部验证后写完整标记；无删除或强推。
+- 原因/决策：GITHUB_TOKEN 发布事件不可靠地触发另一工作流，使用 workflow_call 保证先后顺序。所有者另授权固定 v1.0.0-gitee-test 发布即转草稿，再经 Gitee 接收后改为 v2.0.0 测试，实际包版本保持1.8.6-KMP/Build44；仅该测试草稿允许认证 Asset API 下载，跨主机重定向去掉凭据。新仓库级 GITEE_TOKEN 已由所有者配置，未读出凭据。
+- 验证：PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts/tests -v，14项通过；Ruby解析两个YAML、git diff --check通过。PR head曾滞后于远端分支，经关闭/重开刷新后以完整SHA核对合并。
+- 未验证：合入时真实Actions上传、标签认证和本项目四端匿名下载尚待随后测试；不能据此声称已跑通。
+
+
+## 2026-10-23 双更新源与安装包直链合入（PR #57，实际1.8.6-KMP/Build44）
+
+- 改动：PR #57 已按所有者授权合入 main（a13f8d6d26ea6e4fd691168540db3185c42fa95c）。设置新增自动/GitHub/Gitee；GitHub5秒超时回退Gitee8秒；完整镜像筛选、已知版本防回退，按当前平台直链下载APK/IPA/DMG/MSI。临时测试标记避免Gitee v2.0.0污染1.x版本记录。
+- 验证：本地JAVA_HOME为Android Studio JBR21、DESKTOP_PACKAGE_JAVA_HOME为Temurin25，:shared:desktopTest :desktopApp:createDistributable :androidApp:assembleDebug :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64成功，1108项测试0失败；签名iOS模拟器xcodebuild与codesign严格验证成功。安全检查39816327825四项全部成功（b6241f47；后续ab7cbe60只改测试发布YAML/Python，无App代码差异），镜像脚本15项测试、两个YAML解析和git diff --check通过。窄/宽、浅/深、1.6倍字体、更新/无更新/失败/旧镜像提示与直链按钮已通过本地fixture点验，截图.artifacts/gitee-update-large-*.jpg；源码实例已结束，用户安装版未动。
+- 原因/决策：测试包版本保持1.8.6-KMP/44，授权的测试标签v1.0.0-gitee-test指向合并后的main，上传齐附件后短暂发布并立即转草稿，镜像后改Gitee标签2.0.0。
+- 未验证：合入时真实Gitee上传/匿名四端哈希、真实公开Gitee回退/下载待继续验收；iOS真机/Windows原生安装不以编译或fixture通过代替。
+
+
+## 2026-10-23 双源真实镜像与2.0.0临时更新验收（PR #58～61，包为1.8.6-KMP/44）
+
+- 修复：#58（b314fe65）用认证Release列表查固定测试草稿，普通任务仍只读、专用测试任务有草稿访问权限；#59（6479f457）加入不含凭据的阶段日志；#60（3a3b75ff）增加KMP package的mirror_tag手动重试入口，跳过打包/发版；#61（166f8bca）将大附件上传超时延至1200秒、镜像任务60分钟。App树与a13f8d6d相同，未改实际版本。
+- 真实发布：annotated v1.0.0-gitee-test peeled目标a13f8d6d，KMP package 39819076668四端成功；GitHub Release id420999256附件齐备后于17:22:35Z发布，17:22:37Z已转回草稿。所有者认证draft=true；匿名按标签Release API404、公开列表不含测试版；公开Git标签仍存在。
+- 真实问题与恢复：首次自动镜像因按标签API不返回草稿而404；修复后39823002823已上传并匿名校验APK/IPA，DMG上传300秒超时。延长超时后的39824529964成功，四端匿名SHA-256通过、Gitee v1.0.0-gitee-test完整标记写入。随后39826073012成功将同一个Gitee Release id1231100改为v2.0.0，四端新URL匿名哈希通过，附件未删除或重复上传。独立新工作流的手动API入口仍404，实际用已注册KMP package的mirror_tag入口调用同一独立实现。
+- 本机证据：python3 .artifacts/verify-gitee-release.py --tag v2.0.0 --expected-dir .artifacts/gitee-final-packages-a13f8d6d --output-dir .artifacts/gitee-anonymous-v2，四端HTTP200、大小及SHA-256全部与GitHub Release摘要一致，无Cookie/Authorization/Token。APK6110123字节、IPA23136338、DMG86375792、MSI88080384；合计203702637字节。APK签名v2通过、版本1.8.6-KMP/44；DMG hdiutil verify和包codesign严格验证通过、1.8.6/44；IPA ZIP完整及宿主/widget版本1.8.6-KMP/44通过。镜像16项Python测试、YAML与diff检查通过；App共享1108测试及四端构建证据见前条。
+- 桌面真实链路：--update-source-smoke --live-gitee 使用无账号内存设置，模拟GitHub不可达并走真实Gitee。仅GitHub5013ms失败；不完整镜像459ms拒绝；完整v2.0.0自动模式5215ms回退Gitee，指定Gitee306ms成功。真实更新弹窗显示v2.0.0/来源Gitee，点击下载安装包选出稳定DMG直链，通过验证入口下载处理器匿名下载86375792字节，SHA-256与CI原包一致。日志.artifacts/gitee-live-ui.log、截图gitee-live-auto-v2-dialog.jpg与gitee-live-download-complete.jpg。源码实例PID7566已结束，安装版未动。
+- 交付：/Users/zjg/Downloads/BJTUselfService-1.8.6-Gitee-Test-20261023/，四端包、SHA256SUMS.txt、复测说明.md、验收结果.md、anonymous-download-proof.json，四包再次匹配GitHub摘要。Gitee2.0.0仅用于更新提示，实际包1.8.6，测试标记不污染普通1.x最高版本记录；未发正式1.8.6、未删旧发行版。
+- 未验证：四端真机覆盖安装、系统浏览器下载交接、SideStore重签后Keychain/小组件；GitHub故障为测试注入，并未阻断或修改系统网络。初次自动任务失败后走同实现手动重试，未通过重打包重复发表测试Release。
