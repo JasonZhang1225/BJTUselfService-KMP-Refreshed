@@ -127,6 +127,21 @@ def sync_tag(tag, target_tag=None):
             raise MirrorError('Tag sync failed; check token permissions, repository quota and conflicting tags. No force push performed')
 
 
+def github_release(tag, headers):
+    if tag != TEST_SOURCE_TAG:
+        return json.loads(request(f'https://api.github.com/repos/{GITHUB_REPO}/releases/tags/{tag}', headers=headers))
+    # The by-tag API excludes drafts even for an authenticated repository owner.
+    # Only this authorized disposable test uses the authenticated release list.
+    for page in range(1, 101):
+        releases = json.loads(request(f'https://api.github.com/repos/{GITHUB_REPO}/releases?per_page=100&page={page}', headers=headers))
+        for release in releases:
+            if release['tag_name'] == tag:
+                return release
+        if len(releases) < 100:
+            break
+    raise MirrorError('Authorized test draft not found; its job requires contents:write to see drafts')
+
+
 def main(promote_test=False):
     token = os.environ.get('GITEE_TOKEN', '')
     if not token:
@@ -135,7 +150,7 @@ def main(promote_test=False):
     if not re.fullmatch(r'v[A-Za-z0-9._-]+', tag) or any(x in tag.lower() for x in ('alpha', 'beta')):
         raise MirrorError('Only existing production/emergency v* releases may be mirrored')
     gh_headers = {'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + os.environ['GH_TOKEN']}
-    release = json.loads(request(f'https://api.github.com/repos/{GITHUB_REPO}/releases/tags/{tag}', headers=gh_headers))
+    release = github_release(tag, gh_headers)
     if (release['draft'] and tag != TEST_SOURCE_TAG) or release['tag_name'] != tag:
         raise MirrorError('GitHub release is unpublished or tag mismatched')
     if promote_test and tag != TEST_SOURCE_TAG:
