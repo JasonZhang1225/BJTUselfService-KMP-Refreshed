@@ -181,7 +181,7 @@ jobs:
         env:
           WINDOWS_PACKAGE_JAVA_HOME: ${{ env.JAVA_HOME }}
         run: |
-          .\gradlew.bat :windowsApp:createDistributable -Pbjtu.desktop.compressRuntime=false --stacktrace
+          .\gradlew.bat :windowsApp:createDistributable "-Pbjtu.desktop.compressRuntime=false" --stacktrace
           if ($LASTEXITCODE -ne 0) { throw "Windows baseline build failed" }
           $baseline = (Get-ChildItem "windowsApp/build/compose/binaries/main/app" -Recurse -File | Measure-Object Length -Sum).Sum
           Write-Host "Windows uncompressed runtime baseline bytes: $baseline"
