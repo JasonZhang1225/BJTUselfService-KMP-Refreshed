@@ -149,7 +149,8 @@ afterEvaluate {
             if (taskName == "packageMsi") {
                 // 配置缓存不能序列化脚本对象：路径在配置阶段算好，执行阶段只用纯值和 ProcessBuilder。
                 val rewriteScript = file("packaging/rewrite-msi-product-code.ps1").absolutePath
-                val msiPath = layout.buildDirectory.file("compose/binaries/main/msi/$windowsPackageDisplayName-1.8.5.msi")
+                // 传目录而不是写死版本号的文件名，脚本会取目录里的 MSI。
+                val msiPath = layout.buildDirectory.dir("compose/binaries/main/msi")
                     .get().asFile.absolutePath
                 doLast {
                     val process = ProcessBuilder(
