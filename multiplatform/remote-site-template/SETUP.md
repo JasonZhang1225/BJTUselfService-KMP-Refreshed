@@ -5,7 +5,7 @@
 ## 1. 准备和注册
 
 - 读取当前 Sites skill 的发布流程、身份与机密、Site MCP 文档，以及 Plugin Creator 的 Sites MCP 和 App-backed plugin skill 更新文档。以当前工具返回值为准。
-- 模板源码入口为 `https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed` 的 `feat/chatgpt-agent-remote` 分支、`multiplatform/remote-site-template/` 目录。可用 Git 稀疏检出只读取该目录；复制到仓库之外的独立 Site 目录，不能连带 `.git` 或在维护仓库内直接执行 Site 同步。合入 main 后再统一切换分支入口。
+- 模板源码入口为 `https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed` 的 `main` 分支、`multiplatform/remote-site-template/` 目录。可用 Git 稀疏检出只读取该目录；复制到仓库之外的独立 Site 目录，不能连带 `.git` 或在维护仓库内直接执行 Site 同步。安装文档与查询约定均读取该 main 分支目录内的版本。
 - 在独立空目录使用本模板。它是无第三方 Node 依赖的 Worker ESM，Node >=22.5；无需安装整个 KMP 工程、Vinext 或其他框架。不要改写 src 查询实现。
 - 检查 `.openai/hosting.json`：保留 `d1: "DB"`、`capabilities: ["mcp"]`、无 static。只有没有 project_id 的新实例才 create_site 一次，立即将返回的 ID 写入该实例 manifest。维护模板不写用户 ID。
 - 用户未指定旧 Site 则新建。明确指定的升级则保留原 Site、DB、插件和所有设备数据；按 Sites 源码流程打开已有源码。创建响应不明先核实原操作，不能再创建第二份。

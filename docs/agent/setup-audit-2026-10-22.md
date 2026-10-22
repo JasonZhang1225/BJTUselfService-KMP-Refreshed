@@ -34,7 +34,7 @@
 
 ### 1. P1：复制提示词指向不存在的 main 模板
 
-本轮状态：已按用户要求把 App 提示词 URL 改为 `tree/feat/chatgpt-agent-remote/multiplatform/remote-site-template`，合入 main 后再切回。改动未提交、未打包进入安装版。模板当前尚未合入 main 属正常开发状态，问题是分发提示词提前指向 main。
+当前状态（2026-10-22 更正）：Agent 模板已随 PR #50 合入 main，App 提示词 URL、模板 SETUP.md 和 remote-setup.md 的维护入口统一切换至 main。此前指向开发分支是合入前的临时安排；已安装 App 内置的旧提示词需在更新客户端后才改变。
 
 - 位置：`multiplatform/shared/src/commonMain/kotlin/team/bjtuss/bjtuselfservice/shared/agent/remote/RemoteSetupGuide.kt:4`。
 - 提示词要求读取 `tree/main/multiplatform/remote-site-template`；更新本地 `origin/main` 后，`git cat-file -e origin/main:multiplatform/remote-site-template/README.md` 仍报路径不存在。实际模板在开发分支。

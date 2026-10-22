@@ -1,7 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.agent.remote
 
-/** 模板目前只在开发分支；合入 main 后将此入口切回 main。 */
-const val REMOTE_TEMPLATE_URL = "https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/tree/feat/chatgpt-agent-remote/multiplatform/remote-site-template"
+/** 搭建入口跟随 main 分支中已合入的模板与安装文档。 */
+const val REMOTE_TEMPLATE_URL = "https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/tree/main/multiplatform/remote-site-template"
 
 /** 设置页“复制提示词”的内容：发给 ChatGPT（Work 模式），由它用 Sites 搭建私人 Site 与插件。 */
 val REMOTE_SETUP_PROMPT = """

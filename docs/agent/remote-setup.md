@@ -1,6 +1,6 @@
 # Windows 本地开发与私人 Site 搭建（模板 0.5.0 / 协议 1 / 快照 schema 2）
 
-维护源：`multiplatform/remote-site-template/`。该目录与 Gradle 工程独立，无第三方 Node 依赖，要求 Node ≥22.5。
+维护源：[main 分支模板目录](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/tree/main/multiplatform/remote-site-template)，安装指导见其中的 [SETUP.md](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/blob/main/multiplatform/remote-site-template/SETUP.md)。该目录与 Gradle 工程独立，无第三方 Node 依赖，要求 Node ≥22.5。
 MCP 工具、Skill 与本机 CLI 共用的查询参数和返回结构见同目录 `agent-query-contract.md`；工具与 Skill 的唯一维护源是模板的 `src/mcp.js` 与 `plugin/skills/bjtuss-remote/SKILL.md`，不要另存副本。
 
 ## Windows 本地开发
@@ -72,7 +72,7 @@ Windows 只留托盘、macOS 不开窗口（点程序坞图标打开）；手动
 电脑端关闭远程同步可停调度，本机 App/CLI 保持可用。Site 可以暂停查询、撤销设备、清除云端数据；
 三者是独立动作。清数据但不关电脑同步，会在下次上传重新出现。电脑离线时本地改范围不会瞬间通知云端。
 
-仓库开发代码在主目录 `agent-remote` 整理为基本实现提交，尚未推送/合并；新 MSI 已本地生成，未替换安装版或正式发版。用户授权的维护者私人 Site 与同一插件已发布；
+仓库 Agent 实现已通过 PR #50 合入 main；新 MSI 已本地生成，未替换安装版或正式发版。用户授权的维护者私人 Site 与同一插件已发布；
 Windows Ktor 对该实例的机器访问和虚构数据协议往返通过，具体身份和证据见同目录验证报告。
 真实安装版配对、学校账号刷新与网页自动完成状态已验证。canonical 插件 1.0.2 的 Skill 沿用工具返回的已处理日期时间，禁止重复移日；
 用户 ChatGPT 测试仍反馈物理在线 DDL 漏项，未定位根因。iPhone 完整正确性、第二真实用户实例、连续半小时运行、

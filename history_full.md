@@ -1055,3 +1055,11 @@
 - 原因/决策：用户反馈启动弹窗太多，由代理决定合并方式。验证码调研结论：各端（含命令行与后台刷新）都只用 `UnavailableCaptchaRecognizer`，登录页手动输入、静默登录转引导框、无窗口刷新直接停下且不重放密码；使用中会话过期又需要验证码时无法就地输入，用户决定暂不处理（记入 memory 已知限制）。所有者要求合并后直接推 `debug-1.8.6-Beta` 打包，不等 PR 检查。
 - 验证：本地 `:shared:desktopTest`（SettingsScreenModelTest、AppUpdateCheckerTest、CacheStoreTest、DuoBugFixVisualTest、登录与上传相关）通过，`:androidApp:compileDebugKotlin :desktopApp:compileKotlin :windowsApp:compileKotlinWindows` 通过；1.8.6 说明弹窗浅/深色离线渲染正常，超出高度可滚动。
 - 未验证：iOS 编译仅由 `debug-1.8.6-Beta` 打包验证；新装/升级两种路径的弹窗未在真机走过。
+
+
+## 2026-10-22 Agent 搭建入口统一指向 main（docs/agent-setup-main）
+
+- 改动：App“复制提示词”的 REMOTE_TEMPLATE_URL、模板 SETUP.md 源码入口及 docs/agent/remote-setup.md 的模板/安装文档链接统一指向 main；更正 setup-audit-2026-10-22.md 中合入前的临时分支状态。
+- 原因/决策：PR #50 已将模板合入 main，但搭建指导仍指向 feat/chatgpt-agent-remote。用户明确授权使用其身份修改并强推；基于远端 main@9c7eb55a 追加提交，以显式 force-with-lease 保护远端并发更新，不改写已有提交。当前本机用户仓库远端名为 mine（origin 实为旧上游），只向 JasonZhang1225/BJTUselfService-KMP-Refreshed 推送，未修改远端配置。
+- 验证：git diff --check 通过；模板 npm test 64 项通过、0 失败；npm run build 通过；脚本断言提示词 URL 指向 main、main 已有 SETUP.md 与 agent-query-contract.md、两份安装指导无开发分支引用。
+- 未验证：只修改链接字符串与文档，未运行 Gradle/四端构建，未重新打包或替换安装版；已安装 App 的内置旧提示词需更新客户端后才改变。
