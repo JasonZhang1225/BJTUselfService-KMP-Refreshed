@@ -10,6 +10,64 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class SettingsScreenModelTest {
+    @Test fun updateSourcePersistsAndRejectsSaveFailure() {
+        var saved = AppPreferences()
+        var success = true
+        val model = model(persistPreferences = { if (success) saved = it; success })
+        model.setUpdateSource(team.bjtuss.bjtuselfservice.shared.update.UpdateSource.GITEE)
+        assertEquals(team.bjtuss.bjtuselfservice.shared.update.UpdateSource.GITEE, saved.updateSource)
+        success = false
+        model.setUpdateSource(team.bjtuss.bjtuselfservice.shared.update.UpdateSource.GITHUB)
+        assertEquals(team.bjtuss.bjtuselfservice.shared.update.UpdateSource.GITEE, model.state.value.preferences.updateSource)
+        assertTrue(model.state.value.saveFailed)
+    }
+
+    @Test fun switchingToDelayedMirrorCannotLoseKnownNewerVersionAcrossRestarts() = runBlocking {
+        var saved = AppPreferences()
+        val github = model(persistPreferences = { saved = it; true }, checkLatestRelease = {
+            AppUpdateChecker.Result.Success(AppUpdateChecker.Release("v9.0.0-KMP", htmlUrl = "https://github.com/release"))
+        })
+        github.checkForUpdate()
+        assertEquals("v9.0.0-KMP", saved.highestKnownRelease)
+        val mirror = model(initialPreferences = saved, checkLatestRelease = {
+            AppUpdateChecker.Result.Success(AppUpdateChecker.Release("v8.0.0-KMP", htmlUrl = "https://gitee.com/release"))
+        })
+        mirror.checkForUpdate()
+        assertIs<UpdateCheckState.SourceBehind>(mirror.state.value.updateCheck)
+        mirror.dismissUpdateCheck()
+        mirror.checkForUpdate(silentOnMiss = true)
+        assertIs<UpdateCheckState.Idle>(mirror.state.value.updateCheck)
+        Unit
+    }
+
+    @Test fun disposableGiteeTestDoesNotBlockNormalUpdatesAfterDeletion() = runBlocking {
+        var saved = AppPreferences()
+        val test = model(persistPreferences = { saved = it; true }, checkLatestRelease = {
+            AppUpdateChecker.Result.Success(AppUpdateChecker.Release("v2.0.0-gitee-test", htmlUrl = "https://gitee.com/release",
+                source = team.bjtuss.bjtuselfservice.shared.update.UpdateSource.GITEE))
+        })
+        test.checkForUpdate()
+        assertTrue(assertIs<UpdateCheckState.Done>(test.state.value.updateCheck).hasUpdate)
+        assertEquals("", saved.highestKnownRelease)
+        val normal = model(initialPreferences = saved, checkLatestRelease = {
+            AppUpdateChecker.Result.Success(AppUpdateChecker.Release("v1.8.7-KMP", htmlUrl = "https://github.com/release"))
+        })
+        normal.checkForUpdate()
+        assertTrue(assertIs<UpdateCheckState.Done>(normal.state.value.updateCheck).hasUpdate)
+    }
+
+    @Test fun selectedSourceReachesFetcher() = runBlocking {
+        var source: team.bjtuss.bjtuselfservice.shared.update.UpdateSource? = null
+        val model = SettingsScreenModel(AppPreferences(), { true }, { true }, { true },
+            { error("source-aware fetch expected") }, checkReleaseFromSource = {
+                source = it
+                AppUpdateChecker.Result.Unavailable
+            })
+        model.setUpdateSource(team.bjtuss.bjtuselfservice.shared.update.UpdateSource.GITEE)
+        model.checkForUpdate()
+        assertEquals(team.bjtuss.bjtuselfservice.shared.update.UpdateSource.GITEE, source)
+    }
+
     @Test fun citelSwitchControlsItsEntryAndKeepsOtherFeatureSwitches() {
         var stored = AppPreferences(physicsLabEnabled = true, citelEnabled = true, bottomNavigationItems = listOf("CITEL"), aggregateAssignments = false)
         val model = model(initialPreferences = stored, persistPreferences = { stored = it; true })

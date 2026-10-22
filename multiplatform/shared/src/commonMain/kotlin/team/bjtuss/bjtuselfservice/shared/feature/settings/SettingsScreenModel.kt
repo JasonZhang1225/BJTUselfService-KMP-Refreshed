@@ -1,6 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.settings
 
 import kotlin.time.Clock
+import kotlinx.coroutines.CancellationException
+import team.bjtuss.bjtuselfservice.shared.update.UpdateSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +25,8 @@ sealed interface UpdateCheckState {
         val release: AppUpdateChecker.Release,
         val hasUpdate: Boolean,
     ) : UpdateCheckState
+
+    data class SourceBehind(val knownVersion: String) : UpdateCheckState
 
     data object Failed : UpdateCheckState
 }
@@ -47,12 +51,14 @@ class SettingsScreenModel(
     private val checkLatestRelease: suspend () -> AppUpdateChecker.Result,
     private val nowMillis: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     private val prepareUninstall: (suspend () -> Boolean)? = null,
+    private val checkReleaseFromSource: (suspend (UpdateSource) -> AppUpdateChecker.Result)? = null,
 ) {
     private val mutableState = MutableStateFlow(SettingsUiState(initialPreferences.copy(
         autoSyncGrades = true, autoSyncHomework = true, autoSyncSchedule = true, autoSyncExams = true,
     )))
     val state: StateFlow<SettingsUiState> = mutableState.asStateFlow()
     private var automaticUpdateChecked = false
+    private var highestKnownRelease = initialPreferences.highestKnownRelease
     private var postponedUntilMillis = initialPreferences.updatePostponedUntilMillis
 
     /** 1.8.3 合并弹窗覆盖新版导航、CITEL、作业聚合三项，确认一次即全部记为已读。 */
@@ -129,6 +135,12 @@ class SettingsScreenModel(
         )
     }
 
+    fun setUpdateSource(source: UpdateSource) {
+        if (mutableState.value.updateCheck == UpdateCheckState.Checking) return
+        updatePreferences { copy(updateSource = source) }
+        if (!mutableState.value.saveFailed) dismissUpdateCheck()
+    }
+
     /** Android Material You 动态取色；其它平台设置页不展示，即使写入也无视觉效果。 */
     fun setDynamicColor(enabled: Boolean) = updatePreferences {
         copy(dynamicColor = enabled)
@@ -190,8 +202,30 @@ class SettingsScreenModel(
             automaticUpdateChecked = true
         }
         mutableState.value = mutableState.value.copy(updateCheck = UpdateCheckState.Checking)
+        val result = try {
+            checkReleaseFromSource?.invoke(mutableState.value.preferences.updateSource) ?: checkLatestRelease()
+        } catch (cancelled: CancellationException) {
+            if (silentOnMiss) automaticUpdateChecked = false
+            mutableState.value = mutableState.value.copy(updateCheck = UpdateCheckState.Idle)
+            throw cancelled
+        } catch (_: Exception) {
+            AppUpdateChecker.Result.Unavailable
+        }
+        if (result is AppUpdateChecker.Result.Success) {
+            if (highestKnownRelease.isNotBlank() && AppUpdateChecker.compareVersions(result.release.tagName, highestKnownRelease) < 0) {
+                mutableState.value = mutableState.value.copy(updateCheck =
+                    if (silentOnMiss) UpdateCheckState.Idle else UpdateCheckState.SourceBehind(highestKnownRelease))
+                return
+            }
+            // Reserved disposable Gitee test tags must not poison the persisted high-water mark.
+            val disposableTest = result.release.source == UpdateSource.GITEE && result.release.tagName.endsWith("-gitee-test")
+            if (!disposableTest && (highestKnownRelease.isBlank() || AppUpdateChecker.compareVersions(result.release.tagName, highestKnownRelease) > 0)) {
+                highestKnownRelease = result.release.tagName
+                updatePreferences { copy(highestKnownRelease = this@SettingsScreenModel.highestKnownRelease) }
+            }
+        }
         mutableState.value = mutableState.value.copy(
-            updateCheck = when (val result = runCatching { checkLatestRelease() }.getOrNull()) {
+            updateCheck = when (result) {
                 is AppUpdateChecker.Result.Success -> {
                     val hasUpdate = AppUpdateChecker.isNewer(result.release)
                     if ((!silentOnMiss || nowMillis() >= postponedUntilMillis) && (hasUpdate || !silentOnMiss)) {

@@ -1,28 +1,36 @@
 package team.bjtuss.bjtuselfservice.shared.update
 
 import kotlin.math.min
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.Json
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
-/**
- * KMP 三端更新检测：对齐原安卓 [GitRepository] 的「获取最新 Release → 比较版本 →
- * 弹窗 → 跳转 GitHub 发布页」流程，但指向本 fork 仓库，并显式支持 pre-release。
- *
- * 与原版的差异：原版用 `releases/latest`（GitHub 不返回 pre-release），本应用
- * pre-release 阶段改用 `releases` 列表取第一条（最新创建，含 pre-release）。
- */
+enum class UpdateSource(val label: String) {
+    AUTO("自动选择"), GITHUB("GitHub"), GITEE("Gitee");
+
+    companion object {
+        fun fromSetting(value: String?): UpdateSource = entries.firstOrNull { it.name == value } ?: AUTO
+    }
+}
+
+/** 公开更新接口独立于学校会话；自动模式先请求 GitHub，失败时再请求完整 Gitee 镜像。 */
 object AppUpdateChecker {
 
     const val REPO = "JasonZhang1225/BJTUselfService-KMP-Refreshed"
 
     /** 当前构建版本。与 androidApp versionName / 设置页展示一致。 */
     const val CURRENT_VERSION = "1.8.6-KMP"
+
+    const val GITEE_REPO = "zjg1225/BJTUselfService-KMP-Refreshed"
+    const val MIRROR_READY = "<!-- bjtu-mirror-ready:v1 -->"
 
     private const val RELEASES_URL = "https://api.github.com/repos/$REPO/releases"
 
@@ -37,6 +45,7 @@ object AppUpdateChecker {
         @SerialName("published_at") val publishedAt: String? = null,
         val prerelease: Boolean = false,
         val draft: Boolean = false,
+        @Transient val source: UpdateSource = UpdateSource.GITHUB,
     )
 
     sealed interface Result {
@@ -47,26 +56,74 @@ object AppUpdateChecker {
         data object Unavailable : Result
     }
 
-    /**
-     * 拉取最新 Release（含 pre-release，跳过 draft）。网络异常与非 2xx 都归为
-     * [Result.Unavailable]，不向外抛，调用方据此提示「检查失败」。
-     */
-    suspend fun fetchLatest(transport: SchoolHttpTransport): Result = withContext(Dispatchers.Default) {
-        val response = runCatching {
-            transport.executePublic(
-                SchoolHttpRequest(
+    @Serializable
+    private data class GiteeAsset(val name: String, @SerialName("browser_download_url") val downloadUrl: String)
+
+    @Serializable
+    private data class GiteeRelease(
+        @SerialName("tag_name") val tagName: String,
+        val name: String? = null,
+        val body: String? = null,
+        @SerialName("created_at") val createdAt: String? = null,
+        val prerelease: Boolean = false,
+        val assets: List<GiteeAsset> = emptyList(),
+    )
+
+    suspend fun fetchLatest(
+        transport: SchoolHttpTransport,
+        source: UpdateSource = UpdateSource.AUTO,
+    ): Result = withContext(Dispatchers.Default) {
+        when (source) {
+            UpdateSource.GITHUB -> fetchFrom(transport, UpdateSource.GITHUB)
+            UpdateSource.GITEE -> fetchFrom(transport, UpdateSource.GITEE)
+            UpdateSource.AUTO -> {
+                val github = fetchFrom(transport, UpdateSource.GITHUB)
+                if (github is Result.Success) github else fetchFrom(transport, UpdateSource.GITEE)
+            }
+        }
+    }
+
+    private suspend fun fetchFrom(transport: SchoolHttpTransport, source: UpdateSource): Result {
+        return try {
+            // Bound each source separately so an unreachable GitHub cannot block fallback indefinitely.
+            withTimeoutOrNull(if (source == UpdateSource.GITHUB) 5_000L else 8_000L) {
+                val response = transport.executePublic(SchoolHttpRequest(
                     method = SchoolHttpMethod.GET,
-                    url = RELEASES_URL,
-                    headers = mapOf("Accept" to "application/vnd.github+json"),
-                ),
-            )
-        }.getOrNull() ?: return@withContext Result.Unavailable
-        if (response.statusCode !in 200..299) return@withContext Result.Unavailable
-        val releases = runCatching {
-            json.decodeFromString<List<Release>>(response.bodyText())
-        }.getOrNull() ?: return@withContext Result.Unavailable
-        val latest = releases.firstOrNull { !it.draft } ?: return@withContext Result.Unavailable
-        Result.Success(latest)
+                    url = if (source == UpdateSource.GITHUB) RELEASES_URL else
+                        "https://gitee.com/api/v5/repos/$GITEE_REPO/releases?per_page=100",
+                    headers = mapOf("Accept" to if (source == UpdateSource.GITHUB) "application/vnd.github+json" else "application/json"),
+                ))
+                if (response.statusCode !in 200..299) return@withTimeoutOrNull Result.Unavailable
+                if (source == UpdateSource.GITHUB) {
+                    val latest = json.decodeFromString<List<Release>>(response.bodyText()).firstOrNull { !it.draft }
+                    // Preserve GitHub's existing first published release / emergency pre-release behavior.
+                    latest?.let { Result.Success(it) } ?: Result.Unavailable
+                } else {
+                    val latest = json.decodeFromString<List<GiteeRelease>>(response.bodyText())
+                        .filter { mirror ->
+                            mirror.body?.contains(MIRROR_READY) == true &&
+                                mirror.tagName.matches(Regex("v[0-9]+\\.[0-9]+\\.[0-9]+[A-Za-z0-9._-]*")) &&
+                                listOf(".apk", ".ipa", ".dmg", ".msi").all { ext ->
+                                    mirror.assets.any { asset ->
+                                        asset.name.matches(Regex("[A-Za-z0-9._-]+")) && asset.name.endsWith(ext) &&
+                                            asset.downloadUrl == "https://gitee.com/$GITEE_REPO/releases/download/${mirror.tagName}/${asset.name}"
+                                    }
+                                }
+                        }
+                        // Gitee can reorder releases when an old mirror is retried: compare versions.
+                        .maxWithOrNull { a, b -> compareVersions(a.tagName, b.tagName) }
+                    latest?.let {
+                        Result.Success(Release(it.tagName, it.name, it.body?.replace(MIRROR_READY, "")?.trim(),
+                            "https://gitee.com/$GITEE_REPO/releases/tag/${it.tagName}", it.createdAt,
+                            it.prerelease, source = UpdateSource.GITEE))
+                    } ?: Result.Unavailable
+                }
+            } ?: Result.Unavailable
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Result.Unavailable
+        }
     }
 
     /** 是否有更新：远端 tag 规范比较后严格高于 [CURRENT_VERSION]。 */
