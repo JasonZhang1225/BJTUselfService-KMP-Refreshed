@@ -79,7 +79,7 @@
 - **图书馆借阅** — 统一认证登录后查看当前借阅与借阅历史，支持单本/批量续借，首页提供到期与逾期提醒
 - **校历** — 打开公众号文章查看学校最新校历
 - **成绩单下载** — 支持中英文成绩单快捷下载
-- **应用内更新** — 获取本仓库发布的 Release 和 Pre-release 版本
+- **应用内更新** — 支持 GitHub / Gitee 双更新源，可在设置中选择；自动模式优先连接 GitHub，失败时切换 Gitee。
 
 ### 🤖 AI 助手
 
@@ -181,6 +181,7 @@ xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Releas
 ### 仓库与发布
 
 - 本仓库：[JasonZhang1225/BJTUselfService-KMP-Refreshed](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed)（四端发布见 [Releases](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/releases)，各版本说明见 [docs/releases](docs/releases)）
+- Gitee 镜像与下载：[Gitee Releases](https://gitee.com/zjg1225/BJTUselfService-KMP-Refreshed/releases)。
 - 原版安卓：[HFDLYS/BJTUselfService](https://github.com/HFDLYS/BJTUselfService)
 
 ## 🤝 贡献者
