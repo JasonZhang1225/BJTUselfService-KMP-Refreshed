@@ -14,7 +14,7 @@ internal class SessionRefreshCoordinator(
     private val reauthenticate: (suspend () -> Boolean)?,
     private val probeSession: (suspend () -> Boolean)? = null,
     private val onRecoveryStateChanged: (Boolean) -> Unit = {},
-    private val maxRecoveryAttempts: Int = 2,
+    private val maxRecoveryAttempts: Int = 1,
     sessionVerifiedAtStart: Boolean = false,
 ) {
     init {
@@ -77,7 +77,7 @@ internal class SessionRefreshCoordinator(
 
     private suspend fun attemptRecovery(): Boolean = mutex.withLock {
         // 同一个刷新动作的多个模块共享一次成功的恢复结果；否则首页并发刷新会重复
-        // 发起验证码请求。若本次恢复失败，仍允许下一次（最多两次）重新尝试。
+        // 发起验证码请求。本次恢复失败后等待用户处理，不因其它模块失败再次提交密码。
         if (recoverySucceeded) return@withLock true
         if (recoveryAttempts >= maxRecoveryAttempts || reauthenticate == null) return@withLock false
         recoveryAttempts += 1

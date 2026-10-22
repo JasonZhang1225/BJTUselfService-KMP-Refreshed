@@ -53,6 +53,11 @@ java {
     targetCompatibility = JavaVersion.VERSION_21
 }
 
+// 安装包只面向 Windows x64：sqlite-jdbc/JNA 只保留 Windows x86_64 原生库。
+extra["desktopNativeFilter.configuration"] = "windowsRuntimeClasspath"
+extra["desktopNativeFilter.keep"] = listOf("org/sqlite/native/Windows/x86_64/", "com/sun/jna/win32-x86-64/")
+apply(from = rootProject.file("gradle/desktop-native-filter.gradle.kts"))
+
 compose.desktop {
     application {
         mainClass = "team.bjtuss.bjtuselfservice.windows.MainKt"

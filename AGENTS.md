@@ -50,7 +50,7 @@
 - 标签：`debug-*` 只触发 Actions 打包、不建 Release；`v*`（如 `v1.8.3-KMP`）由 `kmp-package.yml` 打四端包并发 GitHub Release（含 alpha/beta 的不建 Release），发布说明放 `docs/releases/<tag>.md`。`archive/*` 标签只用于存档，不触发任何工作流。
 - 改版本号要同步修改：`multiplatform/androidApp/build.gradle.kts`（versionName/versionCode）、`desktopApp/build.gradle.kts`（数值版本）、`windowsApp/build.gradle.kts`、`iosApp/iosApp/Info.plist`、`iosApp/CourseScheduleWidget/Info.plist`（版本与 Build 必须与宿主一致），以及 `shared/.../update/AppUpdateChecker.kt` 的 `CURRENT_VERSION` 和 `AppUpdateCheckerTest`。
 - iOS 最低系统为 18.0（实时活动的 Apple Watch 视图与分钟计时依赖 iOS 18）：宿主 `Config.xcconfig` 与小组件 `Widget.xcconfig` 必须一致，由 `kmp-security-check.yml` 与 `SecurityReleaseConfigTest` 断言；调整时三处同步，并在发布说明写明。
-- 技术栈：Kotlin Multiplatform + Compose Multiplatform/Material 3；Ktor；Ksoup 解析 HTML；`kotlinx.serialization`；SQLDelight 缓存；凭据走 Android Keystore / Apple Keychain / macOS `MacOsSecretBag` / Windows DPAPI；验证码自动识别：Android 用 ONNX Runtime（`BJTUCaptcha.onnx`），iOS/macOS 用 Core ML（`BJTUCaptcha.mlpackage`），这些仍保留；Windows 不再内置模型（`UnavailableCaptchaRecognizer`），需要验证码时手动输入。MIS 统一认证默认免验证码，旧的数字算式验证码已不再出现，新的字母验证码现有模型识别不了。
+- 技术栈：Kotlin Multiplatform + Compose Multiplatform/Material 3；Ktor；Ksoup 解析 HTML；`kotlinx.serialization`；SQLDelight 缓存；凭据走 Android Keystore / Apple Keychain / macOS `MacOsSecretBag` / Windows DPAPI；各端都不再内置验证码识别模型（统一用 `UnavailableCaptchaRecognizer`），需要验证码时显示图片、由用户手动输入。MIS 统一认证默认免验证码，旧的数字算式验证码已不再出现，新的字母验证码原有模型识别不了；Android ONNX（`BJTUCaptcha.onnx`）与 iOS/macOS Core ML（`BJTUCaptcha.mlpackage`）模型已于 1.8.6（PR #45）移除，同样可从存档标签 `archive/legacy-android-and-captcha-model` 取回。
 - 本机验证产物（截图、导出、诊断日志）放忽略目录 `.artifacts/`，不进 Git。
 
 ## 工作方式
@@ -134,11 +134,11 @@
 - 快照只由主宿主生成，防抖并在后台线程构建与写入；不在每次重组或每个原生 Tab 宿主里各写一遍。
 - 时间线条目数量要克制（真机有预渲染预算，超预算会退回占位图）。
 
-### 验证码模型
+### 验证码与自动登录
 
-- 首版路径永远是“显示图片 → 刷新 → 手动填写”；自动识别失败回到手动，最多 3 次，不无限重试。
-- Apple Core ML 与 Android ONNX 的预处理（`130×42`、RGB、CHW、`[0,1]`）、输出轴顺序、类别表和 CTC 解码必须对齐；改模型或预处理时，用同一份脱敏测试集逐层比较（像素、输入张量、logits、argmax、解码字符串、算式答案）。
-- 仅能加载或执行模型不等于识别正确，没有正确率证据不得改变默认开关。
+- 验证码路径是“显示图片 → 刷新 → 手动填写”；当前各端没有识别模型。
+- 自动登录只在获取登录页/验证码挑战失败时重试，最多 3 次；密码 POST 最多 1 次，被拒、异常或响应不明确都停下交给用户，不重放密码；同一批刷新最多恢复 1 次会话。
+- 将来若重新引入识别模型：各端预处理、输出轴顺序、类别表和解码必须对齐，用同一份脱敏测试集逐层比较；仅能加载或执行模型不等于识别正确，没有正确率证据不得默认开启。
 
 ## 网络与安全红线
 

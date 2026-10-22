@@ -16,7 +16,7 @@ import team.bjtuss.bjtuselfservice.shared.security.MacOsSecretKeys
 import team.bjtuss.bjtuselfservice.shared.security.decodeCredentialPayload
 import team.bjtuss.bjtuselfservice.shared.security.productionMacOsSecretBag
 import team.bjtuss.bjtuselfservice.shared.auth.CaptchaRecognizer
-import team.bjtuss.bjtuselfservice.shared.auth.DesktopCoreMlCaptchaRecognizer
+import team.bjtuss.bjtuselfservice.shared.auth.UnavailableCaptchaRecognizer
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.security.createDesktopAccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.update.AppUpdateChecker
@@ -41,7 +41,7 @@ fun macOsAgentCliPlatform(): AgentCliPlatform = AgentCliPlatform(
         productionMacOsSecretBag.get(MacOsSecretKeys.CREDENTIALS)?.let(::decodeCredentialPayload)?.username
     },
     securityStore = ::createDesktopAccountSecurityStore,
-    captchaRecognizer = { DesktopCoreMlCaptchaRecognizer() },
+    captchaRecognizer = { UnavailableCaptchaRecognizer },
 )
 
 /**
