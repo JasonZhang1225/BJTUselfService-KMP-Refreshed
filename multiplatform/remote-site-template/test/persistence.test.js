@@ -45,7 +45,7 @@ test("两个独立 Site 的设备令牌、平台身份和快照互相隔离", as
   assert.equal((await a.call("POST", "/api/v1/device/poll", { token: db.deviceToken })).status, 401);
   a.env.OWNER_USER_ID = "site-a-owner"; a.env.OWNER_TOKEN = undefined;
   b.env.OWNER_USER_ID = "site-b-owner"; b.env.OWNER_TOKEN = undefined;
-  assert.equal((await b.call("GET", "/api/v1/owner/snapshot", { headers: { "oai-authenticated-user-id": "site-a-owner" } })).status, 503);
+  assert.equal((await b.call("GET", "/api/v1/owner/snapshot", { headers: { "oai-authenticated-user-id": "site-a-owner" } })).status, 401);
   const own = await b.call("GET", "/api/v1/owner/snapshot", { headers: { "oai-authenticated-user-id": "site-b-owner" } });
   assert.equal(own.status, 200);
   assert.equal(own.body.snapshot, null);

@@ -4,12 +4,12 @@ import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 const root = fileURLToPath(new URL('..', import.meta.url));
-const destination = resolve(process.argv[2] ?? join(root, '../../.artifacts/bjtuss-remote-template-0.3.0.tar.gz'));
+const destination = resolve(process.argv[2] ?? join(root, '../../.artifacts/bjtuss-remote-template-0.5.0.tar.gz'));
 if (destination.startsWith(root)) throw Error('Archive must be outside the source template');
 const stage = await mkdtemp(join(tmpdir(), 'bjtuss-template-'));
 const target = join(stage, 'bjtuss-remote-template');
 await mkdir(join(target, '.openai'), { recursive: true });
-for (const name of ['src', 'fixtures', 'migrations', 'drizzle', 'test', 'scripts', 'plugin', 'package.json', 'README.md', '.gitignore', '.env.example']) await cp(join(root, name), join(target, name), { recursive: true });
+for (const name of ['src', 'fixtures', 'migrations', 'drizzle', 'test', 'scripts', 'plugin', 'package.json', 'README.md', 'SETUP.md', 'agent-query-contract.md', '.gitignore', '.env.example']) await cp(join(root, name), join(target, name), { recursive: true });
 // 身份只能在新实例中创建；绝不把当前部署的 ID 或运行数据复制出去。
 await writeFile(join(target, '.openai/hosting.json'), JSON.stringify({ d1: 'DB', r2: null, capabilities: ['mcp'] }, null, 2)+'\n');
 async function scan(dir) {

@@ -127,7 +127,7 @@ class KtorRemoteSiteClient(
             val error = runCatching { remoteJson.decodeFromString(RemoteErrorBody.serializer(), text).error }.getOrNull()
             if (status in listOf(401, 403) && error == null) {
                 return RemoteCall.Failure(RemoteFailureKind.FORBIDDEN, "platform_auth_required",
-                    "电脑与私人 Site 的连接授权未就绪，请通过 AI 助手重新连接这台电脑。")
+                    "本站连接授权无效，请登录 Site 重新生成并复制完整配对信息。")
             }
             val kind = when (status) {
                 401 -> RemoteFailureKind.UNAUTHORIZED

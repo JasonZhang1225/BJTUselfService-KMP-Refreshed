@@ -7,7 +7,7 @@ export function createRefreshMonitor({ api, onStatus, onTask, onBusy, onError,
   try { pending = JSON.parse(storage?.getItem(key) || 'null'); } catch {}
   if (!pending || typeof pending.key !== 'string' || !/^web_[a-f0-9]{32}$/.test(pending.key)) pending = null;
   let task = null, state = null, timer = null, flight = null, revision = 0;
-  let started = false, submitting = false, failures = 0, details = null;
+  let started = false, submitting = false, failures = 0, details = null, blocked = false;
   const active = value => value && ['queued', 'running'].includes(value.status);
   const busy = () => submitting || Boolean(active(task));
   function savePending(value) {
@@ -63,15 +63,21 @@ export function createRefreshMonitor({ api, onStatus, onTask, onBusy, onError,
             }
           }
         }
-        failures = 0;
-      } catch {
+        failures = 0; blocked = false;
+      } catch (error) {
         if (expected === revision && started) {
+          blocked = [401, 403].includes(error?.status) || ['owner_auth_not_configured', 'device_access_not_configured'].includes(error?.code);
+          if (blocked) {
+            if (timer != null) clearTimer(timer);
+            timer = null;
+            onError(error.message); return;
+          }
           failures += 1;
           onError('连接暂时中断，正在自动重试；已提交的任务仍会继续，不会重复发起刷新。');
         }
       } finally {
         flight = null;
-        schedule(failures ? Math.min(30000, 2000 * 2 ** Math.min(failures, 4)) : active(task) && !state?.queriesPaused ? 2000 : 10000);
+        if (!blocked) schedule(failures ? Math.min(30000, 2000 * 2 ** Math.min(failures, 4)) : active(task) && !state?.queriesPaused ? 2000 : 10000);
       }
     })();
     return flight;
@@ -94,7 +100,7 @@ export function createRefreshMonitor({ api, onStatus, onTask, onBusy, onError,
   return {
     start() { if (started) return; started = true; void poll(); },
     stop() { started = false; revision += 1; if (timer != null) clearTimer(timer); timer = null; },
-    wake() { if (started && visible()) { if (timer != null) clearTimer(timer); timer = null; return poll(); } },
+    wake() { if (started && visible()) { blocked = false; if (timer != null) clearTimer(timer); timer = null; return poll(); } },
     poll, requestRefresh, busy,
   };
 }

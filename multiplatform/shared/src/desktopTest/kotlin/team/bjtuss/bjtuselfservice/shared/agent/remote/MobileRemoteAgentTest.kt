@@ -77,4 +77,12 @@ class MobileRemoteAgentTest {
         assertFalse(remoteTemplateAtLeast(null, "0.4.0"))
         assertFalse(remoteTemplateAtLeast("abc", "0.4.0"))
     }
+
+    @Test fun healthAuthorizationFailureDoesNotAskForTemplateUpgrade() = runBlocking {
+        client.healthResponse = RemoteCall.Failure(RemoteFailureKind.FORBIDDEN, "platform_auth_required")
+        val message = controller.pair("https://site.example", "ABCD2345", null, RemoteScope.DEFAULT, true)!!
+        assertTrue(message.contains("连接授权"))
+        assertFalse(message.contains("升级"))
+        assertNull(client.lastPair)
+    }
 }

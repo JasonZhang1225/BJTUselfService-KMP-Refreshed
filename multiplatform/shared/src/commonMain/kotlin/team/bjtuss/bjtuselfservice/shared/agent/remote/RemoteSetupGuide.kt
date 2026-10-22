@@ -1,19 +1,21 @@
 package team.bjtuss.bjtuselfservice.shared.agent.remote
 
-/** 模板所在的仓库路径；合入 main 前联调可临时改成开发分支。 */
-const val REMOTE_TEMPLATE_URL = "https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/tree/main/multiplatform/remote-site-template"
+/** 模板目前只在开发分支；合入 main 后将此入口切回 main。 */
+const val REMOTE_TEMPLATE_URL = "https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/tree/feat/chatgpt-agent-remote/multiplatform/remote-site-template"
 
 /** 设置页“复制提示词”的内容：发给 ChatGPT（Work 模式），由它用 Sites 搭建私人 Site 与插件。 */
 val REMOTE_SETUP_PROMPT = """
-请使用 Sites 插件，按交大自由行的远程模板为我搭建只有我自己能访问的私人 Site 和插件：
+请用 Sites 和 Plugin Creator，按以下模板为我创建一份独立的私人 Site 与查询插件：
 $REMOTE_TEMPLATE_URL
-（先读模板的 README.md；查询约定见仓库 docs/agent/agent-query-contract.md。）
+先读取模板内 SETUP.md，再按其中步骤完成；查询约定也在模板内 agent-query-contract.md。
 
-要求：
-1. 原样使用模板最新版（0.4.0 或更高）的 src、migrations、drizzle 与 plugin/skills/bjtuss-remote/SKILL.md，用持久数据库保存设备、快照与任务；不要改写查询逻辑和日期换算。
-2. 发布为私人 Site，不要公开；不要让我上传学校系统密码。
-3. 复用 Site 自动生成的插件，提供模板定义的 11 个工具：get_status、get_homework、get_calendar、get_exams、get_grades、get_mail、request_live_query、request_refresh_all、request_citel_problem、request_mail_message、get_request_result，并附上模板里的查询 Skill；确认在 ChatGPT 的 Chat、Work 和 Codex 模式里都能调用。
-4. 如果我已经有旧版 Site，请在原 Site 上升级到最新模板（按顺序执行新增的数据库迁移）并重新发布插件，不要另建第二个。同一个 Site 要能同时连接我的电脑和手机。
+请直接完成准备、构建、发布和插件配置，最后统一交付一次，搭建中途不要让我反复登录、取码或配对：
+1. 使用模板 0.5.0 的服务代码、DB 绑定与增量迁移，不重写查询和日期换算。Site 只允许我访问，不保存学校密码。
+2. 我没有提供旧 Site 时新建一份；若明确提供已有 Site，则保留其身份、数据和插件。创建、发布响应不明确时先核实原操作，不重复创建。
+3. 发布前确认 owner-private，按 SETUP.md 配置首次可信用户身份固定和本站设备访问机密。使用插件工具完成配置，不要求我提前登录 Site 取用户 ID，也不操作我的本机系统存储。
+4. 复用 Sites 自动生成的 canonical 私人插件，通过 Plugin Creator 保留 App 绑定并附加模板查询 Skill。核对模板的 11 个工具；需要安装时只在最终交付时展示一次安装/连接入口，不另建插件，不执行额外 MCP 登录。
+5. 开发侧完成可自动执行的检查。会话尚未加载工具或设备尚未配对时，明确区分状态，不要求我重建、重装或反复授权。
 
-完成后告诉我 Site 地址，为每台要连接的设备各生成一个一次性配对码；电脑端由你引导完成安全连接配置，手机端请给我一份可填写的“Site 访问凭据”（服务访问令牌）。电脑端不要让我手工复制平台内部访问凭据。若电脑访问私人 Site 尚未验证，请明确说明并先解决，不要只给一个配对码就说已经连通。
+最终只给我 Site 链接、同一私人插件的安装/连接入口和这套操作说明：打开 Site 并登录 → 点击“生成配对信息” → 在新版交大自由行 App 的“Agent 和 ChatGPT 插件”中填写 Site 地址、粘贴完整配对信息 → 选择上云范围并确认配对。
+不要替我生成、领取或在聊天展示配对码、配对信息和访问凭据；我登录 Site 后自行生成。只在手机 ChatGPT 查询电脑已有数据时，无需再配对手机 App。若有真实平台阻塞，报告具体失败步骤和原因，不让我用重复登录试错。
 """.trimIndent()

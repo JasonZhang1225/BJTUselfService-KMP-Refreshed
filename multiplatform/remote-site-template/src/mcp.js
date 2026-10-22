@@ -1,4 +1,4 @@
-import { ProtocolError, requireObject } from "./protocol.js";
+import { ProtocolError, requireObject, TEMPLATE_VERSION } from "./protocol.js";
 import { ASSIGNMENT_SOURCES, CALENDAR_KINDS, COMMANDS, EXAM_STATUSES, HOMEWORK_STATUSES, RANGES } from "./agent-query.js";
 import { querySnapshot, validateAgentQuery } from "./query.js";
 
@@ -97,7 +97,7 @@ export async function mcpReply(service, rpc) {
   const reply = result => ({ jsonrpc: "2.0", id, result });
   if (!rpc || rpc.jsonrpc !== "2.0" || typeof rpc.method !== "string") return { jsonrpc: "2.0", id, error: { code: -32600, message: "Invalid Request" } };
   if (rpc.method === "server/discover") return reply({ supportedVersions: ["2026-07-28"], capabilities: { tools: {} } });
-  if (rpc.method === "initialize") return reply({ protocolVersion: "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: "bjtuss-remote", version: "0.3.0" }, instructions: MCP_INSTRUCTIONS });
+  if (rpc.method === "initialize") return reply({ protocolVersion: "2026-07-28", capabilities: { tools: {} }, serverInfo: { name: "bjtuss-remote", version: TEMPLATE_VERSION }, instructions: MCP_INSTRUCTIONS });
   if (rpc.method === "notifications/initialized") return null;
   if (rpc.method === "ping") return reply({});
   if (rpc.method === "tools/list") return reply({ tools: MCP_TOOLS });

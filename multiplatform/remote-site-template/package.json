@@ -1,13 +1,14 @@
 {
   "name": "bjtuss-remote-site-template",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "交大自由行远程模板：私人 Site 的配对、快照与即时任务 API（D1）。",
   "scripts": {
     "test": "node --no-warnings --test test/*.test.js",
     "dev": "node --no-warnings scripts/preview.mjs",
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "package:site": "node scripts/package-site.mjs"
   },
   "engines": {
     "node": ">=22.5"

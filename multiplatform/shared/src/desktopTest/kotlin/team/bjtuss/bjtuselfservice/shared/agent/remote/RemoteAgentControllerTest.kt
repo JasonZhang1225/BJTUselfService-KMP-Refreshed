@@ -79,6 +79,15 @@ class RemoteAgentControllerTest {
     }
 
     @Test
+    fun ownerCopiedPairingInformationConfiguresPlatformAccessInTheActualPairFlow() = runBlocking {
+        val info = REMOTE_PAIRING_INFO_PREFIX + """{"siteUrl":"https://site.example","pairingCode":"ABCD2345","platformAccess":"fixture-platform-access","expiresAt":1800000600}"""
+        assertNull(controller.pair("https://site.example", info, null, RemoteScope.DEFAULT, consent = true))
+        assertEquals("ABCD2345", client.lastPair!!.pairingCode)
+        assertEquals("fixture-platform-access", secrets.access)
+        assertFalse(RemoteAgentStore(cache).loadConfig().toString().contains("fixture-platform-access"))
+    }
+
+    @Test
     fun scopesIntervalsAndUnpair() = runBlocking {
         controller.pair("https://site.example", "ABCD2345", null, RemoteScope.DEFAULT, consent = true)
         assertNull(controller.setScopes(setOf(RemoteScope.SCHEDULE, RemoteScope.GRADES)))

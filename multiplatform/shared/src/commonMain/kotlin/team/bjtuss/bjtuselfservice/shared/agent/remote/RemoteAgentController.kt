@@ -171,14 +171,19 @@ class RemoteAgentController(
      */
     suspend fun pair(siteUrl: String, pairingCode: String, platformAccess: String?, scopes: Set<RemoteScope>, consent: Boolean): String? {
         val url = normalizeSiteUrl(siteUrl) ?: return "Site 地址必须是 https:// 开头的完整地址。"
-        val code = pairingCode.uppercase().filter { it.isLetterOrDigit() }
+        val input = pairingCode.trim()
+        val info = if (input.startsWith(REMOTE_PAIRING_INFO_PREFIX)) {
+            runCatching { parseRemotePairingInfo(input, url, clock()) }.getOrNull()
+                ?: return "配对信息无效、已过期或属于另一 Site，请登录本站重新生成并完整复制。"
+        } else null
+        val code = info?.pairingCode ?: input.uppercase().filter { it.isLetterOrDigit() }
         if (!Regex("^[A-Z2-9]{8}$").matches(code)) return "配对码是 8 位字母和数字，请在你的 Site 页面重新生成。"
         if (!consent) return "请先确认同意：所选数据会上传到你自己的 Site，可被 Site 与 ChatGPT 读取。"
         if (scopes.isEmpty()) return "至少选择一类允许上云的数据。"
         val account = executor.currentAccountScope() ?: return "请先在 App 里登录学校账号，再配对。"
         val bindingId = "bind_${randomToken(random, 20)}"
         return try {
-            val enteredAccess = platformAccess?.trim()?.takeIf(String::isNotEmpty)
+            val enteredAccess = info?.platformAccess ?: platformAccess?.trim()?.takeIf(String::isNotEmpty)
             if (enteredAccess != null || secrets.loadPlatformAccessSiteUrl() != url) {
                 secrets.savePlatformAccess(enteredAccess)
                 secrets.savePlatformAccessSiteUrl(if (enteredAccess != null) url else null)
@@ -187,7 +192,11 @@ class RemoteAgentController(
             val api = clientFactory(url)
             if (mobile) {
                 // 旧模板（0.4.0 之前）一个 Site 只认一台设备：手机配对会把电脑顶掉。先确认 Site 已升级。
-                val version = (api.health() as? RemoteCall.Ok)?.value?.templateVersion
+                val health = api.health()
+                if (health is RemoteCall.Failure) return if (health.code == "platform_auth_required")
+                    "本站连接授权无效，请登录 Site 重新生成并复制完整配对信息。"
+                else "无法读取 Site 版本，请检查地址和网络后重试：${RemoteAgentRunner.describe(health)}"
+                val version = (health as RemoteCall.Ok).value.templateVersion
                 if (!remoteTemplateAtLeast(version, REMOTE_MULTI_DEVICE_TEMPLATE)) {
                     return "你的 Site 模板版本是 ${version ?: "未知"}，还不支持电脑和手机同时连接。" +
                         "请先让 ChatGPT 把 Site 升级到 $REMOTE_MULTI_DEVICE_TEMPLATE 或更高版本，再配对手机。"
@@ -215,8 +224,7 @@ class RemoteAgentController(
                 is RemoteCall.Failure -> when (response.code) {
                     "pairing_invalid" -> "配对码无效、已过期或已使用，请在 Site 重新生成。"
                     "pairing_locked" -> "配对失败次数过多，请 10 分钟后在 Site 重新生成配对码。"
-                    "platform_auth_required" -> if (mobile) "私人 Site 拒绝了这台设备的访问：请检查“Site 访问凭据”是否填写正确，或让 ChatGPT 重新生成。"
-                        else "电脑与私人 Site 的连接授权未就绪，请通过 AI 助手重新连接这台电脑。"
+                    "platform_auth_required" -> "本站连接授权无效，请登录 Site 重新生成并复制完整配对信息。"
                     else -> if (response.kind == RemoteFailureKind.UNAUTHORIZED)
                         "Site 未通过配对身份验证，请重新生成配对码后重试。"
                     else RemoteAgentRunner.describe(response)

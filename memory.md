@@ -1,6 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-22。
+> 本轮云端在 `feat/chatgpt-agent-remote@132b0d5` 完成一次交付 setup 修改及全新私人 Site/插件发布；本轮将已验证改动同步到当前开发分支供新对话读取；旧 Site/插件已由用户删除。新站点和验证边界见 `docs/agent/setup-audit-2026-10-22.md`，本节最新记录覆盖下方旧实例状态。
 > 当前分支：`feat/chatgpt-agent-remote`，2026-10-22 已合入 main `9e7b4a7`（含下述 main 状态）。main 上 PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`），细节见 `history_full.md`。远端另保留 `claude/宣传图制作`、`feat/chatgpt-agent-remote`（AI Agent，开发中）。
 > KMP 源码版本：`1.8.6-Alpha` / Build 41（尚未发版）；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。iOS 最低系统 18.0。
 > 2026-10-22 仓库清理：冻结原 Android 工程（`app/` 与根 Gradle 工程、`release.yml`/`debug.yml`）与验证码 torch 模型（含 Windows `BJTUCaptcha.pt`、DJL）已移除，存档于标签 `archive/legacy-android-and-captcha-model`（`8189baf`）；Windows 验证码改为手动输入。只保留 `origin` 远端；GitHub 上仍是 `HFDLYS/BJTUselfService` 的 fork，由所有者在 Settings 解除。
@@ -14,6 +15,8 @@
 > [Agent 分支笔记] Computer Use 已恢复：旧 CODEX_CLI_PATH 指向已不存在的 bin/d0097be4feba73d0/codex.exe，当前程序在 bin/6257d9e8f63c0f2b/codex.exe。已为旧目录建立 Junction，重置后 @oai/sky 可列出并读取安装版窗口；未改写程序。以后移除只删 Junction 本身，不递归删除目标。
 
 ## 进行中
+
+- **新用户 setup 一次交付（2026-10-22，最新状态）。** 用户要求不调用界面自动化，搭建中不反复请求用户登录、不由助手取配对码；最终只交付 Site/插件入口，由用户登录 Site 自行生成配对信息。模板 0.5.0 新增 SETUP 与自包含契约、拥有者首次可信身份固定、受保护配对信息 API、App 配对信息导入与安全存储、确定错误停止重试、手机 health 错误分类、版本统一及已验证的部署归档脚本。Site `appgprj_6ad9ad4c356081919b7a7c74e6597689` 已私人发布，canonical 插件 `plugin_asdk_app_sites_bd52708922cc819185277e2eecb62912` 1.0.1 已附 Skill 并读回保留 App/界面；真实配对码与设备均为 0。模板 64 测试、共享端测试、桌面/Windows 编译和 Android compile-only debug 构建通过；Linux 的 Windows DPAPI 原生测试不可用，未生成 Windows MSI、未执行用户登录配对或宿主实际查询。本轮把上述改动提交并同步至当前开发分支，新增已实测的 sync-site.mjs 作为缺少平台辅助脚本时的确定性入口；新对话从远端分支读取 SETUP，不使用旧安装版复制的提示词。Windows MSI 和用户实际登录配对仍未验证。详见审查报告。
 
 - AI Agent（本分支）：开发中，约七八成；合入 main 后再清理 main 里经紧急修复带进来的半成品 AI 代码。下面先列 main 已合入功能的待验证项，再列 Agent 分支进行中事项。
 - 已合入功能的待真机验证（不阻塞）：

@@ -57,7 +57,10 @@ async function authorizeOwner(request, env) {
     throw new ProtocolError(401, "unauthorized", "当前 ChatGPT 用户不是本站拥有者");
   }
   if (!env.OWNER_TOKEN || env.OWNER_TOKEN.length < 24) {
-    throw new ProtocolError(503, "owner_auth_not_configured", "Site 尚未配置拥有者令牌 OWNER_TOKEN");
+    if (env.OWNER_PRIVATE_BOOTSTRAP === "true" || env.OWNER_USER_ID) {
+      throw new ProtocolError(401, "sign_in_required", "请登录本站后继续；机器访问授权不能代替用户登录");
+    }
+    throw new ProtocolError(503, "owner_auth_not_configured", "Site 尚未配置拥有者身份，请由部署助手设置 OWNER_USER_ID 或 OWNER_PRIVATE_BOOTSTRAP；重复登录无法修复此配置");
   }
   const match = /^Bearer (.+)$/.exec(request.headers.get("authorization") ?? "");
   const presented = await sha256Hex(match?.[1] ?? "");
@@ -137,6 +140,17 @@ export async function handle(request, env, options = {}) {
       // 顺带做一批有界清理，不依赖页面持续打开。
       await service.cleanup();
       if (path === "/api/v1/owner/status" && method === "GET") return json(200, await service.status());
+      if (path === "/api/v1/owner/connection" && method === "POST") {
+        if (!env.SITE_DEVICE_ACCESS || /\s/.test(env.SITE_DEVICE_ACCESS)) {
+          throw new ProtocolError(503, "device_access_not_configured", "本站尚未配置设备连接授权，请由部署助手完成配置；无需重复登录");
+        }
+        const pairing = await service.createPairingCode();
+        // 仅在已授权拥有者的响应中交接；不嵌入 HTML、源码或聊天，不写入 D1。
+        return json(200, { expiresAt: pairing.expiresAt, connectionCode: "bjtuss-pair-v1:" + JSON.stringify({
+          siteUrl: url.origin, pairingCode: pairing.pairingCode,
+          platformAccess: env.SITE_DEVICE_ACCESS, expiresAt: pairing.expiresAt,
+        }) });
+      }
       if (path === "/api/v1/owner/pairings" && method === "POST") return json(200, await service.createPairingCode());
       if (path === "/api/v1/owner/snapshot" && method === "GET") return json(200, await service.latestSnapshot());
       if (path === "/api/v1/owner/tasks" && method === "POST") {

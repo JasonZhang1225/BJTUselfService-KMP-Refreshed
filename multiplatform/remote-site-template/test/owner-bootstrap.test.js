@@ -6,7 +6,7 @@ test("私有部署的首次拥有者身份固定入库；机器访问和之后�
   const site = createSite();
   site.env.OWNER_TOKEN = undefined;
   site.env.OWNER_PRIVATE_BOOTSTRAP = "true";
-  assert.equal((await site.call("GET", "/api/v1/owner/status")).status, 503);
+  assert.equal((await site.call("GET", "/api/v1/owner/status")).status, 401);
   assert.equal(site.env.DB.raw.prepare("SELECT value FROM template_meta WHERE key = 'owner_user_id'").get(), undefined);
   const headers = { "oai-authenticated-user-id": "first-site-owner" };
   assert.equal((await site.call("GET", "/api/v1/owner/status", { headers })).status, 200);

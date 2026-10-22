@@ -6,7 +6,7 @@ import { validateAgentQuery as validateQuery } from "./query.js";
 export const PROTOCOL_VERSION = 1;
 /** 2：data 为 Agent 数据集（与电脑端 CLI 同一结构，见 src/agent-query.js）。 */
 export const SNAPSHOT_SCHEMA_VERSION = 2;
-export const TEMPLATE_VERSION = "0.4.0";
+export const TEMPLATE_VERSION = "0.5.0";
 
 /** 设备类型：desktop 常驻并领取即时任务；mobile 只在 App 刷新后上传快照。 */
 export const DEVICE_KINDS = Object.freeze(["desktop", "mobile"]);

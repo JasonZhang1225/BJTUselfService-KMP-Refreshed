@@ -1,4 +1,4 @@
-# 交大自由行远程模板（Site 端，模板版本 0.4.0，协议 v1，快照 schema 2）
+# 交大自由行远程模板（Site 端，模板版本 0.5.0，协议 v1，快照 schema 2）
 
 本目录是 Agent Remote 计划 PR 3 的服务端最小实现：每位用户部署一份**只属于自己**的私人 Site，
 Windows 上的交大自由行主动连接它，上报快照、领取即时任务。Site 不登录学校、不保存学校凭据。
@@ -42,6 +42,7 @@ Windows 上的交大自由行主动连接它，上报快照、领取即时任务
 | --- | --- | --- |
 | `GET /api/v1/health` | 任意 | 协议与模板版本 |
 | `POST /api/v1/owner/pairings` | 拥有者 | 生成 8 位一次性配对码，10 分钟有效 |
+| `POST /api/v1/owner/connection` | 拥有者 | 用户登录后自行生成完整配对信息，含本站服务访问授权；搭建助手不调用 |
 | `POST /api/v1/device/pair` | 电脑/手机 | 用配对码换设备令牌；`deviceKind` 为 `desktop`（默认）或 `mobile`。0.4.0 起可同时绑定多台设备（上限 5），只撤销同名同类型的旧绑定；10 分钟内失败 10 次锁定 |
 | `PUT /api/v1/device/snapshot` | 电脑 | 上传最新完整快照（≤1 MiB）；同 `snapshotId` 重传幂等，序号不增大拒收 `stale_snapshot` |
 | `PUT /api/v1/device/scopes` | 电脑 | 立即更新允许上云的范围；Site 按此再次过滤已存快照 |
@@ -114,14 +115,12 @@ node scripts/package-template.mjs <绝对输出路径.tar.gz>
 
 脚本使用明确文件清单，并重新生成没有 project_id 的 manifest；不带 `.git`、`.env`、
 数据库、`dist`、用户身份或运行凭据。正式 Site 必须使用 Sites 自动创建的 canonical 私人插件，
-不要把本地开发桥另行上传为第二个云端插件。搭建步骤见仓库 `docs/agent/remote-setup.md`。
+不要把本地开发桥另行上传为第二个云端插件。搭建步骤见包内 `SETUP.md`。
 
-## 私人部署（本地已准备，平台联调仍待完成）
+## 私人部署
 
-1. 从干净模板创建独立的 owner-private Site，保留新 project_id。`.openai/hosting.json` 声明 `d1: "DB"` 和 `capabilities: ["mcp"]`；Sites 发布应用 `drizzle/` 迁移。`migrations/0001_init.sql` 保留为原协议测试依据，Drizzle 镜像不含初始化数据写入。
-2. 拥有者登录私人 Site 后访问 `/api/v1/identity`，将返回的 Site 内 userId 通过 Sites 环境变量工具配置为 `OWNER_USER_ID`。可选受控机器兼容调用使用 `OWNER_TOKEN`（≥24 位随机串）；都不要写入源码、网页或聊天。
-   也可在已确认仅拥有者可访问的实例中显式配置 `OWNER_PRIVATE_BOOTSTRAP=true`：首次可信 Sites 用户身份固定在 D1 中，之后其他身份不能冒领。默认关闭；机器服务访问材料不提供用户身份，因此不能用它初始化拥有者。静态 MCP 元数据发现不返回业务数据，真实工具调用始终需要拥有者鉴权。
-3. 配置每小时一次的定时触发调用 `scheduled`。
-4. 在拥有者页面生成配对码，在电脑端设置里填入 Site 地址与配对码。
+完整、可复用搭建步骤见模板内 [SETUP.md](SETUP.md)，查询约定见 [agent-query-contract.md](agent-query-contract.md)。搭建助手先完成私人部署、拥有者初始化配置、设备连接机密和 canonical 插件 Skill；最后统一交付 Site 与插件入口。用户随后登录 Site 自行生成配对信息，不在搭建对话中取码。
+
+0.5.0 的“生成配对信息”会通过拥有者专属 API 返回绑定本站、十分钟有效的配对信息。新版 App 从中取得一次性码和本站服务访问授权，存入系统安全存储。普通八位码保留为旧接口兼容；全新设备请使用完整配对信息，不需要助手访问本机安全存储。
 
 分发包不得包含作者的项目 ID、Site 地址、令牌、学校账号、快照、数据库或 Git 身份；升级只追加迁移，不覆盖用户绑定与数据。

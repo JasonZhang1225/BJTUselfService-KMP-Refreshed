@@ -1,4 +1,4 @@
-# Windows 本地开发与私人 Site 搭建（模板 0.4.0 / 协议 1 / 快照 schema 2）
+# Windows 本地开发与私人 Site 搭建（模板 0.5.0 / 协议 1 / 快照 schema 2）
 
 维护源：`multiplatform/remote-site-template/`。该目录与 Gradle 工程独立，无第三方 Node 依赖，要求 Node ≥22.5。
 MCP 工具、Skill 与本机 CLI 共用的查询参数和返回结构见同目录 `agent-query-contract.md`；工具与 Skill 的唯一维护源是模板的 `src/mcp.js` 与 `plugin/skills/bjtuss-remote/SKILL.md`，不要另存副本。
@@ -27,44 +27,25 @@ Windows 打包：在 `multiplatform/` 用 JDK 21 运行 `gradlew.bat :windowsApp
 直接从 PowerShell 调 GUI exe 可能不等待完成，验证时应使用 ProcessStartInfo 和重定向句柄。
 打包运行时不保证附带 `java.exe`，不要把系统 JDK 当作分发依赖。
 
-## 一句话创建入口
+## 一句话创建入口与私人部署
 
-电脑 App 的入口为 **应用 → Agent 和 ChatGPT 插件**，其中“远程查询”的“设置方法”框里只有一个“复制提示词”按钮。
-把提示词发送到 ChatGPT Work，要求按模板（README 与查询契约）创建私人 Site、自动生成的插件与一次性配对码；已有旧版 Site 的在原 Site 上升级到 0.3.0。
-搭建助手需要先验证私人 Site 的电脑访问并完成安全连接配置，不得只给出配对码就声称链路已通。
+完整步骤的唯一维护源是模板内 `SETUP.md`，它与 `agent-query-contract.md` 都随干净模板包分发。
 
-拿到地址和配对码后，在同一页填写，选择允许上云的数据、确认同意，再点击“配对并开启”。
-配对码过期时在 Site 页面重新生成。普通查询读取 Site 快照；明确要求最新数据时电脑领取任务，网页自动展示执行状态。
+电脑 App → Agent 和 ChatGPT 插件 → 复制提示词，发给具备 Sites 与 Plugin Creator 的助手。助手完成私人 Site 创建、身份初始化配置、设备访问机密、发布，以及同一 canonical 插件的查询 Skill；最终统一交付 Site 和插件入口。搭建中不要求用户提前登录、取得身份 ID、提供系统存储权限或领取配对码。
 
-同时提供干净模板包。`node scripts/package-template.mjs <源码目录外的绝对输出路径.tar.gz>`
-按明确清单生成包，不携带现有 project_id、个人地址、令牌、快照或数据库。
+用户打开 Site 并登录，点击“生成配对信息”，在支持新流程的 App 中填写 Site 地址、粘贴完整配对信息、选择上云范围并确认。配对信息包含本站机器访问授权，只通过拥有者专属 API 返回，十分钟有效；一次性码只保存摘要，机器访问材料最终保存在设备系统安全存储，不发到聊天、日志或源码。过期在 Site 自行生成，无需回到对话。
 
 ## 手机与平板（Android / iOS）
 
-设置 → 功能开关里的“ChatGPT 插件”默认开启，应用页出现同名入口（不配对就不会上传任何数据，不想看到可以关掉）。手机不做定时上传、心跳和本地 CLI，只在每次 App 刷新完成后上传快照；
-即时查询仍由电脑执行。配对前 App 先读取 Site 的 `/api/v1/health`，模板低于 0.4.0 时拒绝配对（旧模板配对新设备会撤销电脑）。
-手机没有电脑那样的连接助手，私人 Site 的服务访问凭据需要在配对表单里手动填写，保存在 Android Keystore / Apple Keychain。
+仅在手机 ChatGPT 查询已配对电脑上传的数据时，无需配对手机 App。手机 App 自己需要上传缓存时，登录同一 Site 另生成一份配对信息；模板需为 0.5.0 或更高，并使用支持完整配对信息的新客户端。
 
-## 正式私人 Site
+手机不定时上传、不心跳、不轮询任务，只在 App 刷新后上传；即时任务由电脑执行。health 认证/网络失败应报告实际错误，只有确实读到旧版才提示升级。
 
-1. 在独立空目录解包，确认 `.openai/hosting.json` 无 project_id。按 Sites 技能创建一次私人 Site，
-   将返回的真实 ID 写入该实例 manifest，之后一直复用。模板维护源不得写入个人 Site 身份。
-2. 保留 D1 绑定 `DB`、MCP capability 和 `drizzle/` 迁移；按 Sites 源码助手的流程构建、推送、
-   打包和私人发布。新 Site 才建新数据库；升级追加迁移，不覆盖用户绑定。
-3. 拥有者登录 Site 后访问 `/api/v1/identity` 取得 Site 内 userId，作为部署机密 `OWNER_USER_ID`。
-   或在已核实只有拥有者可访问的 Site 中显式设置 `OWNER_PRIVATE_BOOTSTRAP=true`，由第一次可信
-   用户身份请求固定拥有者；服务访问令牌本身不能引导身份。受控机器接口使用独立 `OWNER_TOKEN`。
-   平台身份头只在可信 Sites 边界有效，不把自托管公网服务器上的可伪造请求头视为身份。
-   拥有者未配置时 API/MCP 拒绝访问。网页只载入壳，不包含任何令牌。
-4. 用当前 Sites 支持的 service access 材料验证 Windows 访问。`OAI-Sites-Authorization` 只交给
-   该 Site，且平台服务访问不等于拥有者身份；设备 API 还要求独立设备令牌。
-   平台门槛未实测前，只传虚构数据。不能用公开 Site 绕过此步骤。
-5. 发布后复用 Sites 自动创建的 canonical 私人插件，确认安装/连接并调用工具。
-   连接助手先把本站访问材料安全配置到目标安装版的系统存储；在 Site 页面生成一次性配对码，
-   Windows App 里只填写站点地址和配对码，不提供手工填写平台访问材料的输入框。
-   设备令牌与平台凭据留在 Windows DPAPI，学校密码仍在本机安全存储。
-6. 真实数据上云前由用户在电脑端确认范围。课表、考试、作业为默认范围，成绩和邮箱另行选择。
-   普通查询使用云端快照；用户明确要求最新时才创建最小来源任务，结果可能排队、部分失败或要求手动登录。
+## 开发与回归
+
+`node scripts/package-template.mjs <源码目录外的绝对输出路径.tar.gz>` 生成无个人部署身份的包。创建实例保留 DB、MCP、Drizzle 迁移；新实例确认 owner-private 后，用 Sites 工具设置 `OWNER_PRIVATE_BOOTSTRAP=true` 与 secret `SITE_DEVICE_ACCESS`，后者来自本站 get_site 的服务访问令牌。配置后部署，用户首次可信登录固定身份。升级保留已有身份与数据。
+
+不要以公开 Site 绕过平台访问，不让搭建助手直接写用户安装版存储，不用诊断进程成功代替实际 App 配对证据。对权限和部署配置错误停止自动重试，给出可操作原因。
 
 默认后台周期为 1800 秒刷新上传、5 秒轮询；只有开启远程同步才执行上传和轮询。开机启动默认关闭，需用户自己选择：
 Windows 写当前用户 `Run` 启动项，出现在任务管理器“启动应用”与“设置 → 应用 → 启动”，在那里禁用后 App 内如实显示关闭；

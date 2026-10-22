@@ -40,8 +40,8 @@ class RemotePairingAccessTest {
             assertEquals("https://other.example", secrets.site)
             client.pairResponse = RemoteCall.Failure(RemoteFailureKind.FORBIDDEN, "platform_auth_required")
             val accessError = controller.pair("https://other.example", "ABCD2345", null, RemoteScope.DEFAULT, true)!!
-            assertTrue(accessError.contains("AI 助手"))
-            assertFalse(accessError.contains("填写"), "界面已移除凭据输入框，错误不能再要求填写")
+            assertTrue(accessError.contains("登录 Site"))
+            assertTrue(accessError.contains("完整配对信息"))
         } finally {
             controller.close(); cache.close(); directory.deleteRecursively()
         }

@@ -95,7 +95,7 @@ internal fun RemoteAgentCard(controller: RemoteAgentController, showStatus: Bool
             }
             if (!config.paired) {
                 GroupLabel("配对")
-                PairingForm(busy, askPlatformAccess = mobile) { url, code, access, scopes, consent ->
+                PairingForm(busy) { url, code, access, scopes, consent ->
                     launchAction {
                         controller.pair(url, code, access, scopes, consent)?.let { it to true }
                             ?: ((if (mobile) "配对成功。之后每次刷新都会上传到 Site。" else "配对成功，已开始同步。") to false)
@@ -179,13 +179,12 @@ private fun SetupSteps(paired: Boolean, copied: Boolean, mobile: Boolean = false
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("设置方法", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            SetupStep(1, if (mobile) "已经在电脑上搭好 Site：在 Site 页面为这台设备再生成一个配对码（Site 需为模板 0.4.0 或更高）。" +
+            SetupStep(1, if (mobile) "已经在电脑上搭好 Site：登录 Site 为这台设备生成配对信息（Site 需为模板 0.5.0 或更高）。" +
                 "还没有 Site：复制搭建提示词发给 ChatGPT（Work 模式），由它搭建只有你能访问的私人 Site 和插件。"
             else "复制搭建提示词，发给 ChatGPT（Work 模式）。它会用 Sites 为你搭建只有你能访问的私人 Site 和插件。") {
                 FilledTonalButton(onClick = onCopy) { Text(if (copied) "已复制" else "复制提示词") }
             }
-            SetupStep(2, if (mobile) "把 Site 地址、配对码，以及 ChatGPT 给出的“Site 访问凭据”填到下方。配对码过期可在 Site 页面重新生成。"
-                else "ChatGPT 完成后会给出 Site 地址和一次性配对码，填到下方。配对码过期可在 Site 页面重新生成。")
+            SetupStep(2, "打开助手提供的 Site 链接并登录，点击“生成配对信息”，把 Site 地址和完整配对信息粘贴到下方。过期可在 Site 重新生成，无需回到对话取码。")
             SetupStep(3, "选择允许上云的数据，确认同意后点击“配对并开启”。")
             if (paired) {
                 Text("本机已配对。更新 Site 模板或换新 Site 时，可再次复制提示词。",
@@ -240,31 +239,23 @@ internal fun remoteScopeDetail(scope: RemoteScope): String = when (scope) {
 @Composable
 private fun PairingForm(
     busy: Boolean,
-    askPlatformAccess: Boolean = false,
     onPair: (String, String, String?, Set<RemoteScope>, Boolean) -> Unit,
 ) {
     var url by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
-    var access by remember { mutableStateOf("") }
     var scopes by remember { mutableStateOf(RemoteScope.DEFAULT) }
     var consent by remember { mutableStateOf(false) }
     OutlinedTextField(url, { url = it.trim() }, label = { Text("Site 地址（https://…）") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-    OutlinedTextField(code, { code = it.uppercase().take(12) }, label = { Text("配对码（在 Site 页面生成）") }, singleLine = true,
+    OutlinedTextField(code, { code = it.take(16_384) }, label = { Text("配对信息（登录 Site 后生成并完整复制）") }, singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier.fillMaxWidth())
-    if (askPlatformAccess) {
-        // 私人 Site 在平台层只放行带服务访问凭据的机器请求；手机没有电脑那样的连接助手，只能手动填写。
-        OutlinedTextField(access, { access = it.trim() }, label = { Text("Site 访问凭据（ChatGPT 提供；没有可留空）") },
-            singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-        Text("凭据只保存在本机系统安全存储里，用于让这台设备访问你的私人 Site。", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
     GroupLabel("允许上云的数据")
     ScopeChecklist(scopes) { scopes = it }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Checkbox(checked = consent, onCheckedChange = { consent = it })
         Text("我同意所选数据上传到我自己的 Site，并可被 Site 与 ChatGPT 读取。", style = MaterialTheme.typography.bodyMedium)
     }
-    Button(onClick = { onPair(url, code, access.ifBlank { null }, scopes, consent) }, enabled = !busy && consent && url.isNotBlank() && code.isNotBlank(),
+    Button(onClick = { onPair(url, code, null, scopes, consent) }, enabled = !busy && consent && url.isNotBlank() && code.isNotBlank(),
         modifier = Modifier.fillMaxWidth()) {
         Text(if (busy) "正在配对…" else "配对并开启")
     }
