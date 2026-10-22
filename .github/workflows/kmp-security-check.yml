@@ -133,12 +133,7 @@ jobs:
           DESKTOP_PACKAGE_JAVA_HOME: ${{ env.JAVA_HOME }}
         run: |
           plutil -lint iosApp/iosApp.xcodeproj/project.pbxproj
-          ./gradlew :desktopApp:createDistributable -Pbjtu.desktop.compressRuntime=false --stacktrace
-          du -sk "desktopApp/build/compose/binaries/main/app/BJTUselfServiceKMP.app"
-          echo "Above: uncompressed runtime baseline (KiB on disk)"
           ./gradlew :desktopApp:createDistributable --stacktrace
-          du -sk "desktopApp/build/compose/binaries/main/app/BJTUselfServiceKMP.app"
-          echo "Above: compressed runtime (KiB on disk)"
           python3 - <<'PY'
           from pathlib import Path
           app = Path("desktopApp/build/compose/binaries/main/app/BJTUselfServiceKMP.app")
@@ -181,10 +176,6 @@ jobs:
         env:
           WINDOWS_PACKAGE_JAVA_HOME: ${{ env.JAVA_HOME }}
         run: |
-          .\gradlew.bat :windowsApp:createDistributable "-Pbjtu.desktop.compressRuntime=false" --stacktrace
-          if ($LASTEXITCODE -ne 0) { throw "Windows baseline build failed" }
-          $baseline = (Get-ChildItem "windowsApp/build/compose/binaries/main/app" -Recurse -File | Measure-Object Length -Sum).Sum
-          Write-Host "Windows uncompressed runtime baseline bytes: $baseline"
           .\gradlew.bat :windowsApp:createDistributable --stacktrace
           if ($LASTEXITCODE -ne 0) { throw "Windows app image build failed" }
           $apps = @(Get-ChildItem "windowsApp/build/compose/binaries/main/app" -Directory)
