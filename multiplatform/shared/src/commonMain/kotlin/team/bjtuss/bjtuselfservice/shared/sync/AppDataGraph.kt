@@ -231,6 +231,7 @@ class AppDataGraph(
             }
         },
         checkLatestRelease = { AppUpdateChecker.fetchLatest(transport) },
+        checkReleaseFromSource = { source -> AppUpdateChecker.fetchLatest(transport, source) },
     )
     val mailboxModel = MailboxScreenModel(transport)
     // 各学校业务会话的 Cookie 有不同生命周期。保留当前登录凭据的内存引用，

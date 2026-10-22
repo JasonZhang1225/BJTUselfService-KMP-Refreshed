@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.settings
 
+import androidx.compose.material3.RadioButton
+import team.bjtuss.bjtuselfservice.shared.update.UpdateSource
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
 import androidx.compose.foundation.layout.Arrangement
@@ -294,6 +296,21 @@ fun SettingsWorkspace(
                         "功能对齐基线：原安卓 v1.7.0",
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                Text("更新源", style = MaterialTheme.typography.titleSmall)
+                UpdateSource.entries.forEach { source ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = state.preferences.updateSource == source,
+                            onClick = { model.setUpdateSource(source) },
+                            enabled = state.updateCheck !is UpdateCheckState.Checking,
+                        )
+                        TextButton(
+                            onClick = { model.setUpdateSource(source) },
+                            enabled = state.updateCheck !is UpdateCheckState.Checking,
+                        ) { Text(source.label) }
+                    }
+                }
+                Text("自动选择优先连接 GitHub，连接失败时切换 Gitee。镜像可能稍晚同步。", style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(
                     onClick = { scope.launch { model.checkForUpdate() } },
                     enabled = state.updateCheck !is UpdateCheckState.Checking,
@@ -322,7 +339,7 @@ fun SettingsWorkspace(
                     Text("AIO 版 GitHub（Flutter 跨平台）")
                 }
                 Text(
-                    "预发布阶段更新检测指向本仓库 GitHub Releases（含 pre-release）。",
+                    "更新检测包含紧急修复等预发行版；Gitee 仅提供同步完成的版本。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -415,7 +432,7 @@ private fun formatPublishedAt(iso: String): String =
 /**
  * 更新检测结果弹窗。应用壳（AuthenticatedAppShell）在 SettingsWorkspace 外层渲染它，
  * 因此自动/手动检查出的新版本提示不依赖用户停留在设置页。
- * 新版本 → 「前往下载」跳 GitHub 发布页；已最新/失败 → 轻量提示；Idle/Checking 不渲染。
+ * 新版本 → 下载当前平台安装包直链；历史发行版没有附件时回到发布页；已最新/失败 → 轻量提示；Idle/Checking 不渲染。
  */
 @Composable
 fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit, onPostpone: () -> Unit = onDismiss) {
@@ -424,13 +441,14 @@ fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit, onPost
     when (check) {
         is UpdateCheckState.Done -> {
             if (check.hasUpdate) {
+                val installerUrl = AppUpdateChecker.installerDownloadUrl(check.release, currentPlatform())
                 AppleSheetOrAlert(
                     onDismissRequest = onPostpone,
                     title = "发现新版本",
-                    confirmLabel = "前往下载",
+                    confirmLabel = if (installerUrl != null) "下载安装包" else "前往发布页",
                     onConfirm = {
                         onDismiss()
-                        uriHandler.openUri(check.release.htmlUrl)
+                        uriHandler.openUri(installerUrl ?: check.release.htmlUrl)
                     },
                     dismissLabel = "暂不更新",
                     needsFullHeight = true,
@@ -446,6 +464,7 @@ fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit, onPost
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Text(check.release.tagName, style = MaterialTheme.typography.titleMedium)
+                            Text("下载来源：${check.release.source.label}", style = MaterialTheme.typography.bodyMedium)
                             check.release.publishedAt?.let { publishedAt ->
                                 Text(
                                     "发布时间：${formatPublishedAt(publishedAt)}",
@@ -464,8 +483,18 @@ fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit, onPost
                     confirmLabel = "好",
                     onConfirm = onDismiss,
                 ) {
-                    Text("当前 v${AppUpdateChecker.CURRENT_VERSION} 已是最新发布（${check.release.tagName}）。")
+                    Text("当前 v${AppUpdateChecker.CURRENT_VERSION} 无需更新。${check.release.source.label} 当前可用版本为 ${check.release.tagName}。")
                 }
+            }
+        }
+        is UpdateCheckState.SourceBehind -> {
+            AppleSheetOrAlert(
+                onDismissRequest = onDismiss,
+                title = "更新源尚未同步",
+                confirmLabel = "好",
+                onConfirm = onDismiss,
+            ) {
+                Text("此更新源暂未提供已知版本 ${check.knownVersion}，请稍后重试或切换更新源。")
             }
         }
         UpdateCheckState.Failed -> {
@@ -475,7 +504,7 @@ fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit, onPost
                 confirmLabel = "好",
                 onConfirm = onDismiss,
             ) {
-                Text("无法连接 GitHub，请检查网络后重试。")
+                Text("无法获取所选更新源的完整发行版，请检查网络、稍后重试或切换更新源。")
             }
         }
         UpdateCheckState.Idle, UpdateCheckState.Checking -> Unit

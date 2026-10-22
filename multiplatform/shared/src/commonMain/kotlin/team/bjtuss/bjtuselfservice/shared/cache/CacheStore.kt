@@ -1,5 +1,6 @@
 package team.bjtuss.bjtuselfservice.shared.cache
 
+import team.bjtuss.bjtuselfservice.shared.update.UpdateSource
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.QueryResult
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
@@ -22,6 +23,8 @@ data class AppPreferences(
     val autoSyncPhyVlab: Boolean = true,
     val currentWeek: Int = 0,
     val checkUpdate: Boolean = true,
+    val updateSource: UpdateSource = UpdateSource.AUTO,
+    val highestKnownRelease: String = "",
     val updatePostponedUntilMillis: Long = 0L,
     val dynamicColor: Boolean = true,
     val theme: String = "System",
@@ -417,6 +420,8 @@ class CacheStore(
         autoSyncPhyVlab = booleanSetting(SettingKey.AUTO_SYNC_PHYVLAB, true),
         currentWeek = setting(SettingKey.CURRENT_WEEK)?.toIntOrNull()?.coerceIn(0, 56) ?: 0,
         checkUpdate = booleanSetting(SettingKey.CHECK_UPDATE, true),
+        updateSource = UpdateSource.fromSetting(setting(SettingKey.UPDATE_SOURCE)),
+        highestKnownRelease = setting(SettingKey.HIGHEST_KNOWN_RELEASE).orEmpty(),
         updatePostponedUntilMillis = setting(SettingKey.UPDATE_POSTPONED_UNTIL)?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L,
         dynamicColor = booleanSetting(SettingKey.DYNAMIC_COLOR, true),
         theme = setting(SettingKey.THEME)?.takeIf(String::isNotBlank) ?: "System",
@@ -446,6 +451,8 @@ class CacheStore(
             putSetting(SettingKey.AUTO_SYNC_PHYVLAB, preferences.autoSyncPhyVlab.toString())
             putSetting(SettingKey.CURRENT_WEEK, preferences.currentWeek.coerceIn(0, 56).toString())
             putSetting(SettingKey.CHECK_UPDATE, preferences.checkUpdate.toString())
+            putSetting(SettingKey.UPDATE_SOURCE, preferences.updateSource.name)
+            putSetting(SettingKey.HIGHEST_KNOWN_RELEASE, preferences.highestKnownRelease)
             putSetting(SettingKey.UPDATE_POSTPONED_UNTIL, preferences.updatePostponedUntilMillis.coerceAtLeast(0L).toString())
             putSetting(SettingKey.DYNAMIC_COLOR, preferences.dynamicColor.toString())
             putSetting(SettingKey.THEME, preferences.theme.ifBlank { "System" })
@@ -646,6 +653,8 @@ private object SettingKey {
     const val AUTO_SYNC_PHYVLAB = "auto_sync_phyvlab"
     const val CURRENT_WEEK = "current_week"
     const val CHECK_UPDATE = "check_update"
+    const val UPDATE_SOURCE = "update_source"
+    const val HIGHEST_KNOWN_RELEASE = "highest_known_release"
     const val UPDATE_POSTPONED_UNTIL = "update_postponed_until"
     const val DYNAMIC_COLOR = "dynamic_color"
     const val THEME = "theme"
