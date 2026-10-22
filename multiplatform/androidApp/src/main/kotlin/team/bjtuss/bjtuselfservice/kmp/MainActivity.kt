@@ -8,7 +8,6 @@ import team.bjtuss.bjtuselfservice.shared.App
 import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
 import team.bjtuss.bjtuselfservice.shared.cache.createAndroidCacheStore
 import team.bjtuss.bjtuselfservice.shared.security.createAndroidAccountSecurityStore
-import team.bjtuss.bjtuselfservice.shared.auth.AndroidOnnxCaptchaRecognizer
 import team.bjtuss.bjtuselfservice.shared.logging.AppLog
 
 class MainActivity : ComponentActivity() {
@@ -34,14 +33,12 @@ class MainActivity : ComponentActivity() {
         val accountSecurityStore = createAndroidAccountSecurityStore(this)
         val cacheStoreHandle = createAndroidCacheStore(this)
         val homeworkFileGateway = AndroidHomeworkFileGateway(this)
-        val captchaRecognizer = AndroidOnnxCaptchaRecognizer(this)
         setContent {
             App(
                 accountSecurityStore = accountSecurityStore,
                 cacheStoreHandle = cacheStoreHandle,
                 homeworkFileGateway = homeworkFileGateway,
                 coursewareDirectoryGateway = homeworkFileGateway,
-                captchaRecognizer = captchaRecognizer,
                 nativeNavigationEnabled = true,
                 onOpenExternalUrl = ::openExternalUrl,
                 onOpenNativeRoute = { routeId ->

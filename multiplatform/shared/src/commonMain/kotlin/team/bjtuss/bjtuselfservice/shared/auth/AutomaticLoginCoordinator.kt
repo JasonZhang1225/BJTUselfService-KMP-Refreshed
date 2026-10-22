@@ -81,6 +81,15 @@ class AutomaticLoginCoordinator(
                             }
                             when (recognition) {
                                 is CaptchaRecognitionResult.Failed -> {
+                                    // No bundled model: keep this image for manual entry instead of
+                                    // fetching two more challenges that cannot be recognized either.
+                                    if (recognition.reason == CaptchaRecognitionFailure.MODEL_UNAVAILABLE) {
+                                        return AutomaticLoginResult.ManualRequired(
+                                            challenge = challenge.challenge,
+                                            reason = LoginFailure.CAPTCHA_RECOGNITION_FAILED,
+                                            attempts = attempt,
+                                        )
+                                    }
                                     latestFailure = LoginFailure.CAPTCHA_RECOGNITION_FAILED
                                     return@repeat
                                 }

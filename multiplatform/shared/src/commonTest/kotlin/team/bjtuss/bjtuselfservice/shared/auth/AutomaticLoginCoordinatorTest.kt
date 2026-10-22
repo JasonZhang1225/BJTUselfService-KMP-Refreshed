@@ -91,15 +91,18 @@ class AutomaticLoginCoordinatorTest {
     }
 
     @Test
-    fun unavailablePlatformModelStillUsesThreeFreshChallengesBeforeFallback() = runSuspend {
+    fun unavailablePlatformModelReturnsFirstChallengeForManualEntry() = runSuspend {
         val gateway = FakeAutomationGateway()
         val result = assertIs<AutomaticLoginResult.ManualRequired>(
             AutomaticLoginCoordinator(gateway, UnavailableCaptchaRecognizer)
                 .login(Credentials("student", "secret")),
         )
 
-        assertEquals(3, result.attempts)
-        assertEquals(listOf(1, 2, 3), gateway.challengeIds)
+        assertEquals(1, result.attempts)
+        assertEquals(listOf(1), gateway.challengeIds)
+        assertEquals(1, gateway.challengeRequestCount)
+        assertEquals("captcha-1", result.challenge?.captchaId)
+        assertEquals(LoginFailure.CAPTCHA_RECOGNITION_FAILED, result.reason)
         assertEquals(0, gateway.authenticationCount)
     }
 

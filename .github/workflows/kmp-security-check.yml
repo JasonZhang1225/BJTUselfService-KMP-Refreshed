@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   android:
-    name: Android compile security check
+    name: Android debug and optimized release checks
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     defaults:
@@ -43,7 +43,7 @@ jobs:
             -storepass ci-compile-only -keypass ci-compile-only -alias ci-compile \
             -dname "CN=CI Compile Only" -keyalg RSA -keysize 2048 -validity 1
 
-      - name: Compile Android without packaging
+      - name: Build debug and optimized release APKs
         env:
           BJTU_ANDROID_KEYSTORE: ${{ runner.temp }}/compile-only.keystore
           BJTU_ANDROID_STORE_PASSWORD: ci-compile-only
@@ -51,7 +51,37 @@ jobs:
           BJTU_ANDROID_KEY_PASSWORD: ci-compile-only
         run: |
           chmod +x ./gradlew
-          ./gradlew :shared:compileAndroidMain :androidApp:compileDebugKotlin --stacktrace
+          ./gradlew :androidApp:assembleDebug :androidApp:assembleRelease --stacktrace
+
+      - name: Inspect optimized APK contents and size
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          apks = list(Path("androidApp/build/outputs/apk/release").glob("*-arm64-v8a-release.apk"))
+          assert len(apks) == 1, f"Expected one arm64 release APK, found {apks}"
+          apk = apks[0]
+          with ZipFile(apk) as archive:
+              obsolete = [name for name in archive.namelist()
+                          if name.lower().endswith((".onnx", ".pt", ".ptl"))
+                          or "onnxruntime" in name.lower()
+                          or "pytorch" in name.lower()]
+          assert not obsolete, f"Obsolete captcha files in APK: {obsolete}"
+          mapping = Path("androidApp/build/outputs/mapping/release/mapping.txt")
+          assert mapping.is_file(), "R8 mapping missing: release was not minified"
+          print(f"{apk.name}: {apk.stat().st_size:,} bytes ({apk.stat().st_size / 1024**2:.2f} MiB)")
+          PY
+
+      - name: Upload CI-only release APK and R8 reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-ci-only
+          # This APK uses the disposable CI key, not the release upload key.
+          path: |
+            multiplatform/androidApp/build/outputs/apk/release/*.apk
+            multiplatform/androidApp/build/outputs/mapping/release/
+          if-no-files-found: error
 
   apple:
     name: iOS compile and macOS security tests

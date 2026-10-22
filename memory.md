@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-22。
-> 当前分支：`main`。PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`），细节见 `history_full.md`。远端另保留 `claude/宣传图制作`、`feat/chatgpt-agent-remote`（AI Agent，开发中）。
+> 当前分支：`perf/android-release-size`（基于 `main`，Android 瘦身 PR 待合入）。PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`），细节见 `history_full.md`。远端另保留 `claude/宣传图制作`、`feat/chatgpt-agent-remote`（AI Agent，开发中）。
 > KMP 源码版本：`1.8.6-Alpha` / Build 41（尚未发版）；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。iOS 最低系统 18.0。
 > 2026-10-22 仓库清理：冻结原 Android 工程（`app/` 与根 Gradle 工程、`release.yml`/`debug.yml`）与验证码 torch 模型（含 Windows `BJTUCaptcha.pt`、DJL）已移除，存档于标签 `archive/legacy-android-and-captcha-model`（`8189baf`）；Windows 验证码改为手动输入。只保留 `origin` 远端；GitHub 上仍是 `HFDLYS/BJTUselfService` 的 fork，由所有者在 Settings 解除。
 > 认证现状（2026-10-20）：MIS 走统一身份认证 sso.bjtu.edu.cn（SM2 加密密码、默认免验证码）；物理在线用独立账号密码；智慧教学仍卡在学校的旧 CAS 跳转。
@@ -9,6 +9,7 @@
 
 ## 进行中
 
+- Android 安装包瘦身（`perf/android-release-size`，Codex）：移除 ONNX 模型、识别实现和运行库；保留 SSO 免验证码登录与手动验证码路径，模型不可用时首张图片直接转手动；release 开启 R8 与资源缩减。PR CI 构建 debug/release，检查 APK 模型残留并报告大小，产物仅使用一次性 CI 签名。此环境 Git 代理连接失败，未在本地执行 Gradle；实际 APK 大小、裁剪后登录与真机覆盖安装仍待 CI/实机验证。Apple Core ML 与桌面打包本次不变。
 - AI Agent（`feat/chatgpt-agent-remote`）：开发中，约七八成；合入后再清理 main 里经紧急修复带进来的半成品 AI 代码。
 - 已合入功能的待真机验证（不阻塞）：
   - 灵动岛/实时活动：收起态最终版截图（等实际上课时）；开课时“即将上课”切“正在上课”；两个实时活动并存时的最小态小圆环；Live 菜单读屏自定义操作。

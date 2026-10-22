@@ -11,24 +11,20 @@ class SecurityReleaseConfigTest {
     private val root = findRepositoryRoot()
 
     @Test
-    fun androidCaptchaUsesPinnedOnnxArtifactAndRecordedChecksum() {
+    fun androidDoesNotBundleObsoleteCaptchaModelOrRuntime() {
         val catalog = root.resolve("multiplatform/gradle/libs.versions.toml").readText()
-        assertTrue("onnxRuntime = \"1.30.0\"" in catalog)
+        assertFalse("onnxRuntime" in catalog)
+        assertFalse("onnxruntime-android" in catalog)
         assertTrue("okhttp = \"5.3.2\"" in catalog)
         assertFalse("pytorchAndroid" in catalog)
 
         val onnx = root.resolve("multiplatform/androidApp/src/main/assets/BJTUCaptcha.onnx")
         val legacy = root.resolve("multiplatform/androidApp/src/main/assets/BJTUCaptcha.pt")
-        assertTrue(onnx.isFile)
+        assertFalse(onnx.exists())
         assertFalse(legacy.exists())
 
-        val manifest = root.resolve("multiplatform/tools/captcha/validation_manifest.json").readText()
-        val expected = Regex("\"android_onnx_sha256\"\\s*:\\s*\"([0-9a-f]{64})\"")
-            .find(manifest)
-            ?.groupValues
-            ?.get(1)
-            ?: error("android_onnx_sha256 missing")
-        assertEquals(expected, sha256(onnx))
+        val shared = root.resolve("multiplatform/shared/build.gradle.kts").readText()
+        assertFalse("libs.onnxruntime" in shared)
     }
 
     @Test

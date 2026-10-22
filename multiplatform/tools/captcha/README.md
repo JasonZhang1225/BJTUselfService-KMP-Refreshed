@@ -1,5 +1,9 @@
 # 验证码模型转换
 
+> Android 瘦身后不再内置 ONNX 模型和运行库，使用手动验证码输入；SSO 免验证码登录不受影响。
+> 以下脚本保留作历史复现及 Apple 模型维护，不代表 Android 当前打包流程。
+> 不要将转换生成的 `androidApp/src/main/assets/BJTUCaptcha.onnx` 提交回应用。
+
 > 1.8.6 起冻结 Android 工程（含参考模型 `app/src/main/assets/model.pt`）与 Windows 的
 > `BJTUCaptcha.pt` 已从 main 移除，存档在标签 `archive/legacy-android-and-captcha-model`。重新转换前先从该标签取回模型：
 > `git show archive/legacy-android-and-captcha-model:app/src/main/assets/model.pt > model.pt`。
