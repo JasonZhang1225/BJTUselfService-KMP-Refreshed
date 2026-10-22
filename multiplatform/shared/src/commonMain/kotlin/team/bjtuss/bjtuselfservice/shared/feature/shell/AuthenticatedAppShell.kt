@@ -194,6 +194,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinato
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeWorkspace
+import team.bjtuss.bjtuselfservice.shared.feature.home.LiveActivityPermissionIntroDialog
+import team.bjtuss.bjtuselfservice.shared.feature.home.rememberLiveActivityPermissionIntro
 import team.bjtuss.bjtuselfservice.shared.feature.home.homeIdleStatusText
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeSyncItem
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeSyncItemState
@@ -1086,6 +1088,12 @@ fun AuthenticatedAppShell(
     val showRelease184Guide = showGuideOnThisHost && !urgentNoticeVisible && !showRelease183Guide &&
         !settingsState.preferences.release184GuideAcknowledged
     val blockingGuideVisible = urgentNoticeVisible || showRelease183Guide || showRelease184Guide
+    // 实时活动的通知权限说明（只有 Android 有）：版本说明都确认后再问，排在更新提示前，一次只弹一个。
+    val liveActivityPermissionIntro = if (showGuideOnThisHost && !blockingGuideVisible) {
+        rememberLiveActivityPermissionIntro()
+    } else {
+        null
+    }
     when {
         showEmergencyFix185Notice -> EmergencyFix185NoticeDialog(
             settingsState.saveFailed,
@@ -1097,6 +1105,7 @@ fun AuthenticatedAppShell(
         )
         showRelease183Guide -> Release183GuideDialog(settingsState.saveFailed, settingsModel::acknowledgeRelease183Guide)
         showRelease184Guide -> Release184GuideDialog(settingsState.saveFailed, settingsModel::acknowledgeRelease184Guide)
+        liveActivityPermissionIntro != null -> LiveActivityPermissionIntroDialog(liveActivityPermissionIntro)
         else -> AppUpdateResultDialog(settingsState.updateCheck, settingsModel::dismissUpdateCheck, settingsModel::postponeUpdate)
     }
     partialSyncFailureDialogItems?.takeUnless { blockingGuideVisible }?.let { items ->

@@ -11,7 +11,6 @@ import team.bjtuss.bjtuselfservice.shared.cache.createAppleCacheStore
 import team.bjtuss.bjtuselfservice.shared.security.createAppleAccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.files.IosHomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeBarAction
-import team.bjtuss.bjtuselfservice.shared.auth.IosCoreMlCaptchaRecognizer
 import team.bjtuss.bjtuselfservice.shared.calendar.IosSystemCalendarGateway
 
 // 预热 WebKit：首次创建 WKWebView 要启动 WebContent 进程并初始化渲染子系统（主线程，秒级），
@@ -154,7 +153,6 @@ private fun createMainViewController(
     lateinit var controller: UIViewController
     val homeworkFileGateway = IosHomeworkFileGateway { controller }
     val systemCalendarGateway = IosSystemCalendarGateway()
-    val captchaRecognizer = IosCoreMlCaptchaRecognizer()
     val nativeSheetPresenter = IosNativeSheetPresenter { controller }
     controller = ComposeUIViewController(
         configure = { opaque = false },
@@ -165,7 +163,6 @@ private fun createMainViewController(
             homeworkFileGateway = homeworkFileGateway,
             coursewareDirectoryGateway = homeworkFileGateway,
             systemCalendarGateway = systemCalendarGateway,
-            captchaRecognizer = captchaRecognizer,
             nativeNavigationEnabled = nativeNavigationEnabled,
             nativeTabBarEnabled = nativeTabBarEnabled,
             nativeSheetPresenter = nativeSheetPresenter,

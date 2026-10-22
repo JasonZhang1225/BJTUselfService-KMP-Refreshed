@@ -977,3 +977,42 @@
 - 原因/决策：用户决定。旧数字算式验证码已不再出现，新的字母验证码通常不出现且 torch 模型识别不了；冻结工程不再作参考。仓库在 GitHub 上仍是 `HFDLYS/BJTUselfService` 的 fork，需所有者在 Settings → Leave fork network 解除，本地只保留 `origin`。
 - 验证：见 PR 描述（`:shared:desktopTest`、`:windowsApp:compileKotlinWindows`/`compileTestKotlinWindows`）。
 - 未验证：Windows 真机遇到验证码时的手动输入路径。
+
+## 2026-10-22 课程实时动态：Android 16 Live Updates 与双端课前准点出现（PR #46，`feat/Android-LiveUpdates`，提交 `8108fcd`、`e549885`，合并提交 `aac1816`）
+
+- 改动：
+  - Android 端复用 iOS 灵动岛规则做“课程实时动态”，只用 Android 16 原生 Live Updates（常驻通知写 `android.requestPromotedOngoing` extra，即 `setRequestPromotedOngoing`；权限 `POST_PROMOTED_NOTIFICATIONS`），不用小米焦点通知（需上架小米商店并进白名单）。Android 16 以下不显示 Live 按钮、不发通知。
+  - 规则抽到 shared `LiveActivityPlan.kt`（`planLiveActivity`/`liveActivityNextBoundary`，对应 Swift `desiredState`/`nextBoundary`，`LiveActivityPlanTest` 9 项）：课前 10/20 分钟出现、课间 30 分钟内接力、关闭/划掉不再自动出现、手动开启优先。
+  - 宿主 `androidApp/.../live/CourseLiveUpdates.kt` 读课程小组件快照发通知；首页 Live 胶囊 + 下拉菜单（`LiveActivityButton.android.kt`），首次点“允许通知并开启”才申请通知权限。外观：小图标按类别为课本/烧瓶/试卷/跑步（`ic_live_kind_*.xml`），胶囊短文字“12:58开始”“12:20下课”，第二行“正在上课 · 距下课 N 小时 N 分钟”，第三行“时间 · 地点 · 教师”，ProgressStyle 类别色进度条逐分钟更新，到下课 `setTimeoutAfter` 自动消失。
+  - 定时：课前 N 分钟、开课、下课、零点用 `setExactAndAllowWhileIdle` + `USE_EXACT_ALARM`（安装即授予），每次只约下一个；逐分钟刷新为非唤醒 RTC。
+  - iOS 26+：前台对齐时用 `Activity.request(…, alertConfiguration:, start:)` 预约下一项需要新开实时活动的日程（今天和明天，课前 N 分钟），系统准点启动并以默认提示音提醒，至多一个预约；重叠或紧挨（出现时刻在当前项结束后 30 分钟内，沿接力链）的日程由同一个实时活动接上，不另约；关掉的不约；提前时间、课表、关闭、退出登录变化时取消重约。iOS 18–25 不变。
+  - debug 测试入口：Android `LiveUpdateSmokeActivity`（虚构课程），iOS 启动参数 `-BJTULiveActivityScheduleTest <秒>`。
+- 原因/决策：
+  - 外观取舍：HyperOS 去掉推广通知的颜色/加粗 span；大图标会在灵动岛右侧重复一个，已去掉；进度条跟随图标像滑块，已去掉；系统秒级计时（标题旁跳秒）改为按分钟的文字；通知中心左侧固定为 App 图标，无法改。
+  - `setAndAllowWhileIdle` 实测窗口达 1 小时，不够准，改用精确闹钟（GitHub Release 分发，不受 Play 对 `USE_EXACT_ALARM` 的限制）。
+  - CI 镜像的 android-36 平台缺 `setRequestPromotedOngoing`，改为直接写同名 extra，实测仍推广。
+  - iOS 没有“到点拉起 App”的机制；iOS 26 预约启动不需要推送服务器或开发者账号，SideStore 包可用。AlarmKit 是带铃声的系统闹钟，不用于课前提醒。
+- 验证：
+  - 命令：`:shared:desktopTest`、`:shared:compileKotlinIosSimulatorArm64`、`:desktopApp:compileKotlin`、`:windowsApp:compileKotlinWindows`、`:androidApp:assembleDebug` 通过；iOS 签名模拟器 `xcodebuild … -sdk iphonesimulator CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES DEVELOPMENT_TEAM=34S53DC6T6 … build` BUILD SUCCEEDED；PR CI（Android compile security check、iOS compile and macOS security tests）在 `e549885` 上通过。
+  - 小米平板（HyperOS 4.0，API 37，targetSdk 35）：`PROMOTED_ONGOING` 生效；状态栏胶囊、灵动岛展开态、通知中心正常；“关闭”与划掉记入不再自动出现；用户经 Live 菜单授予通知权限；真实课程在上课时段自动出现；浅色模式外观无变化（用户实测）；进程被杀（非强停）+ 息屏，精确闹钟 10:20:00.3 准点拉起并显示“即将上课”；HyperOS 自启动关闭（MIUIOP 10008=ignore）不影响自家闹钟。
+  - iOS 模拟器（iPhone 17 Pro / iOS 27.1）：真实课表下预约到次日第一节课前 10 分钟；用 debug 参数预约后杀掉 App，系统在 14:10:51 启动实时活动并弹提醒（`liveactivitiesd` 日志 “Starting delayed activity”），随后后台拉起 App。
+- 未验证：iOS 真机提醒声音与灵动岛展开效果、重叠/紧挨日程实际表现、划掉系统启动的一项后不再出现；非 HyperOS 原生 Android 16 样式；长时间不打开 App 后待机分组对闹钟的影响；最近任务未加锁时划掉 App（强停）的表现（按规则推断会清掉闹钟和通知）。
+
+## 2026-10-22 各平台验证码模型移除、安装包瘦身与登录重试收紧（PR #45，`perf/android-release-size`）
+
+- 改动：
+  - 删除不再适用的验证码识别模型：Android 删 `BJTUCaptcha.onnx` 与 ONNX Runtime 依赖；Apple 删 `BJTUCaptcha.mlpackage`、iOS/macOS Core ML 识别代码、macOS `CaptchaCoreMLHelper` 及其编译/复制任务；`tools/captcha` 只留说明。各端需要验证码时走既有“显示图片 → 刷新 → 手动填写”路径。
+  - Android release 开启 R8 与资源缩减（`isMinifyEnabled`/`isShrinkResources`，`proguard-rules.pro` 依赖各库自带规则）。
+  - 自动登录收紧（`AutomaticLoginCoordinator`）：只有获取登录页/挑战失败最多重试 3 次，密码 POST 最多 1 次；拒绝、异常或不明确响应即转手动，不重放；无模型时直接把首张验证码交给用户；`CancellationException` 向上传递。`SessionRefreshCoordinator` 同一批刷新最多恢复 1 次会话；手动验证码提交防重复；登录页提示文案改为不暗示密码错误。
+  - 桌面安装包：新增 `multiplatform/gradle/desktop-native-filter.gradle.kts`（Gradle artifact transform），sqlite-jdbc（内置 24 个平台）与 JNA（28 个平台）的 jar 在运行时 classpath 上只保留 macOS arm64 / Windows x64 原生库，按扩展名删除，类文件不变；两个 jar 合计约 16.4 MB→1.1 MB。
+  - CI（`kmp-security-check.yml`）：Android 构建 debug + release 并检查模型残留与 R8 mapping；Apple 任务先编译桌面测试，再分别跑 macOS 与 iOS 测试并上传两端报告；新增 macOS/Windows 应用镜像构建，检查模型残留、只剩本平台原生库并报告体积。
+- 原因/决策：
+  - 新的字母验证码现有模型识别不了，且 MIS SSO 默认免验证码；模型只增加体积。
+  - 重复提交密码会累积失败次数、可能触发验证码甚至锁号，故提交后任何失败都停下交给用户。
+  - 桌面 jlink `--compress=2` 试过后撤回：打包 #107（未压缩）→ #108（压缩）Actions 归档 DMG 100.56→108.03 MB、MSI 90.71→97.88 MB，预压缩的运行时让 DMG/MSI 容器压缩失效，下载反而变大。
+  - 桌面 ProGuard（Compose release 打包）可再缩 jar，但 serialization、sqlite-jdbc、JNA、Ktor 依赖反射，需要逐条保留规则并全量实机回归；用户决定暂不做。
+- 验证：
+  - 打包 #111（`e6c67fb`）对比 #107（Actions 归档字节）：DMG 100,559,641→85,256,239（−15.2%），MSI 90,713,242→75,437,068（−16.8%），IPA 22,155,944 与 APK 3,100,580 不变；首轮 CI 中 release APK 5,893,616 字节。
+  - 安全检查 #170（`e6c67fb`，手动触发：该次推送未触发 PR 工作流）Android、Windows、Apple 三项通过；本地 Linux `:windowsApp:createDistributable`（开启配置缓存）镜像内只剩 Windows x64 原生库，JNA 124 / sqlite-jdbc 129 个类与原 jar 一致；CI 断言用 #107 的 DMG 回放会失败（各含 24/28 个平台原生库），证明断言有效。
+  - 用户在 Mac 上实测 #111 的 DMG 通过。
+- 未验证：Windows MSI 的启动、本地缓存读写与 DPAPI；Agent CLI smoke（Windows）未在最终提交上运行（只由 PR 事件触发）；需要验证码时的手动弹窗与静默登录失败引导；Android release 包签名覆盖安装。

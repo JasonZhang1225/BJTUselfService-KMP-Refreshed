@@ -80,7 +80,6 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
 import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -112,10 +111,6 @@ fun PhyVlabWorkspace(
     val retryDetail: () -> Unit = onRetryDetail ?: fun() {
         scope.launch { model.loadSelectedActivityDetail(force = true) }
     }
-    var showUpload by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    var showUploadConfirm by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    var uploadFiles by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<List<HomeworkFileContent>>(emptyList()) }
-    var uploadFeedback by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     var showFilters by remember { mutableStateOf(false) }
     val filters = state.filters
     val listState = rememberLazyListState()
@@ -137,13 +132,6 @@ fun PhyVlabWorkspace(
     LaunchedEffect(state.selectedActivity, showDetailSheet) {
         if (showDetailSheet && state.selectedActivity != null) model.loadSelectedActivityDetail()
     }
-    LaunchedEffect(state.selectedActivity) {
-        showUpload = false
-        showUploadConfirm = false
-        uploadFiles = emptyList()
-        uploadFeedback = null
-    }
-
     // 原生栏 underlap 时居中态保持老位置（外层无占位，这里按栏高补回）。
     val topClearance = LocalTopBarClearance.current
     Column(modifier = modifier.fillMaxSize()) {
@@ -289,55 +277,11 @@ fun PhyVlabWorkspace(
                 submissionRevision = state.submissionRevision,
                 nowEpochSeconds = nowEpochSeconds,
                 onRetry = retryDetail,
-                onUpload = {
-                    uploadFiles = emptyList()
-                    uploadFeedback = null
-                    showUpload = true
-                },
                 onOpenWeb = { onOpenActivity(activity.activityUrl) },
             )
         }
     }
 
-    if (showUpload) {
-        PhyVlabUploadDialog(
-            files = uploadFiles,
-            feedback = uploadFeedback,
-            isSubmitting = state.isSubmitting,
-            onPickFiles = {
-                scope.launch {
-                    when (val result = fileGateway.pickFiles()) {
-                        HomeworkFilePickResult.Cancelled -> Unit
-                        is HomeworkFilePickResult.Failed -> uploadFeedback = "无法读取所选文件，请重新选择。"
-                        is HomeworkFilePickResult.Selected -> {
-                            uploadFiles = (uploadFiles + result.files).distinctBy { it.fileName }
-                            uploadFeedback = null
-                        }
-                    }
-                }
-            },
-            onRemoveFile = { index -> uploadFiles = uploadFiles.filterIndexed { i, _ -> i != index } },
-            onSubmit = { showUploadConfirm = true },
-            onDismiss = { if (!state.isSubmitting) showUpload = false },
-        )
-    }
-
-    if (showUploadConfirm) {
-        AppleSheetOrAlert(
-            onDismissRequest = { if (!state.isSubmitting) showUploadConfirm = false },
-            title = "确认保存物理在线作业文件？",
-            confirmLabel = "保存文件",
-            onConfirm = {
-                showUploadConfirm = false
-                showUpload = false
-                scope.launch { model.submitSelectedActivity(uploadFiles) }
-            },
-            confirmEnabled = uploadFiles.isNotEmpty() && !state.isSubmitting,
-            dismissLabel = "取消",
-        ) {
-            Text("将保存 ${uploadFiles.size} 个文件到“${state.selectedActivity?.title.orEmpty()}”的草稿。保存后仍可修改，核对文件后需单独点击最终提交。")
-        }
-    }
 }
 
 /** 紧凑端物理在线作业详情二级页；宽屏不使用此入口，仍由根列表弹出底部详情。 */
@@ -355,18 +299,10 @@ fun PhyVlabDetailWorkspace(
     val retryDetail: () -> Unit = onRetry ?: fun() {
         scope.launch { model.loadSelectedActivityDetail(force = true) }
     }
-    var showUpload by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    var showUploadConfirm by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    var uploadFiles by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<List<HomeworkFileContent>>(emptyList()) }
-    var uploadFeedback by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     val nowEpochSeconds = rememberPhyVlabNowEpochSeconds()
 
     LaunchedEffect(model, state.selectedActivity) {
         if (state.selectedActivity != null) model.loadSelectedActivityDetail()
-        showUpload = false
-        showUploadConfirm = false
-        uploadFiles = emptyList()
-        uploadFeedback = null
     }
 
     val activity = state.selectedActivity
@@ -394,54 +330,10 @@ fun PhyVlabDetailWorkspace(
             fullScreen = true,
             modifier = modifier,
             onRetry = retryDetail,
-            onUpload = {
-                uploadFiles = emptyList()
-                uploadFeedback = null
-                showUpload = true
-            },
             onOpenWeb = { onOpenActivity(selectedActivity.activityUrl) },
         )
     }
 
-    if (showUpload) {
-        PhyVlabUploadDialog(
-            files = uploadFiles,
-            feedback = uploadFeedback,
-            isSubmitting = state.isSubmitting,
-            onPickFiles = {
-                scope.launch {
-                    when (val result = fileGateway.pickFiles()) {
-                        HomeworkFilePickResult.Cancelled -> Unit
-                        is HomeworkFilePickResult.Failed -> uploadFeedback = "无法读取所选文件，请重新选择。"
-                        is HomeworkFilePickResult.Selected -> {
-                            uploadFiles = (uploadFiles + result.files).distinctBy { it.fileName }
-                            uploadFeedback = null
-                        }
-                    }
-                }
-            },
-            onRemoveFile = { index -> uploadFiles = uploadFiles.filterIndexed { i, _ -> i != index } },
-            onSubmit = { showUploadConfirm = true },
-            onDismiss = { if (!state.isSubmitting) showUpload = false },
-        )
-    }
-
-    if (showUploadConfirm) {
-        AppleSheetOrAlert(
-            onDismissRequest = { if (!state.isSubmitting) showUploadConfirm = false },
-            title = "确认保存物理在线作业文件？",
-            confirmLabel = "保存文件",
-            onConfirm = {
-                showUploadConfirm = false
-                showUpload = false
-                scope.launch { model.submitSelectedActivity(uploadFiles) }
-            },
-            confirmEnabled = uploadFiles.isNotEmpty() && !state.isSubmitting,
-            dismissLabel = "取消",
-        ) {
-            Text("将保存 ${uploadFiles.size} 个文件到“${activity?.title.orEmpty()}”的草稿。保存后仍可修改，核对文件后需单独点击最终提交。")
-        }
-    }
 }
 
 @Composable
@@ -617,13 +509,12 @@ private fun PhyVlabAssignmentDetailContent(
     fileGatewayAvailable: Boolean,
     nowEpochSeconds: Long,
     onRetry: () -> Unit,
-    onUpload: () -> Unit,
     onOpenWeb: () -> Unit,
     fullScreen: Boolean = false,
     modifier: Modifier = Modifier,
     fileGateway: HomeworkFileGateway = team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway,
     isSubmitting: Boolean = false,
-    onSaveFiles: (List<HomeworkFileContent>, Set<String>) -> Unit = { _, _ -> onUpload() },
+    onSaveFiles: (List<HomeworkFileContent>, Set<String>) -> Unit = { _, _ -> },
     onFinalize: () -> Unit = {},
     onPrepareFinalization: suspend () -> Boolean = { true },
     finalizationStatement: String? = null,
@@ -787,17 +678,13 @@ private fun PhyVlabAssignmentDetailContent(
         }
     }
     LaunchedEffect(submissionRevision) { showFileEditor = false }
-    if (showFileEditor && detail != null) AppleSheet(onDismissRequest = { if (!isSubmitting) showFileEditor = false },
-        title = "上传作业", needsFullHeight = true, scrollableBody = true) {
-        val uploadScroll = rememberScrollState()
-        Column(Modifier.fillMaxWidth().verticalScroll(uploadScroll).desktopTouchScroll(uploadScroll).padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentFilesEditor(
-                detail.submittedFiles.map { it.fileName }, fileGateway, isSubmitting,
-                "先保存文件并检查，再最终提交。最终提交后不能修改文件。",
-                "保存文件", onSave = onSaveFiles, revision = submissionRevision)
-            feedback?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-        }
+    if (showFileEditor && detail != null) AssignmentUploadSheet(title = "上传作业", busy = isSubmitting,
+        onDismissRequest = { showFileEditor = false }) {
+        AssignmentFilesEditor(
+            detail.submittedFiles.map { it.fileName }, fileGateway, isSubmitting,
+            "文件先保存为草稿，核对后再在详情页点“最终提交”。最终提交后不能修改文件。",
+            "保存为草稿", onSave = onSaveFiles, revision = submissionRevision)
+        feedback?.let { AssignmentUploadMessage(it, isError = false) }
     }
     if (confirmFinal) PhyVlabFinalizationDialog(
         title = activity.title,
@@ -1010,53 +897,6 @@ private fun kotlinx.datetime.DayOfWeek.chineseLabel(): String = when (this) {
     kotlinx.datetime.DayOfWeek.FRIDAY -> "周五"
     kotlinx.datetime.DayOfWeek.SATURDAY -> "周六"
     kotlinx.datetime.DayOfWeek.SUNDAY -> "周日"
-}
-
-@Composable
-private fun PhyVlabUploadDialog(
-    files: List<HomeworkFileContent>,
-    feedback: String?,
-    isSubmitting: Boolean,
-    onPickFiles: () -> Unit,
-    onRemoveFile: (Int) -> Unit,
-    onSubmit: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val scrollState = rememberScrollState()
-    AppleSheetOrAlert(
-        onDismissRequest = onDismiss,
-        title = "上传物理在线作业",
-        confirmLabel = if (isSubmitting) "提交中" else "继续",
-        onConfirm = onSubmit,
-        confirmEnabled = files.isNotEmpty() && !isSubmitting,
-        dismissLabel = "取消",
-        dismissEnabled = !isSubmitting,
-        needsFullHeight = true,
-    ) {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 480.dp)
-                    .verticalScroll(scrollState)
-                    .desktopTouchScroll(scrollState),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text("先选择文件，确认后才会发送到物理在线。", style = MaterialTheme.typography.bodyMedium)
-                OutlinedButton(onClick = onPickFiles, enabled = !isSubmitting, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (files.isEmpty()) "选择文件" else "继续添加文件")
-                }
-                if (files.isEmpty()) {
-                    Text("尚未选择文件", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    files.forEachIndexed { index, file ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(file.fileName, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            TextButton(onClick = { onRemoveFile(index) }, enabled = !isSubmitting) { Text("移除") }
-                        }
-                    }
-                }
-                feedback?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            }
-    }
 }
 
 @Composable

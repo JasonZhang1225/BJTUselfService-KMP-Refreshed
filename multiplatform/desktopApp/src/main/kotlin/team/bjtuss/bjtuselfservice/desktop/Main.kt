@@ -19,12 +19,9 @@ import java.awt.desktop.AppReopenedListener
 import java.awt.event.WindowEvent
 import java.awt.event.WindowFocusListener
 import java.io.File
-import kotlinx.coroutines.runBlocking
 import team.bjtuss.bjtuselfservice.shared.App
 import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
 import team.bjtuss.bjtuselfservice.shared.registerDesktopCredentialWindowHandle
-import team.bjtuss.bjtuselfservice.shared.auth.CaptchaRecognitionResult
-import team.bjtuss.bjtuselfservice.shared.auth.DesktopCoreMlCaptchaRecognizer
 import team.bjtuss.bjtuselfservice.shared.cache.createDesktopCacheStore
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommand
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
@@ -37,7 +34,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import team.bjtuss.bjtuselfservice.shared.system.DesktopWindowLifecycle
 import team.bjtuss.bjtuselfservice.shared.DesktopSyncStatusSmoke
 
-private const val CAPTCHA_VERIFICATION_ARGUMENT = "--verify-captcha-model="
 private const val SYNC_STATUS_SMOKE_ARGUMENT = "--sync-status-smoke"
 
 /** 进程级持有，防止锁对象被回收；进程退出时系统释放。 */
@@ -68,23 +64,6 @@ fun main(args: Array<String>) {
             }
         }
         return
-    }
-    val captchaRecognizer = DesktopCoreMlCaptchaRecognizer()
-    args.firstOrNull { it.startsWith(CAPTCHA_VERIFICATION_ARGUMENT) }?.let { argument ->
-        val image = File(argument.removePrefix(CAPTCHA_VERIFICATION_ARGUMENT))
-        require(image.isFile) { "验证码验证图片不存在：${image.absolutePath}" }
-        when (val result = runBlocking { captchaRecognizer.recognize(image.readBytes()) }) {
-            is CaptchaRecognitionResult.Success -> {
-                println(
-                    "captcha_model=ready expression=${result.value.expression} " +
-                        "answer=${result.value.answer}",
-                )
-                return
-            }
-            is CaptchaRecognitionResult.Failed -> {
-                error("captcha_model=failed reason=${result.reason}")
-            }
-        }
     }
     val accountSecurityStore = createDesktopAccountSecurityStore()
     val cacheStoreHandle = createDesktopCacheStore()
@@ -215,7 +194,6 @@ fun main(args: Array<String>) {
                         coursewareDirectoryGateway = homeworkFileGateway,
                         systemCalendarGateway = systemCalendarGateway,
                         appCommandBus = appCommandBus,
-                        captchaRecognizer = captchaRecognizer,
                         onAuthenticatedSessionChanged = {
                             authenticatedSession.value = it
                             currentSession.set(it)

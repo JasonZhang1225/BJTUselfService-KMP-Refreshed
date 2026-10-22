@@ -8,7 +8,7 @@ import kotlinx.coroutines.runBlocking
 import team.bjtuss.bjtuselfservice.shared.auth.AutomaticLoginCoordinator
 import team.bjtuss.bjtuselfservice.shared.auth.AutomaticLoginResult
 import team.bjtuss.bjtuselfservice.shared.auth.Credentials
-import team.bjtuss.bjtuselfservice.shared.auth.DesktopCoreMlCaptchaRecognizer
+import team.bjtuss.bjtuselfservice.shared.auth.UnavailableCaptchaRecognizer
 import team.bjtuss.bjtuselfservice.shared.auth.SchoolLoginProtocol
 import team.bjtuss.bjtuselfservice.shared.data.course.CourseScheduleRemoteException
 import team.bjtuss.bjtuselfservice.shared.data.course.SchoolCourseScheduleRemoteDataSource
@@ -31,26 +31,9 @@ class LiveCourseScheduleProbeTest {
         }
 
         val credentials = loadMisSecretCredentials()
-        // desktopTest 工作目录通常是 multiplatform/shared。
-        val helper = sequenceOf(
-            File("../desktopApp/build/generated/captcha/BJTUCaptchaHelper"),
-            File("desktopApp/build/generated/captcha/BJTUCaptchaHelper"),
-            File("../../desktopApp/build/generated/captcha/BJTUCaptchaHelper"),
-        ).map { it.absoluteFile }.firstOrNull { it.canExecute() }
-            ?: error("BJTUCaptchaHelper not found")
-        val model = sequenceOf(
-            File("../desktopApp/build/generated/captcha/model/BJTUCaptcha.mlmodelc"),
-            File("desktopApp/build/generated/captcha/model/BJTUCaptcha.mlmodelc"),
-            File("../../desktopApp/build/generated/captcha/model/BJTUCaptcha.mlmodelc"),
-        ).map { it.absoluteFile }.firstOrNull { it.isDirectory }
-            ?: error("BJTUCaptcha.mlmodelc not found")
-        println("CAPTCHA helper=${helper.absolutePath} model=${model.absolutePath}")
-        System.setProperty("bjtu.captcha.helper", helper.absolutePath)
-        System.setProperty("bjtu.captcha.model", model.absolutePath)
-
         val transport = createSchoolHttpTransport()
         val protocol = SchoolLoginProtocol(transport)
-        val captcha = DesktopCoreMlCaptchaRecognizer()
+        val captcha = UnavailableCaptchaRecognizer
 
         val login = AutomaticLoginCoordinator(protocol, captcha).login(credentials)
         when (login) {
@@ -165,12 +148,9 @@ class LiveCourseScheduleProbeTest {
     @Test
     fun probeHomeworkSyncAfterLogin() = runBlocking {
         if (System.getenv("BJTU_LIVE_HOMEWORK_PROBE") != "1") return@runBlocking
-        val base = File("../desktopApp/build/generated/captcha").absoluteFile
-        System.setProperty("bjtu.captcha.helper", File(base, "BJTUCaptchaHelper").absolutePath)
-        System.setProperty("bjtu.captcha.model", File(base, "model/BJTUCaptcha.mlmodelc").absolutePath)
         val delegate = createSchoolHttpTransport()
         val protocol = SchoolLoginProtocol(delegate)
-        val login = AutomaticLoginCoordinator(protocol, DesktopCoreMlCaptchaRecognizer())
+        val login = AutomaticLoginCoordinator(protocol, UnavailableCaptchaRecognizer)
             .login(loadMisSecretCredentials())
         check(login is AutomaticLoginResult.Authenticated || login is AutomaticLoginResult.SessionActive) {
             "Live probe needs an authenticated session"

@@ -191,7 +191,7 @@ private fun executorLabel(executor: String?) = when (executor) {
 private fun loginFailureOutput(login: AgentLoginOutcome, json: Boolean): AgentOutput {
     val (text, reason) = when (login) {
         is AgentLoginOutcome.ManualRequired -> "manual_required" to
-            "自动登录失败（${login.reason.name.lowercase()}）：验证码多次识别失败或密码已变更，请打开 App 手动登录。"
+            "自动登录失败（${login.reason.name.lowercase()}）：可能需要验证码、检查账号密码或恢复网络，已停止自动提交。请打开 App 手动登录。"
         AgentLoginOutcome.Network -> "network" to "无法连接学校系统，请检查网络后重试。"
         AgentLoginOutcome.Ok -> "ok" to "登录成功但没有执行刷新。"
     }

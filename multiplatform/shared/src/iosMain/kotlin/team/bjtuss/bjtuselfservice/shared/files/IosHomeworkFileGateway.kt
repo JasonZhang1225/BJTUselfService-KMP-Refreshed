@@ -40,7 +40,11 @@ import platform.UIKit.UIDocumentPickerViewController
 import platform.UIKit.UIViewController
 import platform.UniformTypeIdentifiers.UTTypeData
 import platform.UniformTypeIdentifiers.UTTypeFolder
+import platform.darwin.DISPATCH_TIME_NOW
 import platform.darwin.NSObject
+import platform.darwin.dispatch_after
+import platform.darwin.dispatch_get_main_queue
+import platform.darwin.dispatch_time
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
@@ -75,7 +79,12 @@ class IosHomeworkFileGateway(
             delegate = source
         }
         activePreview = source
-        owner().presentViewController(controller, animated = true, completion = null)
+        presentFromTop(controller) {
+            if (activePreview === source) {
+                activePreview = null
+                removeTemporary(temporary.directoryUrl)
+            }
+        }
         return HomeworkFilePreviewResult.Opened
     }
 
@@ -106,7 +115,9 @@ class IosHomeworkFileGateway(
             continuation.invokeOnCancellation {
                 cancel(delegate)
             }
-            owner().presentViewController(picker, animated = true, completion = null)
+            presentFromTop(picker) {
+                finish(delegate, continuation, HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE))
+            }
         }
     }
 
@@ -140,7 +151,12 @@ class IosHomeworkFileGateway(
                 removeTemporary(temporary.directoryUrl)
                 cancel(delegate)
             }
-            owner().presentViewController(picker, animated = true, completion = null)
+            presentFromTop(picker) {
+                if (activeDelegate === delegate) {
+                    removeTemporary(temporary.directoryUrl)
+                    finish(delegate, continuation, HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE))
+                }
+            }
         }
     }
 
@@ -191,7 +207,34 @@ class IosHomeworkFileGateway(
             continuation.invokeOnCancellation {
                 cancel(delegate)
             }
-            owner().presentViewController(picker, animated = true, completion = null)
+            presentFromTop(picker) {
+                finish(delegate, continuation, CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE))
+            }
+        }
+    }
+
+    /**
+     * 上传/保存入口常在 UIKit sheet 里（作业上传、日历导出），宿主控制器此时正呈现那张 sheet，
+     * 直接让它再 present 会被 UIKit 静默拒绝：选择器不出来，协程也永远等不到回调。
+     * 因此从最上层、且不在关闭动画中的控制器呈现。
+     *
+     * 文件选择器是系统远程界面，present 返回时 presentingViewController 可能仍为空，
+     * 不能同步判定成败；以呈现完成回调为准，超时仍未呈现才调用 [onRejected] 复位状态。
+     */
+    private fun presentFromTop(controller: UIViewController, onRejected: () -> Unit) {
+        var presenter = owner()
+        while (true) {
+            val next = presenter.presentedViewController ?: break
+            if (next.isBeingDismissed()) break
+            presenter = next
+        }
+        var presented = false
+        presenter.presentViewController(controller, animated = true) { presented = true }
+        dispatch_after(
+            dispatch_time(DISPATCH_TIME_NOW, PRESENT_CONFIRM_TIMEOUT_NS),
+            dispatch_get_main_queue(),
+        ) {
+            if (!presented && controller.presentingViewController == null) onRejected()
         }
     }
 
@@ -296,6 +339,9 @@ private data class TemporaryExport(
 )
 
 private const val PREVIEW_DIRECTORY_PREFIX = "bjtu-preview-"
+
+/** 呈现动画约 0.4 秒；留足余量，避免慢机上把正常弹出的选择器误判为被拒。 */
+private const val PRESENT_CONFIRM_TIMEOUT_NS = 2_000_000_000L
 
 @OptIn(ExperimentalForeignApi::class)
 private fun removeStalePreviewDirectories() {

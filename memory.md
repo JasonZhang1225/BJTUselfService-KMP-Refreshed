@@ -2,7 +2,7 @@
 
 > 最后更新：2026-10-22。
 > 本轮云端在 `feat/chatgpt-agent-remote@132b0d5` 完成一次交付 setup 修改及全新私人 Site/插件发布；实现已提交并推送为 `b70cec6`，供新对话从当前开发分支读取；旧 Site/插件已由用户删除。新站点和验证边界见 `docs/agent/setup-audit-2026-10-22.md`，本节最新记录覆盖下方旧实例状态。
-> 当前分支：`feat/chatgpt-agent-remote`，2026-10-22 已合入 main `9e7b4a7`（含下述 main 状态）。main 上 PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`），细节见 `history_full.md`。远端另保留 `claude/宣传图制作`、`feat/chatgpt-agent-remote`（AI Agent，开发中）。
+> 当前分支：`feat/chatgpt-agent-remote`，2026-10-22 已合入 main `ad2a082`（含下述 main 状态）。main 上 PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次、#46 课程实时动态、#45 验证码模型移除与安装包瘦身、#48 iOS 作业上传修复均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`、`aac1816`、`a58e7c6`、`ad2a082`）；同步时 `AgentCacheUpdate` 的登录失败提示改用 #45 的措辞，桌面 `Main.kt` 去掉已删除的 Core ML 验证码识别。细节见 `history_full.md`。远端另保留 `claude/宣传图制作`、`feat/chatgpt-agent-remote`（AI Agent，开发中）。
 > KMP 源码版本：`1.8.6-Alpha` / Build 41（尚未发版）；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。iOS 最低系统 18.0。
 > 2026-10-22 仓库清理：冻结原 Android 工程（`app/` 与根 Gradle 工程、`release.yml`/`debug.yml`）与验证码 torch 模型（含 Windows `BJTUCaptcha.pt`、DJL）已移除，存档于标签 `archive/legacy-android-and-captcha-model`（`8189baf`）；Windows 验证码改为手动输入。只保留 `origin` 远端；GitHub 上仍是 `HFDLYS/BJTUselfService` 的 fork，由所有者在 Settings 解除。
 > 认证现状（2026-10-20）：MIS 走统一身份认证 sso.bjtu.edu.cn（SM2 加密密码、默认免验证码）；物理在线用独立账号密码；智慧教学仍卡在学校的旧 CAS 跳转。
@@ -21,9 +21,12 @@
 - AI Agent（本分支）：开发中，约七八成；合入 main 后再清理 main 里经紧急修复带进来的半成品 AI 代码。下面先列 main 已合入功能的待验证项，再列 Agent 分支进行中事项。
 - 已合入功能的待真机验证（不阻塞）：
   - 灵动岛/实时活动：收起态最终版截图（等实际上课时）；开课时“即将上课”切“正在上课”；两个实时活动并存时的最小态小圆环；Live 菜单读屏自定义操作。
+  - iOS 26 预约启动（PR #46）：真机上的启动提醒声音与灵动岛展开效果；重叠/紧挨日程的实际表现；划掉系统启动的那一项后不再出现。
+  - Android 实时动态（PR #46）：非 HyperOS 的原生 Android 16 上的样式；长时间不打开 App、系统降低待机分组后闹钟是否仍准点；最近任务未加锁时划掉 App（强停）会清掉闹钟和通知（按规则推断，未实测）。
   - 图书馆：登录流程在 Copilot 修复后改过，需真机重新登录一次；iOS 横屏布局（浮动续借胶囊、顶栏高度）；Android 真机；续借只在早期版本实测过。
   - 作业搜索：iOS 系统搜索按钮展开/取消动画、搜索中进详情再返回；Android 返回键收起搜索；上课时段教室当前节次光晕与空闲/占用标签（浅/深色）。
-  - Windows：移除 torch 模型后，遇到验证码时手动输入路径未在 Windows 真机走过。
+  - Windows：移除 torch 模型后，遇到验证码时手动输入路径未在 Windows 真机走过；PR #45 原生库裁剪后的 MSI 启动与本地缓存（SQLite）读写、DPAPI 凭据读取未实机验证（Windows 冒烟未在最终提交上运行）。
+  - PR #45 登录收紧：需要验证码时的手动输入弹窗、静默自动登录失败后的引导弹窗、Android release（R8）包的签名覆盖安装，均未真机走过。
 
 - **手机 Chat 旧工具/补授权故障（2026-10-22，最新状态）。** 用户已安装最终 MSI，安装 cfg 时间 08:54:28；只读进程检查未发现遗留源码实例。真实 `get_status` 成功，原电脑设备未撤销、09:07 收到新快照 `snap_lTh9cz3pdwJn`，schema 2、三个作业来源 15/18/56 均可用。用户 HEIC 截图显示旧快照调用 `sources: [homework, exams, citel]`，随后“当前的连接不包含所需权限”；用户反馈登录后称已认证仍不能继续。新 Chat 已存在：`本周DDL`（6ad96254-193c-83ee-80ac-bbb70c3b7b73），read_thread 仅读到用户提问，不能再称用户未建 Chat。本任务通过同一有效 OAuth link 复测旧 `query_snapshot`，实际返回 unknown_tool；get_status 成功，说明配对/上传正常且该 link 可用，但不能证明手机补授权回调正常。canonical 插件仍 1.0.3，Skill/App 绑定已更新而平台工具目录仍旧。Sites 文档说明重发布会重新抓取 tools/list，故只重发相同保存版本 6（源码未改、无 MSI 重编译），部署 appgdep_6ad9647be294819189cae740b4ec67f9 已 succeeded/has_mcp=true。当前 Codex 会话仍仅暴露旧 6 工具，不能据部署成功宣称手机已修复；需手机重新进入插件连接后验证 get_homework。生产 Worker 日志中本轮 get_status 的 /mcp 为 200；未取得手机授权服务回调日志，不断言具体 OAuth 失败原因。下一步应验证新工具目录及手机同一插件连接；无需重新配对电脑，也无需为在手机 GPT 查询而配对手机 App。旧段落“等待新 Chat/最终 MSI 未安装/临时源码仍运行”已被本条覆盖，尚未完成手机 Chat 端到端查询。
 

@@ -5,8 +5,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,7 +31,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.course.tones
 import team.bjtuss.bjtuselfservice.shared.feature.widget.compactWidgetPlace
 
 /**
- * 首页“正在上/下一节”卡片对应的一项日程，交给系统实时活动（iOS 灵动岛）显示。
+ * 首页“正在上/下一节”卡片对应的一项日程，交给系统实时活动（iOS 灵动岛、Android 实时动态）显示。
  * 字段与课程小组件快照一致，iOS 宿主按 [id] 在快照里找到同一项；找不到时用这里的内容兜底。
  */
 data class LiveActivityTarget(
@@ -70,10 +73,36 @@ internal fun HomeNowSession.liveActivityTarget(date: LocalDate, category: Course
 
 /**
  * 卡片状态胶囊下方的 Live 按钮：点开菜单可重新开启或关闭这一项的实时活动；课前 10 或 20 分钟（菜单里选）会自动出现。
- * 只有 iOS 有实时活动，其余平台不占位置。
+ * iOS 为实时活动（灵动岛），Android 16+ 为实时动态（Live Updates）；其余平台不占位置。
  */
 @Composable
 internal expect fun LiveActivityButton(target: LiveActivityTarget, modifier: Modifier = Modifier)
+
+/**
+ * 实时活动要先授权的平台（Android 的通知权限）在首次进入主界面时说明一次用途；
+ * 已授权、问过或不需要授权的平台（iOS 实时活动不依赖通知权限）返回 null。
+ * 由壳层排进启动弹窗队列，排在版本说明之后，不与其它弹窗叠在一起。
+ */
+@Composable
+internal expect fun rememberLiveActivityPermissionIntro(): LiveActivityPermissionIntro?
+
+internal class LiveActivityPermissionIntro(val onAllow: () -> Unit, val onLater: () -> Unit)
+
+@Composable
+internal fun LiveActivityPermissionIntroDialog(intro: LiveActivityPermissionIntro) {
+    AlertDialog(
+        onDismissRequest = intro.onLater,
+        title = { Text("允许通知，显示课程实时动态") },
+        text = {
+            Text(
+                "上课前，交大自由行会在状态栏和通知栏顶部显示下一节课的倒计时，上课时显示距下课还有多久。\n\n" +
+                    "这需要通知权限，只用于实时动态，不会推送其他消息。之后也可以在首页课程卡片的 Live 菜单里开启或关闭。",
+            )
+        },
+        confirmButton = { TextButton(onClick = intro.onAllow) { Text("允许") } },
+        dismissButton = { TextButton(onClick = intro.onLater) { Text("暂不") } },
+    )
+}
 
 /**
  * Live 胶囊的外观：与卡片上的“下一节/正在上”状态胶囊同高同形，图标为无线电波。
