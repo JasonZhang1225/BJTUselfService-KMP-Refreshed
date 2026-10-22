@@ -38,6 +38,7 @@ internal fun AggregatedAssignmentWorkspace(
     fileGateway: HomeworkFileGateway,
     markdown: (AggregatedAssignment) -> String,
     detailContent: @Composable (AggregatedAssignment) -> Unit,
+    search: PageSearchState? = null,
 ) {
     var filters by remember(store) { mutableStateOf(store?.load() ?: AggregateAssignmentFilters()) }
     var showFilters by remember { mutableStateOf(false) }
@@ -45,9 +46,13 @@ internal fun AggregatedAssignmentWorkspace(
     val list = rememberLazyListState()
     var selectedKey by remember { mutableStateOf<String?>(null) }
     val visible = filterAggregateAssignments(assignments, filters, now)
+    // 搜索是独立的一层：结果来自全部作业，不经过筛选；列表顶部的同步横幅和筛选 banner 一并让位。
+    val searchActive = search?.active == true
+    val query = search?.query.orEmpty()
+    val results = if (searchActive) searchAggregateAssignments(assignments, query, filters.sortOrder) else emptyList()
     LaunchedEffect(Unit) { onInitialize() }
     LaunchedEffect(Unit) { while (true) { now = Clock.System.now().epochSeconds; delay(30_000) } }
-    LaunchedEffect(filters) { list.scrollToItem(0) }
+    LaunchedEffect(filters, searchActive, query) { list.scrollToItem(0) }
     val dueSoon = visible.count { !it.submitted && it.dueTime?.let { time -> time in now..(now + 48 * 3600) } == true }
     val subtitle = (if (dueSoon > 0) "未来 48 小时内有 $dueSoon 项未提交" else "未来 48 小时内暂无临近截止项") +
         if (filters.active) " · 已筛选" else ""
@@ -57,23 +62,38 @@ internal fun AggregatedAssignmentWorkspace(
         TopScrollLazyColumn(state = list, modifier = listModifier.desktopTouchScroll(list),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp + top, bottom = 24.dp + bottom),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            sync.filter { it.failed }.forEach { status ->
-                item("failure:${status.source}") {
-                    AppErrorBanner(title = "${status.source.label} · ${status.status}",
-                        message = status.message ?: "请检查网络或登录状态后重试。", onRetry = { onRefreshSource(status.source) })
+            if (searchActive) {
+                if (results.isEmpty()) item("search-empty") {
+                    PageSearchEmptyState(query, hint = "搜索课程名、作业标题或来源", modifier = Modifier.animateItem())
+                }
+            } else {
+                sync.filter { it.failed }.forEach { status ->
+                    item("failure:${status.source}") {
+                        Box(Modifier.animateItem()) {
+                            AppErrorBanner(title = "${status.source.label} · ${status.status}",
+                                message = status.message ?: "请检查网络或登录状态后重试。", onRetry = { onRefreshSource(status.source) })
+                        }
+                    }
+                }
+                item("summary") {
+                    Box(Modifier.animateItem()) { HomeworkSummaryBanner(visible.size, subtitle, onOpenFilter = { showFilters = true }) }
+                }
+                if (visible.isEmpty()) item("empty") {
+                    Column(Modifier.animateItem().fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(if (assignments.isEmpty()) "暂无作业" else "当前筛选下没有作业", style = MaterialTheme.typography.titleMedium)
+                        TextButton(onClick = { showFilters = true }) { Text("调整筛选") }
+                    }
                 }
             }
-            item("summary") { HomeworkSummaryBanner(visible.size, subtitle, onOpenFilter = { showFilters = true }) }
-            if (visible.isEmpty()) item("empty") {
-                Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(if (assignments.isEmpty()) "暂无作业" else "当前筛选下没有作业", style = MaterialTheme.typography.titleMedium)
-                    TextButton(onClick = { showFilters = true }) { Text("调整筛选") }
+            // 同一作业在列表与结果里沿用同一 key：打开搜索时匹配的卡片留在原地，其余淡出。
+            items(if (searchActive) results else visible, key = { it.key }) { item ->
+                Box(Modifier.animateItem()) {
+                    AggregatedAssignmentCard(item, now, expanded && item.key == selectedKey) {
+                        if (expanded) selectedKey = item.key
+                        onOpen(item)
+                    }
                 }
             }
-            items(visible, key = { it.key }) { item -> AggregatedAssignmentCard(item, now, expanded && item.key == selectedKey) {
-                if (expanded) selectedKey = item.key
-                onOpen(item)
-            } }
         }
     }
     if (expanded) {
@@ -81,7 +101,7 @@ internal fun AggregatedAssignmentWorkspace(
         CompositionLocalProvider(LocalNativeScrollControllerReporter provides null) {
             Row(modifier.fillMaxSize().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 renderList(Modifier.weight(0.4f).fillMaxHeight())
-                val selected = visible.firstOrNull { it.key == selectedKey }
+                val selected = assignments.firstOrNull { it.key == selectedKey }
                 AssignmentDetailPane(selected, fileGateway, selected?.let(markdown), Modifier.weight(0.6f).fillMaxHeight()) {
                     selected?.let { item -> key(item.key) { detailContent(item) } }
                 }
