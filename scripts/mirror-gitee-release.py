@@ -105,9 +105,9 @@ def sync_tag(tag):
     # Push only this tag; never force/mirror or rewrite main. Existing conflicting tags fail.
     with tempfile.TemporaryDirectory() as temp:
         askpass = Path(temp) / 'askpass'
-        askpass.write_text('#!/bin/sh\ncase "$1" in *Username*) printf "%s" "oauth2";; *) printf "%s" "$GITEE_TOKEN";; esac\n')
+        askpass.write_text('#!/bin/sh\ncase "$1" in *Username*) printf "%s" "$GITEE_USERNAME";; *) printf "%s" "$GITEE_TOKEN";; esac\n')
         askpass.chmod(0o700)
-        env = dict(os.environ, GIT_ASKPASS=str(askpass), GIT_TERMINAL_PROMPT='0')
+        env = dict(os.environ, GITEE_USERNAME=os.environ.get('GITEE_USERNAME') or GITEE_REPO.split('/')[0], GIT_ASKPASS=str(askpass), GIT_TERMINAL_PROMPT='0')
         result = subprocess.run(['git', 'push', f'https://gitee.com/{GITEE_REPO}.git', f'refs/tags/{tag}:refs/tags/{tag}'], env=env, capture_output=True)
         if result.returncode:
             raise MirrorError('Tag sync failed; check token permissions, repository quota and conflicting tags. No force push performed')

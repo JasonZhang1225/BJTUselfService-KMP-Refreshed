@@ -432,5 +432,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_USERNAME: ${{ vars.GITEE_USERNAME || 'zjg1225' }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: python3 scripts/mirror-gitee-release.py

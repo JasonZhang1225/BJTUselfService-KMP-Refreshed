@@ -5,7 +5,7 @@ GitHub 是发行事实来源。`kmp-package.yml` 的 `release` 任务成功后�
 ## 凭据配置
 
 1. 所有者在 [Gitee 私人令牌](https://gitee.com/profile/personal_access_tokens) 创建令牌，选择 **projects（仓库权限）**，账号需有 `zjg1225/BJTUselfService-KMP-Refreshed` 写入权限。API 没有单独的 Release 写权限 scope；建议使用仅能访问该镜像库的专用账号，限制令牌影响范围。
-2. 在 [GitHub Actions Secrets](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/settings/secrets/actions) 新建仓库 secret **GITEE_TOKEN**。不要填写进 YAML、聊天、普通仓库变量或提交。GitHub 读取已发布 Release 使用任务自带 `github.token`，不需要新增 GitHub PAT。
+2. 在 [GitHub Actions Secrets](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/settings/secrets/actions) 新建仓库 secret **GITEE_TOKEN**。不要填写进 YAML、聊天、普通仓库变量或提交。如果使用专用账号，在 Actions Variables 设置 `GITEE_USERNAME` 为该账号登录名（默认 `zjg1225`）；令牌仍必须放 Secrets。GitHub 读取已发布 Release 使用任务自带 `github.token`，不需要新增 GitHub PAT。
 3. 令牌只通过环境变量传给镜像脚本。标签以 `GIT_ASKPASS` 输入密码，只推当前标签，不强推、不覆盖 Gitee main。已有冲突标签会停止同步。
 
 没有配置 Token 时镜像任务明确报错；GitHub 发布继续成功。可在 Actions 中重跑失败任务，按文件名续传并重新验证全部附件；同名但内容不同的旧附件会报错，交由所有者处理，不自动覆盖或删除。
