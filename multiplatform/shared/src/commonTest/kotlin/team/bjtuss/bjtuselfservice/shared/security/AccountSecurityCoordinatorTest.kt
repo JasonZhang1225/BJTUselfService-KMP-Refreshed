@@ -9,6 +9,17 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class AccountSecurityCoordinatorTest {
+    @Test fun failedSaveDoesNotClearThePreviouslyRememberedPassword() = runSuspend {
+        val old = Credentials("fixture", "fixture-old")
+        val vault = FakeCredentialVault(failOnSave = true).apply { saved = old }
+        val preferences = FakeAccountPreferences(enabled = true)
+        val coordinator = AccountSecurityCoordinator(AccountSecurityStore(vault, preferences))
+        assertFalse(coordinator.persistAfterLogin(Credentials("fixture", "fixture-new"), true))
+        assertEquals(old, vault.saved)
+        assertEquals(0, vault.clearCount)
+        assertTrue(preferences.enabled)
+    }
+
     @Test
     fun savesRestoresAndClearsCredentialsInOrder() = runSuspend {
         val vault = FakeCredentialVault()
@@ -36,26 +47,27 @@ class AccountSecurityCoordinatorTest {
             AccountSecurityStore(FakeCredentialVault(), missingPreferences),
         )
         assertIs<CredentialRestoreResult.Empty>(missing.restore())
-        assertFalse(missingPreferences.enabled)
+        assertTrue(missingPreferences.enabled)
 
         val failingPreferences = FakeAccountPreferences(enabled = true)
-        val failingVault = FakeCredentialVault(failOnLoad = true)
+        val failingVault = FakeCredentialVault(failOnLoad = true).apply { saved = Credentials("fixture", "fixture-old") }
         val failing = AccountSecurityCoordinator(AccountSecurityStore(failingVault, failingPreferences))
         assertIs<CredentialRestoreResult.Failed>(failing.restore())
-        assertTrue(failingVault.clearCount > 0)
-        assertFalse(failingPreferences.enabled)
+        assertEquals(0, failingVault.clearCount)
+        assertEquals("fixture-old", failingVault.saved?.password)
+        assertTrue(failingPreferences.enabled)
     }
 
     @Test
-    fun unrememberedStatePurgesResidualVaultContent() = runSuspend {
+    fun missingRememberMarkerDoesNotRestoreOrDeleteResidualVaultContent() = runSuspend {
         // 模拟 iOS 卸载重装：记忆标记（NSUserDefaults）被清除，Keychain 密文残留。
         val vault = FakeCredentialVault().apply { saved = Credentials("student", "secret") }
         val preferences = FakeAccountPreferences(enabled = false)
         val coordinator = AccountSecurityCoordinator(AccountSecurityStore(vault, preferences))
 
         assertIs<CredentialRestoreResult.Empty>(coordinator.restore())
-        assertTrue(vault.clearCount > 0)
-        assertEquals(null, vault.saved)
+        assertEquals(0, vault.clearCount)
+        assertEquals(Credentials("student", "secret"), vault.saved)
     }
 
     @Test
@@ -101,11 +113,13 @@ class AccountSecurityCoordinatorTest {
 
 private class FakeCredentialVault(
     private val failOnLoad: Boolean = false,
+    private val failOnSave: Boolean = false,
 ) : CredentialVault {
     var saved: Credentials? = null
     var clearCount: Int = 0
 
     override suspend fun save(credentials: Credentials) {
+        if (failOnSave) error("fixture save failed")
         saved = credentials
     }
 

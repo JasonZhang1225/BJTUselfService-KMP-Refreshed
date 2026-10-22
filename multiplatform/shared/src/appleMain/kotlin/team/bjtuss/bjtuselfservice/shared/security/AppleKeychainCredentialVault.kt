@@ -30,6 +30,7 @@ import platform.Foundation.create
 import platform.Security.SecItemAdd
 import platform.Security.SecItemCopyMatching
 import platform.Security.SecItemDelete
+import platform.Security.SecItemUpdate
 import platform.Security.errSecItemNotFound
 import platform.Security.errSecSuccess
 import platform.Security.kSecAttrAccessible
@@ -58,15 +59,22 @@ class AppleKeychainCredentialVault(
 ) : CredentialVault {
     override suspend fun save(credentials: Credentials) {
         val payload = encodeCredentialPayload(credentials).toNSData()
-        val clearStatus = withKeychainQuery { SecItemDelete(it) }
-        if (clearStatus != errSecSuccess && clearStatus != errSecItemNotFound) {
-            throw vaultError(CredentialVaultOperation.SAVE, clearStatus)
+        val updateStatus = withKeychainQuery { query ->
+            val attributes = CFDictionaryCreateMutable(null, 0, null, null)
+                ?: error("Unable to create Keychain attributes")
+            val retainedPayload = CFBridgingRetain(payload) ?: error("Unable to bridge Keychain payload")
+            try {
+                CFDictionaryAddValue(attributes, kSecValueData, retainedPayload)
+                SecItemUpdate(query, attributes)
+            } finally {
+                CFRelease(attributes)
+                CFRelease(retainedPayload)
+            }
         }
-
+        if (updateStatus == errSecSuccess) return
+        if (updateStatus != errSecItemNotFound) throw vaultError(CredentialVaultOperation.SAVE, updateStatus)
         val addStatus = withKeychainQuery(payload = payload) { SecItemAdd(it, null) }
-        if (addStatus != errSecSuccess) {
-            throw vaultError(CredentialVaultOperation.SAVE, addStatus)
-        }
+        if (addStatus != errSecSuccess) throw vaultError(CredentialVaultOperation.SAVE, addStatus)
     }
 
     override suspend fun load(): Credentials? = memScoped {

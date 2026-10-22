@@ -1080,3 +1080,12 @@
 - 验证（本机 JBR 25）：`multiplatform/` 下 `./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64` 成功，1080 项测试零失败；`./gradlew :shared:desktopTest --tests '*AgentPluginsRenderTest'` 成功，核对手机/电脑宽度浅色、深色、1.5 倍字体离屏截图。模板 `npm test` 66 项通过，`npm run build` 成功；虚构数据浏览器检查 390px、浅/深色、放大文字及混合设备状态，无横向溢出/console 错误。
 - iOS 验证：`xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,id=6857828A-CCEA-47D0-B26A-93462734DD91' -derivedDataPath ../.artifacts/pairing-ios-build ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES DEVELOPMENT_TEAM=34S53DC6T6 build` 成功，`codesign --verify --deep --strict` 通过。generic 首次请求未支持的 x86_64，改用本机 arm64 目标通过，未修改工程架构配置。
 - 未验证：真实手机 App 与线上 Site 完整配对、双设备真实上传、原生容器交互、新签名包 Keychain 往返、Windows 实机。未打标签、发版或安装替换 App。主干推送后的 CI 状态与已验证的本地结果分别看待；证据保存在忽略目录 `.artifacts/`。
+
+
+## 2026-10-22 禁用异常删库并保护保存凭据（main，1.8.6-Beta / Build 42）
+
+- 交付：用户明确授权本地提交后强推 main，不开 PR；基于 `6f4b07d8`，保留主干既有历史。未改版本号、未重新打包或安装。
+- 决策：用户确认独立功能密码丢失、设置与缓存重置，主账号密码仍在；日程等待在划掉重开后恢复，另曾看到首页文字大小/格式异常。此次按偶发记录并停止继续追查，真实触发原因未定，不把 SideStore 猜测写成结论。
+- 改动：Apple/Android/macOS/Windows 缓存打开异常不再删原文件；Android 覆盖默认 corruption 删除回调；桌面缺加密材料不再清库。共享 App 在存储异常页停止正常启动，保留数据库/设置/凭据，不用临时空库继续登录同步。缺配置标记或读取/保存失败不再清旧凭据，Apple 保存优先 SecItemUpdate；独立账号缺配置时读取尚存的安全存储，显式关闭仍尊重。课表初始化被取消后允许再次初始化。
+- 验证：在 `multiplatform/` 使用 Android Studio JBR 与 Temurin25 执行 `./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64` 成功；202 个测试套件、1088 项测试、0 失败。覆盖损坏与瞬时异常文件保留、缺配置与显式关闭、保存失败保留旧密码、课表取消后重试、错误页不读写账号/偏好；错误页已离屏渲染浅深色/2 倍字并查看截图。`git diff --check` 通过。日志 `.artifacts/ios-credential-preservation-checks.log`，截图 `.artifacts/cache-storage-failure/`。
+- 未验证：原生 Keychain 更新路径仅 iOS 编译通过，未运行 iOS 测试及签名覆盖安装；模拟器真实交互、真机异常触发、视觉变化均未复现；不能恢复已经真正删除的密码。旧本地 IPA 未替换。

@@ -27,6 +27,25 @@ import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.PlatformInfo
 
 class CourseScheduleScreenModelTest {
+    @Test fun cancelledStartupCanInitializeAgainWithoutRestartingApp() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        var calls = 0
+        val snapshot = CourseScheduleSnapshot(emptyList(), 5)
+        val model = CourseScheduleScreenModel(object : CourseScheduleRepository {
+            override fun load() = snapshot
+            override suspend fun refresh(): CourseScheduleRefreshResult {
+                if (++calls == 1) { started.complete(Unit); kotlinx.coroutines.awaitCancellation() }
+                return CourseScheduleRefreshResult.Success(snapshot)
+            }
+        })
+        val first = launch { model.initialize(true) }
+        withTimeout(2000) { started.await() }
+        first.cancelAndJoin()
+        assertFalse(model.state.value.isLoading)
+        withTimeout(2000) { model.initialize(true) }
+        assertEquals(2, calls)
+    }
+
     @Test
     fun slowCalendarDoesNotDelayScheduleOrExposeRemoteBareWeek() = runBlocking {
         val calendarGate = CompletableDeferred<Unit>()

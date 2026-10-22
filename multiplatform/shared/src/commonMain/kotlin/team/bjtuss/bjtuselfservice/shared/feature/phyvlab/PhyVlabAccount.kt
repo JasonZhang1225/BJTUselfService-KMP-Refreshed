@@ -49,13 +49,17 @@ class PhyVlabAccountModel(
 
     suspend fun initialize() = mutex.withLock {
         if (initialized) return@withLock
-        val configured = cache.metadata(scope, CONFIGURED_KEY) == "true"
+        val configured = cache.metadata(scope, CONFIGURED_KEY) != "false"
         val creds = try {
             if (configured) vault?.load() else null
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             null
+        }
+        if (creds?.isValid == true && cache.metadata(scope, CONFIGURED_KEY) == null) {
+            cache.putMetadata(scope, CONFIGURED_KEY, "true")
+            cache.putMetadata(scope, USERNAME_KEY, creds.username)
         }
         mutableState.value = PhyVlabAccountState(
             username = creds?.username ?: cache.metadata(scope, USERNAME_KEY) ?: scope,

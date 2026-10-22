@@ -57,28 +57,18 @@ class AccountSecurityCoordinator(
         val vault = store.credentialVault ?: return CredentialRestoreResult.Unavailable
         val rememberCredentials = store.preferences.shouldRememberCredentials()
         if (!rememberCredentials) {
-            // An explicit opt-out and a missing preference marker are both signed-out
-            // states. On iOS the latter is also the exact state produced by uninstall:
-            // NSUserDefaults is removed while Keychain survives. Never silently restore
-            // a credential when the install-local marker is absent.
-            return if (runCatching { vault.clear() }.isSuccess) {
-                CredentialRestoreResult.Empty
-            } else {
-                CredentialRestoreResult.Failed
-            }
+            // 未记住/安装标记缺失只表示不自动登录；不能据此删除仍在安全存储中的密码。
+            return CredentialRestoreResult.Empty
         }
 
         return try {
             val credentials = vault.load()
             if (credentials == null) {
-                runCatching { store.preferences.setShouldRememberCredentials(false) }
                 CredentialRestoreResult.Empty
             } else {
                 CredentialRestoreResult.Restored(credentials)
             }
         } catch (_: Exception) {
-            runCatching { vault.clear() }
-            runCatching { store.preferences.setShouldRememberCredentials(false) }
             CredentialRestoreResult.Failed
         }
     }
@@ -97,8 +87,6 @@ class AccountSecurityCoordinator(
             store.preferences.setShouldRememberCredentials(true)
             true
         } catch (_: Exception) {
-            runCatching { vault.clear() }
-            runCatching { store.preferences.setShouldRememberCredentials(false) }
             false
         }
     }

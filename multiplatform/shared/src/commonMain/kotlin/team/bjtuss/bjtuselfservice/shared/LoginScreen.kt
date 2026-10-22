@@ -406,6 +406,9 @@ fun LoginRoute(
             CacheOpenState.MIGRATED_TO_ENCRYPTED -> {
                 storageMessage = "本地缓存已升级为加密格式，请重新同步离线数据和设置。"
             }
+            CacheOpenState.UNAVAILABLE -> {
+                storageMessage = "本地数据暂时无法读取，原文件已保留。"
+            }
             CacheOpenState.OPENED -> Unit
         }
         storageReady = true

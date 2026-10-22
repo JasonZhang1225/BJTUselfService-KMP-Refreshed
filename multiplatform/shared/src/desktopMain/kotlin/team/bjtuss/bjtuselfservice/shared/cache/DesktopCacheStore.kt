@@ -35,34 +35,26 @@ internal fun openDesktopCacheStore(
     val cacheFilesExist = desktopCacheFiles(databaseFile).any(File::exists)
     val resetNeeded = !protector.isIdentity && cacheFilesExist &&
         (!encryptionMarker.isFile || cacheKeyCreated)
-    if (resetNeeded) {
-        deleteDesktopCacheFiles(databaseFile)
-    }
     return openCacheStoreWithRecovery(
         openDriver = {
+            check(!resetNeeded) { "本地加密材料与已有缓存不匹配，已保留原数据库。" }
             JdbcSqliteDriver(
                 url = "jdbc:sqlite:${databaseFile.absolutePath}",
                 properties = Properties(),
                 schema = CacheDatabaseSql.Schema,
             )
         },
-        deleteStorage = {
-            deleteDesktopCacheFiles(databaseFile)
+        temporaryDriver = {
+            JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { CacheDatabaseSql.Schema.create(it) }
         },
         protector = protector,
     ).let { handle ->
-        if (!protector.isIdentity) encryptionMarker.writeText("v1\n")
-        if (resetNeeded) handle.copy(state = CacheOpenState.MIGRATED_TO_ENCRYPTED) else handle
+        if (!protector.isIdentity && handle.state == CacheOpenState.OPENED) encryptionMarker.writeText("v1\n")
+        handle
     }
 }
 
 private const val CACHE_ENCRYPTION_MARKER = ".cache-encryption-v1"
-
-private fun deleteDesktopCacheFiles(databaseFile: File) {
-    desktopCacheFiles(databaseFile).forEach { file ->
-        if (file.exists() && !file.delete()) error("无法重建本地缓存数据库。")
-    }
-}
 
 private fun desktopCacheFiles(databaseFile: File): List<File> =
     listOf(

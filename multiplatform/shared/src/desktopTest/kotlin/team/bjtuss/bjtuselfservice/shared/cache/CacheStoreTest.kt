@@ -9,6 +9,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
 import team.bjtuss.bjtuselfservice.shared.cache.db.CacheDatabaseSql
@@ -358,45 +359,61 @@ class CacheStoreTest {
     }
 
     @Test
-    fun corruptedFileIsDeletedAndRecreatedOnce() = withTemporaryDirectory { directory ->
+    fun corruptedFileIsPreservedAndNormalStartupIsBlocked() = withTemporaryDirectory { directory ->
         val databaseFile = File(directory, "bjtuselfservice_cache.db")
         databaseFile.writeText("not-a-sqlite-database")
 
         val recovered = openDesktopCacheStore(directory, PlaintextCacheValueProtector)
         try {
-            assertEquals(CacheOpenState.RECOVERED_AFTER_RESET, recovered.state)
+            assertEquals(CacheOpenState.UNAVAILABLE, recovered.state)
             assertEquals(0L, recovered.store.rowCount())
-            assertNotEquals("not-a-sqlite-database", databaseFile.readText())
+            assertEquals("not-a-sqlite-database", databaseFile.readText())
+            assertNotNull(recovered.openFailure)
         } finally {
             recovered.store.close()
         }
     }
 
     @Test
-    fun encryptedDesktopUpgradeResetsLegacyPlaintextCacheOnce() = withTemporaryDirectory { directory ->
+    fun missingEncryptionMaterialPreservesExistingDatabaseAndSettings() = withTemporaryDirectory { directory ->
         val legacy = openDesktopCacheStore(directory, PlaintextCacheValueProtector)
-        legacy.store.putMetadata("student-a", "profile_name", "LEGACY-PERSONAL-DATA-5e9c")
+        legacy.store.putMetadata("student-a", "profile_name", "fixture-preserved")
+        legacy.store.savePreferences(AppPreferences(dynamicColor = false))
         legacy.store.close()
-
-        val protector = JvmAesCacheValueProtector(ByteArray(32) { (it + 1).toByte() })
-        val upgraded = openDesktopCacheStore(directory, protector, cacheKeyCreated = true)
-        try {
-            assertEquals(CacheOpenState.MIGRATED_TO_ENCRYPTED, upgraded.state)
-            assertEquals(0L, upgraded.store.rowCount())
-            upgraded.store.putMetadata("student-a", "profile_name", "加密后的姓名")
-        } finally {
-            upgraded.store.close()
-        }
-
-        val reopened = openDesktopCacheStore(directory, protector)
-        try {
-            assertEquals(CacheOpenState.OPENED, reopened.state)
-            assertEquals("加密后的姓名", reopened.store.metadata("student-a", "profile_name"))
-        } finally {
-            reopened.store.close()
-        }
         val database = File(directory, "bjtuselfservice_cache.db")
-        assertFalse("LEGACY-PERSONAL-DATA-5e9c" in database.readBytes().toString(Charsets.UTF_8))
+        val bytes = database.readBytes()
+        val protector = JvmAesCacheValueProtector(ByteArray(32) { (it + 1).toByte() })
+        val blocked = openDesktopCacheStore(directory, protector, cacheKeyCreated = true)
+        try {
+            assertEquals(CacheOpenState.UNAVAILABLE, blocked.state)
+            assertTrue(bytes.contentEquals(database.readBytes()))
+            assertFalse(File(directory, ".cache-encryption-v1").exists())
+        } finally { blocked.store.close() }
+        val recovered = openDesktopCacheStore(directory, PlaintextCacheValueProtector)
+        try {
+            assertEquals("fixture-preserved", recovered.store.metadata("student-a", "profile_name"))
+            assertFalse(recovered.store.preferences().dynamicColor)
+        } finally { recovered.store.close() }
+    }
+
+    @Test
+    fun transientOpenFailureRetainsOriginalDataAndRetryCanReadIt() = withTemporaryDirectory { directory ->
+        val existing = openDesktopCacheStore(directory, PlaintextCacheValueProtector)
+        existing.store.putMetadata("scope", "saved", "fixture-value")
+        existing.store.close()
+        val database = File(directory, "bjtuselfservice_cache.db")
+        val bytes = database.readBytes()
+        val blocked = openCacheStoreWithRecovery(
+            openDriver = { throw IllegalStateException("fixture database temporarily locked") },
+            temporaryDriver = { JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { CacheDatabaseSql.Schema.create(it) } },
+        )
+        try {
+            assertEquals(CacheOpenState.UNAVAILABLE, blocked.state)
+            assertTrue(bytes.contentEquals(database.readBytes()))
+        } finally { blocked.store.close() }
+        val reopened = openDesktopCacheStore(directory, PlaintextCacheValueProtector)
+        try { assertEquals("fixture-value", reopened.store.metadata("scope", "saved")) }
+        finally { reopened.store.close() }
     }
 
     @Test

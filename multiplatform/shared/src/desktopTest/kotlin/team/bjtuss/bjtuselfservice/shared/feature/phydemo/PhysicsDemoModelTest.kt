@@ -10,6 +10,25 @@ import team.bjtuss.bjtuselfservice.shared.network.*
 import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
 
 class PhysicsDemoModelTest {
+    @Test fun missingMetadataRestoresVaultButExplicitOptOutRemainsRespected() = runBlocking<Unit> {
+        for (marker in listOf<String?>(null, "false")) {
+            val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            CacheDatabaseSql.Schema.create(driver)
+            val cache = CacheStore(driver)
+            val vault = DemoVault()
+            val saved = Credentials("fixture-account", "fixture-password")
+            vault.save(saved)
+            if (marker != null) cache.putMetadata("scope", "phydemo.configured", marker)
+            try {
+                val model = PhysicsDemoModel("scope", cache, vault, PhysicsDemoRemote(DemoTransport()))
+                model.initialize()
+                assertEquals(saved, vault.load(), "初始化绝不能删除已保存的密码")
+                assertEquals(marker == null, model.state.value.configured)
+                if (marker == null) assertEquals("fixture-account", model.state.value.username)
+            } finally { cache.close() }
+        }
+    }
+
     private fun store():CacheStore {
         val driver=JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         CacheDatabaseSql.Schema.create(driver)

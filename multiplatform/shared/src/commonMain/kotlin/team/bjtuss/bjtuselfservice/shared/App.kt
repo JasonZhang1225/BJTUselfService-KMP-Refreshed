@@ -59,6 +59,10 @@ fun App(
     onOpenExternalUrl: (String) -> Unit = ::openExternalUrl,
     onAuthenticatedSessionChanged: (AuthenticatedSession?) -> Unit = {},
 ) {
+    if (cacheStoreHandle.state == team.bjtuss.bjtuselfservice.shared.cache.CacheOpenState.UNAVAILABLE) {
+        CacheStorageFailureScreen()
+        return
+    }
     val cacheStore = cacheStoreHandle.store
     var appPreferences by remember(cacheStore) {
         mutableStateOf(runCatching(cacheStore::prepareRedesignPreferences).getOrDefault(AppPreferences(bottomNavigationItems = emptyList())))

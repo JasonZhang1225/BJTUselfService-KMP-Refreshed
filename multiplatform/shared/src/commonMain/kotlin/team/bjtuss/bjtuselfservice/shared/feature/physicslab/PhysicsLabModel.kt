@@ -45,9 +45,12 @@ class PhysicsLabModel(
         val enabled = cache.metadata(scope, "physicslab.enabled") == "true"
         resetChangeBaseline = cache.metadata(scope, "physicslab.changeBaselinePending") == "true"
         val credentials = try {
-            if (cache.metadata(scope, "physicslab.configured") == "true") vault?.load()
-            else { vault?.clear(); null }
+            if (cache.metadata(scope, "physicslab.configured") != "false") vault?.load() else null
         } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+        if (credentials?.isValid == true && cache.metadata(scope, "physicslab.configured") == null) {
+            cache.putMetadata(scope, "physicslab.configured", "true")
+            cache.putMetadata(scope, "physicslab.username", credentials.username)
+        }
         twoWeekOverrides = runCatching {
             json.decodeFromString<Map<String, Boolean>>(cache.metadata(scope, "physicslab.twoWeekOverrides").orEmpty())
         }.getOrDefault(emptyMap())

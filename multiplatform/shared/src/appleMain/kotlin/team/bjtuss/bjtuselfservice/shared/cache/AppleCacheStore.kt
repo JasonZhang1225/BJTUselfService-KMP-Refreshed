@@ -1,6 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.cache
 
 import app.cash.sqldelight.driver.native.NativeSqliteDriver
+import app.cash.sqldelight.driver.native.inMemoryDriver
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
@@ -41,17 +42,7 @@ fun createAppleCacheStore(): CacheStoreHandle {
                 name = CACHE_DATABASE_FILE_NAME,
             )
         },
-        deleteStorage = {
-            possibleDatabasePaths.forEach { databasePath ->
-                listOf(databasePath, "$databasePath-wal", "$databasePath-shm").forEach { path ->
-                    if (fileManager.fileExistsAtPath(path)) {
-                        check(fileManager.removeItemAtPath(path, error = null)) {
-                            "无法重建 Apple 本地缓存数据库。"
-                        }
-                    }
-                }
-            }
-        },
+        temporaryDriver = { inMemoryDriver(CacheDatabaseSql.Schema) },
     )
     // 缓存库含个人学业数据，不得随 iCloud/iTunes 备份上云。WAL/SHM 可能晚于本次
     // 启动才生成，因此每次启动都对已存在的文件重设排除位（尽力而为，不阻断启动）。

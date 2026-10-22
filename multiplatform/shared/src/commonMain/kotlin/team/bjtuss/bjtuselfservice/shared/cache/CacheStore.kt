@@ -62,6 +62,7 @@ data class AppPreferences(
 }
 
 enum class CacheOpenState {
+    UNAVAILABLE,
     OPENED,
     RECOVERED_AFTER_RESET,
     MIGRATED_TO_ENCRYPTED,
@@ -70,6 +71,7 @@ enum class CacheOpenState {
 data class CacheStoreHandle(
     val store: CacheStore,
     val state: CacheOpenState,
+    val openFailure: CacheDatabaseOpenException? = null,
 )
 
 class CacheDatabaseOpenException(cause: Throwable) :
@@ -603,7 +605,7 @@ class CacheStore(
 
 fun openCacheStoreWithRecovery(
     openDriver: () -> SqlDriver,
-    deleteStorage: () -> Unit,
+    temporaryDriver: () -> SqlDriver,
     protector: CacheValueProtector = PlaintextCacheValueProtector,
 ): CacheStoreHandle {
     fun openAndProbe(): CacheStore {
@@ -618,12 +620,14 @@ fun openCacheStoreWithRecovery(
 
     return try {
         CacheStoreHandle(openAndProbe(), CacheOpenState.OPENED)
-    } catch (_: Exception) {
+    } catch (error: Exception) {
+        // 原文件与 WAL/SHM 一律保留；临时驱动只供宿主完成初始化，App 将阻止登录与同步。
+        val failure = CacheDatabaseOpenException(error)
         try {
-            deleteStorage()
-            CacheStoreHandle(openAndProbe(), CacheOpenState.RECOVERED_AFTER_RESET)
-        } catch (error: Exception) {
-            throw CacheDatabaseOpenException(error)
+            CacheStoreHandle(CacheStore(temporaryDriver(), protector), CacheOpenState.UNAVAILABLE, failure)
+        } catch (temporaryError: Exception) {
+            failure.addSuppressed(temporaryError)
+            throw failure
         }
     }
 }

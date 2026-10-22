@@ -318,7 +318,12 @@ class CourseScheduleScreenModel(
         if (refreshFromNetwork && !networkAutoSyncStarted) {
             networkAutoSyncStarted = true
             // 登录后自动同步：失败再试，避免首包抖动就弹「同步失败」。
-            refreshWithRetry(maxAttempts = AUTO_SYNC_MAX_ATTEMPTS)
+            try {
+                refreshWithRetry(maxAttempts = AUTO_SYNC_MAX_ATTEMPTS)
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                networkAutoSyncStarted = false
+                throw cancel
+            }
         }
     }
 

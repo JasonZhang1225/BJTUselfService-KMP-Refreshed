@@ -8,11 +8,12 @@ import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class IosKeychainReinstallTest {
     @Test
-    fun missingInstallPreferenceClearsCredentialWithNativePreferences() = runBlocking {
+    fun missingInstallPreferenceDoesNotRestoreOrDeleteSavedCredential() = runBlocking {
         val suffix = NSUUID().UUIDString
         val store = createAppleAccountSecurityStore(
             accessibleAfterFirstUnlock = true,
@@ -32,7 +33,7 @@ class IosKeychainReinstallTest {
             assertIs<CredentialRestoreResult.Empty>(
                 AccountSecurityCoordinator(store.copy(credentialVault = fixtureVault)).restore(),
             )
-            assertNull(fixtureVault.load())
+            assertEquals(Credentials("synthetic-student", "synthetic-password"), fixtureVault.load())
         } finally {
             store.preferences.clearRememberCredentialsSetting()
         }
@@ -61,12 +62,14 @@ class IosKeychainReinstallTest {
             throw error
         }
         try {
+            vault.save(Credentials("synthetic-student", "synthetic-updated-password"))
+            assertEquals(Credentials("synthetic-student", "synthetic-updated-password"), vault.load())
             store.preferences.setShouldRememberCredentials(true)
             assertTrue(store.preferences.shouldRememberCredentials())
             store.preferences.clearRememberCredentialsSetting()
             assertFalse(store.preferences.shouldRememberCredentials())
             assertIs<CredentialRestoreResult.Empty>(AccountSecurityCoordinator(store).restore())
-            assertNull(vault.load())
+            assertEquals(Credentials("synthetic-student", "synthetic-updated-password"), vault.load())
         } finally {
             vault.clear()
             store.preferences.clearRememberCredentialsSetting()

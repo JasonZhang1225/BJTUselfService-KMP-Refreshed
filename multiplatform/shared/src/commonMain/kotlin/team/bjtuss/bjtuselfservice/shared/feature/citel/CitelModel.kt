@@ -77,10 +77,15 @@ class CitelModel(
 
     suspend fun initialize() = mutex.withLock {
         if (initialized) return@withLock
-        val remember = cache.metadata(scope, "citel.remember") == "true"
-        credentials = try { if (remember) vault?.load() else null }
+        val rememberMarker = cache.metadata(scope, "citel.remember")
+        credentials = try { if (rememberMarker != "false") vault?.load() else null }
             catch (e: CancellationException) { throw e } catch (_: Exception) { null }
-        val username = cache.metadata(scope, "citel.username")?.takeIf { it.isNotBlank() } ?: scope
+        val remember = rememberMarker == "true" || (rememberMarker == null && credentials?.isValid == true)
+        val username = credentials?.username ?: cache.metadata(scope, "citel.username")?.takeIf { it.isNotBlank() } ?: scope
+        if (credentials?.isValid == true && cache.metadata(scope, "citel.remember") == null) {
+            cache.putMetadata(scope, "citel.remember", "true")
+            cache.putMetadata(scope, "citel.username", username)
+        }
         val tasks = runCatching { json.decodeFromString<List<CitelTask>>(cache.metadata(scope, "citel.tasks").orEmpty()) }.getOrDefault(emptyList())
         val lastSync = cache.metadata(scope, "citel.lastSync")?.toLongOrNull()
         resetChangeBaseline = lastSync == null && tasks.isEmpty()

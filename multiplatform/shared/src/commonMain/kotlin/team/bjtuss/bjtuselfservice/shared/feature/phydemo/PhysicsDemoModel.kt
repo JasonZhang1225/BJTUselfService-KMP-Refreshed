@@ -32,9 +32,13 @@ class PhysicsDemoModel(private val scope: String, private val cache: CacheStore,
 
     suspend fun initialize() = mutex.withLock {
         if (initialized) return@withLock
-        val configured = cache.metadata(scope, "phydemo.configured") == "true"
-        val creds = try { if (configured) vault?.load() else { vault?.clear(); null } }
+        val configured = cache.metadata(scope, "phydemo.configured") != "false"
+        val creds = try { if (configured) vault?.load() else null }
             catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+        if (creds?.isValid == true && cache.metadata(scope, "phydemo.configured") == null) {
+            cache.putMetadata(scope, "phydemo.configured", "true")
+            cache.putMetadata(scope, "phydemo.username", creds.username)
+        }
         val cachedResults = cache.metadata(scope,"phydemo.results")
         val bookings = runCatching { json.decodeFromString<List<PhysicsDemoBooking>>(cachedResults.orEmpty()) }.getOrDefault(emptyList())
         mutableState.value = PhysicsDemoState(username = creds?.username ?: cache.metadata(scope,"phydemo.username") ?: scope,

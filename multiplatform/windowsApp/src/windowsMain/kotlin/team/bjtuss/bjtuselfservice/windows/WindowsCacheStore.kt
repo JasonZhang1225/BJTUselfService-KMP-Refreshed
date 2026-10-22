@@ -25,33 +25,27 @@ fun createWindowsCacheStore(
     val key = loadOrCreateWindowsCacheKey()
     val cacheFilesExist = windowsCacheFiles(databaseFile).any(File::exists)
     val resetNeeded = cacheFilesExist && (!encryptionMarker.isFile || key.created)
-    if (resetNeeded) deleteWindowsCacheFiles(databaseFile)
     val protector = JvmAesCacheValueProtector(key.bytes).also { key.bytes.fill(0) }
     return openCacheStoreWithRecovery(
         openDriver = {
+            check(!resetNeeded) { "本地加密材料与已有缓存不匹配，已保留原数据库。" }
             JdbcSqliteDriver(
                 url = "jdbc:sqlite:${databaseFile.absolutePath}",
                 properties = Properties(),
                 schema = CacheDatabaseSql.Schema,
             )
         },
-        deleteStorage = {
-            deleteWindowsCacheFiles(databaseFile)
+        temporaryDriver = {
+            JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { CacheDatabaseSql.Schema.create(it) }
         },
         protector = protector,
     ).let { handle ->
-        encryptionMarker.writeText("v1\n")
-        if (resetNeeded) handle.copy(state = CacheOpenState.MIGRATED_TO_ENCRYPTED) else handle
+        if (handle.state == CacheOpenState.OPENED) encryptionMarker.writeText("v1\n")
+        handle
     }
 }
 
 private const val CACHE_ENCRYPTION_MARKER = ".cache-encryption-v1"
-
-private fun deleteWindowsCacheFiles(databaseFile: File) {
-    windowsCacheFiles(databaseFile).forEach { file ->
-        if (file.exists() && !file.delete()) error("无法重建本地缓存数据库。")
-    }
-}
 
 private fun windowsCacheFiles(databaseFile: File): List<File> =
     listOf(

@@ -11,6 +11,25 @@ import team.bjtuss.bjtuselfservice.shared.network.*
 import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
 
 class CitelTest {
+    @Test fun missingMetadataRestoresVaultButExplicitOptOutRemainsRespected() = runBlocking<Unit> {
+        for (marker in listOf<String?>(null, "false")) {
+            val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            CacheDatabaseSql.Schema.create(driver)
+            val cache = CacheStore(driver)
+            val vault = MemoryVault()
+            val saved = Credentials("fixture-account", "fixture-password")
+            vault.save(saved)
+            if (marker != null) cache.putMetadata("scope", "citel.remember", marker)
+            try {
+                val model = CitelModel("scope", cache, vault, object : CitelDataSource { override suspend fun fetch(credentials: Credentials): List<CitelTask> = error("must not request network during restore") })
+                model.initialize()
+                assertEquals(saved, vault.load(), "初始化绝不能删除已保存的密码")
+                assertEquals(marker == null, model.state.value.configured)
+                if (marker == null) assertEquals("fixture-account", model.state.value.username)
+            } finally { cache.close() }
+        }
+    }
+
     @Test fun interruptedAppEntryCanRetryTheSameGeneration() = runBlocking<Unit> {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         CacheDatabaseSql.Schema.create(driver)
