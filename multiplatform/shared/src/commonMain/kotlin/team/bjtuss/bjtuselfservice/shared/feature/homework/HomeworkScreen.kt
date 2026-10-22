@@ -4,6 +4,13 @@ import team.bjtuss.bjtuselfservice.shared.domain.time.formatSchoolDeadline
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceEmptyState
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadAction
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadFiles
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadMessage
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadNote
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadSheet
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.mergePickedFiles
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.pickFeedback
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceLoadingState
 
 import androidx.compose.foundation.Canvas
@@ -94,7 +101,6 @@ import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.safeExportFileName
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
-import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetScrollContentPadding
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
@@ -354,6 +360,8 @@ private class HomeworkTransferState(
         }
     }
 
+    val pickAvailable: Boolean get() = fileGateway.isAvailable
+
     fun openUpload() {
         if (!fileGateway.isAvailable) {
             fileFeedback = "当前平台的系统文件选择器尚未接入。"
@@ -377,9 +385,9 @@ private class HomeworkTransferState(
         scope.launch {
             when (val result = fileGateway.pickFiles()) {
                 HomeworkFilePickResult.Cancelled -> Unit
-                is HomeworkFilePickResult.Failed -> uploadFeedback = "无法读取所选文件，请重新选择。"
+                is HomeworkFilePickResult.Failed -> uploadFeedback = result.pickFeedback()
                 is HomeworkFilePickResult.Selected -> {
-                    uploadFiles = uploadFiles + result.files
+                    uploadFiles = mergePickedFiles(uploadFiles, result.files)
                     uploadFeedback = null
                 }
             }
@@ -459,32 +467,26 @@ private fun rememberHomeworkTransferState(
     }
 }
 
-/** 上传作业弹窗：iOS 走宿主原生 sheet，其他平台保留 Material 对话框。 */
+/** 上传作业：与物理在线、CITEL 共用同一套上传 sheet。 */
 @Composable
 private fun HomeworkUploadDialog(
     transfer: HomeworkTransferState,
     isSubmitting: Boolean,
 ) {
     if (!transfer.showUpload) return
-    AppleSheetOrAlert(
-        onDismissRequest = transfer::closeUpload,
-        title = "上传作业",
-        confirmLabel = if (isSubmitting || transfer.isRecoveringSession) "正在提交" else "提交",
-        onConfirm = transfer::submitUpload,
-        confirmEnabled = transfer.uploadFiles.isNotEmpty() && !isSubmitting && !transfer.isRecoveringSession,
-        dismissLabel = "取消",
-        dismissEnabled = !isSubmitting,
-        needsFullHeight = true,
-    ) {
-            UploadHomeworkContent(
-                files = transfer.uploadFiles,
-                content = transfer.uploadContent,
-                feedback = transfer.uploadFeedback,
-                isSubmitting = isSubmitting,
-                onContentChange = { transfer.uploadContent = it },
-                onPickFiles = transfer::pickUploadFiles,
-                onRemoveFile = transfer::removeUploadFile,
-            )
+    val busy = isSubmitting || transfer.isRecoveringSession
+    AssignmentUploadSheet(title = "上传作业", busy = busy, onDismissRequest = transfer::closeUpload) {
+        UploadHomeworkContent(
+            files = transfer.uploadFiles,
+            content = transfer.uploadContent,
+            feedback = transfer.uploadFeedback,
+            busy = busy,
+            pickEnabled = transfer.pickAvailable,
+            onContentChange = { transfer.uploadContent = it },
+            onPickFiles = transfer::pickUploadFiles,
+            onRemoveFile = transfer::removeUploadFile,
+            onSubmit = transfer::submitUpload,
+        )
     }
 }
 
@@ -1307,78 +1309,43 @@ private fun HomeworkDetailSheetBody(
 }
 
 @Composable
-private fun UploadHomeworkContent(
+private fun ColumnScope.UploadHomeworkContent(
     files: List<HomeworkFileContent>,
     content: String,
     feedback: String?,
-    isSubmitting: Boolean,
+    busy: Boolean,
+    pickEnabled: Boolean,
     onContentChange: (String) -> Unit,
     onPickFiles: () -> Unit,
     onRemoveFile: (Int) -> Unit,
-    modifier: Modifier = Modifier,
+    onSubmit: () -> Unit,
 ) {
-    val uploadScrollState = rememberScrollState()
-    Column(
-        modifier = modifier
-            .heightIn(max = 520.dp)
-            .verticalScroll(uploadScrollState)
-            .desktopTouchScroll(uploadScrollState),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            "先选择文件并检查列表，再提交到学校智慧教学平台。",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedTextField(
-            value = content,
-            onValueChange = onContentChange,
-            label = { Text("提交说明（可选）") },
-            enabled = !isSubmitting,
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-            maxLines = 5,
-        )
-        OutlinedButton(
-            onClick = onPickFiles,
-            enabled = !isSubmitting,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(if (files.isEmpty()) "选择文件" else "继续添加文件")
-        }
-        if (files.isEmpty()) {
-            Text("尚未选择文件", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            files.forEachIndexed { index, file ->
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(12.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(file.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                file.bytes.size.toLong().toReadableSize(),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        TextButton(onClick = { onRemoveFile(index) }, enabled = !isSubmitting) { Text("移除") }
-                    }
-                }
-            }
-        }
-        feedback?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-        }
-        if (isSubmitting) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            Text("正在上传并提交，请勿关闭窗口。", style = MaterialTheme.typography.bodySmall)
-        }
-    }
+    AssignmentUploadNote("选好文件并核对列表后提交到智慧教学平台，提交后可以在详情里看到已交附件。")
+    AssignmentUploadFiles(
+        pending = files,
+        busy = busy,
+        pickEnabled = pickEnabled,
+        onPick = onPickFiles,
+        onRemovePending = onRemoveFile,
+    )
+    OutlinedTextField(
+        value = content,
+        onValueChange = onContentChange,
+        label = { Text("提交说明（可选）") },
+        enabled = !busy,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+        minLines = 3,
+        maxLines = 6,
+    )
+    feedback?.let { AssignmentUploadMessage(it, isError = true) }
+    AssignmentUploadAction(
+        label = "提交作业",
+        busyLabel = "正在上传并提交…",
+        busy = busy,
+        enabled = files.isNotEmpty(),
+        onClick = onSubmit,
+    )
 }
 
 @Composable

@@ -9,6 +9,7 @@
 
 ## 进行中
 
+- iOS 作业上传修复与上传页统一（分支 `claude/jolly-lamport-bsie9k`，PR 待合入）：iOS 文件网关改为从最上层控制器呈现选择器/保存面板/快速查看（上传页本身是 UIKit sheet，之前根控制器 present 被静默拒绝，再点即报“无法读取所选文件”）；呈现以 UIKit 完成回调为准，2 秒内未呈现才返回失败（首版同步检查 presentingViewController 误判远程选择器为被拒，真机 #109 已复现，已修）。课程平台、物理在线、CITEL 上传改用 `AssignmentUi.kt` 的统一上传 sheet；删除物理在线未接线的旧上传对话框。只在 Linux 跑了 desktopTest/Android/macOS 编译，iOS 编译与打包交给 CI，真机未验证。
 - AI Agent（`feat/chatgpt-agent-remote`）：开发中，约七八成；合入后再清理 main 里经紧急修复带进来的半成品 AI 代码。
 - 已合入功能的待真机验证（不阻塞）：
   - 灵动岛/实时活动：收起态最终版截图（等实际上课时）；开课时“即将上课”切“正在上课”；两个实时活动并存时的最小态小圆环；Live 菜单读屏自定义操作。
