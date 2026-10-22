@@ -34,6 +34,7 @@ kotlin {
                 implementation(project(":shared"))
                 implementation(libs.compose.desktop.windows.x64)
                 implementation(libs.kotlinx.coroutines.core)
+                implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.jna)
                 implementation(libs.jna.platform)
                 implementation(libs.ktor.client.cio)
@@ -43,6 +44,7 @@ kotlin {
         val windowsTest by getting {
             dependencies {
                 implementation(kotlin("test"))
+                implementation(libs.kotlinx.serialization.json)
             }
         }
     }
@@ -70,7 +72,8 @@ compose.desktop {
         )
         nativeDistributions {
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)
-            modules("java.sql")
+            // jdk.charsets：AWT 原生菜单（托盘）在中文 Windows 上需要 GBK 编码器，缺了会显示方框。
+            modules("java.sql", "jdk.charsets", "jdk.localedata")
             // 中文显示名。英文系统上 jpackage 默认选代码页 1252 的 en .wxl，WiX light 会把中文
             // 打成 `?????` 并报 311；CI 用 -Duser.language=zh 让它选代码页 936 的中文 .wxl。
             // WINDOWS_PACKAGE_NAME/… 仍可手动传 ASCII 兜底。
@@ -147,6 +150,24 @@ afterEvaluate {
                 val dest = File(resourcesDir)
                 dest.mkdirs()
                 overrideWxs.copyTo(File(dest, "main.wxs"), overwrite = true)
+            }
+            if (taskName == "packageMsi") {
+                // 配置缓存不能序列化脚本对象：路径在配置阶段算好，执行阶段只用纯值和 ProcessBuilder。
+                val rewriteScript = file("packaging/rewrite-msi-product-code.ps1").absolutePath
+                // 传目录而不是写死版本号的文件名，脚本会取目录里的 MSI。
+                val msiPath = layout.buildDirectory.dir("compose/binaries/main/msi")
+                    .get().asFile.absolutePath
+                doLast {
+                    val process = ProcessBuilder(
+                        "powershell.exe",
+                        "-NoProfile",
+                        "-ExecutionPolicy", "Bypass",
+                        "-File", rewriteScript,
+                        msiPath,
+                    ).redirectErrorStream(true).start()
+                    val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
+                    check(process.waitFor() == 0) { "改写 MSI ProductCode 失败：$output" }
+                }
             }
         }
     }

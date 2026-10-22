@@ -52,7 +52,6 @@ import team.bjtuss.bjtuselfservice.shared.update.annotatedInlineMarkdown
 import team.bjtuss.bjtuselfservice.shared.update.parseReleaseNotes
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
-import team.bjtuss.bjtuselfservice.shared.agent.platformAgentIntegration
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
 
@@ -108,10 +107,12 @@ internal fun FeatureSwitchesCard(
     physicsDemoEnabled: Boolean = false, physicsDemoConfigured: Boolean = false,
     onPhysicsDemoEnabled: (Boolean) -> Unit = {}, onPhysicsDemoSettings: () -> Unit = {},
     phyVlabConfigured: Boolean = false, onPhyVlabSettings: () -> Unit = {},
+    agentPluginTitle: String? = null, agentPluginEnabled: Boolean = false, onAgentPluginEnabled: (Boolean) -> Unit = {},
 ) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("功能开关", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            agentPluginTitle?.let { FeatureSwitchRow("启用 $it", agentPluginEnabled, configured = false, onEnabled = onAgentPluginEnabled) }
             FeatureSwitchRow("启用物理在线", phyVlabEnabled, phyVlabConfigured, onPhyVlabEnabled, onPhyVlabSettings)
             FeatureSwitchRow("启用物理实验", physicsLabEnabled, physicsLabConfigured, onPhysicsLabEnabled, onPhysicsLabSettings)
             FeatureSwitchRow("启用演示实验", physicsDemoEnabled, physicsDemoConfigured, onPhysicsDemoEnabled, onPhysicsDemoSettings)
@@ -161,6 +162,7 @@ fun SettingsWorkspace(
     onPhysicsDemoSettings: () -> Unit = {},
     phyVlabConfigured: Boolean = false,
     onPhyVlabSettings: () -> Unit = {},
+    onAgentPluginEnabled: (Boolean) -> Unit = model::setAgentPluginEnabled,
 ) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
@@ -234,14 +236,9 @@ fun SettingsWorkspace(
             state.preferences.isCitelEnabled, physicsLabConfigured, citelConfigured,
             model::setPhyVlabEnabled, model::setPhysicsLabEnabled, model::setCitelEnabled,
             onPhysicsLabSettings, onCitelSettings, physicsDemoEnabled, physicsDemoConfigured, onPhysicsDemoEnabled, onPhysicsDemoSettings,
-            phyVlabConfigured, onPhyVlabSettings)
-        // 本机 AI Agent 接入只在桌面端（macOS/Windows 共用 MacOS 家族）。
-        val agentIntegration = remember(platform.family) {
-            if (platform.family == PlatformFamily.MacOS) platformAgentIntegration() else null
-        }
-        if (agentIntegration != null) {
-            AgentAssistantCard(agentIntegration, state.preferences.agentGradesAllowed, model::setAgentGradesAllowed)
-        }
+            phyVlabConfigured, onPhyVlabSettings,
+            agentPluginTitle = agentPluginTitle(platform), agentPluginEnabled = state.preferences.isAgentPluginEnabled,
+            onAgentPluginEnabled = onAgentPluginEnabled)
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("底栏显示", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

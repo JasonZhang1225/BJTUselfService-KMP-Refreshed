@@ -37,3 +37,7 @@ local.properties
 # Android signing keys; never commit.
 *.jks
 *.keystore
+
+# Local agent skills and memory.
+/.agents/
+/.workbuddy/

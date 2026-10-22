@@ -40,6 +40,8 @@ internal fun MoreWorkspace(
     showPhysicsLabTile: Boolean = physicsLabModel != null,
     platformFamily: PlatformFamily = currentPlatform().family,
     onOpenPhysicsDemo: (() -> Unit)? = null,
+    onOpenAgentPlugins: (() -> Unit)? = null,
+    agentPluginTitle: String = "Agent 和 ChatGPT 插件",
 ) {
     val scroll = rememberLazyListState()
     val topClearance = LocalTopBarClearance.current
@@ -76,6 +78,9 @@ internal fun MoreWorkspace(
                     .takeIf { it >= 0 } ?: size
                 add(position, ApplicationTile("演示实验", section = AppSection.PHYSICS_LAB, onClick = open))
             }
+        }
+        onOpenAgentPlugins?.let { open ->
+            add(ApplicationTile(agentPluginTitle, specialIcon = SpecialTileIcon.AGENT, onClick = open))
         }
     }
     activeAccountEntry?.let { entry ->
@@ -120,7 +125,7 @@ internal fun MoreWorkspace(
     }
 }
 
-private enum class SpecialTileIcon { CAMPUS_CARD, NETWORK }
+private enum class SpecialTileIcon { CAMPUS_CARD, NETWORK, AGENT }
 
 private data class ApplicationTile(
     val title: String,
@@ -134,6 +139,7 @@ private fun ApplicationTileCard(entry: ApplicationTile, modifier: Modifier) {
     val tint = when (entry.specialIcon) {
         SpecialTileIcon.CAMPUS_CARD -> if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF83B9F3) else Color(0xFF286EB8)
         SpecialTileIcon.NETWORK -> if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFF85CBD1) else Color(0xFF267B83)
+        SpecialTileIcon.AGENT -> MaterialTheme.colorScheme.primary
         null -> applicationIconColor(requireNotNull(entry.section))
     }
     Surface(
@@ -159,6 +165,7 @@ private fun ApplicationTileCard(entry: ApplicationTile, modifier: Modifier) {
                         when (entry.specialIcon) {
                             SpecialTileIcon.CAMPUS_CARD -> CampusCardTileIcon()
                             SpecialTileIcon.NETWORK -> NetworkTileIcon()
+                            SpecialTileIcon.AGENT -> AgentTileIcon()
                             null -> CompactTabIcon(requireNotNull(entry.section))
                         }
                     }
@@ -170,6 +177,20 @@ private fun ApplicationTileCard(entry: ApplicationTile, modifier: Modifier) {
                 fontWeight = FontWeight.SemiBold,
             )
         }
+    }
+}
+
+@Composable
+private fun AgentTileIcon() {
+    val color = LocalContentColor.current
+    Canvas(Modifier.fillMaxSize()) {
+        val stroke = Stroke(1.8.dp.toPx())
+        drawRoundRect(color, Offset(size.width * .12f, size.height * .25f),
+            Size(size.width * .76f, size.height * .6f), CornerRadius(4.dp.toPx()), style = stroke)
+        drawLine(color, Offset(size.width * .5f, size.height * .25f), Offset(size.width * .5f, size.height * .08f), 1.8.dp.toPx())
+        drawCircle(color, 1.5.dp.toPx(), Offset(size.width * .35f, size.height * .52f))
+        drawCircle(color, 1.5.dp.toPx(), Offset(size.width * .65f, size.height * .52f))
+        drawLine(color, Offset(size.width * .35f, size.height * .7f), Offset(size.width * .65f, size.height * .7f), 1.8.dp.toPx())
     }
 }
 

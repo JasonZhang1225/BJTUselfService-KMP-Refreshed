@@ -295,6 +295,20 @@ class CitelModel(
         }
     }
     /** Deliberately separate from selectTask and ordinary synchronization. */
+    /** 远程读取不改变详情页选择；只有显式授权才获取全文，与 UI 共用登录和互斥。 */
+    suspend fun remoteProblem(moduleId: Int, fetch: Boolean): CitelCachedProblem? {
+        initialize()
+        return mutex.withLock {
+            val task = state.value.tasks.firstOrNull { it.id == moduleId && it.programming } ?: return@withLock null
+            if (!fetch) return@withLock cache.citelProblem(scope, state.value.username, moduleId)
+            val problem = withTimeout(180_000) { remote.problem(loginCredentials(), task, withResults = true) }
+            val cached = CitelCachedProblem(state.value.username, moduleId, Clock.System.now().epochSeconds, problem)
+            cache.saveCitelProblem(scope, cached)
+            mutableState.value = mutableState.value.copy(problems = state.value.problems + (moduleId to cached))
+            cached
+        }
+    }
+
     suspend fun fetchProblem() {
         if (state.value.problemBusy) return
         initialize()
