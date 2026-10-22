@@ -1,16 +1,24 @@
 # BJTUselfService 实时工作记忆
 
-> 最后更新：2026-10-21。
-> 当前分支：`fix/ios-sheet-dismissal`（PR #35，已合入最新 mine/main@eff3629，包含已合并 PR #34；#35 待用户合并）。
+> 最后更新：2026-10-22。
+> 当前分支：`feat/homework-search-classroom-now`（PR #42，从最新 main 拉出，待用户合并；含作业搜索与教室当前节次强调）。
 > KMP 源码版本：`1.8.5-EmergencyFix2` / Build 40；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。`history_full.md` 尚无 EmergencyFix2 发版条目。
 > 冻结原 Android：`v1.7.1` / versionCode 9（对照 `origin/main@7d94f74`）。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
 > 认证现状（2026-10-20，PR #29/#30 已纳入 main）：MIS 走统一身份认证 sso.bjtu.edu.cn（SM2 加密密码、默认免验证码）；物理在线用独立账号密码（设置 → 物理在线账号设置）；智慧教学仍卡在学校的旧 CAS 跳转。
 
+> 本地打包（2026-10-22，566b2b5）：`.artifacts/BJTUSelfService-KMP-homework-search-566b2b5-debug.apk`（debug 签名，本机无 release 口令）与 `.artifacts/BJTUSelfService-KMP-1.8.5-EmergencyFix2-iOS-unsigned.ipa`（Release，按 CI 流程 ad-hoc 签名）。之后的搜索位置改动不在这两个包里。
+
 > 最近只读操作：2026-10-14 使用已安装 bjtuss 完成本机作业缓存导出；产物仅放 `.artifacts/`，未修改源码、未联网刷新，保留原有暂存与未提交改动。
 
 ## 进行中
 
+- 作业搜索 + 教室当前节次（`feat/homework-search-classroom-now`，PR #42）：
+  - 搜索是独立一层（2026-10-22 按用户反馈重做）：聚合「作业」和未聚合的「课程平台作业」打开搜索后，列表换成结果，结果来自全部作业、不受筛选影响（只沿用排序），同步横幅/筛选 banner/迁移提示都让位；未输入时只显示提示。匹配课程名、标题，聚合页还匹配来源名。离开作业相关页关闭，进详情再返回保留。卡片沿用同一 key，`animateItem` 让匹配项留在原地、其余淡出。
+  - iOS 26+ iPhone 原生壳：页面声明 `NativeBarAction.searchPrompt` 后，宿主给本页挂 `UISearchController`（`preferredSearchBarPlacement = .integratedButton`，系统液态玻璃搜索按钮就地展开、取消收回），文字经 `onSearchQueryChange` 回传；只在 Compose 由开变关时收起系统搜索，避免排队的旧动作误关。iPad 等 Compose 自绘栏：苹果样式搜索头（圆角搜索框 + 取消，自上滑入、临界阻尼）。Android / macOS / Windows：顶栏换成 Material 搜索视图头（返回 + 输入框 + 清除，M3 fade through），Android 返回键先收起搜索，Esc 关闭。
+  - iOS 搜索按钮位置（2026-10-22，`ContentView.swift`，未提交）：收起时 `searchBarPlacementBarButtonItem` 放在左侧 `leadingItemGroups`，与右侧同步状态/刷新分开；展开期间挪到 `trailingItemGroups`——实测（lldb 导视图层级）UIKit 给前部搜索框固定约 180pt，宽度约束、item.width、换 style 都无效，放尾部才铺满整条栏，右侧胶囊展开时被系统整体隐藏、不占位。展开期间自绘居中标题淡出（`setSearchActive`），push 出的二级页照常显示自己的标题。用户真机确认输入框占满整条栏、标题不再残留；展开/收起动画路径、浅色、宽窗口/Duo 竖栏（仍走系统默认）未看。
+  - 教室占用只在「当前学期 + 本周 + 今天」显示当前节次：当前格子向四周散出自身颜色的光晕（`dropShadow`）：浅色用同色系文字色半透明、画在格子上允许轻微染到邻格；深色保留格子色相、拉高饱和度和亮度（外圈本色柔光 + 内圈偏白细亮边，用户在 5 种候选中选定 VividCore 原版；「其他」灰格只提亮不加色），红格也看得清；两种主题都画在格子上方，轻微染到邻格。`CurrentPeriodRenderTest` 覆盖全部占用类型；节次号加粗；卡片右上角标「空闲 / 占用」（配色取当前格子）。课间、课后或在看别的星期/周时不强调。
+  - 验证（2026-10-22）：`./gradlew :shared:desktopTest` 945 项中 944 通过，唯一失败仍是容器缺可执行文件的 `DesktopAgentIntegrationTest.installWritesWorkingScriptAndSkill`；`:androidApp:assembleDebug`、`:windowsApp:compileKotlinWindows`、`:desktopApp:compileKotlin` 通过。`CurrentPeriodRenderTest` 离屏渲染浅/深色截图核对了光晕、标签和两种搜索头。iOS Swift（UISearchController）仅 PR CI 编译，未在模拟器/真机验证交互与动画。未改版本号。
 - iOS 课程详情关闭后卡片无响应（PR #35，`fix/ios-sheet-dismissal`）：用户确认首次详情通过右上角关闭按钮收起；6 秒录屏中课程卡片仍有按压反馈，课表/周数弹层可正常开关，未证明主线程整体卡死。原生弹层宿主被所有 `AppleSheet` 共用，内容、关闭回调和动画状态存在串用风险。
   - 修复：每个 `AppleSheet` 组合通过 `createPresentation()` 持有独立 iOS 呈现对象；旧组合的释放/关闭动画不能清空后一个弹层。原生 dismissal delegate 绑定具体控制器，忽略过期回调，并在发起 present 前绑定 delegate。
   - 验证：真实 `AppleSheet` + 可延迟关闭完成的测试宿主，3 项离屏集成测试通过（重叠弹层独立释放、关闭后快速重开、重组保留呈现对象并更新回调）；`./gradlew :shared:desktopTest --no-configuration-cache` 完整共享测试 935 项全部通过（含新增 3 项）。Linux 无 Xcode/iOS 模拟器，原生编译与 iOS 测试交给 PR CI，未做 iPhone 实机复测，未修改版本号或发版。
@@ -46,6 +54,7 @@
 
 - 后续开发统一从最新 `main` 建分支，PR 以 `main` 为目标。
 
-1. 在真机已有版本（SideStore 保留扩展）上验证小组件共享容器与各尺寸显示。
-2. 华为 HBN-AL10（HarmonyOS 4.2）装含 PR #32/#33 的新包：确认课表小组件尺寸（logcat `CourseWidget` 标签）与教务不可达时不再闪退。
-3. 下次发版时核对版本号清单（见 `AGENTS.md`）、发布说明与测试矩阵；版本与发版由用户决定。
+1. 真机看作业搜索：iOS 导航栏系统搜索按钮的展开/取消、搜索中进详情再返回；Android 返回键收起搜索；上课时段教室当前节次光晕与空闲/占用标签，浅色/深色都看一眼。
+2. 在真机已有版本（SideStore 保留扩展）上验证小组件共享容器与各尺寸显示。
+3. 华为 HBN-AL10（HarmonyOS 4.2）装含 PR #32/#33 的新包：确认课表小组件尺寸（logcat `CourseWidget` 标签）与教务不可达时不再闪退。
+4. 下次发版时核对版本号清单（见 `AGENTS.md`）、发布说明与测试矩阵；版本与发版由用户决定。
