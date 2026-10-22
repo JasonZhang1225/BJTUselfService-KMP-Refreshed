@@ -4,6 +4,8 @@
     <!-- 课程实时动态（Android 16 Live Updates）：常驻通知申请推广到状态栏胶囊，系统原生接口，不用厂商私有接口。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <!-- 实时动态在课前 N 分钟、开课、下课准点出现/换状态（息屏也要准）；安装时授予，不弹框。只登记下一个时刻。 -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <!-- Android 11+ 默认看不到其他应用。附件“打开方式”、打开完美校园 App 和微信扫一扫都要声明。 -->
     <queries>

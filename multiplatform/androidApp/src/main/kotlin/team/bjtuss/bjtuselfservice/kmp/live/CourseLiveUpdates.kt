@@ -341,8 +341,12 @@ object CourseLiveUpdates : AndroidLiveActivityHost {
     // MARK: 定时
 
     /**
-     * 显示中逐分钟更新进度；否则在下一个关键时刻（课前 N 分钟、开始、结束、零点）再看一次。
-     * 与小组件一样不申请精确闹钟权限：非唤醒 RTC 闹钟，息屏时不叫醒手机，亮屏后补上；
+     * 两个闹钟：
+     * - 关键时刻（课前 N 分钟、开始、结束、零点）用精确闹钟 `setExactAndAllowWhileIdle` + RTC_WAKEUP：
+     *   息屏、深度休眠、进程已被系统杀掉时也会准点把应用拉起来，课前出现和开课/下课换状态不必等亮屏。
+     *   每次只登记下一个时刻，一节课两三次。权限是 USE_EXACT_ALARM（安装时授予，课表提醒属日历类用途）；
+     *   系统不允许精确闹钟时退回不精确的 `setAndAllowWhileIdle`（可能晚到，亮屏时会补上）。
+     * - 显示中逐分钟更新进度用非唤醒 RTC：息屏时不叫醒手机，亮屏后补上。
      * 进程还在时另用主线程定时器按时对齐。
      */
     private fun scheduleNext(context: Context, today: List<LiveActivityTarget>, now: LocalDateTime, lead: Int, showing: Boolean) {
@@ -350,9 +354,16 @@ object CourseLiveUpdates : AndroidLiveActivityHost {
         val boundary = liveActivityNextBoundary(today, now, lead).toInstant(zone).toEpochMilliseconds()
         val nowMillis = Clock.System.now().toEpochMilliseconds()
         val nextMinute = (nowMillis / 60_000L + 1) * 60_000L
-        val fireAt = if (showing) minOf(boundary, nextMinute) else boundary
         val alarm = context.getSystemService(AlarmManager::class.java)
-        alarm?.set(AlarmManager.RTC, fireAt, broadcast(context, ACTION_REFRESH, null, requestCode = 0))
+        val boundaryAlarm = broadcast(context, ACTION_REFRESH, null, requestCode = 3)
+        if (alarm?.canScheduleExactAlarms() == true) {
+            alarm.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, boundary, boundaryAlarm)
+        } else {
+            alarm?.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, boundary, boundaryAlarm)
+        }
+        val minuteTick = broadcast(context, ACTION_REFRESH, null, requestCode = 0)
+        if (showing && nextMinute < boundary) alarm?.set(AlarmManager.RTC, nextMinute, minuteTick) else alarm?.cancel(minuteTick)
+        val fireAt = if (showing) minOf(boundary, nextMinute) else boundary
         handler.removeCallbacks(tick)
         handler.postDelayed(tick, (fireAt - nowMillis).coerceAtLeast(1_000L) + 500L)
     }
