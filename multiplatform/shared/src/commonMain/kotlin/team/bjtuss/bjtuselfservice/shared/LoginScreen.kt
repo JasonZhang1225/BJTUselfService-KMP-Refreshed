@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared
 
+import kotlinx.coroutines.CancellationException
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -193,7 +195,6 @@ fun LoginRoute(
     var postLoginStorageFailure by remember { mutableStateOf<String?>(null) }
     var automationMessage by remember { mutableStateOf<String?>(null) }
     var manualDialogChallenge by remember { mutableStateOf<CaptchaChallenge?>(null) }
-    var manualDialogAttempts by remember { mutableStateOf(0) }
     var manualDialogMessage by remember { mutableStateOf<String?>(null) }
     // 静默入场状态：账号之前登录过时，自动登录期间直接用缓存档案渲染主界面。
     var autoEntryProfile by remember { mutableStateOf<StudentProfile?>(null) }
@@ -289,7 +290,6 @@ fun LoginRoute(
         persistCredentials: Boolean,
     ): LoginState {
         manualDialogChallenge = null
-        manualDialogAttempts = 0
         manualDialogMessage = null
         captchaAnswer = ""
         state = LoginState.CheckingSession
@@ -298,9 +298,11 @@ fun LoginRoute(
             AutomaticLoginCoordinator(
                 gateway = protocol.value,
                 captchaRecognizer = captchaRecognizer,
-            ).login(credentials) { attempt, maximum ->
-                automationMessage = "正在自动登录（第 $attempt/$maximum 次）"
+            ).login(credentials) { _, _ ->
+                automationMessage = "正在检查登录状态…"
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (_: Exception) {
             null
         }
@@ -323,17 +325,18 @@ fun LoginRoute(
                     autoLoginFailureAttempts = automaticResult.attempts
                     LoginState.SignedOut
                 } else {
-                    manualDialogAttempts = automaticResult.attempts
-                    // 自动提交过的 challenge 可能已失效；进入手动恢复前始终再取一张新图。
-                    // 只有“尚未提交、仅识别失败”的 challenge 可在刷新网络失败时临时保底。
-                    manualDialogChallenge = automaticResult.challenge.takeIf {
-                        automaticResult.reason == LoginFailure.CAPTCHA_RECOGNITION_FAILED
+                    // Coordinator returns a challenge only before credentials are submitted.
+                    val pendingChallenge = automaticResult.challenge
+                    if (pendingChallenge != null) {
+                        manualDialogChallenge = pendingChallenge
+                        LoginState.AwaitingCaptcha(pendingChallenge)
+                    } else {
+                        requestManualChallenge(
+                            credentials = credentials,
+                            persistCredentials = persistCredentials,
+                            failureWithoutCaptcha = automaticResult.reason,
+                        )
                     }
-                    requestManualChallenge(
-                        credentials = credentials,
-                        persistCredentials = persistCredentials,
-                        failureWithoutCaptcha = automaticResult.reason,
-                    )
                 }
             }
             null -> if (silentAutoLogin) {
@@ -418,6 +421,12 @@ fun LoginRoute(
     }
 
     fun submitManualCaptcha(challenge: CaptchaChallenge) {
+        if (
+            logoutCleanupPending ||
+            state is LoginState.SubmittingCredentials ||
+            state is LoginState.CheckingSession ||
+            state is LoginState.LinkingAcademicSystem
+        ) return
         val credentials = Credentials(username.trim(), password)
         if (!credentials.isValid || captchaAnswer.isBlank()) {
             manualDialogMessage = "请输入当前验证码答案。"
@@ -440,7 +449,6 @@ fun LoginRoute(
                     )
                     is AuthenticationResult.Success -> {
                         manualDialogChallenge = null
-                        manualDialogAttempts = 0
                         manualDialogMessage = null
                         finishLogin(
                             profile = result.profile,
@@ -485,7 +493,6 @@ fun LoginRoute(
         rememberCredentials = securityCoordinator.canStoreCredentials
         automationMessage = null
         manualDialogChallenge = null
-        manualDialogAttempts = 0
         manualDialogMessage = null
         autoEntryProfile = null
         silentAutoLogin = false
@@ -545,11 +552,11 @@ fun LoginRoute(
             if (failureAttempts > 0) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        "已自动尝试登录 $failureAttempts 次仍未成功。密码可能已修改，或验证码识别连续失败。" +
-                            "请回到登录页确认账号和密码后重新登录。",
+                        "自动登录未完成，可能需要验证码、检查账号密码或恢复网络。" +
+                            "为避免重复提交密码，已停止自动登录。请返回登录页处理。",
                     )
                     Text(
-                        "如果你最近更新过版本，别担心，这是安全保护机制，请返回登录页，重新点击一次登录即可。",
+                        "请确认账号密码及网络状态，再主动登录。",
                         fontWeight = FontWeight.Bold,
                     )
                 }
@@ -677,9 +684,8 @@ fun LoginRoute(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    "自动登录已尝试 ${manualDialogAttempts.coerceAtLeast(1)} 次，仍未成功。" +
-                        "请根据图片输入本次验证码。这大概率是因为你的账号密码输入有误。请返回检查。" +
-                        "如果你认为无误，可以手动输入验证码尝试登录。",
+                    "学校要求验证码，请根据图片手动输入后继续登录。" +
+                        "验证码不代表账号密码一定有误；如需修改，可返回登录页检查。",
                 )
                 manualDialogMessage?.let { message ->
                     Text(

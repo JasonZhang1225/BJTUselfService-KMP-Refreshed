@@ -11,7 +11,7 @@ class SecurityReleaseConfigTest {
     private val root = findRepositoryRoot()
 
     @Test
-    fun androidDoesNotBundleObsoleteCaptchaModelOrRuntime() {
+    fun platformsDoNotBundleObsoleteCaptchaModelsOrRuntimes() {
         val catalog = root.resolve("multiplatform/gradle/libs.versions.toml").readText()
         assertFalse("onnxRuntime" in catalog)
         assertFalse("onnxruntime-android" in catalog)
@@ -25,6 +25,13 @@ class SecurityReleaseConfigTest {
 
         val shared = root.resolve("multiplatform/shared/build.gradle.kts").readText()
         assertFalse("libs.onnxruntime" in shared)
+
+        assertFalse(root.resolve("multiplatform/iosApp/iosApp/BJTUCaptcha.mlpackage").exists())
+        val project = root.resolve("multiplatform/iosApp/iosApp.xcodeproj/project.pbxproj").readText()
+        assertFalse("BJTUCaptcha" in project)
+        val desktop = root.resolve("multiplatform/desktopApp/build.gradle.kts").readText()
+        assertFalse("CompileMacCaptcha" in desktop)
+        assertFalse("bjtu.captcha" in desktop)
     }
 
     @Test

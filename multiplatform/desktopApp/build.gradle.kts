@@ -6,9 +6,7 @@ import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
-import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.Internal
-import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.TaskAction
@@ -34,87 +32,6 @@ fun resolveDesktopPackageJavaHome(): String {
     )
     return candidates.firstOrNull { File(it).isDirectory }
         ?: error("Set DESKTOP_PACKAGE_JAVA_HOME or JAVA_HOME to a full JDK that contains jpackage")
-}
-
-@DisableCachingByDefault(because = "Invokes Apple's Core ML compiler")
-abstract class CompileMacCaptchaModel : DefaultTask() {
-    @get:InputDirectory
-    abstract val sourceModel: DirectoryProperty
-
-    @get:OutputDirectory
-    abstract val outputDirectory: DirectoryProperty
-
-    @get:Input
-    @get:Optional
-    abstract val developerDirectory: Property<String>
-
-    @get:Inject
-    abstract val execOperations: ExecOperations
-
-    @TaskAction
-    fun compile() {
-        val output = outputDirectory.get().asFile
-        output.deleteRecursively()
-        output.mkdirs()
-        execOperations.exec {
-            developerDirectory.orNull?.let { environment("DEVELOPER_DIR", it) }
-            commandLine(
-                "xcrun",
-                "coremlcompiler",
-                "compile",
-                sourceModel.get().asFile.absolutePath,
-                output.absolutePath,
-                "--platform",
-                "macOS",
-                "--deployment-target",
-                "12.0",
-            )
-        }.assertNormalExitValue()
-    }
-}
-
-@DisableCachingByDefault(because = "Invokes the Swift compiler")
-abstract class CompileMacCaptchaHelper : DefaultTask() {
-    @get:InputFile
-    abstract val swiftSource: RegularFileProperty
-
-    @get:OutputFile
-    abstract val executable: RegularFileProperty
-
-    @get:Input
-    @get:Optional
-    abstract val developerDirectory: Property<String>
-
-    @get:Inject
-    abstract val execOperations: ExecOperations
-
-    @TaskAction
-    fun compile() {
-        val output = executable.get().asFile
-        output.parentFile.mkdirs()
-        execOperations.exec {
-            developerDirectory.orNull?.let { environment("DEVELOPER_DIR", it) }
-            commandLine(
-                "xcrun",
-                "swiftc",
-                "-O",
-                "-parse-as-library",
-                "-target",
-                "arm64-apple-macos12.0",
-                "-framework",
-                "CoreML",
-                "-framework",
-                "CoreGraphics",
-                "-framework",
-                "ImageIO",
-                "-framework",
-                "Foundation",
-                swiftSource.get().asFile.absolutePath,
-                "-o",
-                output.absolutePath,
-            )
-        }.assertNormalExitValue()
-    }
 }
 
 @DisableCachingByDefault(because = "Invokes the Swift compiler")
@@ -210,12 +127,6 @@ abstract class FinalizeMacDistributable : DefaultTask() {
     abstract val appBundle: DirectoryProperty
 
     @get:InputFile
-    abstract val captchaHelper: RegularFileProperty
-
-    @get:InputDirectory
-    abstract val captchaModel: DirectoryProperty
-
-    @get:InputFile
     abstract val inputSourceHelper: RegularFileProperty
 
     @get:InputFile
@@ -236,16 +147,8 @@ abstract class FinalizeMacDistributable : DefaultTask() {
             resourcesDirectory.resolve("PrivacyInfo.xcprivacy"),
             overwrite = true,
         )
-        val captchaDirectory = resourcesDirectory.resolve("Captcha")
-        captchaDirectory.deleteRecursively()
-        captchaDirectory.mkdirs()
-        val helperTarget = captchaDirectory.resolve("BJTUCaptchaHelper")
-        captchaHelper.get().asFile.copyTo(helperTarget, overwrite = true)
-        helperTarget.setExecutable(true, false)
-        captchaModel.get().asFile.copyRecursively(
-            captchaDirectory.resolve("BJTUCaptcha.mlmodelc"),
-            overwrite = true,
-        )
+        // Remove assets left by an incremental build from before model removal.
+        resourcesDirectory.resolve("Captcha").deleteRecursively()
         val inputSourceDirectory = resourcesDirectory.resolve("InputSource")
         inputSourceDirectory.deleteRecursively()
         inputSourceDirectory.mkdirs()
@@ -579,7 +482,6 @@ compose.desktop {
         // 与守护进程 JDK 解耦（Kotlin 编译仍在 JBR 下跑，避免 KGP 在 JDK 25 下崩溃）。
         // 本机默认 Temurin 25；CI / 其他机器走 DESKTOP_PACKAGE_JAVA_HOME 或 JAVA_HOME。
         javaHome = resolveDesktopPackageJavaHome()
-        val captchaBuildDirectory = layout.buildDirectory.dir("generated/captcha")
         val inputSourceHelperFile =
             layout.buildDirectory.file("generated/input-source/libBJTUInputSourceHelper.dylib")
         val calendarHelperFile = layout.buildDirectory.file("generated/calendar/BJTUCalendarHelper")
@@ -590,8 +492,6 @@ compose.desktop {
             "-Xdock:name=$macDisplayName",
             // 标题栏跟随系统外观（深色模式时标题栏不再保持白色）。
             "-Dapple.awt.application.appearance=system",
-            "-Dbjtu.captcha.helper=${captchaBuildDirectory.get().file("BJTUCaptchaHelper").asFile.absolutePath}",
-            "-Dbjtu.captcha.model=${captchaBuildDirectory.get().dir("model/BJTUCaptcha.mlmodelc").asFile.absolutePath}",
             "-Dbjtu.input-source.helper=${inputSourceHelperFile.get().asFile.absolutePath}",
             "-Dbjtu.calendar.helper=${calendarHelperFile.get().asFile.absolutePath}",
         )
@@ -621,35 +521,18 @@ compose.desktop {
 val macPrivacyManifest = layout.projectDirectory.file(
     "src/main/appResources/macos/PrivacyInfo.xcprivacy",
 )
-val captchaSourceModel = project.file("../iosApp/iosApp/BJTUCaptcha.mlpackage")
-val captchaSwiftSource = project.file("src/main/swift/CaptchaCoreMLHelper.swift")
 val calendarSwiftSource = project.file("src/main/swift/SystemCalendarHelper.swift")
 val inputSourceHelperSource = project.file("src/main/native/InputSourceHelper.m")
-val captchaBuildDirectory = layout.buildDirectory.dir("generated/captcha")
-val captchaHelperFile = captchaBuildDirectory.map { it.file("BJTUCaptchaHelper") }
-val captchaModelDirectory = captchaBuildDirectory.map { it.dir("model/BJTUCaptcha.mlmodelc") }
 val inputSourceHelperFile =
     layout.buildDirectory.file("generated/input-source/libBJTUInputSourceHelper.dylib")
 val calendarHelperFile = layout.buildDirectory.file("generated/calendar/BJTUCalendarHelper")
 
-// 不改全局 xcode-select：显式环境优先，否则项目局部选择完整 Xcode（含 coremlcompiler）。
+// 不改全局 xcode-select：显式环境优先，否则项目局部选择完整 Xcode。
 val xcodeDeveloperDirectory = sequenceOf(
     System.getenv("DEVELOPER_DIR"),
     "/Applications/Xcode-beta.app/Contents/Developer",
     "/Applications/Xcode.app/Contents/Developer",
 ).filterNotNull().firstOrNull { candidate -> File(candidate).isDirectory }
-
-val compileMacCaptchaModel by tasks.registering(CompileMacCaptchaModel::class) {
-    sourceModel.set(captchaSourceModel)
-    outputDirectory.set(captchaBuildDirectory.map { it.dir("model") })
-    xcodeDeveloperDirectory?.let(developerDirectory::set)
-}
-
-val compileMacCaptchaHelper by tasks.registering(CompileMacCaptchaHelper::class) {
-    swiftSource.set(captchaSwiftSource)
-    executable.set(captchaHelperFile)
-    xcodeDeveloperDirectory?.let(developerDirectory::set)
-}
 
 val compileMacCalendarHelper by tasks.registering(CompileMacCalendarHelper::class) {
     swiftSource.set(calendarSwiftSource)
@@ -668,10 +551,8 @@ val compileMacInputSourceHelper by tasks.registering(CompileMacInputSourceHelper
 // Until formal Developer ID signing is configured, finish the local app image by
 // copying the manifest to the bundle root and renewing its existing ad-hoc seal.
 val finalizeMacDistributable by tasks.registering(FinalizeMacDistributable::class) {
-    dependsOn(compileMacCaptchaModel, compileMacCaptchaHelper, compileMacInputSourceHelper, compileMacCalendarHelper)
+    dependsOn(compileMacInputSourceHelper, compileMacCalendarHelper)
     privacyManifest.set(macPrivacyManifest)
-    captchaHelper.set(captchaHelperFile)
-    captchaModel.set(captchaModelDirectory)
     inputSourceHelper.set(inputSourceHelperFile)
     calendarHelper.set(calendarHelperFile)
     displayName.set(macDisplayName)
@@ -705,5 +586,5 @@ tasks.matching { it.name == "packageDmg" }.configureEach {
 }
 
 tasks.matching { it.name == "run" }.configureEach {
-    dependsOn(compileMacCaptchaModel, compileMacCaptchaHelper, compileMacInputSourceHelper, compileMacCalendarHelper)
+    dependsOn(compileMacInputSourceHelper, compileMacCalendarHelper)
 }

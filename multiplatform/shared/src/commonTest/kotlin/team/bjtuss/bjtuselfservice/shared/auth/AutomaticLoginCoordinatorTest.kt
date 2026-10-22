@@ -4,6 +4,9 @@ import kotlin.coroutines.startCoroutine
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
+import kotlin.test.assertFailsWith
+import kotlinx.coroutines.CancellationException
 
 class AutomaticLoginCoordinatorTest {
     @Test
@@ -41,28 +44,54 @@ class AutomaticLoginCoordinatorTest {
     }
 
     @Test
-    fun retriesWithFreshChallengesAndSucceedsOnThirdAttempt() = runSuspend {
+    fun rejectedCaptchaSubmissionIsNotRetried() = runSuspend {
         val gateway = FakeAutomationGateway(failuresBeforeSuccess = 2)
         val attempts = mutableListOf<Int>()
         val result = AutomaticLoginCoordinator(gateway, SuccessfulRecognizer).login(
             Credentials("student", "secret"),
         ) { attempt, _ -> attempts += attempt }
 
-        assertEquals(listOf(1, 2, 3), attempts)
-        assertEquals(listOf(1, 2, 3), gateway.challengeIds)
-        assertEquals(3, assertIs<AutomaticLoginResult.Authenticated>(result).attempts)
+        assertEquals(listOf(1), attempts)
+        assertEquals(listOf(1), gateway.challengeIds)
+        assertEquals(1, gateway.authenticationCount)
+        val manual = assertIs<AutomaticLoginResult.ManualRequired>(result)
+        assertEquals(LoginFailure.CAPTCHA_REJECTED, manual.reason)
+        assertNull(manual.challenge)
     }
 
     @Test
-    fun threeFailuresReturnLatestChallengeForManualEntry() = runSuspend {
-        val gateway = FakeAutomationGateway(failuresBeforeSuccess = Int.MAX_VALUE)
+    fun passwordSubmissionNetworkExceptionDoesNotRetry() = runSuspend {
+        val gateway = SsoGateway(rejection = null, submissionException = IllegalStateException("connection lost"))
         val result = assertIs<AutomaticLoginResult.ManualRequired>(
-            AutomaticLoginCoordinator(gateway, SuccessfulRecognizer).login(Credentials("student", "secret")),
+            AutomaticLoginCoordinator(gateway, UnavailableCaptchaRecognizer).login(Credentials("student", "secret")),
         )
 
-        assertEquals(3, result.attempts)
-        assertEquals("captcha-3", result.challenge?.captchaId)
-        assertEquals(LoginFailure.CAPTCHA_REJECTED, result.reason)
+        assertEquals(1, result.attempts)
+        assertEquals(1, gateway.answers.size)
+        assertNull(result.challenge)
+        assertEquals(LoginFailure.NETWORK, result.reason)
+    }
+
+    @Test
+    fun unclearSubmissionResponsesNeverReplayCredentials() = runSuspend {
+        listOf(LoginFailure.NETWORK, LoginFailure.MALFORMED_RESPONSE).forEach { failure ->
+            val gateway = SsoGateway(rejection = failure)
+            val result = assertIs<AutomaticLoginResult.ManualRequired>(
+                AutomaticLoginCoordinator(gateway, UnavailableCaptchaRecognizer).login(Credentials("student", "secret")),
+            )
+            assertEquals(1, gateway.answers.size)
+            assertEquals(failure, result.reason)
+            assertNull(result.challenge)
+        }
+    }
+
+    @Test
+    fun cancelledSubmissionIsPropagatedWithoutRetry() = runSuspend {
+        val gateway = SsoGateway(rejection = null, submissionException = CancellationException("cancelled"))
+        assertFailsWith<CancellationException> {
+            AutomaticLoginCoordinator(gateway, UnavailableCaptchaRecognizer).login(Credentials("student", "secret"))
+        }
+        assertEquals(1, gateway.answers.size)
     }
 
     @Test
@@ -183,6 +212,7 @@ private class FakeAutomationGateway(
 private class SsoGateway(
     private val rejection: LoginFailure?,
     private val captcha: Boolean = false,
+    private val submissionException: Exception? = null,
 ) : LoginAutomationGateway {
     val answers = mutableListOf<String>()
 
@@ -203,6 +233,7 @@ private class SsoGateway(
         captchaAnswer: String,
     ): AuthenticationResult {
         answers += captchaAnswer
+        submissionException?.let { throw it }
         return rejection?.let(AuthenticationResult::Failed)
             ?: AuthenticationResult.Success(StudentProfile("Test", "student", "student", "test"))
     }

@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.auth
 
+import kotlinx.coroutines.CancellationException
+
+// Only fetching the login page/challenge may retry; credentials are submitted at most once.
 const val DEFAULT_AUTO_LOGIN_ATTEMPTS = 3
 
 interface LoginAutomationGateway {
@@ -50,6 +53,8 @@ class AutomaticLoginCoordinator(
             onAttempt(attempt, maximumAttempts)
             val challenge = try {
                 gateway.requestCaptchaChallenge(credentials.username)
+            } catch (error: CancellationException) {
+                throw error
             } catch (_: Exception) {
                 latestFailure = LoginFailure.NETWORK
                 return@repeat
@@ -75,6 +80,8 @@ class AutomaticLoginCoordinator(
                         else -> {
                             val recognition = try {
                                 captchaRecognizer.recognize(challenge.challenge.imageBytes)
+                            } catch (error: CancellationException) {
+                                throw error
                             } catch (_: Exception) {
                                 latestFailure = LoginFailure.CAPTCHA_RECOGNITION_FAILED
                                 return@repeat
@@ -99,9 +106,15 @@ class AutomaticLoginCoordinator(
                     }
                     val authentication = try {
                         gateway.authenticateMis(credentials, challenge.challenge, answer)
+                    } catch (error: CancellationException) {
+                        throw error
                     } catch (_: Exception) {
-                        latestFailure = LoginFailure.NETWORK
-                        return@repeat
+                        // The server may already have received the password. Never replay the POST.
+                        return AutomaticLoginResult.ManualRequired(
+                            challenge = null,
+                            reason = LoginFailure.NETWORK,
+                            attempts = attempt,
+                        )
                     }
                     when (authentication) {
                         is AuthenticationResult.Success -> {
@@ -111,15 +124,13 @@ class AutomaticLoginCoordinator(
                             )
                         }
                         is AuthenticationResult.Failed -> {
-                            // 密码错误时不再重试：重复提交只会累积失败次数，触发验证码甚至锁定账号。
-                            if (authentication.reason == LoginFailure.ACCOUNT_REJECTED) {
-                                return AutomaticLoginResult.ManualRequired(
-                                    challenge = null,
-                                    reason = LoginFailure.ACCOUNT_REJECTED,
-                                    attempts = attempt,
-                                )
-                            }
-                            latestFailure = authentication.reason
+                            // Any credential submission failure requires user action, including
+                            // password rejection, a captcha requirement and an unclear response.
+                            return AutomaticLoginResult.ManualRequired(
+                                challenge = null,
+                                reason = authentication.reason,
+                                attempts = attempt,
+                            )
                         }
                     }
                 }

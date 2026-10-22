@@ -56,7 +56,7 @@ class SessionRefreshCoordinatorTest {
     }
 
     @Test
-    fun failedReauthenticationStaysOnTheCurrentPageAndStopsAfterTwoAttempts() = runSuspend {
+    fun failedReauthenticationStopsAfterOneAttemptAcrossBatchOperations() = runSuspend {
         var operationCount = 0
         var authenticationCount = 0
         val coordinator = SessionRefreshCoordinator(
@@ -71,8 +71,9 @@ class SessionRefreshCoordinatorTest {
             sessionExpired = { true },
         )
 
-        assertEquals(1, operationCount)
-        assertEquals(2, authenticationCount)
+        coordinator.run(operation = { operationCount += 1 }, sessionExpired = { true })
+        assertEquals(2, operationCount)
+        assertEquals(1, authenticationCount)
     }
 
     @Test
