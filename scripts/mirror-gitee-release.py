@@ -150,6 +150,7 @@ def main(promote_test=False):
     if not re.fullmatch(r'v[A-Za-z0-9._-]+', tag) or any(x in tag.lower() for x in ('alpha', 'beta')):
         raise MirrorError('Only existing production/emergency v* releases may be mirrored')
     gh_headers = {'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer ' + os.environ['GH_TOKEN']}
+    print(f'Read GitHub release metadata: {tag}', flush=True)
     release = github_release(tag, gh_headers)
     if (release['draft'] and tag != TEST_SOURCE_TAG) or release['tag_name'] != tag:
         raise MirrorError('GitHub release is unpublished or tag mismatched')
@@ -159,6 +160,7 @@ def main(promote_test=False):
     assets = release['assets']
     validate_assets(assets)
     api = Gitee(token)
+    print('Read Gitee release inventory', flush=True)
     releases = api.pages('/releases')
     existing = next((r for r in releases if r['tag_name'] == tag), None)
     if promote_test:
@@ -182,6 +184,7 @@ def main(promote_test=False):
     with tempfile.TemporaryDirectory() as temp:
         paths = []
         for asset in assets:
+            print(f'Download original installer: {asset["name"]}', flush=True)
             path = Path(temp) / asset['name']
             if release['draft']:
                 asset_url = asset.get('url', '')
@@ -194,6 +197,7 @@ def main(promote_test=False):
             if path.stat().st_size != asset['size']:
                 raise MirrorError('GitHub asset size mismatch')
             paths.append(path)
+        print(f'Sync release tag: {target_tag}', flush=True)
         sync_tag(tag, target_tag)
         fields = {'tag_name': target_tag, 'name': release['name'] or tag, 'body': (release['body'] or '').replace(READY, ''), 'prerelease': str(release['prerelease']).lower()}
         if tag == TEST_SOURCE_TAG:
@@ -207,6 +211,7 @@ def main(promote_test=False):
         rid = existing['id']
         for path in paths:
             if not any(f['name'] == path.name for f in files):
+                print(f'Upload Gitee installer: {path.name}', flush=True)
                 api.call(f'/releases/{rid}/attach_files', 'POST', file=path)
             url = f'https://gitee.com/{GITEE_REPO}/releases/download/{target_tag}/{path.name}'
             anonymous_verify(url, path)
