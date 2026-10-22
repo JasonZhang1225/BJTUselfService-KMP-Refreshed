@@ -176,6 +176,24 @@ fun filterHomework(
     dateMatches && courseMatches && submittedMatches
 }
 
+/** 课程平台作业搜索：课程名或标题包含关键字即可，空白视为不过滤。 */
+fun homeworkMatchesQuery(item: Homework, query: String): Boolean {
+    val keyword = query.trim()
+    if (keyword.isEmpty()) return true
+    return item.courseName.contains(keyword, ignoreCase = true) ||
+        item.title.contains(keyword, ignoreCase = true)
+}
+
+/** 搜索层结果：全部课程平台作业里找，不看课程/过期/已提交筛选，只沿用排序；未输入时为空。 */
+fun searchHomework(
+    homework: List<Homework>,
+    query: String,
+    order: HomeworkSortOrder,
+): List<Homework> {
+    if (query.isBlank()) return emptyList()
+    return sortHomework(homework.filter { homeworkMatchesQuery(it, query) }, order)
+}
+
 /**
  * 截止时间排序。
  * - [HomeworkSortOrder.ASCENDING]：由近到远（截止更早的在前）

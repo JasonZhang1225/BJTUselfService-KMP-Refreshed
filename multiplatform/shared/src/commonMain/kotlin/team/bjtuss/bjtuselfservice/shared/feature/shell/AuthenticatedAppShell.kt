@@ -7,7 +7,16 @@ import team.bjtuss.bjtuselfservice.shared.feature.grade.GradeContentSource
 import team.bjtuss.bjtuselfservice.shared.feature.grade.GradeWorkspace
 
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
@@ -122,6 +131,7 @@ import team.bjtuss.bjtuselfservice.shared.currentPlatform
 import kotlin.math.PI
 import team.bjtuss.bjtuselfservice.shared.accessibleAlpha
 import team.bjtuss.bjtuselfservice.shared.data.grade.formatGradeDetailForDisplay
+import team.bjtuss.bjtuselfservice.shared.data.library.libraryReminderNow
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.usesLegacySmartTransportFor
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
@@ -152,6 +162,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.assignment.*
 import team.bjtuss.bjtuselfservice.shared.logging.SyncTiming
 import team.bjtuss.bjtuselfservice.shared.feature.citel.CitelDetailWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkWorkspace
+import team.bjtuss.bjtuselfservice.shared.feature.library.LibraryWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.CoursewareContentSource
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.CoursewareScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.CoursewareWorkspace
@@ -353,6 +364,10 @@ fun AuthenticatedAppShell(
         if (written != null) lastWidgetDays = written
     }
     val homeState by homeModel.state.collectAsState()
+    // 图书馆借阅数据只存在会话内存；首页提醒由当前借阅派生，历史记录不参与。
+    val libraryModel = session.libraryModel
+    val libraryState by libraryModel.state.collectAsState()
+    val libraryReminder = remember(libraryState.loans) { libraryReminderNow(libraryState.loans) }
     val phyVlabEnabled = settingsState.preferences.isPhyVlabEnabled
     // 同步期间壳层随任一状态流重组；只在来源数据变化时重新聚合，作业页才能跳过无关重组。
     val aggregatedAssignments = remember(homeworkState.homework, phyVlabState, phyVlabEnabled,
@@ -378,6 +393,10 @@ fun AuthenticatedAppShell(
             citelState.lastSync != null && !citelState.fromCache, citelState.fromCache, citelState.message))
     }
     var aggregateSyncDialogVisible by remember { mutableStateOf(false) }
+    val assignmentSearch = remember { PageSearchState() }
+    val assignmentSearchRoutes = remember {
+        setOf(AppSection.ASSIGNMENTS, AppSection.HOMEWORK, HomeworkDetailRoute, PhyVlabDetailRoute, CitelDetailRoute)
+    }
     val compactBottomNavSections = remember(settingsState.preferences) {
         bottomNavSections(settingsState.preferences)
     }
@@ -504,6 +523,12 @@ fun AuthenticatedAppShell(
         else backStack.add(PhyVlabSettingsRoute)
     }
     val currentRoute = backStack.last()
+    // 作业详情页（含聚合页跳到的物理在线/CITEL 详情）返回时保留搜索；离开作业相关页才关闭。
+    LaunchedEffect(currentRoute) {
+        if (currentRoute !in assignmentSearchRoutes) {
+            assignmentSearch.close()
+        }
+    }
     val section: AppSection = when (currentRoute) {
         ClassroomDetailRoute -> AppSection.CLASSROOMS
         ClassroomOccupancyDetailRoute -> AppSection.CLASSROOM_OCCUPANCY
@@ -638,7 +663,11 @@ fun AuthenticatedAppShell(
         refreshCoordinator.recoveryInProgress.collect { sessionRecoveryInProgress = it }
     }
     val refreshGlobal: suspend (Boolean) -> Unit = { forceReauthenticate ->
-        refreshCoordinator.refresh(RefreshRequest(origin = RefreshOrigin.APP, forceReauthenticate = forceReauthenticate))
+        coroutineScope {
+            launch { refreshCoordinator.refresh(RefreshRequest(origin = RefreshOrigin.APP, forceReauthenticate = forceReauthenticate)) }
+            // 图书馆与学校业务会话独立、不在公共刷新协调器里：全局刷新时一并重取借阅（失败保留旧数据）。
+            launch { session.libraryModel.refresh(silent = true) }
+        }
     }
     val latestGlobalRefresh = rememberUpdatedState(refreshGlobal)
     LaunchedEffect(session, forcedRouteId, nativeTabBarEnabled) {
@@ -729,6 +758,7 @@ fun AuthenticatedAppShell(
                         }
                     },
                 )
+                AppSection.LIBRARY -> libraryModel.refresh()
                 AppSection.PHYVLAB -> if (phyVlabEnabled) phyVlabModel.refresh()
                 AppSection.PHYSICS_LAB -> if (physicsLabEnabled) session.physicsLabModel?.refresh()
                 AppSection.CITEL -> if (currentRoute == CitelDetailRoute) citelState.selectedTask?.let { session.citelModel?.selectTask(it) } else if (currentRoute != CitelSettingsRoute && citelEnabled) session.citelModel?.refresh()
@@ -1009,6 +1039,13 @@ fun AuthenticatedAppShell(
             SyncTiming.measure("startup.physics-lab") { labModel.refresh() }
         }
     }
+    // 图书馆：登录后静默同步一次，用于首页「借阅到期」提醒；失败不打扰用户，
+    // 进入页面或手动刷新时再报错。原生二级页宿主不重复同步。
+    LaunchedEffect(libraryModel, entryLoggingIn, forcedRouteId, nativeTabBarEnabled) {
+        if (entryLoggingIn) return@LaunchedEffect
+        if (!shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) return@LaunchedEffect
+        SyncTiming.measure("startup.library") { libraryModel.refreshIfNeeded() }
+    }
 
     // 物理在线总开关同时控制同步与底栏入口。
     LaunchedEffect(phyVlabModel, phyVlabEnabled, entryLoggingIn, forcedRouteId, nativeTabBarEnabled) {
@@ -1128,6 +1165,12 @@ fun AuthenticatedAppShell(
          */
         topBarActionLabel: String? = null,
         onTopBarActionClick: (() -> Unit)? = null,
+        /**
+         * 页内搜索层。iOS 原生栏交给 UISearchController；Compose 顶栏则放搜索按钮，
+         * 打开后整条顶栏换成 Material 搜索视图的输入框。
+         */
+        search: PageSearchState? = null,
+        searchPrompt: String = "搜索",
         /** 状态胶囊点击动作；首页用于查看同步详情，失败时不在点击瞬间触发重试。 */
         onStatusClick: (() -> Unit)? = null,
         /** 未显式提供 [onStatusClick] 时，首页聚合同步失败可由此生成失败详情弹窗。 */
@@ -1278,7 +1321,7 @@ fun AuthenticatedAppShell(
                 SideEffect {
                     val nativeBarAction = when {
                         !hostBarTakesOver -> null
-                        entryLoggingIn || refreshable || idleStatusText != null || topBarActionLabel != null ->
+                        entryLoggingIn || refreshable || idleStatusText != null || topBarActionLabel != null || search != null ->
                             NativeBarAction(
                                 status = when {
                                     entryLoggingIn -> "登录中"
@@ -1298,6 +1341,11 @@ fun AuthenticatedAppShell(
                                 onExtraClick = onTopBarActionClick,
                                 scrollProgress = nativeScrollProgress,
                                 scrollController = reportedNativeScrollController,
+                                searchPrompt = searchPrompt.takeIf { search != null },
+                                searchActive = search?.active == true,
+                                onSearchOpen = search?.let { it::activate },
+                                onSearchQueryChange = search?.let { it::update },
+                                onSearchClose = search?.let { it::close },
                             )
                         else ->
                             // No visible bar item is needed, but UIKit still
@@ -1323,14 +1371,52 @@ fun AuthenticatedAppShell(
                             .height(measuredTopInset),
                     )
                 } else {
-                    CompactAppTopBar(
+                    // 搜索头替换整条顶栏。Material：顶栏淡出、搜索视图淡入并从 92% 放大（M3 fade through）；
+                    // iOS：搜索框自上方滑入，临界阻尼、无过冲。结果区由页面把列表项就地换掉。
+                    val searchOpen = search?.active == true
+                    val searchReduceMotion = LocalReduceMotion.current
+                    val appleSearchStyle = platform.family == PlatformFamily.IOS
+                    if (search != null) {
+                        // Android 返回键 / 预测性返回先收起搜索，不直接退出本页。
+                        NavigationBackHandler(
+                            state = rememberNavigationEventState(NavigationEventInfo.None),
+                            isBackEnabled = searchOpen,
+                            onBackCompleted = { search.close() },
+                        )
+                    }
+                    AnimatedContent(
+                        targetState = searchOpen,
+                        transitionSpec = {
+                            when {
+                                searchReduceMotion -> fadeIn(tween(120)) togetherWith fadeOut(tween(120))
+                                appleSearchStyle -> {
+                                    val slide = spring<IntOffset>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+                                    (slideInVertically(slide) { -it / 2 } + fadeIn(tween(220))) togetherWith
+                                        (slideOutVertically(slide) { -it / 2 } + fadeOut(tween(160)))
+                                }
+                                else ->
+                                    (fadeIn(tween(210, delayMillis = 90, easing = LinearOutSlowInEasing)) +
+                                        scaleIn(tween(210, delayMillis = 90, easing = LinearOutSlowInEasing), initialScale = 0.92f)) togetherWith
+                                        fadeOut(tween(90, easing = FastOutLinearInEasing))
+                            }
+                        },
+                        label = "page-search-header",
+                    ) { showSearch ->
+                    if (showSearch && search != null) {
+                        if (appleSearchStyle) {
+                            AppleSearchHeader(state = search, prompt = searchPrompt)
+                        } else {
+                            MaterialSearchHeader(state = search, prompt = searchPrompt)
+                        }
+                    } else CompactAppTopBar(
                         title = if (nativeTitleBarActive) "" else title,
                         isRefreshing = isRefreshing || sessionRecoveryInProgress,
                         isLoggingIn = entryLoggingIn,
                         idleStatusText = idleStatusText,
                         statusAsText = title == AppSection.CITEL.title || title == AppSection.ASSIGNMENTS.title,
                         dense = denseTopBar,
-                        action = composeAction.takeUnless { declarativeActionLabel == "今" },
+                        action = composeAction.takeUnless { declarativeActionLabel == "今" }
+                            ?: search?.let { state -> { TopBarSearchCircle(onClick = state::activate) } },
                         leadingAction = composeAction.takeIf { declarativeActionLabel == "今" && platform.family == PlatformFamily.IOS },
                         titleAction = composeAction.takeIf { declarativeActionLabel == "今" && platform.family != PlatformFamily.IOS },
                         // 可刷新页：右上角状态胶囊旁放刷新按钮；不再下拉刷新（保平台原生过滚）。
@@ -1342,6 +1428,7 @@ fun AuthenticatedAppShell(
                             null
                         },
                     )
+                    }
                 }
                 // Scroll progress comes from the page's own list state
                 // (LocalReportTopScroll), not from gesture accumulation: flings, snaps
@@ -1458,6 +1545,8 @@ fun AuthenticatedAppShell(
                         platform = platform,
                         expanded = expanded,
                         mailboxUnread = mailboxUnread,
+                        libraryReminder = libraryReminder.takeIf { libraryState.user != null },
+                        onOpenLibrary = { navigateToSection(AppSection.LIBRARY) },
                         holdNetwork = entryLoggingIn,
                         homework = homeworkState.homework,
                         exams = examState.exams,
@@ -1639,6 +1728,7 @@ fun AuthenticatedAppShell(
                 refreshAction = { aggregateSyncDialogVisible = true; refresh() },
                 isRefreshing = assignmentSync.any { it.busy }, idleStatusText = aggregateAssignmentSyncStatus(assignmentSync),
                 onStatusClick = { aggregateSyncDialogVisible = true },
+                search = assignmentSearch, searchPrompt = "搜索课程、作业或来源",
                 showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier, scrollUnderTopBar = true,
             ) {
@@ -1674,6 +1764,7 @@ fun AuthenticatedAppShell(
                     showSyncDetails = aggregateSyncDialogVisible, onDismissSyncDetails = { aggregateSyncDialogVisible = false },
                     modifier = Modifier.fillMaxSize(), expanded = expanded, fileGateway = homeworkFileGateway,
                     markdown = { item -> aggregateAssignmentMarkdown(item, homeworkState, phyVlabState, citelState) },
+                    search = assignmentSearch,
                     detailContent = { item ->
                         when (item.source) {
                             AssignmentSource.COURSE_PLATFORM -> HomeworkDetailWorkspace(homeworkModel, homeworkFileGateway,
@@ -1694,6 +1785,8 @@ fun AuthenticatedAppShell(
                 showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
                 scrollUnderTopBar = true,
+                search = assignmentSearch,
+                searchPrompt = "搜索课程或作业",
                 // 与课表/成绩一致：同步态在顶栏右上，banner 内只放摘要与筛选入口。
                 idleStatusText = when {
                     homeworkState.failure != null -> "同步失败"
@@ -1721,6 +1814,7 @@ fun AuthenticatedAppShell(
                         }
                     },
                     modifier = Modifier.fillMaxSize(),
+                    search = assignmentSearch,
                 )
             }
             AppSection.COURSEWARE -> DestinationPage(
@@ -1751,6 +1845,28 @@ fun AuthenticatedAppShell(
                     fileGateway = homeworkFileGateway,
                     directoryGateway = coursewareDirectoryGateway,
                     onRefresh = refresh,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            AppSection.LIBRARY -> DestinationPage(
+                title = AppSection.LIBRARY.title,
+                expanded = expanded,
+                refreshable = true,
+                isRefreshing = libraryState.loading || libraryState.refreshing,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
+                modifier = modifier,
+                // 账户摘要与 tab 随列表滚动，内容滚进原生玻璃顶栏后面（与考试/作业页一致）。
+                scrollUnderTopBar = true,
+                idleStatusText = when {
+                    libraryState.failure != null -> "同步失败"
+                    libraryState.lastSyncEpochSeconds != null -> "已同步"
+                    else -> "未同步"
+                },
+            ) {
+                LibraryWorkspace(
+                    model = libraryModel,
+                    expanded = expanded,
+                    holdNetwork = entryLoggingIn,
                     modifier = Modifier.fillMaxSize(),
                 )
             }

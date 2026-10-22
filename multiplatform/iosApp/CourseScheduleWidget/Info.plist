@@ -18,9 +18,9 @@
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<!-- 必须与 iosApp/Info.plist 的版本一致；改版本号时两处一起改（verify-apple-release-metadata.sh 会检查）。 -->
 	<key>CFBundleShortVersionString</key>
-	<string>1.8.5-EmergencyFix2</string>
+	<string>1.8.6-Alpha</string>
 	<key>CFBundleVersion</key>
-	<string>40</string>
+	<string>41</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>

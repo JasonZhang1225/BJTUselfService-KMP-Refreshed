@@ -52,11 +52,34 @@ data class AggregateAssignmentFilters(
 fun filterAggregateAssignments(items: List<AggregatedAssignment>, filters: AggregateAssignmentFilters, now: Long): List<AggregatedAssignment> {
     val visible = items.filter { filters.forSource(it.source).matches(it.courseId) && (!filters.hideSubmitted || !it.submitted) &&
         (!filters.hideExpired || it.dueTime?.let { time -> time > now } != false) }
-    return when (filters.sortOrder) {
-        1 -> visible.sortedBy { it.dueTime ?: Long.MAX_VALUE }
-        2 -> visible.sortedByDescending { it.dueTime ?: Long.MIN_VALUE }
-        else -> visible
+    return sortAggregateAssignments(visible, filters.sortOrder)
+}
+
+private fun sortAggregateAssignments(items: List<AggregatedAssignment>, sortOrder: Int): List<AggregatedAssignment> =
+    when (sortOrder) {
+        1 -> items.sortedBy { it.dueTime ?: Long.MAX_VALUE }
+        2 -> items.sortedByDescending { it.dueTime ?: Long.MIN_VALUE }
+        else -> items
     }
+
+/**
+ * 搜索层结果：在全部作业里找，不看来源/课程/已提交/过期筛选，只沿用排序。
+ * 还没输入时返回空表，由搜索层显示提示，而不是把整张列表原样搬过来。
+ */
+fun searchAggregateAssignments(items: List<AggregatedAssignment>, query: String, sortOrder: Int): List<AggregatedAssignment> {
+    val keyword = query.trim()
+    if (keyword.isEmpty()) return emptyList()
+    return sortAggregateAssignments(items.filter { assignmentMatchesSearch(it, keyword) }, sortOrder)
+}
+
+/** 聚合列表搜索：课程名、作业标题或来源名（课程平台 / 物理在线 / CITEL）。 */
+fun assignmentMatchesSearch(item: AggregatedAssignment, query: String): Boolean {
+    val keyword = query.trim()
+    if (keyword.isEmpty()) return true
+    val title = item.homework?.title ?: item.physical?.title ?: item.citel?.title.orEmpty()
+    return item.courseName.contains(keyword, ignoreCase = true) ||
+        title.contains(keyword, ignoreCase = true) ||
+        item.source.label.contains(keyword, ignoreCase = true)
 }
 
 class AggregateAssignmentFilterStore(private val cache: CacheStore, private val account: String) {

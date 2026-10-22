@@ -15,6 +15,10 @@ import team.bjtuss.bjtuselfservice.shared.auth.SessionProbeResult
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
 import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
+import team.bjtuss.bjtuselfservice.shared.data.library.DefaultLibraryRepository
+import team.bjtuss.bjtuselfservice.shared.data.library.LibraryLoginProtocol
+import team.bjtuss.bjtuselfservice.shared.data.library.SchoolLibraryRemoteDataSource
+import team.bjtuss.bjtuselfservice.shared.feature.library.LibraryModel
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
@@ -74,6 +78,23 @@ internal fun rememberAuthenticatedSession(
     val mobileRemote = remember(graph) {
         createMobileRemoteAgent(platform, cacheStore, securityCoordinator, graph.refreshCoordinator, sessionHolder)
     }
+    // 图书馆（opac）登录不在 CAS/MIS 链路上：它走独立的 OAuth2 授权页，
+    // 但复用同一个统一身份认证会话与内存凭据。数据只保存在内存，不写缓存。
+    // 以学号为 key 按账号隔离：换账号后不沿用上一账号的借阅快照、自动同步标记与 loanId。
+    val libraryLoginProtocol = remember(profile.studentId, transport) {
+        LibraryLoginProtocol(
+            transport = transport,
+            credentialsProvider = { latestCredentials.value.takeIf(Credentials::isValid) },
+        )
+    }
+    val libraryModel = remember(profile.studentId, transport, libraryLoginProtocol) {
+        LibraryModel(
+            repository = DefaultLibraryRepository(
+                remote = SchoolLibraryRemoteDataSource(transport),
+                authenticator = libraryLoginProtocol,
+            ),
+        )
+    }
     // 退出登录、切换账号或宿主销毁：取消旧账号的在途刷新，结果不会写进新账号缓存。
     DisposableEffect(graph) {
         onDispose {
@@ -81,7 +102,7 @@ internal fun rememberAuthenticatedSession(
             graph.close()
         }
     }
-    val session = remember(graph, profile, appPreferences, coursewareDirectoryGateway, systemCalendarGateway) {
+    val session = remember(graph, libraryModel, profile, appPreferences, coursewareDirectoryGateway, systemCalendarGateway) {
         AuthenticatedSession(
             profile = profile,
             entryLoggingIn = entryLoggingIn,
@@ -101,6 +122,7 @@ internal fun rememberAuthenticatedSession(
             physicsDemoModel = graph.physicsDemoModel,
             phyVlabAccountModel = graph.phyVlabAccountModel,
             citelModel = graph.citelModel,
+            libraryModel = libraryModel,
             aggregateFilterStore = team.bjtuss.bjtuselfservice.shared.feature.assignment.AggregateAssignmentFilterStore(cacheStore, profile.studentId),
             homeModel = graph.homeModel,
             homeChangeFeed = graph.homeChangeFeed,

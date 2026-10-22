@@ -371,6 +371,19 @@ internal fun CompactTabIcon(section: AppSection) {
                 )
                 drawCircle(color, radius = 1.2.dp.toPx(), center = Offset(12.dp.toPx(), 12.dp.toPx()))
             }
+            AppSection.LIBRARY -> {
+                // 图书馆：打开的书本（左右两页 + 中缝 + 两条文字线）。
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(4.dp.toPx(), 4.dp.toPx()),
+                    size = Size(16.dp.toPx(), 16.dp.toPx()),
+                    cornerRadius = CornerRadius(2.dp.toPx()),
+                    style = Stroke(width = strokeWidth),
+                )
+                drawLine(color, Offset(12.dp.toPx(), 4.dp.toPx()), Offset(12.dp.toPx(), 20.dp.toPx()), strokeWidth)
+                drawLine(color, Offset(6.5.dp.toPx(), 8.dp.toPx()), Offset(10.dp.toPx(), 8.dp.toPx()), strokeWidth)
+                drawLine(color, Offset(14.dp.toPx(), 8.dp.toPx()), Offset(17.5.dp.toPx(), 8.dp.toPx()), strokeWidth)
+            }
             AppSection.MAILBOX -> {
                 drawRoundRect(color, Offset(3.dp.toPx(), 5.dp.toPx()), Size(18.dp.toPx(), 14.dp.toPx()), CornerRadius(2.dp.toPx()), style = Stroke(strokeWidth))
                 drawLine(color, Offset(3.dp.toPx(), 6.dp.toPx()), Offset(12.dp.toPx(), 13.dp.toPx()), strokeWidth)

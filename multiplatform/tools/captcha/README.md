@@ -1,5 +1,9 @@
 # 验证码模型转换
 
+> 1.8.6 起冻结 Android 工程（含参考模型 `app/src/main/assets/model.pt`）与 Windows 的
+> `BJTUCaptcha.pt` 已从 main 移除，存档在标签 `archive/legacy-android-and-captcha-model`。重新转换前先从该标签取回模型：
+> `git show archive/legacy-android-and-captcha-model:app/src/main/assets/model.pt > model.pt`。
+
 `convert_model.py` 从冻结 Android 参考模型读取原权重，重建确定性的
 推理网络，并同时生成：
 

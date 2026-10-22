@@ -103,7 +103,7 @@ jobs:
           for configuration in Debug Release; do
             xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp \
               -configuration "$configuration" -sdk iphonesimulator -showBuildSettings |
-              grep -Eq '^[[:space:]]*IPHONEOS_DEPLOYMENT_TARGET = 16\.0$'
+              grep -Eq '^[[:space:]]*IPHONEOS_DEPLOYMENT_TARGET = 18\.0$'
           done
 
       - name: Compile iOS and test macOS security paths

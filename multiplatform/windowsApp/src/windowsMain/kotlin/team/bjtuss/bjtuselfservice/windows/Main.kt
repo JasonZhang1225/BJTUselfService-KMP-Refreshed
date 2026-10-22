@@ -29,6 +29,11 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.sun.jna.Library
 import com.sun.jna.Native
+import com.sun.jna.platform.win32.Advapi32Util
+import com.sun.jna.platform.win32.WinReg
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import java.awt.Dimension
 import java.awt.Image
 import java.awt.Toolkit
@@ -41,11 +46,9 @@ import javax.imageio.ImageIO
 import kotlinx.coroutines.runBlocking
 import team.bjtuss.bjtuselfservice.shared.App
 import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
-import team.bjtuss.bjtuselfservice.shared.auth.CaptchaRecognitionResult
+import team.bjtuss.bjtuselfservice.shared.auth.UnavailableCaptchaRecognizer
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
 
-private const val CAPTCHA_VERIFICATION_ARGUMENT = "--verify-captcha-model="
-private const val CAPTCHA_LOGITS_ARGUMENT = "--dump-captcha-logits="
 
 /** 进程级持有，防止锁对象被回收；进程退出时系统释放。 */
 private var appRunningLock: AutoCloseable? = null
@@ -57,39 +60,13 @@ fun main(args: Array<String>) {
         val code = team.bjtuss.bjtuselfservice.shared.agent.runAgentCli(args.drop(1), windowsAgentCliPlatform())
         kotlin.system.exitProcess(code)
     }
-    val captchaRecognizer = WindowsTorchCaptchaRecognizer()
-    args.firstOrNull { it.startsWith(CAPTCHA_LOGITS_ARGUMENT) }?.let { argument ->
-        val image = File(argument.removePrefix(CAPTCHA_LOGITS_ARGUMENT))
-        require(image.isFile) { "验证码验证图片不存在：${image.absolutePath}" }
-        val logits = captchaRecognizer.recognizeRawLogits(image.readBytes())
-            ?: error("captcha_logits=failed")
-        println("captcha_logits=${logits.joinToString(",")}")
-        captchaRecognizer.close()
-        return
-    }
-    args.firstOrNull { it.startsWith(CAPTCHA_VERIFICATION_ARGUMENT) }?.let { argument ->
-        val image = File(argument.removePrefix(CAPTCHA_VERIFICATION_ARGUMENT))
-        require(image.isFile) { "验证码验证图片不存在：${image.absolutePath}" }
-        when (val result = runBlocking { captchaRecognizer.recognize(image.readBytes()) }) {
-            is CaptchaRecognitionResult.Success -> {
-                println(
-                    "captcha_model=ready expression=${result.value.expression} " +
-                        "answer=${result.value.answer}",
-                )
-                captchaRecognizer.close()
-                return
-            }
-            is CaptchaRecognitionResult.Failed -> {
-                captchaRecognizer.close()
-                error("captcha_model=failed reason=${result.reason}")
-            }
-        }
-    }
+    // 1.8.6 起 Windows 不再内置验证码模型（旧 torch 模型已存档于 archive/legacy-android-and-captcha-model），
+    // 需要验证码时由用户手动输入。
+    val captchaRecognizer = UnavailableCaptchaRecognizer
     // 已有窗口进程（可能在后台运行远程同步）：请它显示窗口后本进程退出，不建立第二个会话。
     if (BACKGROUND_LAUNCH_ARGUMENT !in args &&
         team.bjtuss.bjtuselfservice.shared.agent.host.AppRefreshHost.showExistingWindow(windowsAgentCliPlatform().cacheDirectory)
     ) {
-        captchaRecognizer.close()
         return
     }
     val accountSecurityStore = createWindowsAccountSecurityStore()
@@ -169,12 +146,23 @@ fun main(args: Array<String>) {
                         window.requestFocus()
                     }
                 }
-                LaunchedEffect(Unit) {
+                LaunchedEffect(window) {
                     window.minimumSize = Dimension(720, 520)
-                    applyWindowsDarkTitleBar(window.windowHandle)
                     // 多尺寸图标列表：Windows 按当前 DPI 选最合适尺寸，避免缩放模糊。
                     appWindowIconImages()?.let { images ->
                         window.iconImages = images
+                    }
+                    // 标题栏跟随系统浅/深色：轮询注册表以支持运行中切换 Windows 主题。
+                    // 实测单次 JNA 读注册表约 40µs（20k 次平均），2s 一次的任务周期占用
+                    // ≈0.002% CPU；注册表读取放到 IO 线程，避免占用 Compose 主线程。
+                    var appliedDark: Boolean? = null
+                    while (isActive) {
+                        val dark = withContext(Dispatchers.IO) { isWindowsAppsUseDarkTheme() }
+                        if (dark != appliedDark) {
+                            applyWindowsTitleBarTheme(window.windowHandle, dark)
+                            appliedDark = dark
+                        }
+                        delay(2_000)
                     }
                 }
                 // Count completed content clicks only. Focus, mouse movement, wheel
@@ -215,7 +203,6 @@ fun main(args: Array<String>) {
         runCatching { appRunningLock?.close() }
         remoteController.close()
         remoteScope.cancel()
-        captchaRecognizer.close()
         cacheStoreHandle.store.close()
     }
 }
@@ -249,14 +236,17 @@ private fun appWindowIconResource(): java.io.InputStream? =
     Thread.currentThread().contextClassLoader.getResourceAsStream("app-icon.png")
 
 /**
- * Windows 10/11 标题栏跟随系统深色：DWM 的 DWMWA_USE_IMMERSIVE_DARK_MODE
- * （属性 20，Windows 10 1809+；Windows 11 22H2 上 20/19 均可用）。
- * 不设置时标题栏始终用系统浅色主题（白底黑字），与应用内深色主题割裂。
+ * Windows 10/11 标题栏跟随**系统**浅色/深色主题（DWM 的 DWMWA_USE_IMMERSIVE_DARK_MODE，
+ * 属性 20，Windows 10 1809+）。
+ *
+ * 注意：Java/AWT 窗口不会自动跟随系统深色，所以必须显式设置；但以前这里无条件写 1，
+ * 导致系统浅色时应用内容是浅色、标题栏却是纯黑。现在由调用方按注册表 AppsUseLightTheme
+ * 决定深浅，并在窗口生命周期内轮询以跟随系统主题切换。
  */
-private fun applyWindowsDarkTitleBar(windowHandle: Long) {
+private fun applyWindowsTitleBarTheme(windowHandle: Long, dark: Boolean) {
     if (windowHandle == 0L) return
+    val darkMode = intArrayOf(if (dark) 1 else 0)
     runCatching {
-        val darkMode = intArrayOf(1)
         Dwmapi.INSTANCE.DwmSetWindowAttribute(
             windowHandle,
             DWMWA_USE_IMMERSIVE_DARK_MODE,
@@ -265,6 +255,16 @@ private fun applyWindowsDarkTitleBar(windowHandle: Long) {
         )
     }
 }
+
+/** 系统“应用模式”是否为深色；读不到时按浅色处理（与 Windows 默认一致）。 */
+private fun isWindowsAppsUseDarkTheme(): Boolean = runCatching {
+    val lightTheme = Advapi32Util.registryGetIntValue(
+        WinReg.HKEY_CURRENT_USER,
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+        "AppsUseLightTheme",
+    )
+    lightTheme == 0
+}.getOrDefault(false)
 
 private interface Dwmapi : Library {
     fun DwmSetWindowAttribute(

@@ -23,7 +23,7 @@ class AppUpdateCheckerTest {
 
     @Test
     fun releaseVersionCanUpgradeThe173Base() {
-        assertTrue(AppUpdateChecker.CURRENT_VERSION == "1.8.5-EmergencyFix2")
+        assertTrue(AppUpdateChecker.CURRENT_VERSION == "1.8.6-Alpha")
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.5-EmergencyFix1") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.5-AgentAlpha") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.4-Candidate3") > 0)
@@ -34,7 +34,8 @@ class AppUpdateCheckerTest {
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.4-Beta-SheetFix-Widget") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.4-Beta-SheetFix-Widget-fix2") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.4-Beta2") > 0)
-        assertTrue(AppUpdateChecker.compareVersions("1.8.5-KMP", AppUpdateChecker.CURRENT_VERSION) > 0)
+        assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.5-KMP") > 0)
+        assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.5-EmergencyFix2") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.3-Beta-ci") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.3-Alpha-ci") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.2-KMP") > 0)

@@ -85,6 +85,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkDetail
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkSortOrder
 import team.bjtuss.bjtuselfservice.shared.domain.homework.SubmittedHomeworkAttachment
+import team.bjtuss.bjtuselfservice.shared.domain.homework.searchHomework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.stableKey
 import team.bjtuss.bjtuselfservice.shared.domain.homework.typeLabel
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
@@ -98,6 +99,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetScrollContentPaddin
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
+import team.bjtuss.bjtuselfservice.shared.feature.shell.PageSearchEmptyState
+import team.bjtuss.bjtuselfservice.shared.feature.shell.PageSearchState
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LegacySmartTransportWarning
 import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
@@ -116,11 +119,20 @@ fun HomeworkWorkspace(
     onRefresh: () -> Unit,
     onOpenDetail: () -> Unit,
     modifier: Modifier,
+    search: PageSearchState? = null,
 ) {
     val scope = rememberCoroutineScope()
     // 附件下载/上传状态与详情二级页共用同一套实现，见 HomeworkTransferState。
     val transfer = rememberHomeworkTransferState(model, fileGateway, onReauthenticate)
     var showFilterSheet by remember { mutableStateOf(false) }
+    // 搜索是独立的一层：结果来自全部作业，不经过课程/过期/已提交筛选，筛选 banner 与提示让位。
+    val searchActive = search?.active == true
+    val query = search?.query.orEmpty()
+    val displayedHomework = if (searchActive) {
+        searchHomework(state.homework, query, state.sortOrder)
+    } else {
+        state.visibleHomework
+    }
 
     // 只灌缓存；网络自动同步由 shell 在登录成功后触发。
     LaunchedEffect(model) { model.initialize(refreshFromNetwork = false) }
@@ -167,19 +179,25 @@ fun HomeworkWorkspace(
             ) { HomeworkEmptyState(onRefresh) }
             else -> {
                 if (expanded) {
-                    // 与移动端一致：同步态在顶栏；Banner 内筛选入口；课程/过期/排序进 sheet。
-                    HomeworkSummary(
-                        state = state,
-                        onOpenFilter = { showFilterSheet = true },
-                    )
-                    if (state.visibleHomework.isEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                                Text("当前筛选下没有作业", style = MaterialTheme.typography.titleMedium)
-                                TextButton(onClick = { showFilterSheet = true }) { Text("调整筛选") }
+                    if (!searchActive) {
+                        // 与移动端一致：同步态在顶栏；Banner 内筛选入口；课程/过期/排序进 sheet。
+                        HomeworkSummary(
+                            state = state,
+                            onOpenFilter = { showFilterSheet = true },
+                        )
+                    }
+                    if (displayedHomework.isEmpty()) {
+                        if (searchActive) {
+                            PageSearchEmptyState(query, hint = "搜索课程名或作业标题")
+                        } else {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    Text("当前筛选下没有作业", style = MaterialTheme.typography.titleMedium)
+                                    TextButton(onClick = { showFilterSheet = true }) { Text("调整筛选") }
+                                }
                             }
                         }
                     } else {
@@ -189,7 +207,7 @@ fun HomeworkWorkspace(
                             horizontalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
                             HomeworkList(
-                                homework = state.visibleHomework,
+                                homework = displayedHomework,
                                 selectedKey = state.selectedHomeworkKey,
                                 sortOrder = state.sortOrder,
                                 onOpen = { key ->
@@ -227,6 +245,9 @@ fun HomeworkWorkspace(
                     // 紧凑端：Banner（含筛选按钮）+ 列表；点卡片先选中再 push 详情二级页。
                     HomeworkScrollableContent(
                         state = state,
+                        displayed = displayedHomework,
+                        searchActive = searchActive,
+                        query = query,
                         legacyWarningVisible = legacyWarningVisible,
                         onDismissLegacyWarning = onDismissLegacyWarning,
                         onOpenFilter = { showFilterSheet = true },
@@ -821,6 +842,9 @@ private fun CourseFilterRow(title: String, selected: Boolean, onClick: () -> Uni
 @Composable
 private fun HomeworkScrollableContent(
     state: HomeworkUiState,
+    displayed: List<Homework>,
+    searchActive: Boolean,
+    query: String,
     legacyWarningVisible: Boolean = false,
     onDismissLegacyWarning: () -> Unit = {},
     onOpenFilter: () -> Unit,
@@ -833,7 +857,7 @@ private fun HomeworkScrollableContent(
     // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
     val topClearance = LocalTopBarClearance.current
     // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
-    LaunchedEffect(state.sortOrder, state.hideExpired, state.hideSubmitted, state.selectedCourses) {
+    LaunchedEffect(state.sortOrder, state.hideExpired, state.hideSubmitted, state.selectedCourses, searchActive, query) {
         listState.scrollToItem(0)
     }
     TopScrollLazyColumn(
@@ -847,42 +871,56 @@ private fun HomeworkScrollableContent(
             bottom = 18.dp + LocalBottomBarClearance.current,
         ),
     ) {
-        // underlap 时失败横幅也收进列表（外层已跳过），平时保持外层旧布局，见 Workspace。
-        if (topClearance > 0.dp) {
-            state.failure?.let { failure ->
-                item(key = "homework-failure") {
-                    HomeworkFailureBanner(
-                        failure = failure,
-                        hasContent = state.homework.isNotEmpty(),
-                        onRetry = onRetry,
-                        onDismiss = onDismissFailure,
-                    )
-                }
-            }
-        }
-        if (legacyWarningVisible) {
-            item(key = "homework-legacy-warning") {
-                LegacySmartTransportWarning(onDismiss = onDismissLegacyWarning)
-            }
-        }
-        item(key = "homework-summary") {
-            HomeworkSummary(state = state, onOpenFilter = onOpenFilter)
-        }
-        if (state.visibleHomework.isEmpty()) {
-            item(key = "homework-empty") {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 48.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Text("当前筛选下没有作业", style = MaterialTheme.typography.titleMedium)
-                    TextButton(onClick = onOpenFilter) { Text("调整筛选") }
+        if (searchActive) {
+            // 搜索层：只有结果，没有失败横幅、迁移提示和筛选 banner。
+            if (displayed.isEmpty()) {
+                item(key = "homework-search-empty") {
+                    PageSearchEmptyState(query, hint = "搜索课程名或作业标题", modifier = Modifier.animateItem())
                 }
             }
         } else {
-            items(state.visibleHomework, key = Homework::stableKey) { item ->
+            // underlap 时失败横幅也收进列表（外层已跳过），平时保持外层旧布局，见 Workspace。
+            if (topClearance > 0.dp) {
+                state.failure?.let { failure ->
+                    item(key = "homework-failure") {
+                        Box(Modifier.animateItem()) {
+                            HomeworkFailureBanner(
+                                failure = failure,
+                                hasContent = state.homework.isNotEmpty(),
+                                onRetry = onRetry,
+                                onDismiss = onDismissFailure,
+                            )
+                        }
+                    }
+                }
+            }
+            if (legacyWarningVisible) {
+                item(key = "homework-legacy-warning") {
+                    Box(Modifier.animateItem()) { LegacySmartTransportWarning(onDismiss = onDismissLegacyWarning) }
+                }
+            }
+            item(key = "homework-summary") {
+                Box(Modifier.animateItem()) { HomeworkSummary(state = state, onOpenFilter = onOpenFilter) }
+            }
+            if (displayed.isEmpty()) {
+                item(key = "homework-empty") {
+                    Column(
+                        modifier = Modifier
+                            .animateItem()
+                            .fillMaxWidth()
+                            .padding(vertical = 48.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text("当前筛选下没有作业", style = MaterialTheme.typography.titleMedium)
+                        TextButton(onClick = onOpenFilter) { Text("调整筛选") }
+                    }
+                }
+            }
+        }
+        // 列表与搜索结果沿用同一 key：打开搜索、输入关键字时匹配的卡片留在原地，其余淡出。
+        items(displayed, key = Homework::stableKey) { item ->
+            Box(Modifier.animateItem()) {
                 HomeworkCard(
                     item = item,
                     // 紧凑端详情是独立二级页（原生 push），返回时没有可靠的 pop 回调可清选中；

@@ -951,3 +951,29 @@
 - 已明确推送到 `https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed.git` 的 main；fetch 后本地 HEAD 与 origin/main 均为 `b083953`。实际 origin 指向用户仓库，与 AGENTS.md 的旧命名不同；未修改远端配置，未向上游推送。上游 PR #38 经 API 核对为 CLOSED、mergedAt=null，来源为用户 fork。
 - 验证：全部 refs/heads 和 refs/remotes/origin 逐一执行 `git merge-base --is-ancestor <ref> HEAD` 成功；`git diff --exit-code android-account-fix HEAD -- multiplatform docs/releases` 成功，应用源码与已发布/四端打包成功的 Fix 2 一致；`git diff --check` 通过。本轮未重新构建、安装或实机验证。
 - 备份：`.artifacts/branch-merge-20261020/before-merge.bundle` 与 `local-changes.patch`；合并前暂存并在合并后恢复原有三份未提交文件，本地修复分支保留。未重新创建已删除的远端分支，提交已由 main 保留。本条与 memory 更新继续留在本地未提交文档中。
+
+## 2026-10-22 图书馆借阅功能（PR #40，`feat/library`，合并提交 `64c24ab`）
+
+- 改动：新增 `data/library/`（模型、endpoints、SSO OAuth2 登录协议、remote、repository）与 `feature/library/`（LibraryModel、LibraryScreen），应用页磁贴 + 底栏自定义候选 + 首页到期提醒；续借支持单本/全选批量并确认，不做离线缓存。登录链路：SSO 授权回 `opac.bjtu.edu.cn/OAuth2/bjtu/index?code=` → `/OAuth2/bjtu/login` → 必须再跟随 `find/sso/login/bjtu/0?data/time/enc` 才写入 `SESSION` Cookie。续借响应按 `fail` 区分新应还日期与失败原因。iOS 顶栏改 `scrollUnderTopBar` 液态玻璃，续借栏改浮动胶囊；横屏修复（只用真实底部安全区、去掉重复留白、高度 <480 时头部随列表滚动、遵守水平安全区）。评审修复：`firstReferer`/`followAllowed` 白名单、按学号作 remember key、移除未用 `MoreGroupSections`；Copilot 6 条（会话交接不跟随重定向、SSO 页面 `parseOffMain`、无效/重复 loanId 过滤、`holdNetwork` 作 init key、真实链路测试登录失败即失败、文档）。顺带：Windows 标题栏跟随系统深浅色、应用目录返回全部入口、`desktopApp` 打包 JavaHome 兜底。版本号改为 `1.8.6-Alpha` / Build 41（全平台）。
+- 验证：Linux JDK 21 `:shared:desktopTest` 976–978 项仅 macOS 专属 `DesktopAgentIntegrationTest` 失败，图书馆测试全过；`:androidApp:assembleDebug`、`:windowsApp:compileKotlinWindows` 通过；`LibraryLiveTest` 真实链路读取借阅成功；真机续借成功（早期版本）。
+- 未验证：Copilot 修复后的登录真机复测、iOS 横屏真机观感、Android 真机。
+
+## 2026-10-22 iOS 日程灵动岛、实时活动与 Apple Watch 智能叠放（PR #41，`feat/ios-dynamic-island`，合并提交 `6f5c36f`）
+
+- 改动：首页“正在上/下一节”对应课程，课前 10/20 分钟（Live 菜单二选一，存 `BJTULiveActivity.leadMinutes`）自动出现到下课。小岛：类别图标 + 环形进度 + 两行倒计时（课前带秒“距开始”，上课收起态显示“下课 / HH:mm”，展开与锁屏显示系统分钟计时“距结束 / N 小时 N 分钟”）；锁屏透明底透出液态玻璃；多活动收成小圆环。Apple Watch `.small` 视图（watchfix3：App 名独占顶行，圆环 + 类别前缀说明 + 计时，固定深色）。文件：`CourseLiveActivityAttributes.swift`、`CourseLiveActivityWidget.swift`、`CourseLiveActivityCoordinator.swift`、`LiveActivityButton*.kt`；`Info.plist` 加 `NSSupportsLiveActivities`、`fetch` 后台模式与 BGTask 标识。**iOS 最低系统改为 18.0**（宿主与扩展 xcconfig、`kmp-security-check.yml`、`SecurityReleaseConfigTest` 同步）。PR 审查：BGAppRefresh 到期也 `setTaskCompleted(false)` 且只报一次；Live 菜单提供读屏自定义操作。
+- 原因/决策：中文系统分钟计时无法缩写，英文试验仍是全称，按用户顺序改为收起态显示下课时刻。
+- 验证：KMP package run 39564988345 四端成功；签名模拟器 xcodebuild 通过；`LiveActivityTargetTest` 通过；watchfix3 手表排版真机验证通过。
+- 未验证：收起态最终截图、“即将上课→正在上课”切换、两活动并存小圆环、读屏操作。已知限制：只能前台新建活动，后台更新靠 BGAppRefresh 不保证准点。
+
+## 2026-10-22 作业搜索与教室当前节次强调（PR #42，`feat/homework-search-classroom-now`，合并提交 `8189baf`）
+
+- 改动：聚合「作业」与「课程平台作业」新增独立搜索层（结果来自全部作业、不受筛选影响，匹配课程名/标题/来源名，离开作业页关闭、进详情返回保留）。iOS 26+ iPhone 用原生 `UISearchController`（收起时在左侧，展开时挪到尾部铺满整条栏）；iPad 苹果样式搜索头；Android/macOS/Windows Material 搜索视图头（Android 返回键先收起、Esc 关闭）。教室占用在“当前学期 + 本周 + 今天”给当前节次格子加光晕（深色 VividCore）、节次号加粗、卡片标「空闲 / 占用」。合入 main 时只解决 `memory.md` 冲突，用管理员权限绕过审批合并。
+- 验证：`:shared:desktopTest` 945 项仅 `DesktopAgentIntegrationTest` 失败；`:androidApp:assembleDebug`、`:windowsApp:compileKotlinWindows`、`:desktopApp:compileKotlin` 通过；`CurrentPeriodRenderTest` 离屏截图核对；iOS 真机确认搜索框占满整条栏。
+- 未验证：iOS 搜索展开/收起动画、浅色与宽窗口；Android 真机；上课时段实机光晕。
+
+## 2026-10-22 移除冻结原 Android 与验证码 torch 模型，断开上游远端（`chore/cleanup-legacy`）
+
+- 改动：先打注释标签 `archive/legacy-android-and-captcha-model`（指向 `8189baf`）存档，再从 main 删除：冻结原 Android 工程 `app/`（149 个文件，含 `model.pt` 23.8 MB）与根 Gradle 工程（`build.gradle.kts`、`settings.gradle.kts`、`gradle/`、`gradlew(.bat)`、`gradle.properties`、`local-maven/`）；只构建它的 `.github/workflows/release.yml`、`debug.yml` 与 `.github/ci/` 两个脚本；Windows `BJTUCaptcha.pt`（23.6 MB）、`WindowsTorchCaptchaRecognizer` 及其测试、DJL 依赖。Windows 主程序与 `WindowsAgentCli` 改用 `UnavailableCaptchaRecognizer`（需要验证码时转手动输入），去掉 `--verify-captcha-model`/`--dump-captcha-logits` 调试参数。`SecurityReleaseConfigTest` 改为断言这些路径与 `release.yml` 不存在。Android ONNX、iOS/macOS Core ML 识别保留。AGENTS.md 更新仓库事实（存档标签、只有 `origin`、规则集与只有所有者合并/发版）；README 与 `tools/captcha/README.md` 指向存档标签。
+- 原因/决策：用户决定。旧数字算式验证码已不再出现，新的字母验证码通常不出现且 torch 模型识别不了；冻结工程不再作参考。仓库在 GitHub 上仍是 `HFDLYS/BJTUselfService` 的 fork，需所有者在 Settings → Leave fork network 解除，本地只保留 `origin`。
+- 验证：见 PR 描述（`:shared:desktopTest`、`:windowsApp:compileKotlinWindows`/`compileTestKotlinWindows`）。
+- 未验证：Windows 真机遇到验证码时的手动输入路径。

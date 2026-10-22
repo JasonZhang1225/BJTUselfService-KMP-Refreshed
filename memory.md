@@ -1,15 +1,26 @@
 # BJTUselfService 实时工作记忆
 
-> 最后更新：2026-10-22（用户已安装最终 MSI 并上传 schema 2；手机 Chat 仍调用旧工具且卡在连接补授权，正在刷新平台工具目录）。
-> 最新同步：本地 `feat/chatgpt-agent-remote`（原名 `agent-remote`）跟踪 `origin/feat/chatgpt-agent-remote`，已快进至 `235ad81`。用户现已授权按 memory 升级私人 Site/插件、实际配对并新建 Chat 验收；本轮按用户要求将 Windows 托盘中文与定位修复、位置测试及工作记忆一并提交并推送至该分支；未合入 main。Site 与插件最新状态见下方首条。
-> 开发位置：主目录 `C:/Users/zjg/BJTUselfService-KMP-Refreshed` 的本地 `feat/chatgpt-agent-remote`，不再使用开发工作树。原 `origin/agent-remote` 压缩历史已在此前推送，现已被远端新分支取代。快进前本地 memory 完整副本与补丁保存在 `.artifacts/agent-remote-fast-forward-20261022-074553/`，并保留 stash `830fc559561216b6b839a824be624f4e969c0c4f`；本地交接核对笔记已恢复到下方。
-> 压缩前源码、补丁、原提交 bundle 和旧工作树残留均备份于 `.artifacts/agent-remote-consolidation-20261021/`；原迁移备份和 Git stash 保留。宣传图分支 `claude/project-thread-a8br6t@5b165e4` 本地/远端保留。
-> 工作树清理：两个旧版 Temp 工作树已由 Git 自带命令删除，Git 仅登记主目录。`.artifacts/agent-windows` 已不是 Git 工作树；其递归残留清理被自动策略拒绝（blocked by policy），未绕过，完整残留已另存 669036652 字节归档。
-> 实际 `origin` 指向用户仓库 `JasonZhang1225/BJTUselfService-KMP-Refreshed`，无 `mine`，与 AGENTS.md 的旧远端命名不同。压缩基线为已知 `origin/main@f454d3a`；不改写 main 和远端。
-> 版本仍为 `1.8.5-EmergencyFix2` / Build 40；最新已核验 Release 为 `v1.8.5-EmergencyFix2`。本地 MSI 为 `.artifacts/交大自由行 KMP-1.8.5-agent-plugins.msi`（116428800 字节，SHA256 D5D0E73E3E004448414EF1DDA4701E9FF10FDFA34AFC0837DEA2463178965C36），未安装。只读 ProductCode={8E7A3023-9F2E-43E2-BBE0-3B22932EEF8A}，UpgradeCode 保留；行政提取 /a 返回 1619，未验证包内提取和实际升级。
-> Computer Use 已恢复：旧 CODEX_CLI_PATH 指向已不存在的 bin/d0097be4feba73d0/codex.exe，当前程序在 bin/6257d9e8f63c0f2b/codex.exe。已为旧目录建立 Junction，重置后 @oai/sky 可列出并读取安装版窗口；未改写程序。以后移除只删 Junction 本身，不递归删除目标。
+> 最后更新：2026-10-22。
+> 当前分支：`feat/chatgpt-agent-remote`，2026-10-22 已合入 main `9e7b4a7`（含下述 main 状态）。main 上 PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`），细节见 `history_full.md`。远端另保留 `claude/宣传图制作`、`feat/chatgpt-agent-remote`（AI Agent，开发中）。
+> KMP 源码版本：`1.8.6-Alpha` / Build 41（尚未发版）；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。iOS 最低系统 18.0。
+> 2026-10-22 仓库清理：冻结原 Android 工程（`app/` 与根 Gradle 工程、`release.yml`/`debug.yml`）与验证码 torch 模型（含 Windows `BJTUCaptcha.pt`、DJL）已移除，存档于标签 `archive/legacy-android-and-captcha-model`（`8189baf`）；Windows 验证码改为手动输入。只保留 `origin` 远端；GitHub 上仍是 `HFDLYS/BJTUselfService` 的 fork，由所有者在 Settings 解除。
+> 认证现状（2026-10-20）：MIS 走统一身份认证 sso.bjtu.edu.cn（SM2 加密密码、默认免验证码）；物理在线用独立账号密码；智慧教学仍卡在学校的旧 CAS 跳转。
+> 已完成工作的细节见 `history_full.md` 末尾日志。
+> [Agent 分支笔记] 最新同步：本地 `feat/chatgpt-agent-remote`（原名 `agent-remote`）跟踪 `origin/feat/chatgpt-agent-remote`，已快进至 `235ad81`。用户现已授权按 memory 升级私人 Site/插件、实际配对并新建 Chat 验收；本轮按用户要求将 Windows 托盘中文与定位修复、位置测试及工作记忆一并提交并推送至该分支；未合入 main。Site 与插件最新状态见下方首条。
+> [Agent 分支笔记] 开发位置：主目录 `C:/Users/zjg/BJTUselfService-KMP-Refreshed` 的本地 `feat/chatgpt-agent-remote`，不再使用开发工作树。原 `origin/agent-remote` 压缩历史已在此前推送，现已被远端新分支取代。快进前本地 memory 完整副本与补丁保存在 `.artifacts/agent-remote-fast-forward-20261022-074553/`，并保留 stash `830fc559561216b6b839a824be624f4e969c0c4f`；本地交接核对笔记已恢复到下方。
+> [Agent 分支笔记] 压缩前源码、补丁、原提交 bundle 和旧工作树残留均备份于 `.artifacts/agent-remote-consolidation-20261021/`；原迁移备份和 Git stash 保留。宣传图分支 `claude/project-thread-a8br6t@5b165e4` 本地/远端保留。
+> [Agent 分支笔记] 工作树清理：两个旧版 Temp 工作树已由 Git 自带命令删除，Git 仅登记主目录。`.artifacts/agent-windows` 已不是 Git 工作树；其递归残留清理被自动策略拒绝（blocked by policy），未绕过，完整残留已另存 669036652 字节归档。
+> [Agent 分支笔记] 实际 `origin` 指向用户仓库 `JasonZhang1225/BJTUselfService-KMP-Refreshed`，无 `mine`，与 AGENTS.md 的旧远端命名不同。压缩基线为已知 `origin/main@f454d3a`；不改写 main 和远端。
+> [Agent 分支笔记] Computer Use 已恢复：旧 CODEX_CLI_PATH 指向已不存在的 bin/d0097be4feba73d0/codex.exe，当前程序在 bin/6257d9e8f63c0f2b/codex.exe。已为旧目录建立 Junction，重置后 @oai/sky 可列出并读取安装版窗口；未改写程序。以后移除只删 Junction 本身，不递归删除目标。
 
 ## 进行中
+
+- AI Agent（本分支）：开发中，约七八成；合入 main 后再清理 main 里经紧急修复带进来的半成品 AI 代码。下面先列 main 已合入功能的待验证项，再列 Agent 分支进行中事项。
+- 已合入功能的待真机验证（不阻塞）：
+  - 灵动岛/实时活动：收起态最终版截图（等实际上课时）；开课时“即将上课”切“正在上课”；两个实时活动并存时的最小态小圆环；Live 菜单读屏自定义操作。
+  - 图书馆：登录流程在 Copilot 修复后改过，需真机重新登录一次；iOS 横屏布局（浮动续借胶囊、顶栏高度）；Android 真机；续借只在早期版本实测过。
+  - 作业搜索：iOS 系统搜索按钮展开/取消动画、搜索中进详情再返回；Android 返回键收起搜索；上课时段教室当前节次光晕与空闲/占用标签（浅/深色）。
+  - Windows：移除 torch 模型后，遇到验证码时手动输入路径未在 Windows 真机走过。
 
 - **手机 Chat 旧工具/补授权故障（2026-10-22，最新状态）。** 用户已安装最终 MSI，安装 cfg 时间 08:54:28；只读进程检查未发现遗留源码实例。真实 `get_status` 成功，原电脑设备未撤销、09:07 收到新快照 `snap_lTh9cz3pdwJn`，schema 2、三个作业来源 15/18/56 均可用。用户 HEIC 截图显示旧快照调用 `sources: [homework, exams, citel]`，随后“当前的连接不包含所需权限”；用户反馈登录后称已认证仍不能继续。新 Chat 已存在：`本周DDL`（6ad96254-193c-83ee-80ac-bbb70c3b7b73），read_thread 仅读到用户提问，不能再称用户未建 Chat。本任务通过同一有效 OAuth link 复测旧 `query_snapshot`，实际返回 unknown_tool；get_status 成功，说明配对/上传正常且该 link 可用，但不能证明手机补授权回调正常。canonical 插件仍 1.0.3，Skill/App 绑定已更新而平台工具目录仍旧。Sites 文档说明重发布会重新抓取 tools/list，故只重发相同保存版本 6（源码未改、无 MSI 重编译），部署 appgdep_6ad9647be294819189cae740b4ec67f9 已 succeeded/has_mcp=true。当前 Codex 会话仍仅暴露旧 6 工具，不能据部署成功宣称手机已修复；需手机重新进入插件连接后验证 get_homework。生产 Worker 日志中本轮 get_status 的 /mcp 为 200；未取得手机授权服务回调日志，不断言具体 OAuth 失败原因。下一步应验证新工具目录及手机同一插件连接；无需重新配对电脑，也无需为在手机 GPT 查询而配对手机 App。旧段落“等待新 Chat/最终 MSI 未安装/临时源码仍运行”已被本条覆盖，尚未完成手机 Chat 端到端查询。
 
@@ -40,7 +51,6 @@
   - 验证与未验证边界见本次交付说明；Windows 托盘/开机启动、iOS 编译、真实 ChatGPT 问答需实机或 CI 验证。
 
 - **Agent Remote 基本实现（`agent-remote`）。** 上一轮实现与证据见 `docs/agent/windows-local-verification-2026-10-21.md`；Site https://bjtuss-private-remote.ardent-rice-3928.chatgpt.site 仍是旧模板 0.2.0，需要按新提示词升级后才能与新电脑端配合。未验证：新 MSI 升级安装、连续半小时/睡眠恢复、第二真实用户部署、Apple 原生构建；远程常驻仅 Windows。
-- **截至本次拉取，`origin/main` 仍为 `f454d3a`，本分支未合入 main；此前“main 已前进到 1.8.6-KMP”记录与当前远端不符。**
 
 ## 要让 ChatGPT 做的事（它不太聪明：一次只发一条，照抄，做完逐项核对）
 
@@ -84,14 +94,15 @@
 
 - iOS Keychain 合法签名往返、正式签名发布（无 Apple Developer Team）。
 - 物理在线真实上传、Windows 触摸屏；邮箱真实发送/删除/移动/附件上传；真实作业上传、退出账号往返（等学校侧条件）。
-- 验证码发布级正确率需至少 300 张独立留出集。
 
 ## 接下来
 
 - Agent：Windows 开机启动仍待实机验证；私人 Site 已升级到模板 0.4.0，继续处理 ChatGPT 旧工具目录与补授权故障，再用手机 ChatGPT 复测“本周 DDL”（核对物理在线、CITEL 与 24:00 截止）；合入前合并 main。
 
 1. 在真机已有版本（SideStore 保留扩展）上验证小组件共享容器与各尺寸显示。
-2. 下次发版时核对版本号清单（见 `AGENTS.md`）、发布说明与测试矩阵；版本与发版由用户决定。
+2. 华为 HBN-AL10（HarmonyOS 4.2）装含 PR #32/#33 的新包：确认课表小组件尺寸（logcat `CourseWidget` 标签）与教务不可达时不再闪退。
+3. 真机过一遍“进行中”列出的待验证项。
+4. 下次发版时核对版本号清单（见 `AGENTS.md`）、发布说明与测试矩阵；版本与发版由用户决定。
 
 ## 更新前保留的本地笔记（历史快照）
 1. 等 CI 四端产物和 GitHub Release。

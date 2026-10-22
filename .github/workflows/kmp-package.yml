@@ -5,8 +5,8 @@ on:
     tags:
       - "v*-KMP*"
       - "v*-Liquid*"
-      # 1.7.9 起应用版本不再带 KMP/Liquid 后缀。v1.7.0 仍是冻结根 Android 标签，
-      # 由各打包任务跳过，避免和 release.yml 一起打出两套包。
+      # 1.7.9 起应用版本不再带 KMP/Liquid 后缀。v1.7.0 是历史上冻结根 Android 的标签
+      # （工程已于 1.8.6 移除并存档），各打包任务仍跳过它。
       - "v*"
       # debug-* 只打包并上传 Actions 产物，不创建 GitHub Release / pre-release，
       # 因此应用内更新检查不会把它当成全量更新。

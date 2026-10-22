@@ -423,6 +423,43 @@ internal fun TopBarRefreshCircle(
     }
 }
 
+/** Compose 顶栏上的搜索入口：圆形按钮，和刷新钮同一排；打开后整条顶栏换成搜索视图。 */
+@Composable
+internal fun TopBarSearchCircle(onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        color = MaterialTheme.colorScheme.surfaceVariant.accessibleAlpha(0.68f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        shape = CircleShape,
+        modifier = Modifier.size(32.dp).semantics { contentDescription = "搜索" },
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            TopBarSearchIcon(modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+internal fun TopBarSearchIcon(
+    modifier: Modifier = Modifier,
+    tint: Color = LocalContentColor.current,
+) {
+    Canvas(modifier = modifier) {
+        val strokeWidth = 1.7.dp.toPx()
+        val radius = size.minDimension * 0.28f
+        val center = Offset(size.width * 0.42f, size.height * 0.42f)
+        drawCircle(color = tint, radius = radius, center = center, style = Stroke(width = strokeWidth, cap = StrokeCap.Round))
+        val handleStart = Offset(center.x + radius * 0.72f, center.y + radius * 0.72f)
+        drawLine(
+            tint,
+            handleStart,
+            Offset(size.width * 0.84f, size.height * 0.84f),
+            strokeWidth,
+            StrokeCap.Round,
+        )
+    }
+}
+
 @Composable
 internal fun PartialSyncFailureDialog(
     failedItems: List<String>,
