@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-22。
-> 当前分支：`feat/Android-LiveUpdates`（PR #46，基于 `main` `9e7b4a7`；本地其余分支已于 2026-10-22 清理）。PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`），细节见 `history_full.md`。远端另保留 `claude/宣传图制作`、`feat/chatgpt-agent-remote`（AI Agent，开发中）。
+> 当前分支：`main`（`aac1816`）。PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次、#46 课程实时动态（Android Live Updates + 双端课前准点出现）均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`、`aac1816`），细节见 `history_full.md`。远端另保留 `claude/宣传图制作`、`feat/chatgpt-agent-remote`（AI Agent，开发中）。
 > KMP 源码版本：`1.8.6-Alpha` / Build 41（尚未发版）；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。iOS 最低系统 18.0。
 > 2026-10-22 仓库清理：冻结原 Android 工程（`app/` 与根 Gradle 工程、`release.yml`/`debug.yml`）与验证码 torch 模型（含 Windows `BJTUCaptcha.pt`、DJL）已移除，存档于标签 `archive/legacy-android-and-captcha-model`（`8189baf`）；Windows 验证码改为手动输入。只保留 `origin` 远端；GitHub 上仍是 `HFDLYS/BJTUselfService` 的 fork，由所有者在 Settings 解除。
 > 认证现状（2026-10-20）：MIS 走统一身份认证 sso.bjtu.edu.cn（SM2 加密密码、默认免验证码）；物理在线用独立账号密码；智慧教学仍卡在学校的旧 CAS 跳转。
@@ -9,21 +9,11 @@
 
 ## 进行中
 
-- Android 实时动态（`feat/Android-LiveUpdates`，PR #46 待合并）：用 Android 16 原生 Live Updates（`setRequestPromotedOngoing` + `POST_PROMOTED_NOTIFICATIONS`，不用小米焦点通知）复用 iOS 灵动岛规则。规则抽到 shared `LiveActivityPlan.kt`（`planLiveActivity`，对应 Swift `desiredState`/`nextBoundary`，有 `LiveActivityPlanTest`）；宿主 `androidApp/.../live/CourseLiveUpdates.kt`；卡片 Live 胶囊 + 下拉菜单在 `LiveActivityButton.android.kt`，Android 16 以下不显示。首次点“允许通知并开启”才申请通知权限。debug 包有 `LiveUpdateSmokeActivity`（虚构课程）。
-  - 已验证（小米平板 HyperOS 4.0 / API 37，targetSdk 仍为 35）：`PROMOTED_ONGOING` 生效，状态栏胶囊显示“13:14下课”/“12:58开始”，通知顶部进度条逐分钟走，“关闭”与划掉都记入不再自动出现；`:shared:desktopTest`、iOS 模拟器/桌面/Windows 编译、`:androidApp:assembleDebug` 通过。
-  - 外观（用户把平板时间改到上课时段实测后调整）：小图标按课程类别换成课本/烧瓶/试卷/跑步（`res/drawable/ic_live_kind_*.xml`），灵动岛展开态左侧与状态栏胶囊都用它；去掉标题旁跳秒的系统计时，第二行改为“正在上课 · 距下课 N 小时 N 分钟”（逐分钟更新），第三行“时间 · 地点 · 教师”。试过的取舍：大图标会在 HyperOS 灵动岛右侧重复一个，已去掉；推广通知的颜色/加粗 span 被 HyperOS 去掉，已不用；进度条跟随图标像滑块，已去掉。通知中心左侧固定是 App 图标，改不了。
-  - 已实测：用户经首页 Live 菜单授予通知权限（USER_SET），真实课程“工业产品创新设计”在上课时段自动出现。
-  - 定时：关键时刻（课前 N 分钟、开课、下课、零点）用精确闹钟 `setExactAndAllowWhileIdle` + `USE_EXACT_ALARM`（安装即授予），每次只登记下一个；逐分钟刷新仍是非唤醒 RTC。`setAndAllowWhileIdle` 实测窗口可达 1 小时，已放弃。HyperOS 自启动关闭（MIUIOP 10008=ignore）不影响自家闹钟拉起进程。
-  - 已实测（2026-10-22，平板改时间）：进程被杀（非强停）+ 息屏，10:20:00.3 准点拉起并显示“即将上课”；系统杀进程后普通闹钟也能拉起。CI 镜像 android-36 缺 `setRequestPromotedOngoing`，改为直接写 `android.requestPromotedOngoing` extra，实测仍推广。
-  - 注意：划掉通知等于“这一项不再自动出现”（与 iOS 相同），测试时别划。最近任务未加锁时划掉 App 会被强停，闹钟和通知一并清除（按 Android 规则推断，未实测）。
-  - 浅色模式：用户实测，外观无变化（2026-10-22）。
-  - iOS 26+ 预约启动（同一 PR）：前台对齐时用 `Activity.request(…, alertConfiguration:, start:)` 预约“下一项需要新开实时活动的日程”（今天和明天里，课前 N 分钟），系统准点启动并用默认提示音提醒；至多一个预约。重叠/紧挨的日程（时间重叠，或出现时刻落在当前项结束后 30 分钟接力窗口内，沿接力链看到底）由同一个实时活动接上，不另约；关掉的不约；提前时间、课表、关闭、退出登录变化时取消重约。iOS 18–25 不变。debug 启动参数 `-BJTULiveActivityScheduleTest <秒>`。
-  - iOS 已实测（模拟器 iPhone 17 Pro / iOS 27.1）：签名构建通过；真实课表下预约到明天第一节课前 10 分钟（UserDefaults `BJTULiveActivity.scheduledId`）；App 被杀后系统 14:10:51 准点启动预约的实时活动并弹提醒（liveactivitiesd 日志），随后在后台拉起 App。
-  - iOS 待测试：真机上的提醒声音与灵动岛展开效果；重叠/紧挨日程的实际表现；划掉系统启动的那一项后不再出现。
-  - 待测试：标准 Android 16（非 HyperOS）上的样式；长时间不打开 App 后系统降低待机分组，对闹钟准点的影响。
 - AI Agent（`feat/chatgpt-agent-remote`）：开发中，约七八成；合入后再清理 main 里经紧急修复带进来的半成品 AI 代码。
 - 已合入功能的待真机验证（不阻塞）：
   - 灵动岛/实时活动：收起态最终版截图（等实际上课时）；开课时“即将上课”切“正在上课”；两个实时活动并存时的最小态小圆环；Live 菜单读屏自定义操作。
+  - iOS 26 预约启动（PR #46）：真机上的启动提醒声音与灵动岛展开效果；重叠/紧挨日程的实际表现；划掉系统启动的那一项后不再出现。
+  - Android 实时动态（PR #46）：非 HyperOS 的原生 Android 16 上的样式；长时间不打开 App、系统降低待机分组后闹钟是否仍准点；最近任务未加锁时划掉 App（强停）会清掉闹钟和通知（按规则推断，未实测）。
   - 图书馆：登录流程在 Copilot 修复后改过，需真机重新登录一次；iOS 横屏布局（浮动续借胶囊、顶栏高度）；Android 真机；续借只在早期版本实测过。
   - 作业搜索：iOS 系统搜索按钮展开/取消动画、搜索中进详情再返回；Android 返回键收起搜索；上课时段教室当前节次光晕与空闲/占用标签（浅/深色）。
   - Windows：移除 torch 模型后，遇到验证码时手动输入路径未在 Windows 真机走过。
