@@ -7,6 +7,7 @@ struct CourseWidgetBundle: WidgetBundle {
         UpNextCourseWidget()
         TodayCourseWidget()
         WeekCourseWidget()
+        CourseLiveActivityWidget()
     }
 }
 
