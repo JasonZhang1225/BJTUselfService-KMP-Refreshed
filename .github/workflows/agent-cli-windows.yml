@@ -3,6 +3,7 @@ name: Agent CLI smoke (Windows)
 # AI Agent 命令行在 Windows 上的冒烟测试：打包后的 GUI exe 经管道/重定向句柄输出 JSON，
 # 没有缓存时按约定退出码 2，参数错误为 64。macOS 由本机验证。
 on:
+  workflow_dispatch:
   push:
     branches:
       - "feat/ai-agent*"
