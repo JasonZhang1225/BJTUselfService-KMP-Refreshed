@@ -438,6 +438,9 @@ jobs:
   gitee-mirror:
     name: Gitee mirror after GitHub Release
     needs: release
+    # The reusable workflow keeps normal mirrors read-only, but its exact hidden-test job needs draft access.
+    permissions:
+      contents: write
     if: ${{ needs.release.result == 'success' }}
     uses: ./.github/workflows/gitee-release-mirror.yml
     with:

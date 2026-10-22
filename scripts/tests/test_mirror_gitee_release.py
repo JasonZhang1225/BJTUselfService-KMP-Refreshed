@@ -59,6 +59,8 @@ class MirrorTest(unittest.TestCase):
                 calls.append((method, path, fields))
                 return {'id': 1}
         def download(url, **kwargs):
+            if '/releases?per_page=' in url:
+                return json.dumps([dict(release, tag_name='unrelated'), release]).encode()
             if '/releases/tags/' in url:
                 return json.dumps(release).encode()
             if fail_download and 'gitee.com' in url and url.endswith('.msi'):
@@ -145,6 +147,14 @@ class MirrorTest(unittest.TestCase):
         self.assertIsNone(redirected.get_header('Cookie'))
         same_host = handler.redirect_request(original, None, 302, '', {}, 'https://api.github.com/other')
         self.assertEqual('Bearer dummy', same_host.get_header('Authorization'))
+
+    def test_draft_lookup_paginates_and_matches_exact_test_tag(self):
+        target = dict(tag_name=m.TEST_SOURCE_TAG, draft=True)
+        with patch.object(m, 'request', side_effect=[json.dumps([dict(tag_name='other')] * 100).encode(), json.dumps([target]).encode()]) as fetch:
+            self.assertEqual(target, m.github_release(m.TEST_SOURCE_TAG, {}))
+            self.assertIn('page=2', fetch.call_args.args[0])
+        with patch.object(m, 'request', return_value=b'[]'), self.assertRaises(m.MirrorError):
+            m.github_release(m.TEST_SOURCE_TAG, {})
 
 
 if __name__ == '__main__':
