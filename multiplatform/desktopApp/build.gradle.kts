@@ -473,6 +473,7 @@ dependencies {
     implementation(project(":shared"))
     implementation(libs.compose.desktop.macos.arm64)
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.swing)
 }
 
 // 应用只打 Apple Silicon 包：sqlite-jdbc/JNA 只保留 macOS arm64 原生库。
@@ -505,7 +506,7 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg)
             modules("java.sql")
             packageName = desktopPackageName
-            // Compose Desktop 的 packageVersion 仅允许 MAJOR.MINOR.PATCH。
+            // Compose Desktop 的 packageVersion 仅允许 MAJOR.MINOR.PATCH；应用内版本 1.8.6-Beta2 / Build 43。
             packageVersion = desktopPackageVersion
             description = "交大自由行 Kotlin Multiplatform macOS 应用"
             vendor = "BJTUselfService Contributors"
@@ -516,7 +517,7 @@ compose.desktop {
                 dockName = macDisplayName
                 appCategory = "public.app-category.education"
                 minimumSystemVersion = "12.0"
-                packageBuildVersion = "42"
+                packageBuildVersion = "43"
             }
         }
     }

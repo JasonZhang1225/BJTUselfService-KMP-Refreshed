@@ -30,6 +30,8 @@ import team.bjtuss.bjtuselfservice.shared.sync.cachedSourceSyncTime
 interface RemoteHostPlatform {
     val deviceName: String
     val traySupported: Boolean get() = false
+    /** macOS 关闭窗口后仍可从 Dock 恢复；无需 Windows 托盘。 */
+    val usesDockForBackground: Boolean get() = false
     /** [RemoteDeviceKind]：电脑常驻领取任务；手机只在刷新后上传。 */
     val deviceKind: String get() = RemoteDeviceKind.DESKTOP
 }
@@ -186,10 +188,11 @@ class RemoteAgentController(
                 if (health is RemoteCall.Failure) return if (health.code == "platform_auth_required")
                     "本站连接授权无效，请登录 Site 重新生成并复制完整配对信息。"
                 else "无法读取 Site 版本，请检查地址和网络后重试：${RemoteAgentRunner.describe(health)}"
-                val version = (health as RemoteCall.Ok).value.templateVersion
+                val healthInfo = (health as RemoteCall.Ok).value
+                val version = healthInfo.releaseVersion ?: healthInfo.templateVersion
                 if (!remoteTemplateAtLeast(version, REMOTE_MULTI_DEVICE_TEMPLATE)) {
                     return "你的 Site 模板版本是 ${version ?: "未知"}，还不支持电脑和手机同时连接。" +
-                        "请先让 ChatGPT 把 Site 升级到 $REMOTE_MULTI_DEVICE_TEMPLATE 或更高版本，再配对手机。"
+                        "请先让 ChatGPT 把 Site 更新为与 App 对应的 $REMOTE_TEMPLATE_RELEASE 模板，再配对手机。"
                 }
             }
             val response = api.pair(RemotePairRequest(

@@ -75,16 +75,23 @@ object RemoteDeviceKind {
 const val REMOTE_MULTI_DEVICE_TEMPLATE = "0.4.0"
 
 @Serializable
-data class RemoteHealth(val protocolVersion: Int = 0, val templateVersion: String? = null)
+data class RemoteHealth(
+    val protocolVersion: Int = 0,
+    val templateVersion: String? = null,
+    val releaseVersion: String? = null,
+)
 
-/** 比较 `x.y.z` 形式的模板版本。 */
+/** 能力门槛比较数字主版本；Beta/构建后缀属于发布标识，不应使版本解析失败。 */
 fun remoteTemplateAtLeast(version: String?, minimum: String): Boolean {
-    val parts = version?.split('.')?.map { it.toIntOrNull() ?: return false } ?: return false
-    val want = minimum.split('.').map { it.toInt() }
-    for (i in 0 until maxOf(parts.size, want.size)) {
-        val a = parts.getOrElse(i) { 0 }
-        val b = want.getOrElse(i) { 0 }
-        if (a != b) return a > b
+    fun parse(value: String?): List<Int>? {
+        val match = Regex("""^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?$""")
+            .matchEntire(value ?: return null) ?: return null
+        return match.groupValues.drop(1).map { it.toIntOrNull() ?: return null }
+    }
+    val parts = parse(version) ?: return false
+    val want = parse(minimum) ?: return false
+    for (i in parts.indices) {
+        if (parts[i] != want[i]) return parts[i] > want[i]
     }
     return true
 }

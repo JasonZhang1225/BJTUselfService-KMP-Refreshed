@@ -93,6 +93,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.SLOT_TIME_RA
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.currentFreeRoomNames
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.currentFreeSummary
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.currentOccupancyPeriod
+import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.currentOrNextOccupancyPeriod
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
@@ -385,10 +386,11 @@ private fun OccupancyDetail(
         state.selectedWeek == model.currentWeek &&
         state.selectedWeekday == nowLocal.dayOfWeek.isoDayNumber
     val currentPeriod = if (viewingCurrentSchedule) {
-        currentOccupancyPeriod(nowLocal.hour * 60 + nowLocal.minute)
+        currentOrNextOccupancyPeriod(nowLocal.hour * 60 + nowLocal.minute)
     } else {
         null
     }
+    val upcomingPeriod = currentPeriod != null && currentOccupancyPeriod(nowLocal.hour * 60 + nowLocal.minute) == null
     // 与其它页一致水平 16.dp；筛选与说明留给列表剩余高度。
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
         Column(
@@ -494,7 +496,7 @@ private fun OccupancyDetail(
                         val listState = rememberLazyListState()
                         if (viewingCurrentSchedule) {
                             Text(
-                                if (currentPeriod == null) "当前无进行中的节次" else currentFreeSummary(currentPeriod, freeRooms),
+                                if (currentPeriod == null) "今日节次已结束" else currentFreeSummary(currentPeriod, freeRooms, upcoming = upcomingPeriod),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface,
@@ -502,9 +504,9 @@ private fun OccupancyDetail(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.fillMaxWidth().semantics {
                                     contentDescription = if (currentPeriod == null) {
-                                        "当前无进行中的节次"
+                                        "今日节次已结束"
                                     } else {
-                                        currentFreeSummary(currentPeriod, freeRooms)
+                                        currentFreeSummary(currentPeriod, freeRooms, upcoming = upcomingPeriod)
                                     }
                                 },
                             )

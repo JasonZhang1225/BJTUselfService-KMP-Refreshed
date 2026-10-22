@@ -47,6 +47,7 @@ import team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteIntervals
 import team.bjtuss.bjtuselfservice.shared.agent.remote.RemotePhase
 import team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteScope
 import team.bjtuss.bjtuselfservice.shared.agent.remote.REMOTE_SETUP_PROMPT
+import team.bjtuss.bjtuselfservice.shared.agent.remote.REMOTE_TEMPLATE_RELEASE
 
 /** 只有提供了远程控制器的宿主才显示“远程查询”设置。 */
 val LocalRemoteAgentController = staticCompositionLocalOf<RemoteAgentController?> { null }
@@ -179,7 +180,7 @@ private fun SetupSteps(paired: Boolean, copied: Boolean, mobile: Boolean = false
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("设置方法", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            SetupStep(1, if (mobile) "已经在电脑上搭好 Site：登录 Site 为这台设备生成配对信息（Site 需为模板 0.5.0 或更高）。" +
+            SetupStep(1, if (mobile) "已经在电脑上搭好 Site：登录 Site 为这台设备生成配对信息（Site 建议与当前 App 一致，使用模板 $REMOTE_TEMPLATE_RELEASE）。" +
                 "还没有 Site：复制搭建提示词发给 ChatGPT（Work 模式），由它搭建只有你能访问的私人 Site 和插件。"
             else "复制搭建提示词，发给 ChatGPT（Work 模式）。它会用 Sites 为你搭建只有你能访问的私人 Site 和插件。") {
                 FilledTonalButton(onClick = onCopy) { Text(if (copied) "已复制" else "复制提示词") }

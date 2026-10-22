@@ -51,7 +51,7 @@ class MobileRemoteAgentTest {
     @Test fun oldSiteTemplateIsRejectedBeforePairing() = runBlocking {
         client.healthResponse = RemoteCall.Ok(RemoteHealth(1, "0.3.0"))
         val message = controller.pair(pairingFixture("https://site.example", "ABCD2345", "access"), RemoteScope.DEFAULT, consent = true)
-        assertTrue(message!!.contains(REMOTE_MULTI_DEVICE_TEMPLATE))
+        assertTrue(message!!.contains(REMOTE_TEMPLATE_RELEASE))
         assertNull(client.lastPair, "旧模板会撤销电脑，不能发出配对请求")
     }
 
@@ -76,6 +76,23 @@ class MobileRemoteAgentTest {
         assertFalse(remoteTemplateAtLeast("0.3.9", "0.4.0"))
         assertFalse(remoteTemplateAtLeast(null, "0.4.0"))
         assertFalse(remoteTemplateAtLeast("abc", "0.4.0"))
+    }
+
+    @Test fun betaTemplatePairsBeforeConsumingTheCode() = runBlocking {
+        client.healthResponse = RemoteCall.Ok(RemoteHealth(1, "1.8.6-Beta2"))
+        assertNull(controller.pair(pairingFixture("https://site.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, true))
+        assertEquals(RemoteDeviceKind.MOBILE, client.lastPair?.deviceKind)
+    }
+
+    @Test fun releaseLabelsDoNotFailCapabilityVersionChecks() {
+        for (version in listOf("1.8.6-Beta2", "1.8.6-Alpha", "v1.8.6-Beta2+43", "1.8.6+43")) {
+            assertTrue(remoteTemplateAtLeast(version, REMOTE_MULTI_DEVICE_TEMPLATE), version)
+        }
+        for (version in listOf("0.3.9-Beta2", "1.8.6garbage", "1.8.6-", "99999999999999.0.0", "abc")) {
+            assertFalse(remoteTemplateAtLeast(version, REMOTE_MULTI_DEVICE_TEMPLATE), version)
+        }
+        assertTrue(REMOTE_SETUP_PROMPT.contains("使用模板 $REMOTE_TEMPLATE_RELEASE"))
+        assertFalse(REMOTE_SETUP_PROMPT.contains("0.5.0"))
     }
 
     @Test fun healthAuthorizationFailureDoesNotAskForTemplateUpgrade() = runBlocking {

@@ -1,6 +1,6 @@
 {
   "name": "bjtuss-remote-site-template",
-  "version": "0.5.0",
+  "version": "1.8.6-Beta2",
   "private": true,
   "type": "module",
   "description": "交大自由行远程模板：私人 Site 的配对、快照与即时任务 API（D1）。",

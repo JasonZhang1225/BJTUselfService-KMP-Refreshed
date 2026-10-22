@@ -10,6 +10,14 @@ fun createDesktopAccountSecurityStore(): AccountSecurityStore = AccountSecurityS
         legacyAccount = LEGACY_PRIMARY_ACCOUNT,
     ),
     preferences = DesktopAccountPreferences(),
+    remoteVault = { name ->
+        MacOsBagBackedCredentialVault(
+            bag = productionMacOsSecretBag,
+            key = "remote:$name",
+            legacyService = "team.bjtuss.bjtuselfservice.kmp.remote",
+            legacyAccount = name,
+        )
+    },
     physicsDemoVault = { accountScope ->
         MacOsBagBackedCredentialVault(
             bag = productionMacOsSecretBag,

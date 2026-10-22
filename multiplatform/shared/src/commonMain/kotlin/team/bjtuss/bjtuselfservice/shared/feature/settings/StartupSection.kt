@@ -76,7 +76,9 @@ internal fun StartupSection(host: AppStartupHost, remote: RemoteAgentController?
         }
         remote?.host?.let { remoteHost ->
             val config by remote.config.collectAsState()
-            SwitchRow("最小化到托盘", if (remoteHost.traySupported) "最小化或关闭窗口时留在托盘中继续运行；从托盘菜单选择“退出”才会结束 App。"
+            if (remoteHost.usesDockForBackground) {
+                Text("关闭窗口后继续在后台运行；点击 Dock 图标重新打开，选择“退出”才会停止远程服务。", style = MaterialTheme.typography.bodySmall)
+            } else SwitchRow("最小化到托盘", if (remoteHost.traySupported) "最小化或关闭窗口时留在托盘中继续运行；从托盘菜单选择“退出”才会结束 App。"
                 else "当前系统不支持托盘，关闭窗口会退出应用。", config.minimizeToTray,
                 enabled = remoteHost.traySupported, onChange = remote::setMinimizeToTray)
         }

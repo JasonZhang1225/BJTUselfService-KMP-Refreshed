@@ -1089,3 +1089,11 @@
 - 改动：Apple/Android/macOS/Windows 缓存打开异常不再删原文件；Android 覆盖默认 corruption 删除回调；桌面缺加密材料不再清库。共享 App 在存储异常页停止正常启动，保留数据库/设置/凭据，不用临时空库继续登录同步。缺配置标记或读取/保存失败不再清旧凭据，Apple 保存优先 SecItemUpdate；独立账号缺配置时读取尚存的安全存储，显式关闭仍尊重。课表初始化被取消后允许再次初始化。
 - 验证：在 `multiplatform/` 使用 Android Studio JBR 与 Temurin25 执行 `./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64` 成功；202 个测试套件、1088 项测试、0 失败。覆盖损坏与瞬时异常文件保留、缺配置与显式关闭、保存失败保留旧密码、课表取消后重试、错误页不读写账号/偏好；错误页已离屏渲染浅深色/2 倍字并查看截图。`git diff --check` 通过。日志 `.artifacts/ios-credential-preservation-checks.log`，截图 `.artifacts/cache-storage-failure/`。
 - 未验证：原生 Keychain 更新路径仅 iOS 编译通过，未运行 iOS 测试及签名覆盖安装；模拟器真实交互、真机异常触发、视觉变化均未复现；不能恢复已经真正删除的密码。旧本地 IPA 未替换。
+
+
+## 2026-10-22 私人 Site Beta2 多设备状态独立展示（Site 部署，1.8.6-Beta2）
+
+- 改动：私人 Site/MCP 版本升为 `1.8.6-Beta2`，每台设备独立卡片显示最近联系、自己的快照接收时间、授权范围、即时任务目标和独立撤销按钮；桌面按最近120秒联系显示在线，手机仅说明按需上传/不提供持续在线状态，避免将无后台轮询误判为离线。
+- 部署：现有 owner-private Site 权限保持不变；Sites source `b1d646460b020e16f868d866e5f92240868c2b0f`，saved version `appgprj_6ad9b56e35188191a19f3988ced54e6d~appgver_a8db7715c8788191a2b737e056fd1143`，deployment `appgdep_6ad9ed00cc048191af0f756b95df9318`，终态 succeeded、has_mcp=true；URL https://bjtu-agent-remote-baizhou-2026.ardent-rice-3928.chatgpt.site 。
+- 验证：Site `npm test` 68项通过，构建与归档成功；IAB 使用纯虚构三台设备验证各自状态/快照时间，截图 `.artifacts/beta2-site-device-status.png`。部署使用 Sites 技能指定 source helper，源码与归档一致。
+- 边界：没有操作真实设备配对/撤销或学校数据；公共模板的相同改动尚在本地任务分支，未推主仓库、未打 tag。

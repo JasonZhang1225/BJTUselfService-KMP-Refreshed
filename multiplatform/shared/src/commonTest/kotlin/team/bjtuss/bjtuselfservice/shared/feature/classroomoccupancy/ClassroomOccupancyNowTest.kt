@@ -8,6 +8,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyKin
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.currentFreeRoomNames
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.currentFreeSummary
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.currentOccupancyPeriod
+import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.currentOrNextOccupancyPeriod
 
 class ClassroomOccupancyNowTest {
     @Test
@@ -22,6 +23,16 @@ class ClassroomOccupancyNowTest {
         assertEquals(7, currentOccupancyPeriod(21 * 60 + 49))
         assertNull(currentOccupancyPeriod(21 * 60 + 50))
         assertNull(currentOccupancyPeriod(22 * 60 + 57))
+    }
+
+    @Test fun breaksHighlightTheNextPeriodIncludingDinner() {
+        for ((minute, period) in listOf(0 to 1, 479 to 1, 480 to 1, 590 to 2,
+            609 to 2, 610 to 2, 720 to 3, 840 to 4, 960 to 5, 1090 to 6,
+            1139 to 6, 1140 to 6, 1250 to 7, 1260 to 7, 1309 to 7)) {
+            assertEquals(period, currentOrNextOccupancyPeriod(minute), "minute=$minute")
+        }
+        for (minute in listOf(-1, 1310, 1439, 1440)) assertNull(currentOrNextOccupancyPeriod(minute))
+        assertEquals("下一节第6节 · 空闲 SY101", currentFreeSummary(6, listOf("SY101"), upcoming = true))
     }
 
     @Test

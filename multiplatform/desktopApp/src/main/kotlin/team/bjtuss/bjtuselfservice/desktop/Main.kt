@@ -13,6 +13,12 @@ import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import team.bjtuss.bjtuselfservice.shared.agent.remote.*
+import team.bjtuss.bjtuselfservice.shared.feature.settings.LocalRemoteAgentController
 import java.awt.Dimension
 import java.awt.Desktop
 import java.awt.desktop.AppReopenedListener
@@ -53,14 +59,14 @@ fun main(args: Array<String>) {
         // Enable only sanitized timing events; general business/debug logs stay off.
         team.bjtuss.bjtuselfservice.shared.logging.SyncTiming.sink = { println(it) }
     }
-    if (SYNC_STATUS_SMOKE_ARGUMENT in args || "--schedule-events-smoke" in args || "--new-migration-smoke" in args || "--agent-ui-smoke" in args) {
+    if ("--remote-ui-smoke" in args || SYNC_STATUS_SMOKE_ARGUMENT in args || "--schedule-events-smoke" in args || "--new-migration-smoke" in args || "--agent-ui-smoke" in args) {
         application {
             Window(
                 onCloseRequest = { exitApplication() },
                 title = "同步状态 · 本地测试",
                 state = rememberWindowState(width = if ("--narrow" in args) 420.dp else 1080.dp, height = 720.dp),
             ) {
-                if ("--agent-ui-smoke" in args) team.bjtuss.bjtuselfservice.shared.DesktopAgentUiSmoke() else if ("--new-migration-smoke" in args) team.bjtuss.bjtuselfservice.shared.feature.shell.NewMigrationUiProbe() else if ("--schedule-events-smoke" in args) team.bjtuss.bjtuselfservice.shared.DesktopScheduleEventsSmoke() else DesktopSyncStatusSmoke()
+                if ("--remote-ui-smoke" in args) team.bjtuss.bjtuselfservice.shared.DesktopRemoteAgentSmoke() else if ("--agent-ui-smoke" in args) team.bjtuss.bjtuselfservice.shared.DesktopAgentUiSmoke() else if ("--new-migration-smoke" in args) team.bjtuss.bjtuselfservice.shared.feature.shell.NewMigrationUiProbe() else if ("--schedule-events-smoke" in args) team.bjtuss.bjtuselfservice.shared.DesktopScheduleEventsSmoke() else DesktopSyncStatusSmoke()
             }
         }
         return
@@ -74,6 +80,19 @@ fun main(args: Array<String>) {
         File(System.getProperty("user.home"), "Library/Application Support/BJTUselfServiceKMP"),
         sessionProvider = currentSession::get,
     )
+
+    val remoteScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val remoteController = RemoteAgentController(
+        store = RemoteAgentStore(cacheStoreHandle.store),
+        secrets = VaultRemoteSecretStore(requireNotNull(accountSecurityStore.remoteVault)),
+        executor = AppSessionRemoteExecutor(currentSession::get, cacheStoreHandle.store),
+        scope = remoteScope,
+        host = object : RemoteHostPlatform {
+            override val usesDockForBackground = true
+            override val deviceName = "${System.getProperty("user.name", "本机")} 的 Mac（macOS）".take(64)
+        },
+    )
+    if (cacheStoreHandle.state == team.bjtuss.bjtuselfservice.shared.cache.CacheOpenState.OPENED) remoteController.start()
 
     // 开机登录项带 --background 启动：用户开了静默启动就不弹窗口，点程序坞图标再打开（同一个窗口）。
     val startupHost = MacLaunchAgentStartupHost()
@@ -186,7 +205,7 @@ fun main(args: Array<String>) {
                         DesktopHomeworkFileGateway { window }
                     }
                     val systemCalendarGateway = remember { DesktopSystemCalendarGateway() }
-                    CompositionLocalProvider(LocalAppStartupHost provides startupHost) {
+                    CompositionLocalProvider(LocalAppStartupHost provides startupHost, LocalRemoteAgentController provides remoteController) {
                     App(
                         accountSecurityStore = accountSecurityStore,
                         cacheStoreHandle = cacheStoreHandle,
@@ -204,6 +223,8 @@ fun main(args: Array<String>) {
         }
     } finally {
         // 先停 IPC、删端点再释放锁；异常退出时由系统释放锁，残留端点会因连不上被忽略。
+        remoteController.close()
+        remoteScope.cancel()
         runCatching { appRunningLock?.close() }
         cacheStoreHandle.store.close()
     }

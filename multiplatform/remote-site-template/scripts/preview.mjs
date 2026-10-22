@@ -4,9 +4,12 @@ import { createSite, pairDevice, snapshotFor, OWNER_TOKEN } from "../test/helper
 import { handle } from "../src/index.js";
 
 const site = createSite();
-site.clock.now = Math.floor(Date.now() / 1000);
-const device = await pairDevice(site);
-await site.call("PUT", "/api/v1/device/snapshot", { token: device.deviceToken, body: snapshotFor(device) });
+site.clock.now = Math.floor(Date.now() / 1000) - 300;
+for (const [name, kind, offset] of [['测试 Mac（macOS）','desktop',300],['测试电脑（Windows）','desktop',0],['测试手机（iOS）','mobile',0]]) {
+  const device = await pairDevice(site, {deviceName:name, deviceKind:kind});
+  await site.call("PUT", "/api/v1/device/snapshot", { token: device.deviceToken, body: snapshotFor(device) });
+  if(offset) site.clock.now += offset;
+}
 const port = Number(process.env.PORT ?? 4173);
 const server = createServer(async (req, res) => {
   try {

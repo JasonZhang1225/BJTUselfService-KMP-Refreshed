@@ -143,6 +143,15 @@ fun currentOccupancyPeriod(minuteOfDay: Int): Int? {
     return null
 }
 
+/** 上课时高亮当前节；课间及当天第一节前高亮下一节；当天结束后不高亮。 */
+fun currentOrNextOccupancyPeriod(minuteOfDay: Int): Int? {
+    if (minuteOfDay !in 0 until 24 * 60) return null
+    return SLOT_TIME_RANGES.indexOfFirst { range ->
+        val end = clockMinute(range.substringAfter('-'))
+        end != null && minuteOfDay < end
+    }.takeIf { it >= 0 }?.plus(1)
+}
+
 /** 所选星期、节次上占用为 [OccupancyKind.FREE] 的教室，保持原列表顺序。 */
 fun currentFreeRoomNames(
     rooms: List<ClassroomOccupancy>,
@@ -153,10 +162,13 @@ fun currentFreeRoomNames(
     .map { it.room }
 
 /** 当前节次的空闲摘要。教室不多时直接点名，多了只报间数，避免顶栏折行。 */
-fun currentFreeSummary(period: Int, freeRooms: List<String>): String = when {
-    freeRooms.isEmpty() -> "当前第${period}节 · 没有空闲教室"
-    freeRooms.size <= 4 -> "当前第${period}节 · 空闲 ${freeRooms.joinToString("、")}"
-    else -> "当前第${period}节 · 空闲 ${freeRooms.size} 间"
+fun currentFreeSummary(period: Int, freeRooms: List<String>, upcoming: Boolean = false): String {
+    val label = if (upcoming) "下一节第${period}节" else "当前第${period}节"
+    return when {
+    freeRooms.isEmpty() -> "$label · 没有空闲教室"
+    freeRooms.size <= 4 -> "$label · 空闲 ${freeRooms.joinToString("、")}"
+    else -> "$label · 空闲 ${freeRooms.size} 间"
+}
 }
 
 private fun clockMinute(hhmm: String): Int? {

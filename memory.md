@@ -1,14 +1,23 @@
 # BJTUselfService 实时工作记忆
 
 > 最后更新：2026-10-22。
-> 当前分支：`main`。2026-10-22 按用户授权直接在本地主干提交数据保护修复并推送（禁用自动删库、凭据保护、启动取消后重试；1088 项测试通过，四端相关编译通过；未重新打包），细节见日志。2026-10-22 所有者明确授权将本次全部修改直接推送 main：完整长码 App 配对、公共模板及文档提交 `27efa42b` / `9de3eade` / `08b9286b` 已进入主干；以 `--force-with-lease` 推送，保留原有历史。模板 PR #54 已关闭。私人 Site 已部署成功（源码 `495efffe`、`has_mcp=true`）。本机唯一远端 `origin` = `JasonZhang1225/BJTUselfService-KMP-Refreshed`，GitHub 已脱离 fork。验证与交付细节见日志；本地三端包已生成（源码 `6f4b07d8`，未发版；用户已覆盖安装 IPA，未包含本次数据保护修复）：Release APK 约 5.8 MiB、DMG 约 82.5 MiB、供 SideStore 自签的 Release IPA 约 22.0 MiB，均为 arm64；目录 `~/Downloads/BJTUselfService-1.8.6-Beta-6f4b07d8-20261022/`，含 SHA256SUMS.txt 和构建说明。
+> 当前分支：`fix/beta2-desktop-agent-classroom`（基于 main@2cb49216，Beta2 整合与版本兼容修复按用户要求只作本地提交；App/Site/插件/模板为 1.8.6-Beta2 / Build 43，未推主仓库或 tag）。2026-10-22 按用户授权直接在本地主干提交数据保护修复并推送（禁用自动删库、凭据保护、启动取消后重试；1088 项测试通过，四端相关编译通过；未重新打包），细节见日志。2026-10-22 所有者明确授权将本次全部修改直接推送 main：完整长码 App 配对、公共模板及文档提交 `27efa42b` / `9de3eade` / `08b9286b` 已进入主干；以 `--force-with-lease` 推送，保留原有历史。模板 PR #54 已关闭。私人 Site 已部署成功（源码 `495efffe`、`has_mcp=true`）。本机唯一远端 `origin` = `JasonZhang1225/BJTUselfService-KMP-Refreshed`，GitHub 已脱离 fork。验证与交付细节见日志；本地三端包已生成（源码 `6f4b07d8`，未发版；用户已覆盖安装 IPA，未包含本次数据保护修复）：Release APK 约 5.8 MiB、DMG 约 82.5 MiB、供 SideStore 自签的 Release IPA 约 22.0 MiB，均为 arm64；目录 `~/Downloads/BJTUselfService-1.8.6-Beta-6f4b07d8-20261022/`，含 SHA256SUMS.txt 和构建说明。
 > 上次任务分支：`docs/agent-setup-main`（基于 `main@9c7eb55a`；Agent 搭建入口改 main，按用户授权直接推送；验证见日志）。PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次、#46 课程实时动态（Android Live Updates + 双端课前准点出现）均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`、`aac1816`）；#45 验证码模型移除与安装包瘦身（合并提交 `a58e7c6`）、#48 iOS 作业上传修复与上传页统一（合并提交 `ad2a082`）均经所有者实测后合并（2026-10-22），合并后主干安全检查 #179 与打包 #113 见日志；#50 AI Agent 与 ChatGPT 私人远程查询（合并提交 `a18369d`）已合入；#51 v1.8.6 发布说明（`docs/releases/v1.8.6.md`，合并提交 `7513348`）已合入；#52 启动弹窗合并与 1.8.6-Beta 版本号待所有者合并。细节见 `history_full.md`。远端另保留 `claude/宣传图制作`。
-> KMP 源码版本：`1.8.6-Beta` / Build 42（已推 `debug-1.8.6-Beta` 标签打包，尚未发版）；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。iOS 最低系统 18.0。
+> KMP 源码版本：`1.8.6-Beta2` / Build 43（仅本地提交，未推标签；下载目录已有 Beta2 / Build43 的三端 Release 包，未安装）；最新 GitHub Release 为 `v1.8.5-EmergencyFix2`（2026-10-20，Latest）。iOS 最低系统 18.0。
 > 2026-10-22 仓库清理：冻结原 Android 工程（`app/` 与根 Gradle 工程、`release.yml`/`debug.yml`）与验证码 torch 模型（含 Windows `BJTUCaptcha.pt`、DJL）已移除，存档于标签 `archive/legacy-android-and-captcha-model`（`8189baf`）；Windows 验证码改为手动输入。只保留 `origin` = `JasonZhang1225/BJTUselfService-KMP-Refreshed`；所有者已确认在 GitHub 解除 fork 关系，本机远端配置也已对齐。
 > 认证现状（2026-10-20）：MIS 走统一身份认证 sso.bjtu.edu.cn（SM2 加密密码、默认免验证码）；物理在线用独立账号密码；智慧教学仍卡在学校的旧 CAS 跳转。
 > 已完成工作的细节见 `history_full.md` 末尾日志。
 
 ## 进行中
+
+- Beta2 配对版本误判及安装文案（2026-10-22）：用户 Build43 真机截图把已部署 1.8.6-Beta2 判为低于0.4.0；已用原打包 JAR 实际复现纯数字解析器拒绝 Beta 后缀。App 改为解析 SemVer 数字核心、保留旧多设备门槛；安装页/复制提示词/升级提示引用 App 当前版本，清除可见0.5.0硬编码。公共模板 health 为旧 App 返回数字 templateVersion=1.8.6，完整发布 releaseVersion=1.8.6-Beta2 保留于界面/MCP；兼容源码 `0df877a6ab3b7d3cb7f557b958a50515ab5224a7` 已在先前授权下同步私人 Site 源码仓库并归档，尚未部署；用户随后要求先全部本地提交，因此停止后续部署和重新打包。当前线上仍是上一部署 `b1d64646`。Site69项测试通过，原 Build43 JAR 复现后缀解析失败且数字兼容版本可通过（`.artifacts/beta2-installed-parser-check.log`）；`./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64` 成功，1091项测试0失败；日志 `.artifacts/beta2-version-compat-gradle.log`。现有下载包尚不含 App 解析/文案修复；服务端兼容层设计面向已安装 Build43，需后续部署才生效；这次没有重新生成安装包。
+
+
+- Beta2 本地三端包已交付（未发版/未安装，2026-10-22）：`~/Downloads/BJTUselfService-1.8.6-Beta2-43-20261022/`，含 APK 5.8 MiB、IPA 22.0 MiB、DMG 82.6 MiB（全部 Release / arm64）、SHA256SUMS.txt 和构建说明.txt。基于 `2cb49216` 加未提交 Beta2 改动；构建前后849个源文件哈希一致，源码清单摘要 `60e159ec9482abe247f435031adc5304720250f41cb99c73650d2c5b937e0972`。`./gradlew :androidApp:assembleRelease :desktopApp:packageDmg`、`xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Release -destination generic/platform=iOS -derivedDataPath ../.artifacts/local-package-beta2/ios-derived CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build` 均成功。Android apksigner/aapt 通过，证书与旧包相同；DMG 校验/只读挂载、包 codesign/arm64/Build43、Swing dispatcher 与 Beta2 class 常量验证通过，验证卷已卸载；IPA 依仓库 sign-ios-sideload-app.sh 嵌套 ad-hoc 签名、App Group、宿主/小组件版本、原有 bundle ID、arm64 和 zip 完整性均通过；三份 SHA-256 全部核对通过。日志/校验脚本在 `.artifacts/local-package-beta2/`。未验证 SideStore 重签后的真机覆盖安装、Keychain/小组件行为；没有安装/替换应用、提交/推送或推 tag。
+
+
+- Beta2（2026-10-22）：课间/晚饭与首节前高亮当天下一节，文案区分“下一节”；Mac 补远程控制器、系统安全存储、桌面轮询/上传、退出释放及 Dock 后台说明，补 Swing Main dispatcher 依赖（原生报错与缺依赖一致）；Site 独立设备卡展示最近联系/在线、各自快照、范围与撤销，手机标记按需联系而非持续在线；App/Site/MCP/插件/模板版本统一 1.8.6-Beta2，构建号43；验证已结束：`./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:createDistributable :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64`（Android Studio JBR + Temurin25）成功，202 套件1089 测试0失败；Site 68测试通过，`git diff --check` 通过。Mac 独立虚构数据 `--remote-ui-smoke` 已实际启动，确认“主线程调度器正常”和完整长码配对入口（`.artifacts/beta2-mac-remote.png`），源码实例已结束；未连接真实 Site 或学校账号。多设备页面已用虚构 Windows在线、Mac离线、手机按需上传在 IAB 检查，截图 `.artifacts/beta2-site-device-status.png`。私人 Site 已部署 Beta2（见 history_full.md）；App/公共模板代码本次仅本地提交，未推送或打标签。iOS 真机、Windows 原生运行、macOS 真实配对及后台长时间运行未验证；三端本地安装包已生成，见上条。
+
 
 - 本地安装包验证记录（未发版）：`main@6f4b07d8` / `1.8.6-Beta` / Build 42。`JAVA_HOME=<Android Studio JBR> DESKTOP_PACKAGE_JAVA_HOME=<Temurin 25> ./gradlew :androidApp:assembleRelease :desktopApp:packageDmg` 成功；`xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp -configuration Release -destination generic/platform=iOS -derivedDataPath ../.artifacts/local-package-6f4b07d8/ios-derived CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build` 成功。APK 经 apksigner、aapt 验证；DMG 经 hdiutil verify、只读挂载后的 codesign/版本/架构检查，已卸载验证卷；IPA 经仓库 sign-ios-sideload-app.sh 依次 ad-hoc 签名并验证 App Group、宿主/小组件版本与 codesign，unzip -tq 通过。产物已交付下载目录，日志 `.artifacts/local-package-6f4b07d8/`；未安装或替换 App，未验证真实安装/配对，不代表发布签名成功。
 
@@ -27,7 +36,7 @@
 
 ## 当前痛点
 
-- iOS 覆盖安装后丢独立密码、设置重置及首页字号/布局异常：用户决定暂按偶发处理，原因未定（SideStore 仅为猜测），停止继续追查。已在主干禁用自动删库并保护凭据；日程等待重启后恢复。若复发再取真机证据；当前下载目录旧 IPA 未含保护修复。
+- iOS 覆盖安装后丢独立密码、设置重置及首页字号/布局异常：用户决定暂按偶发处理，原因未定（SideStore 仅为猜测），停止继续追查。已在主干禁用自动删库并保护凭据；日程等待重启后恢复。若复发再取真机证据；Beta2 / Build43 下载包已包含保护修复；旧 Build42 包仍未替换。
 
 - 智慧教学（课程平台作业/课件，MIS module 28）仍被学校跳到已下线的 `cas.bjtu.edu.cn/o/authorize`，浏览器同样 404，属学校侧问题；待学校改到 SSO 后再适配 `SmartPlatformEndpoint` 握手白名单。
 - 同步卡顿：Beta3 已到可接受范围。剩余长帧为同步详情 sheet 弹出（约 50ms）、进入作业页（约 49ms）和原生滚动带来的导航栏布局；`checkSession` 改后台后未复采；壳层随任一状态流整体重组（约 0.4 秒/次同步），彻底解决需拆分壳层。

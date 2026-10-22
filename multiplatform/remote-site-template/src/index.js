@@ -89,7 +89,8 @@ export async function handle(request, env, options = {}) {
       if (origin && origin !== url.origin) throw new ProtocolError(403, "origin_denied", "拒绝跨站请求");
     }
     if (path === "/api/v1/health" && method === "GET") {
-      return json(200, { ok: true, protocolVersion: PROTOCOL_VERSION, templateVersion: TEMPLATE_VERSION });
+      return json(200, { ok: true, protocolVersion: PROTOCOL_VERSION, // 旧 App 的健康检查只接受数字版本；完整发布版本放独立字段，页面/MCP 仍使用完整版本。
+        templateVersion: TEMPLATE_VERSION.split(/[-+]/, 1)[0], releaseVersion: TEMPLATE_VERSION });
     }
     if (path === "/mcp" && method === "POST") {
       const { body } = await readBody(request, LIMITS.requestBytes);
