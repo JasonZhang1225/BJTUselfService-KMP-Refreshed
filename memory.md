@@ -1,9 +1,9 @@
 # BJTUselfService 实时工作记忆
 
-> 当前分支：`main`；Windows 修复提交 `719f4f1b` 已按所有者本次明确授权直接推送（无 PR、无强推），Agent Smoke run `39878900122` 全部通过。实现、复现与本地/线上验证细节见 `history_full.md` 末尾。
+> 当前分支：`main`；作业详情全平台 Markdown 操作提交 `62d2031e` 已按所有者本次明确授权直接推送（无 PR、无强推）；远端旧诊断分支已删除，实际远端只保留 `main`。实现与验证见 `history_full.md` 末尾。
 > Windows 本机既有 MSI 记录（保留接手前未提交修改）：`C:\Users\zjg\Downloads\交大自由行 KMP-1.8.6.msi`（源码 `ab3eac6f` / 1.8.6-Beta2 / Build 43，87678976 字节，SHA256 `9DD504400EAF0968124A1E32C2347F5473C59258CFF8D84AE6575FED96E42645`），ProductCode=`{44161E10-B9DC-4B9F-B257-02DE4C744FE3}`，UpgradeCode 保留；已覆盖上一份 `6f4b07d8` 包，未替换 Program Files 安装版。
 
-> 最后更新：2026-10-23（Windows Agent Smoke 修复已推送并经线上验证通过，工作记录已归档）。
+> 最后更新：2026-10-23（作业 Markdown 操作已进入 main，远端仅 main；相关 9 项检查及 Android/桌面编译通过，iOS 尚未编译/实机验证，线上 CI 待结果）。
 > 既往整合记录：`fix/beta2-desktop-agent-classroom`（Beta2 整合、版本兼容修复、iOS ChatGPT 插件页顶栏玻璃修复与 CI 竞态测试修复已于 2026-10-22 按所有者授权推送 main，见日志；App/Site/插件/模板为 1.8.6-Beta2 / Build 43；debug-1.8.6-Beta2 已按用户授权推至最新 origin/main@ab3eac6f）。2026-10-22 按用户授权直接在本地主干提交数据保护修复并推送（禁用自动删库、凭据保护、启动取消后重试；1088 项测试通过，四端相关编译通过；未重新打包），细节见日志。2026-10-22 所有者明确授权将本次全部修改直接推送 main：完整长码 App 配对、公共模板及文档提交 `27efa42b` / `9de3eade` / `08b9286b` 已进入主干；以 `--force-with-lease` 推送，保留原有历史。模板 PR #54 已关闭。私人 Site 已部署成功（源码 `495efffe`、`has_mcp=true`）。本机唯一远端 `origin` = `JasonZhang1225/BJTUselfService-KMP-Refreshed`，GitHub 已脱离 fork。验证与交付细节见日志；本地三端包已生成（源码 `6f4b07d8`，未发版；用户已覆盖安装 IPA，未包含本次数据保护修复）：Release APK 约 5.8 MiB、DMG 约 82.5 MiB、供 SideStore 自签的 Release IPA 约 22.0 MiB，均为 arm64；目录 `~/Downloads/BJTUselfService-1.8.6-Beta-6f4b07d8-20261022/`，含 SHA256SUMS.txt 和构建说明。
 > 上次任务分支：`docs/agent-setup-main`（基于 `main@9c7eb55a`；Agent 搭建入口改 main，按用户授权直接推送；验证见日志）。PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次、#46 课程实时动态（Android Live Updates + 双端课前准点出现）均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`、`aac1816`）；#45 验证码模型移除与安装包瘦身（合并提交 `a58e7c6`）、#48 iOS 作业上传修复与上传页统一（合并提交 `ad2a082`）均经所有者实测后合并（2026-10-22），合并后主干安全检查 #179 与打包 #113 见日志；#50 AI Agent 与 ChatGPT 私人远程查询（合并提交 `a18369d`）已合入；#51 v1.8.6 发布说明（`docs/releases/v1.8.6.md`，合并提交 `7513348`）已合入；#52 启动弹窗合并与 1.8.6-Beta 版本号待所有者合并。细节见 `history_full.md`。远端另保留 `claude/宣传图制作`。
 > 私人 Site 线上仍为 1.8.6-Beta2（部署需 Codex 的 ChatGPT Sites 连接器，Claude Code 会话无此工具）；模板源码已改 1.8.6-KMP，Beta2 App/模板互不拦截（Site 不校验客户端版本，App 只要求模板数字核心 ≥0.4.0）。
