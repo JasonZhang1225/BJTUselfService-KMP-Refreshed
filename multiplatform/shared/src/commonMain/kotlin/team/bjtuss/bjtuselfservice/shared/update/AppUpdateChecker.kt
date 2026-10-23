@@ -31,6 +31,9 @@ object AppUpdateChecker {
     /** 当前构建版本。与 androidApp versionName / 设置页展示一致。 */
     const val CURRENT_VERSION = "1.8.6-KMP"
 
+    /** 当前构建号。与 androidApp versionCode、iOS CFBundleVersion、桌面 packageBuildVersion 一致。 */
+    const val CURRENT_BUILD = 44
+
     const val GITEE_REPO = "zjg1225/BJTUselfService-KMP-Refreshed"
     const val MIRROR_READY = "<!-- bjtu-mirror-ready:v1 -->"
     const val MIRROR_TEST = "<!-- bjtu-mirror-test:v1 -->"

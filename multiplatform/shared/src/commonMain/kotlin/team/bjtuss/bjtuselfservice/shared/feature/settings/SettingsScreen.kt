@@ -1,6 +1,16 @@
 package team.bjtuss.bjtuselfservice.shared.feature.settings
 
-import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import team.bjtuss.bjtuselfservice.shared.update.UpdateSource
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
@@ -285,66 +295,14 @@ fun SettingsWorkspace(
             }
         }
 
-        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text("版本与项目", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "${platform.displayName} · KMP 迁移构建 v${AppUpdateChecker.CURRENT_VERSION}\n" +
-                        "功能对齐基线：原安卓 v1.7.0",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text("更新源", style = MaterialTheme.typography.titleSmall)
-                UpdateSource.entries.forEach { source ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = state.preferences.updateSource == source,
-                            onClick = { model.setUpdateSource(source) },
-                            enabled = state.updateCheck !is UpdateCheckState.Checking,
-                        )
-                        TextButton(
-                            onClick = { model.setUpdateSource(source) },
-                            enabled = state.updateCheck !is UpdateCheckState.Checking,
-                        ) { Text(source.label) }
-                    }
-                }
-                Text("自动选择优先连接 GitHub，连接失败时切换 Gitee。镜像可能稍晚同步。", style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(
-                    onClick = { scope.launch { model.checkForUpdate() } },
-                    enabled = state.updateCheck !is UpdateCheckState.Checking,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(if (state.updateCheck is UpdateCheckState.Checking) "正在检查更新…" else "检查更新")
-                }
-                OutlinedButton(
-                    onClick = { uriHandler.openUri("https://github.com/HFDLYS/BJTUselfService") },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("原作者 GitHub（安卓原版）")
-                }
-                OutlinedButton(
-                    onClick = {
-                        uriHandler.openUri("https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed")
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("本仓库 GitHub（Kotlin MultiPlatform跨平台）")
-                }
-                OutlinedButton(
-                    onClick = { uriHandler.openUri("https://github.com/optsimauth/BJTUselfServiceAIO") },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("AIO 版 GitHub（Flutter 跨平台）")
-                }
-                Text(
-                    "更新检测包含紧急修复等预发行版；Gitee 仅提供同步完成的版本。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+        VersionAndProjectCard(
+            systemVersion = platform.displayName,
+            updateSource = state.preferences.updateSource,
+            checking = state.updateCheck is UpdateCheckState.Checking,
+            onUpdateSource = model::setUpdateSource,
+            onCheckUpdate = { scope.launch { model.checkForUpdate() } },
+            onOpenUri = uriHandler::openUri,
+        )
 
         ElevatedCard(modifier = Modifier.fillMaxWidth()) {
             Column(
@@ -658,6 +616,139 @@ private fun Feedback(message: String, isError: Boolean, onDismiss: () -> Unit) {
                 modifier = Modifier.weight(1f),
             )
             TextButton(onClick = onDismiss) { Text("关闭") }
+        }
+    }
+}
+
+@Composable
+private fun VersionInfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+    }
+}
+
+private fun updateSourceDescription(source: UpdateSource): String = when (source) {
+    UpdateSource.AUTO -> "优先连接 GitHub，连接失败时改用 Gitee 镜像。更新检测包含紧急修复等预发行版。"
+    UpdateSource.GITHUB -> "只从 GitHub 检查更新，最先拿到新版本，包含紧急修复等预发行版。"
+    UpdateSource.GITEE -> "只从 Gitee 镜像检查更新，国内网络更稳定；只提供同步完成的版本，可能稍晚。"
+}
+
+/** 更新源三段滑块：左 Gitee、中自动选择、右 GitHub，样式与成绩单中/英文版选择一致。 */
+@Composable
+private fun UpdateSourceSelector(
+    selected: UpdateSource,
+    enabled: Boolean,
+    onSelect: (UpdateSource) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .selectableGroup(),
+    ) {
+        listOf(UpdateSource.GITEE, UpdateSource.AUTO, UpdateSource.GITHUB).forEach { source ->
+            val isSelected = source == selected
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                    .selectable(
+                        selected = isSelected,
+                        enabled = enabled,
+                        role = Role.RadioButton,
+                        onClick = { onSelect(source) },
+                    )
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = source.label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                    color = when {
+                        isSelected -> MaterialTheme.colorScheme.onPrimary
+                        enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RepositoryLinkButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(label)
+    }
+}
+
+/** 版本与项目：系统/App 版本、构建号、更新源与仓库链接。 */
+@Composable
+internal fun VersionAndProjectCard(
+    systemVersion: String,
+    updateSource: UpdateSource,
+    checking: Boolean,
+    onUpdateSource: (UpdateSource) -> Unit,
+    onCheckUpdate: () -> Unit,
+    onOpenUri: (String) -> Unit,
+) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("版本与项目", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Column {
+                VersionInfoRow("系统版本", systemVersion)
+                VersionInfoRow("App 版本", AppUpdateChecker.CURRENT_VERSION)
+                VersionInfoRow("构建号", AppUpdateChecker.CURRENT_BUILD.toString())
+            }
+            Text("更新源", style = MaterialTheme.typography.titleSmall)
+            UpdateSourceSelector(
+                selected = updateSource,
+                enabled = !checking,
+                onSelect = onUpdateSource,
+            )
+            Text(
+                updateSourceDescription(updateSource),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = onCheckUpdate,
+                enabled = !checking,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (checking) "正在检查更新…" else "检查更新")
+            }
+            Text("项目仓库", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
+            RepositoryLinkButton(RepositoryBrandIcons.GitHub, "GitHub 仓库") {
+                onOpenUri("https://github.com/${AppUpdateChecker.REPO}")
+            }
+            RepositoryLinkButton(RepositoryBrandIcons.Gitee, "Gitee 仓库") {
+                onOpenUri("https://gitee.com/${AppUpdateChecker.GITEE_REPO}")
+            }
+            Text("相关仓库", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
+            RepositoryLinkButton(RepositoryBrandIcons.GitHub, "交大自由行 NEO（原版）") {
+                onOpenUri("https://github.com/HFDLYS/BJTUselfService")
+            }
+            RepositoryLinkButton(RepositoryBrandIcons.GitHub, "交大自由行 AIO（跨平台）") {
+                onOpenUri("https://github.com/optsimauth/BJTUselfServiceAIO")
+            }
         }
     }
 }

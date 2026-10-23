@@ -11,6 +11,7 @@
 
 ## 进行中
 
+- 设置页“版本与项目”重构（分支 `claude/kind-darwin-u2fxah`，2026-10-23，PR 待所有者审核）：系统版本/App 版本/构建号三行（新增 `AppUpdateChecker.CURRENT_BUILD`，`SecurityReleaseConfigTest` 断言与 Android/iOS 宿主/小组件/macOS 构建号一致，改构建号时需同步此常量）；更新源改 Gitee｜自动选择｜GitHub 三段滑块（默认自动，说明随选项变化）；仓库链接分“项目仓库”（GitHub/Gitee，带品牌图标）与“相关仓库”（交大自由行 NEO（原版）、AIO（跨平台））。验证：`./gradlew :shared:desktopTest :windowsApp:compileKotlinWindows` 1110 项 1 失败（`DesktopAgentIntegrationTest.installWritesWorkingScriptAndSkill` 退出码 127，撤下改动后在原代码上同样失败，云端 Linux 环境问题）；`VersionAndProjectCardRenderTest` 离屏渲染浅/深色、1.4 倍字号、检查中状态，截图 `.artifacts/settings-version-card/`。Android/iOS 构建与模拟器实机仅 CI 验证。
 
 - `debug-1.8.6-Beta2` 打包（2026-10-22）：所有者明确要求基于远端最新打标签；目标 `origin/main@ab3eac6f4bf786774ee21e9572dfe4a56da6c43d`，安全检查 run #39774068051 success。远端 annotated tag 已验证 peeled SHA 与目标一致。KMP package run #39777575554 已触发，当前 queued，链接 https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/39777575554 。只打四端包、不创建 Release；尚未验证此次 Actions 最终构建结果。
 

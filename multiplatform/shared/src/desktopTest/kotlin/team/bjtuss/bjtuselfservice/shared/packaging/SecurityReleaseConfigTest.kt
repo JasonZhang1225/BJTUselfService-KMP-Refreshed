@@ -189,6 +189,20 @@ class SecurityReleaseConfigTest {
             assertTrue("IPHONEOS_DEPLOYMENT_TARGET = 18.0" in config, name)
         }
     }
+
+    @Test
+    fun settingsBuildNumberMatchesEveryPlatform() {
+        // 设置页“构建号”来自 AppUpdateChecker.CURRENT_BUILD，发版改构建号时各端必须一起改。
+        val build = team.bjtuss.bjtuselfservice.shared.update.AppUpdateChecker.CURRENT_BUILD.toString()
+        val android = root.resolve("multiplatform/androidApp/build.gradle.kts").readText()
+        assertTrue("versionCode = $build" in android)
+        val desktop = root.resolve("multiplatform/desktopApp/build.gradle.kts").readText()
+        assertTrue("packageBuildVersion = \"$build\"" in desktop)
+        listOf("iosApp/Info.plist", "CourseScheduleWidget/Info.plist").forEach { plist ->
+            val text = root.resolve("multiplatform/iosApp/$plist").readText()
+            assertTrue(Regex("<key>CFBundleVersion</key>\\s*<string>$build</string>").containsMatchIn(text), plist)
+        }
+    }
 }
 
 private fun sha256(file: File): String {
