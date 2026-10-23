@@ -378,6 +378,17 @@ fun AuthenticatedAppShell(
             if (phyVlabEnabled) phyVlabModel.allActivities() else emptyList(),
             if (citelEnabled) citelState.tasks else emptyList(), homeworkState.timeZone)
     }
+    val renderAssignmentMarkdownActions: @Composable (AssignmentSource) -> Unit = { source ->
+        val selected = when (source) {
+            AssignmentSource.COURSE_PLATFORM -> aggregateAssignments(listOfNotNull(homeworkState.selectedHomework), emptyList(), emptyList())
+            AssignmentSource.PHYVLAB -> aggregateAssignments(emptyList(), listOfNotNull(phyVlabState.selectedActivity), emptyList())
+            AssignmentSource.CITEL -> aggregateAssignments(emptyList(), emptyList(), listOfNotNull(citelState.selectedTask))
+        }.singleOrNull()
+        selected?.let { item ->
+            AssignmentMarkdownActions(item, homeworkFileGateway,
+                aggregateAssignmentMarkdown(item, homeworkState, phyVlabState, citelState))
+        }
+    }
     val assignmentSync = buildList {
         add(AssignmentSourceSync(AssignmentSource.COURSE_PLATFORM, homeworkState.isLoading || homeworkState.isRefreshing,
             homeworkState.failure != null, homeworkState.source == HomeworkContentSource.NETWORK,
@@ -2001,6 +2012,7 @@ fun AuthenticatedAppShell(
                     fileGateway = homeworkFileGateway,
                     onReauthenticate = reauthenticateSession,
                     modifier = Modifier.fillMaxSize(),
+                    headerContent = { renderAssignmentMarkdownActions(AssignmentSource.COURSE_PLATFORM) },
                 )
             }
             AppSection.SETTINGS -> DestinationPage(
@@ -2176,6 +2188,7 @@ fun AuthenticatedAppShell(
                     onRetry = retryPhyVlabDetail,
                     onOpenActivity = { url -> onOpenExternalUrl(upgradePhyVlabUrlToHttps(url)) },
                     modifier = Modifier.fillMaxSize(),
+                    headerContent = { renderAssignmentMarkdownActions(AssignmentSource.PHYVLAB) },
                 )
             }
             AiAssistantSettingsRoute -> DestinationPage(
@@ -2273,7 +2286,8 @@ fun AuthenticatedAppShell(
                 isRefreshing = citelState.submissionBusy, showBack = true, modifier = modifier, scrollUnderTopBar = true) {
                 session.citelModel?.let { model ->
                     team.bjtuss.bjtuselfservice.shared.feature.citel.CitelDetailWorkspace(model, homeworkFileGateway,
-                        onOpenExternalUrl, entryLoggingIn, Modifier.fillMaxSize(), directoryGateway = coursewareDirectoryGateway)
+                        onOpenExternalUrl, entryLoggingIn, Modifier.fillMaxSize(), directoryGateway = coursewareDirectoryGateway,
+                        headerContent = { renderAssignmentMarkdownActions(AssignmentSource.CITEL) })
                 }
             }
             CitelSettingsRoute -> DestinationPage(title = "CITEL 账号设置", expanded = expanded, refreshable = false,

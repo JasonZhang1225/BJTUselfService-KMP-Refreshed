@@ -501,6 +501,7 @@ fun HomeworkDetailWorkspace(
     fileGateway: HomeworkFileGateway,
     onReauthenticate: (suspend () -> Boolean)? = null,
     modifier: Modifier = Modifier,
+    headerContent: (@Composable () -> Unit)? = null,
 ) {
     val state by model.state.collectAsState()
     val transfer = rememberHomeworkTransferState(model, fileGateway, onReauthenticate)
@@ -513,8 +514,10 @@ fun HomeworkDetailWorkspace(
             .padding(horizontal = 24.dp)
             // 原生栏 underlap 时视口顶边贴屏幕顶，首项靠这份顶边距让开（其余平台恒 0）。
             .padding(top = 12.dp + LocalTopBarClearance.current, bottom = 28.dp + LocalBottomBarClearance.current),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         state.selectedHomework?.let { selected ->
+            headerContent?.invoke()
             HomeworkDetailSheetBody(
                 homework = selected,
                 detail = state.detail,

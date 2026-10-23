@@ -201,36 +201,47 @@ internal fun AssignmentSyncDetails(sync: List<AssignmentSourceSync>, onRefreshSo
 @Composable
 private fun AssignmentDetailPane(item: AggregatedAssignment?, gateway: HomeworkFileGateway,
     markdown: String?, modifier: Modifier, content: @Composable () -> Unit) {
-    val scope = rememberCoroutineScope()
-    val clipboard = LocalClipboardManager.current
-    var feedback by remember(item?.key) { mutableStateOf<String?>(null) }
-    var saving by remember(item?.key) { mutableStateOf(false) }
     Surface(modifier, shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
         if (item == null) Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
             Text("选择一项作业查看要求和附件", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else Column(Modifier.fillMaxSize()) {
-            FlowRow(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("作业详情", style = MaterialTheme.typography.titleLarge, modifier = Modifier.align(Alignment.CenterVertically))
-                TextButton(onClick = { clipboard.setText(AnnotatedString(markdown.orEmpty())); feedback = "已复制为 Markdown" }) { Text("复制为 Markdown") }
-                OutlinedButton(enabled = gateway.isAvailable && !saving, onClick = {
-                    scope.launch {
-                        saving = true
-                        try {
-                            val title = item.homework?.title ?: item.physical?.title ?: item.citel?.title.orEmpty()
-                            val result = gateway.saveFile(HomeworkFileContent(safeExportFileName("${item.courseName}-$title.md"),
-                                "text/markdown", markdown.orEmpty().encodeToByteArray()))
-                            feedback = when (result) {
-                                HomeworkFileSaveResult.Saved -> "Markdown 已保存"
-                                HomeworkFileSaveResult.Cancelled -> null
-                                is HomeworkFileSaveResult.Failed -> "无法保存 Markdown，请重试。"
-                            }
-                        } finally { saving = false }
-                    }
-                }) { Text("保存为 Markdown") }
-            }
-            feedback?.let { Text(it, Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.primary) }
+            AssignmentMarkdownActions(item, gateway, markdown.orEmpty(), Modifier.padding(16.dp), showHeading = true)
             Box(Modifier.weight(1f).fillMaxWidth()) { content() }
         }
+    }
+}
+
+/** 宽屏详情框架和手机独立详情页共用导出入口；按钮在窄屏或大字号下自动换行。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun AssignmentMarkdownActions(item: AggregatedAssignment, gateway: HomeworkFileGateway,
+    markdown: String, modifier: Modifier = Modifier, showHeading: Boolean = false) {
+    val scope = rememberCoroutineScope()
+    val clipboard = LocalClipboardManager.current
+    var feedback by remember(item.key) { mutableStateOf<String?>(null) }
+    var saving by remember(item.key) { mutableStateOf(false) }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (showHeading) Text("作业详情", style = MaterialTheme.typography.titleLarge, modifier = Modifier.align(Alignment.CenterVertically))
+            TextButton(onClick = { clipboard.setText(AnnotatedString(markdown)); feedback = "已复制为 Markdown" }) { Text("复制为 Markdown") }
+            OutlinedButton(enabled = gateway.isAvailable && !saving, onClick = {
+                scope.launch {
+                    saving = true
+                    feedback = null
+                    try {
+                        val title = item.homework?.title ?: item.physical?.title ?: item.citel?.title.orEmpty()
+                        val result = gateway.saveFile(HomeworkFileContent(safeExportFileName("${item.courseName}-$title.md"),
+                            "text/markdown", markdown.encodeToByteArray()))
+                        feedback = when (result) {
+                            HomeworkFileSaveResult.Saved -> "Markdown 已保存"
+                            HomeworkFileSaveResult.Cancelled -> null
+                            is HomeworkFileSaveResult.Failed -> "无法保存 Markdown，请重试。"
+                        }
+                    } finally { saving = false }
+                }
+            }) { Text("保存为 Markdown") }
+        }
+        feedback?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
     }
 }

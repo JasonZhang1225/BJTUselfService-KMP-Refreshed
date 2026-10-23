@@ -143,7 +143,8 @@ private fun CitelDetailLine(label: String, value: String) {
 @Composable
 fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, onOpen: (String) -> Unit,
     holdNetwork: Boolean = false, modifier: Modifier = Modifier,
-    directoryGateway: CoursewareDirectoryGateway = UnavailableCoursewareDirectoryGateway) {
+    directoryGateway: CoursewareDirectoryGateway = UnavailableCoursewareDirectoryGateway,
+    headerContent: (@Composable () -> Unit)? = null) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
     val task = state.selectedTask ?: run { Text("未选择作业。"); return }
@@ -173,6 +174,7 @@ fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, on
         contentModifier = Modifier.padding(horizontal = 24.dp)
             .padding(top = 12.dp + LocalTopBarClearance.current, bottom = 28.dp + LocalBottomBarClearance.current),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        headerContent?.invoke()
         Text(task.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         CitelDetailLine("课程", task.courseName)
         CitelDetailLine("类型", if (task.programming) "编程作业" else "实验报告")
@@ -194,20 +196,22 @@ fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, on
                 Button(onClick = { scope.launch { model.fetchProblem() } }, enabled = !holdNetwork && !state.problemBusy && !state.submissionBusy) {
                     Text(if (state.problemBusy) "正在获取…" else "获取题目全文")
                 }
-                TextButton(enabled = markdown != null, onClick = {
-                    clipboard.setText(AnnotatedString(markdown.orEmpty())); exportMessage = "Markdown 已复制"
-                }) { Text("复制 Markdown") }
-                OutlinedButton(enabled = markdown != null && fileGateway.isAvailable && !exportBusy, onClick = {
-                    scope.launch {
-                        exportBusy = true
-                        try {
-                            val saved = fileGateway.saveFile(HomeworkFileContent(safeExportFileName("CITEL-${task.id}.md"),
-                                "text/markdown", markdown.orEmpty().encodeToByteArray()))
-                            exportMessage = saved.citelExportMessage()
-                        } catch (_: Exception) { exportMessage = "保存失败，请重试。"
-                        } finally { exportBusy = false }
-                    }
-                }) { Text("保存 Markdown") }
+                if (headerContent == null) {
+                    TextButton(enabled = markdown != null, onClick = {
+                        clipboard.setText(AnnotatedString(markdown.orEmpty())); exportMessage = "Markdown 已复制"
+                    }) { Text("复制 Markdown") }
+                    OutlinedButton(enabled = markdown != null && fileGateway.isAvailable && !exportBusy, onClick = {
+                        scope.launch {
+                            exportBusy = true
+                            try {
+                                val saved = fileGateway.saveFile(HomeworkFileContent(safeExportFileName("CITEL-${task.id}.md"),
+                                    "text/markdown", markdown.orEmpty().encodeToByteArray()))
+                                exportMessage = saved.citelExportMessage()
+                            } catch (_: Exception) { exportMessage = "保存失败，请重试。"
+                            } finally { exportBusy = false }
+                        }
+                    }) { Text("保存 Markdown") }
+                }
                 OutlinedButton(enabled = cachedProblem != null && directoryGateway.isDirectoryExportAvailable && !exportBusy, onClick = {
                     scope.launch {
                         exportBusy = true

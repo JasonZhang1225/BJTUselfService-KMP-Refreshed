@@ -293,6 +293,7 @@ fun PhyVlabDetailWorkspace(
     /** 由应用壳提供会话感知的详情重试；独立预览/测试时回退到模型重试。 */
     onRetry: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    headerContent: (@Composable () -> Unit)? = null,
 ) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
@@ -329,6 +330,7 @@ fun PhyVlabDetailWorkspace(
             nowEpochSeconds = nowEpochSeconds,
             fullScreen = true,
             modifier = modifier,
+            headerContent = headerContent,
             onRetry = retryDetail,
             onOpenWeb = { onOpenActivity(selectedActivity.activityUrl) },
         )
@@ -519,6 +521,7 @@ private fun PhyVlabAssignmentDetailContent(
     onPrepareFinalization: suspend () -> Boolean = { true },
     finalizationStatement: String? = null,
     submissionRevision: Long = 0,
+    headerContent: (@Composable () -> Unit)? = null,
 ) {
     var confirmFinal by remember(activity.id) { mutableStateOf(false) }
 
@@ -552,6 +555,7 @@ private fun PhyVlabAssignmentDetailContent(
             .padding(bottom = if (fullScreen) LocalBottomBarClearance.current else 0.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        headerContent?.invoke()
         Text(activity.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text(activity.courseName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         if (openedAt != null || dueAt != null || submittedAt != null || detail != null) {
