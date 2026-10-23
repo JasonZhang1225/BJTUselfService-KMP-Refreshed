@@ -2,9 +2,12 @@ package team.bjtuss.bjtuselfservice.shared.agent.remote
 
 import java.io.File
 import java.nio.file.Files
+import java.util.PriorityQueue
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.random.Random
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.resume
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -13,7 +16,13 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Delay
+import kotlinx.coroutines.DisposableHandle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -256,37 +265,64 @@ class RemoteAgentRunnerTest {
     }
 
     @Test
-    fun loopsRunIndependentlyAndIntervalChangeDoesNotDuplicateLoops() = runBlocking {
-        // 上报周期取上限：慢机器上也只会在启动时到期一次，断言不依赖墙钟速度。
+    fun loopsRunIndependentlyAndIntervalChangeDoesNotDuplicateLoops() {
+        val dispatcher = RunnerTestDispatcher()
+        val job = SupervisorJob()
+        val scope = CoroutineScope(job + dispatcher)
+        val refreshGate = CompletableDeferred<Unit>()
+        executor.gate = refreshGate
         config.value = config.value.copy(pollIntervalSeconds = 1, uploadIntervalSeconds = RemoteIntervals.UPLOAD_RANGE.last)
-        // 用真实时钟驱动（1 秒 = 10 毫秒）；只断言“至少”与“不再增加”，不卡固定时间窗内的次数。
-        val start = System.currentTimeMillis()
-        val realRunner = RemoteAgentRunner(config, { client }, executor, store, { (System.currentTimeMillis() - start) / 10 + now },
-            Random(1), secondMillis = 10)
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        realRunner.start(scope)
-        realRunner.start(scope)
-        withTimeout(20_000) { while (client.polls.get() < 5 || executor.refreshes.get() < 1) delay(10) }
-        assertEquals(1, executor.refreshes.get(), "启动时到期只上报一轮，空轮询不刷新：refreshes=${executor.refreshes.get()}")
-        assertEquals(1, client.snapshots.size, "snapshots=${client.snapshots.size}")
-        // 改成 300 秒（压缩后 3 秒）：等轮询静下来（连续 500 毫秒没有新轮询），再确认之后 1.5 秒内不再增加。
-        // 若旧频率的循环还在或多开了循环，轮询会持续增加，永远静不下来（超时失败）。
-        config.value = config.value.copy(pollIntervalSeconds = 300)
-        withTimeout(20_000) {
-            var last = client.polls.get()
-            var quietSince = System.currentTimeMillis()
-            while (System.currentTimeMillis() - quietSince < 500) {
-                delay(20)
-                val current = client.polls.get()
-                if (current != last) { last = current; quietSince = System.currentTimeMillis() }
+        // 时钟和 delay 共用虚拟时间，保持生产的一秒 = 1000 毫秒，不依赖 CI 的运行速度。
+        val loopRunner = RemoteAgentRunner(config, { client }, executor, store,
+            { now + dispatcher.currentTimeMillis / 1_000 }, Random(1))
+        try {
+            loopRunner.start(scope)
+            loopRunner.start(scope)
+            dispatcher.runCurrent()
+            assertEquals(1, client.polls.get(), "重复 start 只启动一个轮询循环")
+            assertEquals(1, executor.refreshes.get())
+
+            dispatcher.advanceTimeBy(4_000)
+            assertEquals(5, client.polls.get(), "刷新挂起时轮询仍独立运行")
+            assertEquals(1, executor.refreshes.get())
+            // 此时旧等待条件 polls >= 5 && refreshes >= 1 已成立，上传却尚未开始。
+            assertTrue(client.snapshots.isEmpty())
+            assertNull(loopRunner.status.value.lastUploadAt)
+            refreshGate.complete(Unit)
+            dispatcher.runCurrent()
+            assertEquals(now + 4, loopRunner.status.value.lastUploadAt, "确认上传完整结束后再检查快照")
+            assertEquals(1, client.snapshots.size)
+            assertNull(store.loadPending())
+
+            config.value = config.value.copy(pollIntervalSeconds = 300)
+            dispatcher.runCurrent()
+            // 配置变更会唤醒等待中的循环，允许立即轮询一次；随后必须使用新间隔。
+            val settled = client.polls.get()
+            assertEquals(6, settled)
+            loopRunner.start(scope)
+            repeat(2) { cycle ->
+                dispatcher.advanceTimeBy(299_999)
+                assertEquals(settled + cycle, client.polls.get(), "新间隔到期前不能保留旧频率或重复循环")
+                dispatcher.advanceTimeBy(1)
+                assertEquals(settled + cycle + 1, client.polls.get(), "每个新间隔恰好轮询一次")
             }
+            config.value = config.value.copy(pollIntervalSeconds = 1)
+            dispatcher.runCurrent()
+            val resumed = client.polls.get()
+            assertEquals(settled + 3, resumed)
+            dispatcher.advanceTimeBy(999)
+            assertEquals(resumed, client.polls.get())
+            dispatcher.advanceTimeBy(1)
+            assertEquals(resumed + 1, client.polls.get(), "缩短间隔也只保留一个循环")
+            assertEquals(1, executor.refreshes.get(), "空轮询与间隔变更不触发学校刷新")
+            assertEquals(1, client.snapshots.size)
+        } finally {
+            loopRunner.stop()
+            scope.cancel()
+            // 处理取消的 continuation，确保关闭数据库前所有循环都已退出，即使断言失败也清理。
+            dispatcher.runCurrent()
+            assertTrue(job.isCompleted, "测试协程必须在清理后结束")
         }
-        val settled = client.polls.get()
-        delay(1_500)
-        assertEquals(settled, client.polls.get(), "改间隔后不能保留旧频率的循环：settled=$settled now=${client.polls.get()}")
-        assertEquals(1, executor.refreshes.get(), "refreshes=${executor.refreshes.get()}")
-        realRunner.stop()
-        scope.cancel()
     }
 
     @Test
@@ -313,5 +349,55 @@ class RemoteAgentRunnerTest {
         assertNull(normalizeSiteUrl("https://me.example.com/?x=1"))
         assertFalse(RemoteAgentConfig(enabled = true, siteUrl = "https://a.example", deviceId = "d", accountBindingId = "b", accountScope = "s").runnable,
             "没有同意记录不能运行")
+    }
+}
+
+/** 仅供本文件的循环测试：按截止时间、入队顺序执行；时钟与协程计时都由测试推进。 */
+@OptIn(InternalCoroutinesApi::class)
+private class RunnerTestDispatcher : CoroutineDispatcher(), Delay {
+    private class Scheduled(val at: Long, val order: Long, val block: Runnable) {
+        var cancelled = false
+    }
+
+    private val queue = PriorityQueue(compareBy<Scheduled> { it.at }.thenBy { it.order })
+    private var order = 0L
+    var currentTimeMillis = 0L
+        private set
+
+    private fun schedule(delayMillis: Long, block: Runnable): DisposableHandle {
+        val task = Scheduled(currentTimeMillis + delayMillis, order++, block)
+        queue.add(task)
+        return DisposableHandle { task.cancelled = true }
+    }
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        schedule(0, block)
+    }
+
+    override fun scheduleResumeAfterDelay(timeMillis: Long, continuation: CancellableContinuation<Unit>) {
+        val handle = schedule(timeMillis, Runnable { continuation.resume(Unit) })
+        continuation.invokeOnCancellation { handle.dispose() }
+    }
+
+    override fun invokeOnTimeout(timeMillis: Long, block: Runnable, context: CoroutineContext): DisposableHandle =
+        schedule(timeMillis, block)
+
+    fun runCurrent() {
+        var steps = 0
+        while (queue.peek()?.let { it.at <= currentTimeMillis } == true) {
+            check(++steps <= 10_000) { "循环在同一虚拟时刻未挂起" }
+            val task = queue.remove()
+            if (!task.cancelled) task.block.run()
+        }
+    }
+
+    fun advanceTimeBy(millis: Long) {
+        require(millis >= 0)
+        val target = currentTimeMillis + millis
+        while (queue.peek()?.let { it.at <= target } == true) {
+            currentTimeMillis = queue.peek().at
+            runCurrent()
+        }
+        currentTimeMillis = target
     }
 }

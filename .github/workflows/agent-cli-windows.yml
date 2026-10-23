@@ -46,7 +46,32 @@ jobs:
       - name: Refresh IPC, coordinator and remote agent tests on Windows
         # 本机 IPC（回环端口、端点文件权限回退）、公共刷新协调器与远程常驻组件在真实 Windows 上跑一遍；
         # 远程令牌的 DPAPI 往返只用独立测试节点。
-        run: .\gradlew.bat :shared:desktopTest --tests "*RefreshIpcTest*" --tests "*AppRefreshCoordinatorTest*" --tests "*agent.remote*" --tests "*AgentCacheUpdateTest*" :windowsApp:windowsTest --tests "*WindowsRemoteSecretStoreTest*" --stacktrace
+        run: |
+          @'
+          allprojects {
+              tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+                  testLogging {
+                      events 'failed'
+                      exceptionFormat 'full'
+                      showExceptions = true
+                      showCauses = true
+                      showStackTraces = true
+                  }
+              }
+          }
+          '@ | Set-Content -Path "$env:RUNNER_TEMP/bjtu-test-diagnostics.gradle" -Encoding utf8
+          .\gradlew.bat -I "$env:RUNNER_TEMP/bjtu-test-diagnostics.gradle" :shared:desktopTest --tests "*RefreshIpcTest*" --tests "*AppRefreshCoordinatorTest*" --tests "*agent.remote*" --tests "*AgentCacheUpdateTest*" :windowsApp:windowsTest --tests "*WindowsRemoteSecretStoreTest*" --stacktrace
+
+      - name: Preserve Windows test reports even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-cli-test-diagnostics
+          path: |
+            multiplatform/shared/build/test-results/desktopTest/**/*.xml
+            multiplatform/shared/build/reports/tests/desktopTest/**
+            multiplatform/windowsApp/build/test-results/windowsTest/**/*.xml
+          if-no-files-found: warn
 
       - name: Run CLI with redirected handles (how agents spawn it)
         run: |
