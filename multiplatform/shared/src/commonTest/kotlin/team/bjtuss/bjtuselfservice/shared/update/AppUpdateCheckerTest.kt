@@ -24,6 +24,7 @@ class AppUpdateCheckerTest {
     @Test
     fun releaseVersionCanUpgradeThe173Base() {
         assertTrue(AppUpdateChecker.CURRENT_VERSION == "1.8.6-KMP")
+        assertTrue(AppUpdateChecker.CURRENT_BUILD == 44)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.6-Alpha") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.6-Beta2") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.6-Beta") > 0)
