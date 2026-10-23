@@ -26,8 +26,6 @@ sealed interface UpdateCheckState {
         val hasUpdate: Boolean,
     ) : UpdateCheckState
 
-    data class SourceBehind(val knownVersion: String) : UpdateCheckState
-
     data object Failed : UpdateCheckState
 }
 
@@ -58,7 +56,6 @@ class SettingsScreenModel(
     )))
     val state: StateFlow<SettingsUiState> = mutableState.asStateFlow()
     private var automaticUpdateChecked = false
-    private var highestKnownRelease = initialPreferences.highestKnownRelease
     private var postponedUntilMillis = initialPreferences.updatePostponedUntilMillis
 
     /** 1.8.3 合并弹窗覆盖新版导航、CITEL、作业聚合三项，确认一次即全部记为已读。 */
@@ -210,20 +207,6 @@ class SettingsScreenModel(
             throw cancelled
         } catch (_: Exception) {
             AppUpdateChecker.Result.Unavailable
-        }
-        if (result is AppUpdateChecker.Result.Success) {
-            if (highestKnownRelease.isNotBlank() && AppUpdateChecker.compareVersions(result.release.tagName, highestKnownRelease) < 0) {
-                mutableState.value = mutableState.value.copy(updateCheck =
-                    if (silentOnMiss) UpdateCheckState.Idle else UpdateCheckState.SourceBehind(highestKnownRelease))
-                return
-            }
-            // Reserved disposable Gitee test tags must not poison the persisted high-water mark.
-            val disposableTest = result.release.disposableTest ||
-                (result.release.source == UpdateSource.GITEE && result.release.tagName.endsWith("-gitee-test"))
-            if (!disposableTest && (highestKnownRelease.isBlank() || AppUpdateChecker.compareVersions(result.release.tagName, highestKnownRelease) > 0)) {
-                highestKnownRelease = result.release.tagName
-                updatePreferences { copy(highestKnownRelease = this@SettingsScreenModel.highestKnownRelease) }
-            }
         }
         mutableState.value = mutableState.value.copy(
             updateCheck = when (result) {

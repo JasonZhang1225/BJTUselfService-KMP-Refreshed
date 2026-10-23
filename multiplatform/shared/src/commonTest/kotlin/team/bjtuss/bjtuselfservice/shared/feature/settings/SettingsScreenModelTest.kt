@@ -22,38 +22,40 @@ class SettingsScreenModelTest {
         assertTrue(model.state.value.saveFailed)
     }
 
-    @Test fun switchingToDelayedMirrorCannotLoseKnownNewerVersionAcrossRestarts() = runBlocking {
-        var saved = AppPreferences()
-        val github = model(persistPreferences = { saved = it; true }, checkLatestRelease = {
-            AppUpdateChecker.Result.Success(AppUpdateChecker.Release("v9.0.0-KMP", htmlUrl = "https://github.com/release"))
+    @Test fun everyManualCheckUsesFreshReleaseEvenAfterHigherTestVersion() = runBlocking {
+        var calls = 0
+        val versions = listOf("v2.0.0-EmergencyFix2", "v1.8.7-KMP", "v1.8.6-KMP")
+        val model = model(checkLatestRelease = {
+            AppUpdateChecker.Result.Success(AppUpdateChecker.Release(versions[calls++], htmlUrl = "https://github.com/release"))
         })
-        github.checkForUpdate()
-        assertEquals("v9.0.0-KMP", saved.highestKnownRelease)
-        val mirror = model(initialPreferences = saved, checkLatestRelease = {
-            AppUpdateChecker.Result.Success(AppUpdateChecker.Release("v8.0.0-KMP", htmlUrl = "https://gitee.com/release"))
-        })
-        mirror.checkForUpdate()
-        assertIs<UpdateCheckState.SourceBehind>(mirror.state.value.updateCheck)
-        mirror.dismissUpdateCheck()
-        mirror.checkForUpdate(silentOnMiss = true)
-        assertIs<UpdateCheckState.Idle>(mirror.state.value.updateCheck)
-        Unit
+        versions.forEachIndexed { index, version ->
+            model.checkForUpdate()
+            val result = assertIs<UpdateCheckState.Done>(model.state.value.updateCheck)
+            assertEquals(version, result.release.tagName)
+            assertEquals(index < 2, result.hasUpdate)
+            model.dismissUpdateCheck()
+        }
+        assertEquals(3, calls)
     }
 
-    @Test fun disposableGiteeTestDoesNotBlockNormalUpdatesAfterDeletion() = runBlocking {
-        var saved = AppPreferences()
-        val test = model(persistPreferences = { saved = it; true }, checkLatestRelease = {
-            AppUpdateChecker.Result.Success(AppUpdateChecker.Release("v2.0.0", htmlUrl = "https://gitee.com/release",
-                source = team.bjtuss.bjtuselfservice.shared.update.UpdateSource.GITEE, disposableTest = true))
-        })
-        test.checkForUpdate()
-        assertTrue(assertIs<UpdateCheckState.Done>(test.state.value.updateCheck).hasUpdate)
-        assertEquals("", saved.highestKnownRelease)
-        val normal = model(initialPreferences = saved, checkLatestRelease = {
-            AppUpdateChecker.Result.Success(AppUpdateChecker.Release("v1.8.7-KMP", htmlUrl = "https://github.com/release"))
-        })
-        normal.checkForUpdate()
-        assertTrue(assertIs<UpdateCheckState.Done>(normal.state.value.updateCheck).hasUpdate)
+    @Test fun newLoginChecksSourceAgainAfterPreviousSessionSawTestVersion() = runBlocking {
+        var calls = 0
+        var stored = AppPreferences()
+        val fetch: suspend () -> AppUpdateChecker.Result = {
+            calls++
+            AppUpdateChecker.Result.Success(AppUpdateChecker.Release(
+                if (calls == 1) "v2.0.0-EmergencyFix2" else "v1.8.7-KMP", htmlUrl = "https://github.com/release"))
+        }
+        val firstLogin = model(persistPreferences = { stored = it; true }, checkLatestRelease = fetch)
+        firstLogin.checkForUpdate(silentOnMiss = true)
+        // Persist an unrelated preference just as a real session would before signing out.
+        firstLogin.setDynamicColor(false)
+        val nextLogin = model(initialPreferences = stored, checkLatestRelease = fetch)
+        nextLogin.checkForUpdate(silentOnMiss = true)
+        assertEquals(2, calls)
+        val result = assertIs<UpdateCheckState.Done>(nextLogin.state.value.updateCheck)
+        assertEquals("v1.8.7-KMP", result.release.tagName)
+        assertTrue(result.hasUpdate)
     }
 
     @Test fun selectedSourceReachesFetcher() = runBlocking {
