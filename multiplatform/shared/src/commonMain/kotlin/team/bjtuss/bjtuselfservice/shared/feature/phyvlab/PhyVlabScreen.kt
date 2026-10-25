@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.phyvlab
 
+import team.bjtuss.bjtuselfservice.shared.domain.assignment.assignmentGradeText
+import team.bjtuss.bjtuselfservice.shared.domain.time.assignmentDeadlineText
+import team.bjtuss.bjtuselfservice.shared.domain.time.assignmentStartText
 import team.bjtuss.bjtuselfservice.shared.domain.time.formatChineseDeadline
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
@@ -377,8 +380,9 @@ internal fun PhyVlabActivityRow(activity: PhyVlabActivity, nowEpochSeconds: Long
         Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             AssignmentCardHeader(activity.courseName, activity.title, activity.completed, source)
             Text("类型 · ${activity.activityType}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            activity.openText?.let { Text("开始 · ${formatPhyVlabDateTime(it)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            activity.dueText?.let { Text("截止 · ${formatChineseDeadline(it)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Text("开始 · ${assignmentStartText(activity.openText)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("截止 · ${assignmentDeadlineText(activity.dueText)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("评分 · ${assignmentGradeText(null, activity.completed, graded = null)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

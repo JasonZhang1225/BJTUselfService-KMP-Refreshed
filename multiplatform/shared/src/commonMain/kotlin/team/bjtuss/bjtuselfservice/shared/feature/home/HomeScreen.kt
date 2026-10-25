@@ -1850,7 +1850,7 @@ private fun ChangeFieldDiffRow(field: team.bjtuss.bjtuselfservice.shared.domain.
         DataChangeKind.MODIFIED -> changed
         DataChangeKind.ADDED, DataChangeKind.DELETED -> true
     }
-    // 已提交、截止延后这类利好变更用绿色，和作业卡片“已提交”胶囊同一组色值。
+    // 已提交、AC、截止延后这类利好变更用绿色，和作业卡片“已提交”胶囊同一组色值。
     val favorable = pair && field.isFavorableChange()
     val dark = scheme.background.luminance() < 0.5f
     val background = when {

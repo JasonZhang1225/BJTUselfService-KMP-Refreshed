@@ -52,7 +52,7 @@ class AssignmentVisualTest {
                         Panel("CITEL", Modifier.weight(1f)) {
                             listOf(false, true).forEachIndexed { i, submitted ->
                                 CitelTaskCard(CitelTask(i, 1, "测试课程 · 数据结构", "第 ${i + 1} 章 · 编程练习", "", true,
-                                    openTime = 1791302400, discountTime = 1791907200, dueTime = 1792339140, discount = 0.8, submitted = submitted), {})
+                                    openTime = 1791302400, discountTime = 1791907200, dueTime = 1792339140, discount = 0.8, submitted = submitted, grade = "10"), {})
                             }
                         }
                     }
