@@ -226,7 +226,7 @@ fun isHomeworkDueSoon(
     now: LocalDateTime,
     timeZone: TimeZone,
 ): Boolean {
-    if (homework.subStatus == "已提交") return false
+    if (isHomeworkSubmitted(homework)) return false
     val deadline = parseSchoolLocalDateTime(homework.endTime) ?: return false
     val hours = (deadline.toInstant(timeZone) - now.toInstant(timeZone)).inWholeHours
     return hours in 0..48

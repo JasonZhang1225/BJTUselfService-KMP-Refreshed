@@ -120,6 +120,11 @@ abstract class CompileMacInputSourceHelper : DefaultTask() {
 
 @DisableCachingByDefault(because = "Mutates and re-signs the packaged macOS app bundle")
 abstract class FinalizeMacDistributable : DefaultTask() {
+    /** 本地验证过、由新 SDK 重编译的原始 jpackage 启动器；未指定时不替换 jpackage 输出。 */
+    @get:Optional
+    @get:InputFile
+    abstract val sdkLauncher: RegularFileProperty
+
     @get:InputFile
     abstract val privacyManifest: RegularFileProperty
 
@@ -141,6 +146,12 @@ abstract class FinalizeMacDistributable : DefaultTask() {
     @TaskAction
     fun finalizeBundle() {
         val bundle = appBundle.get().asFile
+        sdkLauncher.orNull?.asFile?.let { launcher ->
+            val target = bundle.resolve("Contents/MacOS/BJTUselfServiceKMP")
+            check(target.isFile) { "Missing jpackage app launcher: $target" }
+            launcher.copyTo(target, overwrite = true)
+            check(target.setExecutable(true, false)) { "Cannot make launcher executable: $target" }
+        }
         val resourcesDirectory = bundle.resolve("Contents/Resources")
         resourcesDirectory.mkdirs()
         privacyManifest.get().asFile.copyTo(
@@ -562,6 +573,8 @@ val finalizeMacDistributable by tasks.registering(FinalizeMacDistributable::clas
     inputSourceHelper.set(inputSourceHelperFile)
     calendarHelper.set(calendarHelperFile)
     displayName.set(macDisplayName)
+    // 显式选择启动器，避免普通打包依赖本机试验产物或静默提升最低系统要求。
+    providers.gradleProperty("macosSdkLauncher").orNull?.let { sdkLauncher.set(file(it)) }
     appBundle.set(
         layout.buildDirectory.dir("compose/binaries/main/app/$desktopPackageName.app"),
     )
