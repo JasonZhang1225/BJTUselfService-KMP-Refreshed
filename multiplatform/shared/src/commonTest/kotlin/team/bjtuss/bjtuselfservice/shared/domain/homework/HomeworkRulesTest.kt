@@ -104,11 +104,14 @@ class HomeworkRulesTest {
         val dueIn48Hours = homework(1, "课程", "2026-08-01 08:59")
         val dueLater = homework(2, "课程", "2026-08-01 09:01")
         val submitted = homework(3, "课程", "2026-07-30 09:00", subStatus = "已提交")
+        val submittedWithRecord = homework(4, "课程", "2026-07-30 09:00").copy(idSnId = 42)
 
         assertTrue(isHomeworkDueSoon(dueIn48Hours, now, TimeZone.UTC))
         assertFalse(isHomeworkDueSoon(dueLater, now, TimeZone.UTC))
         assertFalse(isHomeworkDueSoon(submitted, now, TimeZone.UTC))
-        assertEquals(1, dueSoonHomeworkCount(listOf(dueIn48Hours, dueLater, submitted), now, TimeZone.UTC))
+        assertTrue(isHomeworkSubmitted(submittedWithRecord))
+        assertFalse(isHomeworkDueSoon(submittedWithRecord, now, TimeZone.UTC))
+        assertEquals(1, dueSoonHomeworkCount(listOf(dueIn48Hours, dueLater, submitted, submittedWithRecord), now, TimeZone.UTC))
     }
 
     private fun homework(

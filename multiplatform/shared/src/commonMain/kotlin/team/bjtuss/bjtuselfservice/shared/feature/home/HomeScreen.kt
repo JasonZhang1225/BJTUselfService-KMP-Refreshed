@@ -535,7 +535,7 @@ private fun HomeAgendaSection(
     }
 
     if (dueSoonItems.isNotEmpty()) {
-        HomeCard(modifier = Modifier.fillMaxWidth()) {
+        HomeCard(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
             if (expanded) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -1224,7 +1224,7 @@ private fun DueSoonHomeworkSummary(
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-            "48 小时内有 ${items.size} 项作业截止",
+            "48 小时内有 ${items.size} 项待完成作业截止",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.error,
             fontWeight = FontWeight.SemiBold,
