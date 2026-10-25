@@ -36,8 +36,18 @@ kotlin {
 
     iosArm64()
     iosSimulatorArm64()
+    // macOS 原生端：SwiftUI 宿主（macosApp）承载共享 Compose 业务界面，
+    // 与 iOS 端同构（Kotlin 导出框架 + Xcode 宿主工程）。只出 Apple Silicon。
+    macosArm64()
 
     targets.withType<KotlinNativeTarget>().configureEach {
+        binaries.framework {
+            baseName = "BJTUShared"
+            isStatic = true
+        }
+    }
+    // UIKit cinterop 只对 iOS 目标存在；macOS 端没有 UIKit，放到全部原生目标上会直接编译失败。
+    targets.withType<KotlinNativeTarget>().matching { it.name.startsWith("ios") }.configureEach {
         compilations.getByName("main") {
             cinterops {
                 create("uikitSheet") {
@@ -46,10 +56,6 @@ kotlin {
                     includeDirs(project.file("src/iosMain/cinterop"))
                 }
             }
-        }
-        binaries.framework {
-            baseName = "BJTUShared"
-            isStatic = true
         }
     }
 

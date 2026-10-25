@@ -260,6 +260,17 @@ fun AuthenticatedAppShell(
     onCloseNativeRoute: () -> Unit = {},
     homeworkFileGatewayOverride: HomeworkFileGateway? = null,
     coursewareDirectoryGatewayOverride: CoursewareDirectoryGateway? = null,
+    /**
+     * macOS 原生壳：侧栏由宿主的 `NavigationSplitView` 提供，Compose 不再自绘侧栏，
+     * 宽屏时只渲染右侧内容区。
+     */
+    nativeSidebarEnabled: Boolean = false,
+    /** 宿主侧栏把选中的一级入口交给共享壳层；与 [nativeSidebarEnabled] 配套使用。 */
+    nativeSidebarBus: NativeSidebarBus? = null,
+    /** 向宿主发布当前一级入口，供原生侧栏高亮。 */
+    onNativeSectionChanged: (String) -> Unit = {},
+    /** 向宿主发布内容区的滚动偏移（像素）；macOS 原生工具栏据此做滚动模糊。 */
+    onNativeScrollProgress: (Float) -> Unit = {},
 ) {
     val profile = session.profile
     val entryLoggingIn = session.entryLoggingIn
@@ -940,6 +951,19 @@ fun AuthenticatedAppShell(
         }
     }
 
+    // macOS 原生侧栏：宿主把选中的 section 名交回来，共享壳层按同一套导航切换。
+    LaunchedEffect(nativeSidebarBus) {
+        nativeSidebarBus?.requests?.collect { routeId ->
+            val target = routeId.toAppRoute()
+            if (target is AppSection) navigateToSection(target)
+        }
+    }
+
+    // 原生侧栏高亮跟随当前一级入口；二级页归属到它的一级入口。
+    LaunchedEffect(section, nativeSidebarEnabled) {
+        if (nativeSidebarEnabled) onNativeSectionChanged(section.name)
+    }
+
     // 登录未完成（静默自动登录中）不触发任何网络自动同步。
     // 各 Workspace 只会 initialize(refreshFromNetwork=false) 灌缓存；真正的自动同步只在这里启动。
     LaunchedEffect(gradeModel, entryLoggingIn) {
@@ -1289,8 +1313,14 @@ fun AuthenticatedAppShell(
                 // fling/跳转/回顶都不会漂移；上报源只在 composition 里读它，重组开销与之前相当。
                 // lambda 用 remember 稳住实例，避免每次重组都让消费方连带重组。
                 val topScrollOffsetPx = remember(title) { mutableFloatStateOf(0f) }
+                // macOS 原生壳把滚动进度回报给宿主：原生工具栏据此在内容滚过顶栏时
+                // 切换材质，Compose 侧不再自绘顶栏。
+                val latestScrollProgressReporter = rememberUpdatedState(onNativeScrollProgress)
                 val reportTopScroll: (Float) -> Unit = remember(title) {
-                    { offsetPx -> topScrollOffsetPx.floatValue = offsetPx }
+                    { offsetPx ->
+                        topScrollOffsetPx.floatValue = offsetPx
+                        latestScrollProgressReporter.value(offsetPx)
+                    }
                 }
                 // 真原生 underlap：接管 + opt-in 的页面跳过实心 Spacer，内容从屏幕顶开始画；
                 // 顶边距取宿主实测栏高与状态栏二者的较大值，首帧（宿主未回报前）也不错位。
@@ -2339,23 +2369,35 @@ fun AuthenticatedAppShell(
         )
     } else if (windowClass == WindowClass.Expanded) {
         Row(
-            modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.topSystemBars).padding(18.dp),
+            // macOS 原生壳：侧栏与工具栏由宿主的 NavigationSplitView 提供，
+            // Compose 只渲染右侧内容区，也不再为窗口内边距让位。
+            modifier = if (nativeSidebarEnabled) {
+                Modifier.fillMaxSize()
+            } else {
+                Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.topSystemBars).padding(18.dp)
+            },
             horizontalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            AppSidebar(
-                profile = profile,
-                section = section,
-                showPhyVlab = phyVlabEnabled,
-                sections = compactBottomNavSections,
-                onSectionSelected = { target -> navigateToSection(target) },
-                // 随窗口比例伸缩，避免小窗时侧栏仍占固定 236dp 挤掉内容区。
-                modifier = Modifier.weight(0.22f).fillMaxHeight(),
-            )
+            if (!nativeSidebarEnabled) {
+                AppSidebar(
+                    profile = profile,
+                    section = section,
+                    showPhyVlab = phyVlabEnabled,
+                    sections = compactBottomNavSections,
+                    onSectionSelected = { target -> navigateToSection(target) },
+                    // 随窗口比例伸缩，避免小窗时侧栏仍占固定 236dp 挤掉内容区。
+                    modifier = Modifier.weight(0.22f).fillMaxHeight(),
+                )
+            }
             // 宽屏侧栏布局按 macOS/iPad 的并列工作区处理，不播放手机式 push/pop。
             NavDisplay(
                 backStack = backStack,
                 onBack = handleBack,
-                modifier = Modifier.weight(0.78f).fillMaxHeight(),
+                modifier = if (nativeSidebarEnabled) {
+                    Modifier.fillMaxSize()
+                } else {
+                    Modifier.weight(0.78f).fillMaxHeight()
+                },
                 transitionSpec = { EnterTransition.None togetherWith ExitTransition.None },
                 popTransitionSpec = { EnterTransition.None togetherWith ExitTransition.None },
                 predictivePopTransitionSpec = { _: Int ->

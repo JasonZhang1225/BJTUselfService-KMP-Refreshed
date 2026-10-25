@@ -21,6 +21,7 @@ local.properties
 
 # Verification artifacts (baselines, screenshots, audit evidence); local only.
 /.artifacts/
+/multiplatform/.artifacts/
 
 # Local build / IDE caches that must never be published
 **/DerivedData*/

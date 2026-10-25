@@ -1,0 +1,281 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		M10000000000000000000001 /* MacosApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = M10000000000000000000011 /* MacosApp.swift */; };
+		M10000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = M10000000000000000000012 /* ContentView.swift */; };
+		M10000000000000000000003 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = M10000000000000000000013 /* AppModel.swift */; };
+		M10000000000000000000004 /* ComposeContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = M10000000000000000000014 /* ComposeContentView.swift */; };
+		M10000000000000000000005 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = M10000000000000000000016 /* PrivacyInfo.xcprivacy */; };
+		M10000000000000000000006 /* BJTUselfServiceKMP-v2.icns in Resources */ = {isa = PBXBuildFile; fileRef = M10000000000000000000017 /* BJTUselfServiceKMP-v2.icns */; };
+		M10000000000000000000007 /* SQLiteExtensionShim.c in Sources */ = {isa = PBXBuildFile; fileRef = M10000000000000000000019 /* SQLiteExtensionShim.c */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		M10000000000000000000010 /* 交大自由行 KMP.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "交大自由行 KMP.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		M10000000000000000000011 /* MacosApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacosApp.swift; sourceTree = "<group>"; };
+		M10000000000000000000012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		M10000000000000000000013 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		M10000000000000000000014 /* ComposeContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposeContentView.swift; sourceTree = "<group>"; };
+		M10000000000000000000015 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		M10000000000000000000018 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		M10000000000000000000016 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Resources/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		M10000000000000000000017 /* BJTUselfServiceKMP-v2.icns */ = {isa = PBXFileReference; lastKnownFileType = file.icns; path = Resources/BJTUselfServiceKMP-v2.icns; sourceTree = "<group>"; };
+		M10000000000000000000019 /* SQLiteExtensionShim.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = SQLiteExtensionShim.c; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		M10000000000000000000020 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		M10000000000000000000030 = {
+			isa = PBXGroup;
+			children = (
+				M10000000000000000000031 /* macosApp */,
+				M10000000000000000000032 /* Configuration */,
+				M10000000000000000000033 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		M10000000000000000000031 /* macosApp */ = {
+			isa = PBXGroup;
+			children = (
+				M10000000000000000000011 /* MacosApp.swift */,
+				M10000000000000000000012 /* ContentView.swift */,
+				M10000000000000000000013 /* AppModel.swift */,
+				M10000000000000000000014 /* ComposeContentView.swift */,
+				M10000000000000000000019 /* SQLiteExtensionShim.c */,
+				M10000000000000000000016 /* PrivacyInfo.xcprivacy */,
+				M10000000000000000000017 /* BJTUselfServiceKMP-v2.icns */,
+				M10000000000000000000015 /* Info.plist */,
+			);
+			path = macosApp;
+			sourceTree = "<group>";
+		};
+		M10000000000000000000032 /* Configuration */ = {
+			isa = PBXGroup;
+			children = (
+				M10000000000000000000018 /* Config.xcconfig */,
+			);
+			path = Configuration;
+			sourceTree = "<group>";
+		};
+		M10000000000000000000033 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				M10000000000000000000010 /* 交大自由行 KMP.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		M10000000000000000000040 /* macosApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = M10000000000000000000041 /* Build configuration list for PBXNativeTarget "macosApp" */;
+			buildPhases = (
+				M10000000000000000000050 /* Build Kotlin framework */,
+				M10000000000000000000051 /* Sources */,
+				M10000000000000000000020 /* Frameworks */,
+				M10000000000000000000052 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = macosApp;
+			productName = macosApp;
+			productReference = M10000000000000000000010 /* 交大自由行 KMP.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		M10000000000000000000060 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2710;
+				LastUpgradeCheck = 2710;
+				TargetAttributes = {
+					M10000000000000000000040 = {
+						CreatedOnToolsVersion = 27.1;
+					};
+				};
+			};
+			buildConfigurationList = M10000000000000000000061 /* Build configuration list for PBXProject "macosApp" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				zh_CN,
+			);
+			mainGroup = M10000000000000000000030;
+			productRefGroup = M10000000000000000000033 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				M10000000000000000000040 /* macosApp */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		M10000000000000000000052 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				M10000000000000000000005 /* PrivacyInfo.xcprivacy in Resources */,
+				M10000000000000000000006 /* BJTUselfServiceKMP-v2.icns in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		M10000000000000000000050 /* Build Kotlin framework */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Build Kotlin framework";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\ncd \"$SRCROOT/..\"\n\n: \"${BUILT_PRODUCTS_DIR:?missing BUILT_PRODUCTS_DIR}\"\n: \"${CONFIGURATION:?missing CONFIGURATION}\"\n: \"${PLATFORM_NAME:?missing PLATFORM_NAME}\"\n: \"${ARCHS:?missing ARCHS}\"\n\nif [ -z \"${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}\" ]; then\n  if [ -n \"${CONTENTS_FOLDER_PATH:-}\" ]; then\n    export UNLOCALIZED_RESOURCES_FOLDER_PATH=\"$CONTENTS_FOLDER_PATH\"\n  elif [ -n \"${FULL_PRODUCT_NAME:-}\" ]; then\n    export UNLOCALIZED_RESOURCES_FOLDER_PATH=\"$FULL_PRODUCT_NAME\"\n  else\n    export UNLOCALIZED_RESOURCES_FOLDER_PATH=\"${PRODUCT_NAME}.app\"\n  fi\n  echo \"note: derived UNLOCALIZED_RESOURCES_FOLDER_PATH=$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\nfi\n\nexport JAVA_HOME=\"${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}\"\necho \"note: embedAndSign CONFIGURATION=$CONFIGURATION PLATFORM=$PLATFORM_NAME ARCHS=$ARCHS\"\n\n# 保留 daemon 以加速增量；configuration-cache 对 Xcode 注入的环境变量不稳定，关闭。\n./gradlew :shared:embedAndSignAppleFrameworkForXcode --no-configuration-cache --console=plain\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		M10000000000000000000051 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				M10000000000000000000001 /* MacosApp.swift in Sources */,
+				M10000000000000000000002 /* ContentView.swift in Sources */,
+				M10000000000000000000003 /* AppModel.swift in Sources */,
+				M10000000000000000000004 /* ComposeContentView.swift in Sources */,
+				M10000000000000000000007 /* SQLiteExtensionShim.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		M10000000000000000000070 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = M10000000000000000000018 /* Config.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 34S53DC6T6;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = macosApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID).dev";
+				PRODUCT_NAME = "$(PRODUCT_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		M10000000000000000000071 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = M10000000000000000000018 /* Config.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 34S53DC6T6;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = macosApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID)";
+				PRODUCT_NAME = "$(PRODUCT_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+		M10000000000000000000072 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+			};
+			name = Debug;
+		};
+		M10000000000000000000073 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		M10000000000000000000041 /* Build configuration list for PBXNativeTarget "macosApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				M10000000000000000000070 /* Debug */,
+				M10000000000000000000071 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		M10000000000000000000061 /* Build configuration list for PBXProject "macosApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				M10000000000000000000072 /* Debug */,
+				M10000000000000000000073 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = M10000000000000000000060 /* Project object */;
+}

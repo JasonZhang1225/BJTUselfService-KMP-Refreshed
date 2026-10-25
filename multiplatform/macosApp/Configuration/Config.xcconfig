@@ -1,0 +1,10 @@
+PRODUCT_NAME = 交大自由行 KMP
+BUNDLE_ID = team.bjtuss.bjtuselfservice.kmp.macos
+
+MACOSX_DEPLOYMENT_TARGET = 13.0
+SWIFT_VERSION = 5.0
+
+// Kotlin/Native 框架由 Gradle 的 embedAndSignAppleFrameworkForXcode 产出，
+// 目录结构与 iOS 端一致（shared/build/xcode-frameworks/<配置>/<SDK>）。
+FRAMEWORK_SEARCH_PATHS = $(inherited) $(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)
+OTHER_LDFLAGS = $(inherited) -framework BJTUShared -lsqlite3

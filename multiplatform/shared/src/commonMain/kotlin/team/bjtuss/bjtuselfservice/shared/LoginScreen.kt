@@ -169,6 +169,11 @@ fun LoginRoute(
     onOpenNativeRoute: (String) -> Unit,
     onOpenExternalUrl: (String) -> Unit,
     onAuthenticatedSessionChanged: (AuthenticatedSession?) -> Unit,
+    /** macOS 原生壳：侧栏由宿主提供，Compose 不再自绘。 */
+    nativeSidebarEnabled: Boolean = false,
+    nativeSidebarBus: team.bjtuss.bjtuselfservice.shared.feature.shell.NativeSidebarBus? = null,
+    onNativeSectionChanged: (String) -> Unit = {},
+    onNativeScrollProgress: (Float) -> Unit = {},
 ) {
     val transport = remember {
         lazy(LazyThreadSafetyMode.NONE) { createSchoolHttpTransport() }
@@ -619,6 +624,10 @@ fun LoginRoute(
                     onOpenNativeRoute(routeId)
                 },
                 onOpenExternalUrl = onOpenExternalUrl,
+                nativeSidebarEnabled = nativeSidebarEnabled,
+                nativeSidebarBus = nativeSidebarBus,
+                onNativeSectionChanged = onNativeSectionChanged,
+                onNativeScrollProgress = onNativeScrollProgress,
             )
         }
         postLoginStorageFailure?.let { message ->

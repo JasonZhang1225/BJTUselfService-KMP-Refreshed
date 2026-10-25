@@ -58,6 +58,11 @@ fun App(
     onOpenNativeRoute: (String) -> Unit = {},
     onOpenExternalUrl: (String) -> Unit = ::openExternalUrl,
     onAuthenticatedSessionChanged: (AuthenticatedSession?) -> Unit = {},
+    /** macOS 原生壳：侧栏由宿主的 NavigationSplitView 提供，Compose 不再自绘侧栏。 */
+    nativeSidebarEnabled: Boolean = false,
+    nativeSidebarBus: team.bjtuss.bjtuselfservice.shared.feature.shell.NativeSidebarBus? = null,
+    onNativeSectionChanged: (String) -> Unit = {},
+    onNativeScrollProgress: (Float) -> Unit = {},
 ) {
     if (cacheStoreHandle.state == team.bjtuss.bjtuselfservice.shared.cache.CacheOpenState.UNAVAILABLE) {
         CacheStorageFailureScreen()
@@ -88,10 +93,16 @@ fun App(
                 )) {
                     LoginRoute(
                         platform = currentPlatform(),
-                        windowClass = adaptiveWindowClassFor(
-                            widthDp = maxWidth.value.toInt(),
-                            fontScale = effectiveFontScale,
-                        ),
+                        // macOS 原生壳的侧栏始终存在（宿主提供），内容区固定按宽屏布局渲染，
+                        // 不随窗口变窄退回紧凑端的底部导航。
+                        windowClass = if (nativeSidebarEnabled) {
+                            WindowClass.Expanded
+                        } else {
+                            adaptiveWindowClassFor(
+                                widthDp = maxWidth.value.toInt(),
+                                fontScale = effectiveFontScale,
+                            )
+                        },
                         accountSecurityStore = accountSecurityStore,
                         cacheStoreHandle = cacheStoreHandle,
                         homeworkFileGateway = homeworkFileGateway,
@@ -106,6 +117,10 @@ fun App(
                         onOpenNativeRoute = onOpenNativeRoute,
                         onOpenExternalUrl = onOpenExternalUrl,
                         onAuthenticatedSessionChanged = onAuthenticatedSessionChanged,
+                        nativeSidebarEnabled = nativeSidebarEnabled,
+                        nativeSidebarBus = nativeSidebarBus,
+                        onNativeSectionChanged = onNativeSectionChanged,
+                        onNativeScrollProgress = onNativeScrollProgress,
                     )
                 }
             }
