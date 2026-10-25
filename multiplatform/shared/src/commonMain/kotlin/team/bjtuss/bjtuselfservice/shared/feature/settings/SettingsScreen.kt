@@ -445,16 +445,6 @@ fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit, onPost
                 }
             }
         }
-        is UpdateCheckState.SourceBehind -> {
-            AppleSheetOrAlert(
-                onDismissRequest = onDismiss,
-                title = "更新源尚未同步",
-                confirmLabel = "好",
-                onConfirm = onDismiss,
-            ) {
-                Text("此更新源暂未提供已知版本 ${check.knownVersion}，请稍后重试或切换更新源。")
-            }
-        }
         UpdateCheckState.Failed -> {
             AppleSheetOrAlert(
                 onDismissRequest = onDismiss,

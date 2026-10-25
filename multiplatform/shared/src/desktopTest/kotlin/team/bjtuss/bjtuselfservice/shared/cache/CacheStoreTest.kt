@@ -22,14 +22,15 @@ import team.bjtuss.bjtuselfservice.shared.domain.grade.GradeSelectionRecord
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 
 class CacheStoreTest {
-    @Test fun updateSourceAndHighestVersionRoundTripWithoutSchemaChange() {
+    @Test fun legacyHighestVersionIsIgnoredAndRetiredWithoutChangingOtherPreferences() {
         val store = inMemoryStore()
         try {
             assertEquals(team.bjtuss.bjtuselfservice.shared.update.UpdateSource.AUTO, store.preferences().updateSource)
-            store.savePreferences(AppPreferences(updateSource = team.bjtuss.bjtuselfservice.shared.update.UpdateSource.GITEE,
-                highestKnownRelease = "v9.0.0-KMP"))
+            store.putSetting("highest_known_release", "v2.0.0-EmergencyFix2")
+            assertEquals(AppPreferences(), store.preferences())
+            store.savePreferences(AppPreferences(updateSource = team.bjtuss.bjtuselfservice.shared.update.UpdateSource.GITEE))
             assertEquals(team.bjtuss.bjtuselfservice.shared.update.UpdateSource.GITEE, store.preferences().updateSource)
-            assertEquals("v9.0.0-KMP", store.preferences().highestKnownRelease)
+            assertNull(store.setting("highest_known_release"))
             store.putSetting("update_source", "future-or-corrupt")
             assertEquals(team.bjtuss.bjtuselfservice.shared.update.UpdateSource.AUTO, store.preferences().updateSource)
         } finally { store.close() }
