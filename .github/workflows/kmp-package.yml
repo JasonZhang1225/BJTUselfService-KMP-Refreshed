@@ -210,7 +210,9 @@ jobs:
   macos:
     name: macOS DMG
     if: ${{ !inputs.mirror_tag && github.event_name != 'pull_request' && (github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0') }}
-    runs-on: macos-15
+    # 原生启动器需要 macOS 27 SDK 重编译（见 docs/build/macos-sdk-launcher.md），
+    # 必须用 xcode-27 镜像；macos-15 默认 Xcode 的 SDK 低于 27，脚本会直接拒绝。
+    runs-on: xcode-27
     timeout-minutes: 60
     defaults:
       run:
@@ -224,21 +226,67 @@ jobs:
         uses: gradle/actions/wrapper-validation@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
 
       - name: Set up JDK 21
+        id: jdk21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
           cache: gradle
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+      - name: Set up JDK 25 for the launcher
+        id: jdk25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Select Xcode 27.1+
+        run: |
+          SELECTED=""
+          for path in \
+            /Applications/Xcode_27.1.app \
+            /Applications/Xcode_27.1_beta.app \
+            /Applications/Xcode_27.2.app \
+            /Applications/Xcode_27.2_beta.app
+          do
+            if [ -d "$path/Contents/Developer" ]; then
+              SELECTED="$path"
+              break
+            fi
+          done
+          if [ -z "$SELECTED" ]; then
+            echo "Need Xcode 27.1+ with macOS 27 SDK"
+            exit 1
+          fi
+          sudo xcode-select -s "$SELECTED/Contents/Developer"
+          xcodebuild -version
+          echo "macosx SDK=$(xcrun --sdk macosx --show-sdk-version)"
+
+      - name: Rebuild launcher with macOS 27 SDK
+        run: |
+          python3 scripts/build-macos-sdk-launcher.py \
+            --java-home "${{ steps.jdk25.outputs.path }}" \
+            --output-dir "$RUNNER_TEMP/macos-sdk-launcher"
+          test -x "$RUNNER_TEMP/macos-sdk-launcher/jpackageapplauncher"
 
       - name: Build macOS DMG
         env:
-          DESKTOP_PACKAGE_JAVA_HOME: ${{ env.JAVA_HOME }}
+          # Gradle 仍用 JDK 21；jpackage 运行时与启动器源码都用 JDK 25，与文档一致。
+          JAVA_HOME: ${{ steps.jdk21.outputs.path }}
+          DESKTOP_PACKAGE_JAVA_HOME: ${{ steps.jdk25.outputs.path }}
         run: |
           chmod +x ./gradlew
-          ./gradlew :desktopApp:packageDmg --stacktrace
+          ./gradlew :desktopApp:packageDmg \
+            -PmacosSdkLauncher="$RUNNER_TEMP/macos-sdk-launcher/jpackageapplauncher" \
+            --stacktrace
+
+      - name: Verify launcher SDK in app bundle
+        run: |
+          LAUNCHER="desktopApp/build/compose/binaries/main/app/BJTUselfServiceKMP.app/Contents/MacOS/BJTUselfServiceKMP"
+          test -f "$LAUNCHER"
+          xcrun vtool -show-build "$LAUNCHER" | tee "$RUNNER_TEMP/launcher-build.txt"
+          grep -Eq '^[[:space:]]*sdk 27\.' "$RUNNER_TEMP/launcher-build.txt"
+          grep -Eq '^[[:space:]]*minos 12\.0' "$RUNNER_TEMP/launcher-build.txt"
 
       - name: Rename DMG
         id: artifact

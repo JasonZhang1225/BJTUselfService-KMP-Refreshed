@@ -18,7 +18,7 @@ JAVA_HOME='<Android Studio JBR>' DESKTOP_PACKAGE_JAVA_HOME='<JDK25>' \
 
 `macos-launcher-sources.json` 将 OpenJDK `jdk-25+36` 固定到提交 `6c48f4ed707bf0b15f9b6098de30db8aae6fa40f`，逐个验证源文件和许可证文件的 SHA-256。首次重建从 OpenJDK 官方 GitHub 下载；再次运行使用通过校验的本地缓存，校验失败直接停止。源文件与许可证保留在输出目录的 `openjdk-src/`，`build-info.json` 记录 SDK、最低系统版本、上游提交和启动器校验和；对外分发时保留对应的源码及上游许可证信息。
 
-Gradle 参数只影响 macOS 镜像中的主启动器，替换发生在重新签名之前。CI 和普通构建默认仍走现有 JDK 启动器，不要求下载源码或安装新 SDK；需要新版外观的打包必须显式传入该参数。为了从可选启动器切回原始 JDK 启动器，请先运行 `:desktopApp:clean`，再重新打包，避免增量镜像保留上次替换的启动器。
+Gradle 参数只影响 macOS 镜像中的主启动器，替换发生在重新签名之前。普通本地构建默认仍走现有 JDK 启动器，不要求下载源码或安装新 SDK；需要新版外观的打包必须显式传入该参数。`kmp-package.yml` 的 macOS 任务已固定使用 `xcode-27` 镜像、JDK 25 重编译启动器并传入该参数，打包后用 `xcrun vtool -show-build` 校验主程序 SDK 为 27、`minos 12.0`，不满足即失败。为了从可选启动器切回原始 JDK 启动器，请先运行 `:desktopApp:clean`，再重新打包，避免增量镜像保留上次替换的启动器。
 
 ## 兼容与验收
 
