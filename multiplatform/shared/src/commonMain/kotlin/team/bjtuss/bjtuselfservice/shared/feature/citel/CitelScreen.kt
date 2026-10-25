@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.citel
 
+import team.bjtuss.bjtuselfservice.shared.domain.assignment.assignmentGradeText
+import team.bjtuss.bjtuselfservice.shared.domain.time.assignmentDeadlineText
+import team.bjtuss.bjtuselfservice.shared.domain.time.assignmentStartText
 import team.bjtuss.bjtuselfservice.shared.domain.time.formatDeadlineEpoch
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
@@ -117,10 +120,10 @@ internal fun CitelTaskCard(task: CitelTask, onOpen: () -> Unit, source: Assignme
             AssignmentCardHeader(task.courseName, task.title, task.completed, source, statusLabel = task.cardStatusText)
             CitelTaskLine("类型", if (task.programming) "编程作业" else "实验报告")
             if (task.programming) CitelTaskLine("评测", task.submissionStatusText())
-            task.openTime?.let { CitelTaskLine("开始", citelDateText(it)) }
-            task.discountTime?.let { CitelTaskLine("折扣", citelDateText(it) + (task.discount?.let { factor -> " · ×$factor" } ?: "")) }
-            CitelTaskLine("截止", task.dueTime?.let(::formatDeadlineEpoch) ?: "未提供")
-            task.grade?.let { CitelTaskLine(if (task.programming) "题目分值" else "评分", it) }
+            CitelTaskLine("开始", assignmentStartText(task.openTime))
+            task.discountTime?.let { CitelTaskLine("折扣", assignmentStartText(it) + (task.discount?.let { factor -> " · ×$factor" } ?: "")) }
+            CitelTaskLine("截止", assignmentDeadlineText(task.dueTime))
+            CitelTaskLine("评分", assignmentGradeText(task.grade, task.completed))
         }
     }
 }

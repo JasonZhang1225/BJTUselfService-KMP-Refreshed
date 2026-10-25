@@ -1,5 +1,9 @@
 package team.bjtuss.bjtuselfservice.shared.feature.homework
 
+import team.bjtuss.bjtuselfservice.shared.domain.assignment.assignmentGradeText
+import team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkSubmitted
+import team.bjtuss.bjtuselfservice.shared.domain.time.assignmentDeadlineText
+import team.bjtuss.bjtuselfservice.shared.domain.time.assignmentStartText
 import team.bjtuss.bjtuselfservice.shared.domain.time.formatSchoolDeadline
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
@@ -965,9 +969,10 @@ internal fun HomeworkCard(
             team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCardHeader(
                 item.courseName, item.title, team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkSubmitted(item), source)
             HomeworkCardLine("类型", item.typeLabel())
-            HomeworkCardLine("截止", item.endTime.ifBlank { "未提供" }.let(::formatSchoolDeadline))
+            HomeworkCardLine("开始", assignmentStartText(item.openDate))
+            HomeworkCardLine("截止", assignmentDeadlineText(item.endTime))
             HomeworkCardLine("提交人数", "${item.submitCount} / ${item.allCount}")
-            if (item.score.isNotBlank()) HomeworkCardLine("评分", item.score)
+            HomeworkCardLine("评分", assignmentGradeText(item.score, isHomeworkSubmitted(item)))
         }
     }
 }
