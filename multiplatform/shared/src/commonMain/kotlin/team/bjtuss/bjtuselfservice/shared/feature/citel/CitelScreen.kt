@@ -123,7 +123,11 @@ internal fun CitelTaskCard(task: CitelTask, onOpen: () -> Unit, source: Assignme
             CitelTaskLine("开始", assignmentStartText(task.openTime))
             task.discountTime?.let { CitelTaskLine("折扣", assignmentStartText(it) + (task.discount?.let { factor -> " · ×$factor" } ?: "")) }
             CitelTaskLine("截止", assignmentDeadlineText(task.dueTime))
-            CitelTaskLine("评分", assignmentGradeText(task.grade, task.completed))
+            if (task.programming) {
+                CitelTaskLine("评分", task.grade?.takeIf { it.isNotBlank() } ?: "暂无")
+            } else {
+                CitelTaskLine("评分", assignmentGradeText(task.grade, task.completed, graded = null))
+            }
         }
     }
 }
@@ -233,7 +237,11 @@ fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, on
             if (showProblem && markdown != null) SelectionContainer { Text(markdown, style = MaterialTheme.typography.bodyMedium) }
             HorizontalDivider()
         }
-        task.grade?.let { CitelDetailLine(if (task.programming) "题目分值" else "评分", it) }
+        if (task.programming) {
+            CitelDetailLine("评分", task.grade?.takeIf { it.isNotBlank() } ?: "暂无")
+        } else {
+            task.grade?.let { CitelDetailLine("评分", it) }
+        }
         if (!task.completed) Text(task.deadlineStatus(now))
         state.submissionMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         if (state.submissionBusy) LinearProgressIndicator(Modifier.fillMaxWidth())

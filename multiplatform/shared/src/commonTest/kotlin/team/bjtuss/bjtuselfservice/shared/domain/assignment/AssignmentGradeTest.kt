@@ -5,21 +5,39 @@ import kotlin.test.assertEquals
 
 class AssignmentGradeTest {
     @Test
-    fun publishedGradeWinsOverSubmissionState() {
-        assertEquals("95", assignmentGradeText("95", submitted = true))
-        assertEquals("20", assignmentGradeText("20", submitted = false))
+    fun publishedGradeWinsOverSubmissionAndGradingState() {
+        assertEquals("95", assignmentGradeText("95", submitted = true, graded = false))
+        assertEquals("20", assignmentGradeText("20", submitted = false, graded = null))
     }
 
     @Test
-    fun submittedWithoutGradeIsPendingGrading() {
-        assertEquals("待评分", assignmentGradeText("未公布成绩", submitted = true))
-        assertEquals("待评分", assignmentGradeText(null, submitted = true))
-        assertEquals("待评分", assignmentGradeText("  ", submitted = true))
+    fun placeholderTextsAreNotGrades() {
+        assertEquals("待公布", assignmentGradeText("未公布成绩", submitted = true, graded = true))
+        assertEquals("待公布", assignmentGradeText("暂未公布", submitted = true, graded = true))
+        assertEquals("待公布", assignmentGradeText("  ", submitted = true, graded = true))
     }
 
     @Test
-    fun unsubmittedWithoutGradeIsUnpublished() {
-        assertEquals("未公布成绩", assignmentGradeText(null, submitted = false))
-        assertEquals("未公布成绩", assignmentGradeText("未公布成绩", submitted = false))
+    fun submittedAndGradedWithoutScoreIsPendingPublish() {
+        assertEquals("待公布", assignmentGradeText(null, submitted = true, graded = true))
+    }
+
+    @Test
+    fun submittedAndNotGradedIsPendingGrading() {
+        assertEquals("待评分", assignmentGradeText(null, submitted = true, graded = false))
+        assertEquals("待评分", assignmentGradeText("未公布成绩", submitted = true, graded = false))
+    }
+
+    @Test
+    fun submittedWithoutGradingSignalIsPendingGrading() {
+        assertEquals("待评分", assignmentGradeText(null, submitted = true, graded = null))
+        assertEquals("待评分", assignmentGradeText("未公布成绩", submitted = true, graded = null))
+    }
+
+    @Test
+    fun unsubmittedIsNoneRegardlessOfGradingState() {
+        assertEquals("暂无", assignmentGradeText(null, submitted = false, graded = null))
+        assertEquals("暂无", assignmentGradeText(null, submitted = false, graded = false))
+        assertEquals("暂无", assignmentGradeText("未公布成绩", submitted = false, graded = true))
     }
 }

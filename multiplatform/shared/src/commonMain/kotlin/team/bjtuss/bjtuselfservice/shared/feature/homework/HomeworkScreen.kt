@@ -972,7 +972,7 @@ internal fun HomeworkCard(
             HomeworkCardLine("开始", assignmentStartText(item.openDate))
             HomeworkCardLine("截止", assignmentDeadlineText(item.endTime))
             HomeworkCardLine("提交人数", "${item.submitCount} / ${item.allCount}")
-            HomeworkCardLine("评分", assignmentGradeText(item.score, isHomeworkSubmitted(item)))
+            HomeworkCardLine("评分", assignmentGradeText(item.score, isHomeworkSubmitted(item), graded = item.scoreId != 0))
         }
     }
 }

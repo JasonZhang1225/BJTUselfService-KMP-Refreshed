@@ -382,7 +382,7 @@ internal fun PhyVlabActivityRow(activity: PhyVlabActivity, nowEpochSeconds: Long
             Text("类型 · ${activity.activityType}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("开始 · ${assignmentStartText(activity.openText)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("截止 · ${assignmentDeadlineText(activity.dueText)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("评分 · ${assignmentGradeText(null, activity.completed)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("评分 · ${assignmentGradeText(null, activity.completed, graded = null)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
