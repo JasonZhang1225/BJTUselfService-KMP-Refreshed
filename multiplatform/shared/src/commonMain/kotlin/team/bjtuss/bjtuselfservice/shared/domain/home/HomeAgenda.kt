@@ -117,7 +117,7 @@ fun resolveHomeAgendaWeekStart(
     val anchorWeek = currentWeek.takeIf { it in 1..HOME_MAX_TEACHING_WEEK } ?: selectedWeek
     val fallbackMonday = today.minus(today.dayOfWeek.isoDayNumber - 1, DateTimeUnit.DAY)
     val anchorStart = weekDates.firstOrNull { it.week == anchorWeek }?.startDate ?: fallbackMonday
-    return anchorStart.plus(selectedWeek - anchorWeek, DateTimeUnit.DAY)
+    return anchorStart.plus((selectedWeek - anchorWeek) * 7, DateTimeUnit.DAY)
 }
 
 /**

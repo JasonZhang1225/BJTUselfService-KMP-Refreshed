@@ -268,7 +268,7 @@ fun AppleSheetOrAlert(
     fitContentHeight: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    if (currentPlatform().family == PlatformFamily.IOS) {
+    if (currentPlatform().family == PlatformFamily.IOS || LocalNativeSheetPresenter.current != null) {
         // On iOS the title and actions are UIBarButtonItems in the native sheet
         // navigation bar. Compose supplies only the body; it does not imitate
         // the system sheet chrome with Material buttons.

@@ -77,6 +77,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.course.displayScheduleCourseNam
 import team.bjtuss.bjtuselfservice.shared.domain.course.displayTitleWithTeacher
 import team.bjtuss.bjtuselfservice.shared.domain.course.classTimeRange
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseDetailContent
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -128,6 +129,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkSubmitted
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEventKind
+import team.bjtuss.bjtuselfservice.shared.feature.course.tones
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseWeekScrollAccumulator
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseWeekScrollDirection
 import team.bjtuss.bjtuselfservice.shared.feature.course.courseWeekScrollNavigation
@@ -167,6 +169,8 @@ fun HomeWorkspace(
     holdNetwork: Boolean = false,
     todayRequest: Int = 0,
     onTodaySelectedChanged: (Boolean) -> Unit = {},
+    /** Deterministic offline previews keep their supplied date/time. */
+    realtimeClock: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val state by model.state.collectAsState()
@@ -222,6 +226,68 @@ fun HomeWorkspace(
         LocalDateTime(now.date, LocalTime(now.hour, now.minute))
     }
     val status = state.status
+    val desktopPresenter = team.bjtuss.bjtuselfservice.shared.feature.shell.LocalNativeDesktopPresentation.current
+    if (desktopPresenter != null) {
+        var nativeNow by remember { mutableStateOf(now) }
+        LaunchedEffect(timeZone, realtimeClock) {
+            if (!realtimeClock) return@LaunchedEffect
+            while (true) {
+                kotlinx.coroutines.delay(30_000)
+                nativeNow = kotlin.time.Clock.System.now().toLocalDateTime(timeZone)
+            }
+        }
+        val nativeMinute = LocalDateTime(nativeNow.date, LocalTime(nativeNow.hour, nativeNow.minute))
+        val unread = mailboxUnread?.let { if (it.capped) "${it.count}+" else "${it.count}" }
+            ?: status?.newMailCount ?: "—"
+        val nowSessions = team.bjtuss.bjtuselfservice.shared.domain.home.pickHomeNowSessions(
+            homeCoursesOnDate(homeSchedule, nativeMinute.date), homePhysicsLabsOnDate(homeSchedule, nativeMinute.date),
+            nativeMinute, homeSchedule.staggeredClassTimes,
+        )
+        val context = NativeHomeContext(
+            errorMessage = state.failure?.message(status != null),
+            nowEvents = nowSessions.map { session ->
+                NativeHomeEvent(
+                    id = session.course.id.toString(), kind = when {
+                        session.ongoing && session.isLab -> "进行中"
+                        session.ongoing -> "正在上"
+                        session.isLab -> "下一场"
+                        else -> "下一节"
+                    },
+                    title = session.course.displayTitleWithTeacher(),
+                    detail = listOf(session.timeRange, team.bjtuss.bjtuselfservice.shared.domain.course.displayCoursePlace(session.course.coursePlace))
+                        .filter(String::isNotBlank).joinToString(" · "),
+                    done = false,
+                    colorRgb = team.bjtuss.bjtuselfservice.shared.feature.course.courseColorCategory(session.course, homeSchedule.courseTypesByCode).tones.accent,
+                    onOpen = { selectedChangeCourse = session.course },
+                )
+            },
+            summaries = buildList {
+                add(NativeHomeSummary("新邮件", unread, "当前 BJTU 邮箱未读状态", onOpenMailbox))
+                libraryReminder?.let { reminder ->
+                    val detail = when {
+                        reminder.overdue.isNotEmpty() -> "逾期 ${reminder.overdue.size} 本，建议尽快归还"
+                        reminder.dueSoon.isNotEmpty() -> "${reminder.dueSoon.size} 本 7 天内到期"
+                        reminder.total > 0 -> "共 ${reminder.total} 本在借"
+                        else -> "当前没有在借图书"
+                    }
+                    add(NativeHomeSummary("图书馆", if (reminder.total > 0) "${reminder.total} 本在借" else "暂无借阅", detail, onOpenLibrary))
+                }
+            },
+            changes = HomeChangeDomain.entries.mapNotNull { domain ->
+                val records = changes.filter { it.domain == domain && !(it.kind == DataChangeKind.MODIFIED && it.beforeDetail == it.afterDetail) }
+                if (records.isEmpty()) null else NativeHomeChangeGroup(domain.name, domain.title, changeCountSummary(records)) { selectedChangeDomain = domain }
+            },
+            onClearChanges = onClearAllChanges,
+            onOpenCourse = { selectedChangeCourse = it },
+        )
+        HomeAgendaSection(
+            todayRequest, onTodaySelectedChanged, platform, homework, exams, phyVlabEvents,
+            currentWeek, academicWeeks, nativeMinute, timeZone, isAgendaLoading, expanded, isWeekResolved,
+            onOpenHomework, onOpenHomeworkDetail, onOpenExams, onOpenPhyVlab,
+            nativeContext = context,
+        )
+        return
+    }
     Box(
         modifier = modifier.fillMaxSize(),
     ) {
@@ -458,6 +524,7 @@ private fun HomeAgendaSection(
     onOpenHomeworkDetail: (Homework) -> Unit,
     onOpenExams: (ExamSchedule) -> Unit,
     onOpenPhyVlab: (PhyVlabEvent) -> Unit,
+    nativeContext: NativeHomeContext? = null,
 ) {
     val homeSchedule = LocalHomeSchedule.current
     val today = now.date
@@ -532,6 +599,56 @@ private fun HomeAgendaSection(
         nextAutoFollowedWeekSlot(selectedSlot, automaticSlot, weekWasManuallySelected)?.let { slot ->
             selectedSlot = slot
         }
+    }
+
+    if (nativeContext != null) {
+        val presenter = team.bjtuss.bjtuselfservice.shared.feature.shell.LocalNativeDesktopPresentation.current!!
+        val weekAgenda = remember(homework, exams, phyVlabEvents, today, now, timeZone, selectedSlot, homeSchedule) {
+            buildHomeAgenda(homework, exams, today, now, timeZone, phyVlabEvents, selectedSlot.startDate).withCourses(homeSchedule)
+        }
+        val selectedDate = selectedDateFor(selectedSlot)
+        val selectedDay = weekAgenda.days.firstOrNull { it.date == selectedDate } ?: weekAgenda.days.first()
+        val previous = adjacentWeekFor(selectedSlot, -1)
+        val next = adjacentWeekFor(selectedSlot, 1)
+        val todaySelected = selectedSlot.startDate == todayMonday && selectedDay.date == today
+        val markColors = listOf(courseAgendaMarkColor(), labAgendaMarkColor(), examAgendaMarkColor(), startingHomeworkMarkColor(), pendingHomeworkMarkColor(), submittedHomeworkMarkColor())
+            .map { it.toArgb().toLong() and 0xFFFFFF }
+        val snapshot = NativeDesktopHome(
+            weekTitle = if (weekValueIsPending) "日程加载中" else selectedSlot.teachingWeek?.let { "第 $it 教学周" } ?: "非教学周",
+            dateRange = "${shortDate(weekAgenda.days.first().date)} — ${shortDate(weekAgenda.days.last().date)}",
+            days = weekAgenda.days.map { day ->
+                val marks = agendaWeekMarks(day)
+                val items = listOf(
+                    NativeHomeMark("课程", marks.courses, markColors[0]), NativeHomeMark("实验", marks.labs, markColors[1]),
+                    NativeHomeMark("考试", marks.exams, markColors[2]), NativeHomeMark("开始", marks.startingHomework, markColors[3]),
+                    NativeHomeMark("待完成", marks.pendingHomework, markColors[4]), NativeHomeMark("已提交", marks.submittedHomework, markColors[5]),
+                ).filter { it.count > 0 }
+                NativeHomeDay(day.date.toString(), weekdayShortName(day.date), "${day.date.day}", day.date == selectedDay.date,
+                    day.date == today, items, "${shortDate(day.date)}，${items.joinToString { "${it.label} ${it.count} 项" }.ifEmpty { "没有日程" }}",
+                    onSelect = { selectedDates[selectedSlot.startDate] = day.date })
+            },
+            selectedDateTitle = "${shortDate(selectedDay.date)} · ${weekdayName(selectedDay.date)}",
+            events = nativeHomeEvents(selectedDay, homeSchedule, nativeContext.onOpenCourse, onOpenHomeworkDetail, onOpenExams, onOpenPhyVlab),
+            loading = isLoading || weekValueIsPending,
+            errorMessage = nativeContext.errorMessage,
+            dueSoon = dueSoonItems.map { it.text }, nowEvents = nativeContext.nowEvents,
+            summaries = nativeContext.summaries, changes = nativeContext.changes,
+            onPrevious = previous?.let { { selectWeekFromUser(it) } },
+            onNext = next?.let { { selectWeekFromUser(it) } },
+            onToday = {
+                selectedSlot = weekSlots.firstOrNull { it.startDate == todayMonday } ?: AcademicWeekSlot(null, todayMonday)
+                selectedDates[selectedSlot.startDate] = today
+                weekWasManuallySelected = true
+            },
+            todaySelected = todaySelected, todayRequest = todayRequest, onOpenHomework = onOpenHomework,
+            onClearChanges = nativeContext.onClearChanges,
+        )
+        SideEffect {
+            presenter.showHome(snapshot)
+            onTodaySelectedChanged(todaySelected)
+        }
+        androidx.compose.runtime.DisposableEffect(presenter) { onDispose { presenter.showHome(null) } }
+        return
     }
 
     if (dueSoonItems.isNotEmpty()) {
@@ -1931,4 +2048,46 @@ private fun HomeStatusFailure.message(hasCache: Boolean): String = when (this) {
     }
     HomeStatusFailure.PARSE -> if (hasCache) "学校返回格式变化，正在显示上次状态。" else "无法读取学校返回的状态。"
     HomeStatusFailure.CACHE -> if (hasCache) "最新状态未能写入本地，仍显示上次状态。" else "无法保存最新状态。"
+}
+
+/** The native home uses exactly the same resolved day and routing actions as the shared calendar. */
+private fun nativeHomeEvents(
+    day: HomeAgendaDay,
+    schedule: HomeSchedulePresentation,
+    openCourse: (Course) -> Unit,
+    openHomework: (Homework) -> Unit,
+    openExam: (ExamSchedule) -> Unit,
+    openEvent: (PhyVlabEvent) -> Unit,
+): List<NativeHomeEvent> = buildList {
+    day.homeworkStarting.forEachIndexed { index, item ->
+        add(NativeHomeEvent("start-$index", "开始", item.title, displayScheduleCourseName(item.courseName), false, 0xD5A000) { openHomework(item) })
+    }
+    day.homeworkDue.forEachIndexed { index, item ->
+        val done = isHomeworkSubmitted(item)
+        add(NativeHomeEvent("due-$index", "截止", item.title,
+            "${displayScheduleCourseName(item.courseName)} · ${formatSchoolDeadline(item.endTime)}", done,
+            if (done) 0x16723B else 0xBF3A42) { openHomework(item) })
+    }
+    day.exams.forEachIndexed { index, item ->
+        add(NativeHomeEvent("exam-$index", "考试", displayScheduleCourseName(item.courseName), item.examTimeAndPlace,
+            false, team.bjtuss.bjtuselfservice.shared.feature.course.CourseColorCategory.EXAM.tones.accent) { openExam(item) })
+    }
+    day.phyVlabEvents.forEachIndexed { index, event ->
+        val kind = when {
+            event.id.startsWith("citel-discount-") -> "折扣开始"
+            event.id.startsWith("citel-start-") -> "CITEL开始"
+            event.id.startsWith("citel-") -> "CITEL截止"
+            event.kind == PhyVlabEventKind.START -> "物理开始"
+            else -> "物理截止"
+        }
+        add(NativeHomeEvent("event-$index", kind, event.title, formatPhyVlabAgendaDate(event), event.submitted,
+            if (event.submitted) 0x16723B else if (event.kind == PhyVlabEventKind.START) 0xD5A000 else 0xBF3A42) { openEvent(event) })
+    }
+    (day.physicsLabCourses + day.courses).forEachIndexed { index, course ->
+        val lab = course.scheduleEventKind in listOf("physicslab", "phydemo")
+        val time = if (lab) course.scheduleEventTime.orEmpty() else course.classTimeRange(schedule.staggeredClassTimes)?.replace('-', '–').orEmpty()
+        add(NativeHomeEvent("course-$index", if (lab) "实验" else "课程", course.displayTitleWithTeacher(),
+            listOf(time, team.bjtuss.bjtuselfservice.shared.domain.course.displayCoursePlace(course.coursePlace)).filter(String::isNotBlank).joinToString(" · "),
+            false, team.bjtuss.bjtuselfservice.shared.feature.course.courseColorCategory(course, schedule.courseTypesByCode).tones.accent) { openCourse(course) })
+    }
 }

@@ -145,6 +145,7 @@ class MacosComposeHost(content: @Composable () -> Unit) {
         }
 
         override fun mouseDown(event: NSEvent) {
+            window?.makeFirstResponder(this)
             onMouseEvent(event, PointerEventType.Press, PointerButton.Primary)
         }
 
@@ -230,7 +231,8 @@ class MacosComposeHost(content: @Composable () -> Unit) {
      * 只处理可打印字符与退格/回车；组合输入（中文候选）仍需上游实现。
      */
     private fun handleTextInput(event: NSEvent): Boolean {
-        val characters = event.charactersIgnoringModifiers
+        if (event.modifierFlags and (NSEventModifierFlagCommand or NSEventModifierFlagControl) != 0UL) return false
+        val characters = event.characters
         if (!characters.isNullOrEmpty()) {
             val text = characters.filter { it.code in 0x20..0x7E || it.code > 0x7E }
             if (text.isNotEmpty()) {
@@ -266,7 +268,7 @@ class MacosComposeHost(content: @Composable () -> Unit) {
             eventType = eventType,
             position = event.composeOffset,
             scrollDelta = Offset(x = event.deltaX.toFloat(), y = event.deltaY.toFloat()),
-            type = PointerType.Touch,
+            type = PointerType.Mouse,
             nativeEvent = event,
             button = button,
         )
@@ -274,8 +276,8 @@ class MacosComposeHost(content: @Composable () -> Unit) {
 
     /** 事件坐标：AppKit 原点在左下角，Compose 原点在左上角，需要翻转 Y。 */
     private val NSEvent.composeOffset: Offset get() {
-        val position = locationInWindow.useContents { x to y }
-        val height = view.frame.useContents { size.height }
+        val position = view.convertPoint(locationInWindow, fromView = null).useContents { x to y }
+        val height = view.bounds.useContents { size.height }
         return with(scene.density) {
             Offset(
                 x = position.first.dp.toPx(),

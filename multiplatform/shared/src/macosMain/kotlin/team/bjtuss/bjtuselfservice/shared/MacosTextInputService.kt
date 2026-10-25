@@ -43,6 +43,7 @@ internal class MacosTextInputService : PlatformTextInputService {
         var value: TextFieldValue,
         val onEditCommand: (List<EditCommand>) -> Unit,
         val onImeActionPerformed: (ImeAction) -> Unit,
+        val imeAction: ImeAction,
     )
 
     private var session: Session? = null
@@ -53,7 +54,7 @@ internal class MacosTextInputService : PlatformTextInputService {
         onEditCommand: (List<EditCommand>) -> Unit,
         onImeActionPerformed: (ImeAction) -> Unit,
     ) {
-        session = Session(value, onEditCommand, onImeActionPerformed)
+        session = Session(value, onEditCommand, onImeActionPerformed, imeOptions.imeAction)
     }
 
     override fun stopInput() {
@@ -85,7 +86,7 @@ internal class MacosTextInputService : PlatformTextInputService {
         current.onEditCommand(
             listOf(
                 SetSelectionCommand(start, end),
-                CommitTextCommand(text, newCursor),
+                CommitTextCommand(text, 1),
                 SetSelectionCommand(newCursor, newCursor),
             )
         )
@@ -101,7 +102,7 @@ internal class MacosTextInputService : PlatformTextInputService {
             current.onEditCommand(
                 listOf(
                     SetSelectionCommand(start - 1, start),
-                    CommitTextCommand("", start - 1),
+                    CommitTextCommand("", 1),
                     SetSelectionCommand(start - 1, start - 1),
                 )
             )
@@ -111,7 +112,7 @@ internal class MacosTextInputService : PlatformTextInputService {
             current.onEditCommand(
                 listOf(
                     SetSelectionCommand(start, end),
-                    CommitTextCommand("", start),
+                    CommitTextCommand("", 1),
                     SetSelectionCommand(start, start),
                 )
             )
@@ -121,6 +122,6 @@ internal class MacosTextInputService : PlatformTextInputService {
     /** 回车：交给 Compose 的 IME 动作处理。 */
     fun performImeAction() {
         val current = session ?: return
-        current.onImeActionPerformed(ImeAction.Default)
+        current.onImeActionPerformed(current.imeAction)
     }
 }

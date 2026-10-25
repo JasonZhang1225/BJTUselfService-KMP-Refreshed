@@ -7,7 +7,7 @@ struct MacosApp: App {
     @StateObject private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup {
+        Window("交大自由行", id: "main") {
             ContentView(model: model)
                 .frame(minWidth: 960, minHeight: 620)
                 .onAppear { WindowCapture.runIfRequested() }

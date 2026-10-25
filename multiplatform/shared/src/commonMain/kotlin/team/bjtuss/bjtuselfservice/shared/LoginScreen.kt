@@ -744,6 +744,24 @@ fun LoginScreen(
     onRememberCredentialsChange: (Boolean) -> Unit,
     onLogin: () -> Unit,
 ) {
+    val desktopPresenter = team.bjtuss.bjtuselfservice.shared.feature.shell.LocalNativeDesktopPresentation.current
+    if (desktopPresenter != null) {
+        val busy = !storageReady || state is LoginState.CheckingSession ||
+            state is LoginState.SubmittingCredentials || state is LoginState.LinkingAcademicSystem
+        SideEffect {
+            desktopPresenter.showLogin(team.bjtuss.bjtuselfservice.shared.feature.shell.NativeDesktopLogin(
+                username, password, rememberCredentials, canRememberCredentials, busy,
+                listOfNotNull(
+                    (state as? LoginState.Failed)?.let { loginFailureMessage(it.reason) },
+                    storageMessage, automationMessage,
+                    if (state is LoginState.LinkingAcademicSystem) "MIS 已通过，正在连接教务系统…" else null,
+                ).joinToString("\n"),
+                onUsernameChange, onPasswordChange, onRememberCredentialsChange, onLogin,
+            ))
+        }
+        DisposableEffect(desktopPresenter) { onDispose { desktopPresenter.showLogin(null) } }
+        return
+    }
     val scroll = rememberScrollState()
     val focusManager = LocalFocusManager.current
     val busy = !storageReady ||

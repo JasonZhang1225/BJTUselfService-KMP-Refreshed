@@ -14,6 +14,7 @@
 		M10000000000000000000005 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = M10000000000000000000016 /* PrivacyInfo.xcprivacy */; };
 		M10000000000000000000006 /* BJTUselfServiceKMP-v2.icns in Resources */ = {isa = PBXBuildFile; fileRef = M10000000000000000000017 /* BJTUselfServiceKMP-v2.icns */; };
 		M10000000000000000000007 /* SQLiteExtensionShim.c in Sources */ = {isa = PBXBuildFile; fileRef = M10000000000000000000019 /* SQLiteExtensionShim.c */; };
+		B20000000000000000000001 /* NativeHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* NativeHomeView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,6 +28,7 @@
 		M10000000000000000000016 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Resources/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		M10000000000000000000017 /* BJTUselfServiceKMP-v2.icns */ = {isa = PBXFileReference; lastKnownFileType = file.icns; path = Resources/BJTUselfServiceKMP-v2.icns; sourceTree = "<group>"; };
 		M10000000000000000000019 /* SQLiteExtensionShim.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = SQLiteExtensionShim.c; sourceTree = "<group>"; };
+		B20000000000000000000002 /* NativeHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHomeView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -56,6 +58,7 @@
 				M10000000000000000000012 /* ContentView.swift */,
 				M10000000000000000000013 /* AppModel.swift */,
 				M10000000000000000000014 /* ComposeContentView.swift */,
+				B20000000000000000000002 /* NativeHomeView.swift */,
 				M10000000000000000000019 /* SQLiteExtensionShim.c */,
 				M10000000000000000000016 /* PrivacyInfo.xcprivacy */,
 				M10000000000000000000017 /* BJTUselfServiceKMP-v2.icns */,
@@ -174,6 +177,7 @@
 				M10000000000000000000002 /* ContentView.swift in Sources */,
 				M10000000000000000000003 /* AppModel.swift in Sources */,
 				M10000000000000000000004 /* ComposeContentView.swift in Sources */,
+				B20000000000000000000001 /* NativeHomeView.swift in Sources */,
 				M10000000000000000000007 /* SQLiteExtensionShim.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

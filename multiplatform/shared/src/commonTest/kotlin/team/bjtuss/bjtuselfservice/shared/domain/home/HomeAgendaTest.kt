@@ -59,6 +59,14 @@ class HomeAgendaTest {
     }
 
     @Test
+    fun missingCalendarMovesWholeWeeksAcrossMonthBoundary() {
+        val today = LocalDate(2026, 10, 25)
+        assertEquals(LocalDate(2026, 10, 26), resolveHomeAgendaWeekStart(6, 7, today))
+        assertEquals(LocalDate(2026, 11, 2), resolveHomeAgendaWeekStart(6, 8, today))
+        assertEquals(LocalDate(2026, 10, 12), resolveHomeAgendaWeekStart(6, 5, today))
+    }
+
+    @Test
     fun requestedTeachingWeekUsesCalendarDateAcrossHolidayGap() {
         val weekStart = resolveHomeAgendaWeekStart(
             currentWeek = 3,

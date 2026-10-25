@@ -1167,3 +1167,17 @@
 - 验证：JDK 21，全部 Gradle 命令在 `multiplatform/` 执行。最后运行 `.\gradlew.bat -I ..\.artifacts\homework-markdown-actions\local-render.gradle -I ..\.artifacts\android-account-debug-signing.gradle :shared:desktopTest --tests "*HomeworkMarkdownActionsLocalCheck*" --tests "*AggregatedAssignmentsTest*" --tests "*AggregateAssignmentVisualTest*" :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows --console=plain`，BUILD SUCCESSFUL（1m04s），相关 9 项零失败/错误/跳过；Android Debug APK 与桌面宿主编译成功。临时离屏夹具仅在忽略目录加载，不交付源码；检查 320/390/1000 宽度、浅深色、1.6 倍字号、保存不可用显示，并用内存剪贴板/假网关验证内容、文件名/MIME/UTF-8、取消/失败/保存中防重复点击；已目视截图。Android 使用机器已有标准 debug key 与既有本地 init 脚本，仅进程内提供占位配置，未修改工程签名配置或安装 App。
 - 全量与证据：`.\gradlew.bat :shared:desktopTest --console=plain` 执行 1110 项，1105 通过、5 失败、0 错误/跳过；5 项与仓库既有 Windows 环境限制清单完全对应（3 个 DesktopAgentIntegrationTest、2 个 MacUninstallCleanerTest，涉及 Unix 脚本非 Win32、符号链接特权与 macOS 卸载流程），未修改、排除或重试这些用例。`git diff --check` 通过。完整命令、失败方法、XML、界面 PNG 和本地临时夹具在 `.artifacts/homework-markdown-actions/validation.md`、`full-test-results/`、`render-results/`，最终联合验证日志 `final-check.log`。
 - 未验证：未调用 Mac、未做 iOS/Xcode 编译或手机实际系统剪贴板/文档面板验证；本次 main 推送自动触发[常规安全检查 run 39881761156](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/39881761156)，记录时进行中、结果待定。未改版本、README、发布说明，未替换安装版 App、打 tag 或发版。
+
+## 2026-10-25 作业卡片统一与 CITEL 状态补绿合入（PR #66）
+
+- 改动：所有者合入 PR #66（`4a9c54ec` Merge pull request #66 from JasonZhang1225/claude/affectionate-bell-7hpm21）。作业列表卡片统一开始/截止/评分文案（`DeadlineText` / `AssignmentGrade`）；CITEL 未做或评测错误变为已提交/AC 时首页变更标绿；顺带 macOS 打包改用 SDK 27 重编译的原生启动器。
+- 原因/决策：卡片三平台文案对齐；CITEL 原始英文状态原先不被 `isFavorableChange` 识别。
+- 验证：合入前分支记录 `./gradlew :shared:desktopTest` 1119 项，仅容器缺命令的 `DesktopAgentIntegrationTest.installWritesWorkingScriptAndSkill` 失败；`AssignmentVisualTest` 离屏渲染确认三平台卡片文字。本次本地仅快进 `main`，未重跑测试。
+- 未验证：物理在线卡片无法用列表数据区分已出分与待评分；iOS/macOS 原生界面未在本机复核。
+
+## 2026-10-25 本地工作树与分支清理
+
+- 改动：主仓库 `main` 快进到 `origin/main@4a9c54ec`；删除本地已合并分支 `claude/affectionate-bell-7hpm21`、课件 worktree 与本地 `feat/courseware-fallback-playback`、无关 stash `feat/dual-update-sources`、未跟踪的 `multiplatform/.artifacts/`。保留 `feat/mac-swift` worktree。PR #66 与本次清理记录放在本分支，不留在 `main` 工作树。
+- 原因/决策：用户要求本地只留与远端同步的最新 `main` 和未完成的 Swift mac 分支，文档进入 `feat/mac-swift` 后再推远端。
+- 验证：清理后主仓工作树干净；`git worktree list` 仅主仓 `main` 与 `/Users/zjg/BJTUselfService-mac-swift`。
+- 未验证：未删除远端 `origin/feat/courseware-fallback-playback`。

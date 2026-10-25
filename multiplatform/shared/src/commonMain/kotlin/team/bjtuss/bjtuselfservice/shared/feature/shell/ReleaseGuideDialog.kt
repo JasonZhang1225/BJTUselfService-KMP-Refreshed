@@ -36,6 +36,16 @@ internal fun TimedGuideDialog(
             remaining -= 1
         }
     }
+    val desktopPresenter = LocalNativeDesktopPresentation.current
+    if (desktopPresenter != null) {
+        // Read the timer in composition, so each tick schedules a fresh native snapshot.
+        val guide = NativeDesktopGuide(title, body, remaining, saveFailed, onConfirm)
+        androidx.compose.runtime.SideEffect { desktopPresenter.showGuide(guide) }
+        androidx.compose.runtime.DisposableEffect(desktopPresenter) {
+            onDispose { desktopPresenter.showGuide(null) }
+        }
+        return
+    }
     AlertDialog(
         onDismissRequest = {},
         properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),

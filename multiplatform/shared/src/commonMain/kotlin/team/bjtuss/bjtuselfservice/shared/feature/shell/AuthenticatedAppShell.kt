@@ -637,7 +637,7 @@ fun AuthenticatedAppShell(
                 } else if (shouldOpenNativeSectionRoute(target.name, useNativeSecondaryRoutes, compactBottomNavSections)) {
                     onOpenNativeRoute(target.name)
                 } else if (
-                    target !in compactBottomNavSections &&
+                    !nativeSidebarEnabled && target !in compactBottomNavSections &&
                         target != AppSection.MORE
                 ) {
                     // 「更多」子页：固定为 [更多, 子页]，返回一定回到更多目录。
@@ -1270,8 +1270,9 @@ fun AuthenticatedAppShell(
                 // 原生标题栏生效的两条路：被宿主 push 的二级页，以及玻璃壳的一级 tab 根页
                 // （M17 之后一级页的紧凑原生标题与同步动作也交给系统导航栏）。
                 // 返回动作不只是出栈的页（写信要先取消草稿）例外，它整条顶栏都留在页内。
-                val nativeTitleBarActive =
-                    useNativeTitleBar && !ownsBackAction && (showBack || nativeTabBarEnabled)
+                val desktopPresenter = LocalNativeDesktopPresentation.current
+                val nativeTitleBarActive = !ownsBackAction && (desktopPresenter != null ||
+                    (useNativeTitleBar && (showBack || nativeTabBarEnabled)))
                 // 刷新、同步状态、页面级动作现在都能进系统栏右侧：状态文案自己就是入口
                 // （首页「同步失败」点开同步详情）也一并带过去，不再因为顶栏被撤掉而丢入口。
                 // 只有仍由 Compose 绘制的自定义操作组没法声明成原生项，出现时整行仍留在页内。
@@ -1303,7 +1304,10 @@ fun AuthenticatedAppShell(
                     }
                 }
                 if (nativeTitleBarActive) {
-                    SideEffect { onNativeTitleChanged(title) }
+                    SideEffect {
+                        onNativeTitleChanged(title)
+                        desktopPresenter?.updateNavigation(title, backStack.size > 1, onBack ?: popBackStack)
+                    }
                 }
                 val nativeSyncBusy = isRefreshing || sessionRecoveryInProgress
                 val topBarTransitionHeight = 52.dp
@@ -1399,6 +1403,7 @@ fun AuthenticatedAppShell(
                             )
                     }
                     onNativeActionChanged(nativeBarAction)
+                    desktopPresenter?.updateAction(nativeBarAction)
                 }
                 if (useTopUnderlap) {
                     // 内容自己从屏幕顶画起，首项靠 LocalTopBarClearance 让开；这里不占位。
