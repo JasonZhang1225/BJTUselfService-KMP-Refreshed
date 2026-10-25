@@ -1,9 +1,9 @@
 # BJTUselfService 实时工作记忆
 
-> 当前分支：`main`；作业详情全平台 Markdown 操作提交 `62d2031e` 已按所有者本次明确授权直接推送（无 PR、无强推）；远端旧诊断分支已删除，实际远端只保留 `main`。实现与验证见 `history_full.md` 末尾。
+> 当前分支：`feat/mac-swift`（基于 `main` @ `4a9c54ec` / PR #66）。2026-10-25 实现 **macOS 原生 SwiftUI 外观**：新增 `macosApp/`（SwiftUI 宿主工程）+ `shared` 的 `macosArm64` 目标与 `macosMain` 平台实现，**已提交到本分支**（未开 PR、未发新版）。JVM 的 `desktopApp`（Windows）未动，Mac 正式发布包仍走原 jpackage 链路。
 > Windows 本机既有 MSI 记录（保留接手前未提交修改）：`C:\Users\zjg\Downloads\交大自由行 KMP-1.8.6.msi`（源码 `ab3eac6f` / 1.8.6-Beta2 / Build 43，87678976 字节，SHA256 `9DD504400EAF0968124A1E32C2347F5473C59258CFF8D84AE6575FED96E42645`），ProductCode=`{44161E10-B9DC-4B9F-B257-02DE4C744FE3}`，UpgradeCode 保留；已覆盖上一份 `6f4b07d8` 包，未替换 Program Files 安装版。
 
-> 最后更新：2026-10-23（作业 Markdown 操作已进入 main，远端仅 main；相关 9 项检查及 Android/桌面编译通过，iOS 尚未编译/实机验证，线上 CI 待结果）。
+> 最后更新：2026-10-25（`feat/mac-swift`：macOS 原生 SwiftUI 壳已跑通并截图核对，已提交到本分支；共享壳层新增原生侧栏模式；文本输入在 macOS 原生端仍未通，见「进行中」）。
 > 既往整合记录：`fix/beta2-desktop-agent-classroom`（Beta2 整合、版本兼容修复、iOS ChatGPT 插件页顶栏玻璃修复与 CI 竞态测试修复已于 2026-10-22 按所有者授权推送 main，见日志；App/Site/插件/模板为 1.8.6-Beta2 / Build 43；debug-1.8.6-Beta2 已按用户授权推至最新 origin/main@ab3eac6f）。2026-10-22 按用户授权直接在本地主干提交数据保护修复并推送（禁用自动删库、凭据保护、启动取消后重试；1088 项测试通过，四端相关编译通过；未重新打包），细节见日志。2026-10-22 所有者明确授权将本次全部修改直接推送 main：完整长码 App 配对、公共模板及文档提交 `27efa42b` / `9de3eade` / `08b9286b` 已进入主干；以 `--force-with-lease` 推送，保留原有历史。模板 PR #54 已关闭。私人 Site 已部署成功（源码 `495efffe`、`has_mcp=true`）。本机唯一远端 `origin` = `JasonZhang1225/BJTUselfService-KMP-Refreshed`，GitHub 已脱离 fork。验证与交付细节见日志；本地三端包已生成（源码 `6f4b07d8`，未发版；用户已覆盖安装 IPA，未包含本次数据保护修复）：Release APK 约 5.8 MiB、DMG 约 82.5 MiB、供 SideStore 自签的 Release IPA 约 22.0 MiB，均为 arm64；目录 `~/Downloads/BJTUselfService-1.8.6-Beta-6f4b07d8-20261022/`，含 SHA256SUMS.txt 和构建说明。
 > 上次任务分支：`docs/agent-setup-main`（基于 `main@9c7eb55a`；Agent 搭建入口改 main，按用户授权直接推送；验证见日志）。PR #40 图书馆、#41 灵动岛/实时活动/手表、#42 作业搜索与教室当前节次、#46 课程实时动态（Android Live Updates + 双端课前准点出现）均已合入（合并提交 `64c24ab`、`6f5c36f`、`8189baf`、`aac1816`）；#45 验证码模型移除与安装包瘦身（合并提交 `a58e7c6`）、#48 iOS 作业上传修复与上传页统一（合并提交 `ad2a082`）均经所有者实测后合并（2026-10-22），合并后主干安全检查 #179 与打包 #113 见日志；#50 AI Agent 与 ChatGPT 私人远程查询（合并提交 `a18369d`）已合入；#51 v1.8.6 发布说明（`docs/releases/v1.8.6.md`，合并提交 `7513348`）已合入；#52 启动弹窗合并与 1.8.6-Beta 版本号待所有者合并。细节见 `history_full.md`。远端另保留 `claude/宣传图制作`。
 > 私人 Site 线上仍为 1.8.6-Beta2（部署需 Codex 的 ChatGPT Sites 连接器，Claude Code 会话无此工具）；模板源码已改 1.8.6-KMP，Beta2 App/模板互不拦截（Site 不校验客户端版本，App 只要求模板数字核心 ≥0.4.0）。
@@ -14,8 +14,15 @@
 
 ## 进行中
 
-- 作业列表卡片统一（分支 `claude/affectionate-bell-7hpm21`，2026-10-25，未合入）：课程平台／CITEL／物理在线卡片统一为 类型、开始、截止（`2026年10月14日 00:00 · 周三`，开始 00:00 原样、截止 00:00 仍显示前一天 24:00，缺失为“未指定”）、评分（有成绩显示成绩，已提交未出分为“待评分”，未提交为“未公布成绩”）；提交人数仅课程平台保留；CITEL 编程题的“题目分值”卡片标签改为“评分”，折扣按开始时间格式显示。实现：`domain/time/DeadlineText.kt` 的 `assignment*Text`、`domain/assignment/AssignmentGrade.kt`。验证：`./gradlew :shared:desktopTest` 1119 项，仅 `DesktopAgentIntegrationTest.installWritesWorkingScriptAndSkill`（退出码 127，容器缺命令，与改动无关）失败；`:androidApp:compileDebugKotlin :windowsApp:compileKotlinWindows` 成功；`AssignmentVisualTest` 离屏渲染确认三平台卡片文字。物理在线卡片的“待评分”无法区分已出分，因为卡片没有批改成绩数据（详情里才有）。
-- CITEL 利好变更补绿（分支 `claude/affectionate-bell-7hpm21`，2026-10-25，未合入）：`HomeChangeField.isFavorableChange()` 的“状态”只认中文“未提交/未完成”，漏掉 CITEL 原始英文状态（No attempt → Submitted for grading）与空白/“未填写”/评测错误 → AC。现改为“原状态未做（空白、未填写、No attempt、WA 等）且新状态为已提交/已完成/Submitted for grading/AC 才绿”。验证：`./gradlew :shared:desktopTest --tests '*Home*' --tests '*Change*' --tests '*Citel*'` 通过（210 项 0 失败，含新增 `citelStatusFromUnattemptedOrWrongToSubmittedOrAcceptedIsFavorable`），`:androidApp:compileDebugKotlin :windowsApp:compileKotlinWindows` 成功；iOS/macOS 原生未编译，界面截图未在本机复核。
+- **macOS 原生 SwiftUI 外观（`feat/mac-swift`，2026-10-25，基线 `main@4a9c54ec`，已提交到本分支）**：
+  - 架构：新增 `multiplatform/macosApp/`（SwiftUI Xcode 工程，仿 `iosApp` 结构）+ `shared` 增加 `macosArm64()` Kotlin/Native 目标与 `macosMain` 源集。侧栏、工具栏、材质由 SwiftUI `NavigationSplitView` 画，右侧内容区仍是共享 Compose 业务界面（与 iOS「UIKit 承载 Compose」同构）。JVM `desktopApp` 保留给 Windows；Mac 正式发布包暂时仍走旧 jpackage 链路。
+  - 关键实现：`shared/src/macosMain/.../MacosComposeHost.kt` 自建 Compose→`NSView` 宿主（CMP 1.12 的 macOS 目标没有 iOS 那样的 `ComposeUIViewController`，只有会自建 `NSWindow` 的 `ComposeWindow`）；`MacosTextInputService.kt` 补文本输入；`MacosAppController.kt` 导出给 Swift 的入口；`shared/.../feature/shell/NativeSidebar.kt` 定义原生侧栏条目与 `NativeSidebarBus`。
+  - 共享壳层改动：`App()`/`LoginRoute()`/`AuthenticatedAppShell` 新增 `nativeSidebarEnabled`、`nativeSidebarBus`、`onNativeSectionChanged`、`onNativeScrollProgress`；宿主侧栏驱动时宽屏不再自绘 Compose 侧栏，窗口类固定 `Expanded`。
+  - 验证：`./gradlew :shared:compileKotlinMacosArm64` 通过；`xcodebuild -project macosApp/macosApp.xcodeproj -scheme macosApp -configuration Debug -destination 'platform=macOS'` 通过；开发版（bundle id `…kmp.macos.dev`）已在本机跑起，Computer Use 截图确认：原生半透明侧栏（搜索框 + 首页/成绩/课程表/考试安排/作业/课件下载/教室查询/邮箱/图书馆/校历下载/成绩单下载/设置，SF Symbols）、原生工具栏（标题「交大自由行」+ 副标题「首页」+ 刷新按钮）、底部账号行，右侧 Compose 登录页正常渲染。
+  - 踩过的坑：① `PlatformContext` 委托对象里同 getter 会自引用导致无限递归；② `SkiaLayer.attachTo` 必须在视图**进窗口之后**调用，否则 `MacOsMetalRedrawer` 空指针崩溃；③ 绘制必须走 `SingleComposeSceneRenderingScope.render(frameRecomposer, canvas, nanoTime)`，直接调 `ComposeScene.draw` 不会驱动重组（只渲染 2 帧、界面停在第一帧）；④ macOS 系统 libsqlite3 不导出 `sqlite3_load_extension`，用 `macosApp/SQLiteExtensionShim.c` 补两个空实现才能链接。
+  - **未完成**：Compose 文本框在 macOS 原生端**收不到键入**（上游 CMP 的 `MacosTextInputService` 是空壳，macOS 的 `InteropView` 也是 `typealias InteropView = Any`），登录因此无法完成；顶栏「滚动时模糊」只做了按滚动偏移切换材质，尚未验证内容是否真正滚到工具栏下方；打包（Xcode 出 .app/DMG）、CI 任务、功能对齐（AI Agent、扫码、日历导出、邮件附件）都没动。
+  - **下一步**：① 先解决文本输入（自写 `NSTextInputClient`，或把凭据输入改成宿主侧原生字段）；② 验证顶栏内容是否真正滚到工具栏下方，按需调整 SwiftUI 布局；③ 补 macOS 打包与 CI；④ 按功能对齐清单逐项移植。
+
 - 设置页“版本与项目”重构（分支 `claude/kind-darwin-u2fxah`，2026-10-23，PR 待所有者审核）：系统版本/App 版本/构建号三行（新增 `AppUpdateChecker.CURRENT_BUILD`，`SecurityReleaseConfigTest` 断言与 Android/iOS 宿主/小组件/macOS 构建号一致，改构建号时需同步此常量）；更新源改 Gitee｜自动选择｜GitHub 三段滑块（默认自动，说明随选项变化）；仓库链接分“项目仓库”（GitHub/Gitee，带品牌图标）与“相关仓库”（交大自由行 NEO（原版）、AIO（跨平台））。验证：`./gradlew :shared:desktopTest :windowsApp:compileKotlinWindows` 1110 项 1 失败（`DesktopAgentIntegrationTest.installWritesWorkingScriptAndSkill` 退出码 127，撤下改动后在原代码上同样失败，云端 Linux 环境问题）；`VersionAndProjectCardRenderTest` 离屏渲染浅/深色、1.4 倍字号、检查中状态，截图 `.artifacts/settings-version-card/`。Android/iOS 构建与模拟器实机仅 CI 验证。
 
 - `debug-1.8.6-Beta2` 打包（2026-10-22）：所有者明确要求基于远端最新打标签；目标 `origin/main@ab3eac6f4bf786774ee21e9572dfe4a56da6c43d`，安全检查 run #39774068051 success。远端 annotated tag 已验证 peeled SHA 与目标一致。KMP package run #39777575554 已触发，当前 queued，链接 https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/39777575554 。只打四端包、不创建 Release；尚未验证此次 Actions 最终构建结果。
@@ -62,6 +69,8 @@
 - macOS 附件默认应用打开、iOS 保存面板未点验；`HomeworkFileGateway` 已被邮箱复用，可改名为通用文件网关。
 
 ## 已知限制（非缺陷，排查时先看这里）
+
+- macOS 原生端（`feat/mac-swift`）的 Compose 文本框收不到键入：Compose Multiplatform 1.12 的 macOS 目标里 `MacosTextInputService` 只存值不回传编辑命令（上游 TODO CMP-9858），macOS 的 `InteropView` 也只是 `typealias InteropView = Any`。这是上游缺口，不是本仓库的 bug；要在 macOS 原生端登录需自写 `NSTextInputClient` 或改用宿主侧原生输入框。
 
 - 教务系统 `aa.bjtu.edu.cn` 会临时拒绝 443 连接（2026-10-20 晚间约 1.5 小时，MIS 同时可达）；PR #33 起 App 照常进入主界面，仅成绩/课表/考试同步失败并保留缓存。复现可在 `KtorSchoolHttpTransport.executeOn` 临时对 aa 抛异常，测完撤销。
 - 校历公众号文章不能由第三方 App 直接在微信内打开（invalid source），走系统浏览器。
