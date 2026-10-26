@@ -66,7 +66,7 @@ private func courseDynamicIsland(_ context: ActivityViewContext<CourseLiveActivi
             // 展开态有系统高度上限和大圆角，不能沿用锁屏卡片的字号、间距。
             VStack(alignment: .leading, spacing: 4) {
                 Text(state.name)
-                    .font(.headline.weight(.bold))
+                    .font(.title3.weight(.bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 LiveDetailLine(state: state, font: .caption)
@@ -252,42 +252,57 @@ private struct LiveCountdown: View {
                 .lineLimit(1)
                 // 手表上“考试·距开始”偏长：宁可略缩也不截成“…”。
                 .minimumScaleFactor(style == .watch ? 0.8 : 1)
-            switch phase {
-            case .finished:
-                Text("--:--")
-                    .font(timerFont)
-                    .foregroundStyle(.secondary)
-            case .upcoming:
-                Text(timerInterval: now...state.start, countsDown: true)
+            ZStack(alignment: style == .compact ? .center : .trailing) {
+                // 展开态、锁屏两行高度要与阶段无关：开课前倒计时字号大于上课时的分钟计时，
+                // 若按内容定高，右上区域在“正在上课”时变矮，整张卡片下方的课名、进度条随之上移。
+                if style == .expanded || style == .lockScreen {
+                    Text(verbatim: "0:00")
+                        .font(timerFont)
+                        .hidden()
+                        .accessibilityHidden(true)
+                }
+                value(phase, accent: accent)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func value(_ phase: CourseLiveActivityPhase, accent: Color) -> some View {
+        switch phase {
+        case .finished:
+            Text("--:--")
+                .font(timerFont)
+                .foregroundStyle(.secondary)
+        case .upcoming:
+            Text(timerInterval: now...state.start, countsDown: true)
+                .font(timerFont)
+                .foregroundStyle(accent)
+                .multilineTextAlignment(style == .compact ? .center : .trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                // 计时文字默认按最长格式占位，固定宽度避免撑宽、折行；手表空间够，不限宽。
+                .frame(
+                    width: style == .watch ? nil : timerWidth(hours: state.start.timeIntervalSince(now) >= 3600, seconds: true),
+                    alignment: style == .compact ? .center : .trailing
+                )
+        case .ongoing:
+            if style == .compact {
+                // 收起态显示下课时刻：系统分钟计时只有全称单位（“1 小时 29 分钟”），会把灵动岛两侧对称撑宽；
+                // 静态时刻最短，剩余多少由进度环表达。
+                Text(clock(state.end))
                     .font(timerFont)
                     .foregroundStyle(accent)
-                    .multilineTextAlignment(style == .compact ? .center : .trailing)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    // 计时文字默认按最长格式占位，固定宽度避免撑宽、折行；手表空间够，不限宽。
-                    .frame(
-                        width: style == .watch ? nil : timerWidth(hours: state.start.timeIntervalSince(now) >= 3600, seconds: true),
-                        alignment: style == .compact ? .center : .trailing
-                    )
-            case .ongoing:
-                if style == .compact {
-                    // 收起态显示下课时刻：系统分钟计时只有全称单位（“1 小时 29 分钟”），会把灵动岛两侧对称撑宽；
-                    // 静态时刻最短，剩余多少由进度环表达。
-                    Text(clock(state.end))
-                        .font(timerFont)
-                        .foregroundStyle(accent)
-                        .lineLimit(1)
-                        .fixedSize()
-                } else {
-                    // 展开、锁屏、手表：系统分钟计时，中文写作“1 小时 29 分钟”，每分钟自己走。
-                    LiveMinuteCountdown(now: now, end: state.end)
-                        .font(.system(size: minuteTimerSize, weight: .semibold, design: .rounded).monospacedDigit())
-                        // 手表上用类别色：卡片是深色底，不能依赖 iPhone 的浅/深色外观。
-                        .foregroundStyle(style == .watch ? AnyShapeStyle(accent) : AnyShapeStyle(.primary))
-                        .multilineTextAlignment(.trailing)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
+                    .fixedSize()
+            } else {
+                // 展开、锁屏、手表：系统分钟计时，中文写作“1 小时 29 分钟”，每分钟自己走。
+                LiveMinuteCountdown(now: now, end: state.end)
+                    .font(.system(size: minuteTimerSize, weight: .semibold, design: .rounded).monospacedDigit())
+                    // 手表上用类别色：卡片是深色底，不能依赖 iPhone 的浅/深色外观。
+                    .foregroundStyle(style == .watch ? AnyShapeStyle(accent) : AnyShapeStyle(.primary))
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
         }
     }

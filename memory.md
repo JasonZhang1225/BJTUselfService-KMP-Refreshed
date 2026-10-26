@@ -22,6 +22,8 @@
 
 ## 进行中
 
+- 灵动岛展开态高度对齐与课名放大（2026-10-26，分支 `claude/awesome-mendel-s7k46w` → PR 到 `feat/courseware-fallback-playback`）：“即将上课”右上倒计时 18pt、“正在上课”分钟计时 14pt，右上区域高度随阶段变化，下方课名/进度条/接下来整体上移约 5pt（没有隐藏内容）。现在展开态与锁屏的计时行用隐藏的“0:00”占位固定行高；展开态课名 `.headline` → `.title3`。本机（Linux）无 Swift 工具链，仅交 PR CI 编译，未在模拟器/真机看效果。
+
 - 2026-10-26 iOS 回放、各端全屏和原生二级页修复（358601c7，已提交推送）（安卓已提交推送 `e9a457f4`）：系统 BGContinuedProcessingTask 与自绘 ActivityKit 重复，且旧共享 inactive 缺陷会反复完成/新建系统任务，符合用户截图。当前改动：整次运行仅申请一次系统任务、系统活动生效时关闭自绘回退、两秒节流、Swift 单 worker 串行 update/end 与重复清理/清空后台待建状态；iOS 分片退避复用 2/4/8 秒规则；共享 HTML 全屏按钮覆盖 iOS/macOS/Windows 并保留双路，iOS 开 WKPreferences 全屏；PLAYBACK_DETAIL 原生 push 路由替代手机/平板详情 sheet，旧壳也使用页面返回栈。51 项相关检查、Android debug、Windows 编译通过；完整 1163 项仅 5 项已知 Windows 环境失败。真实 iOS BackgroundTasks/WebKit 新 API 经 Windows 上 konanc 的 iOS simulator 薄编译通过，不能代替完整 Apple 编译/运行；JS DOM fixture 检查通过，不代表真实浏览器视觉验证（file:// 被浏览器安全策略拒绝，未绕过）。新增 CI 对 ActivityKit 宿主 Swift 的单独 typecheck。用户已授权提交推送并跟进；CI run 40281987671（head 358601c7）四项全部成功：真实 ActivityKit Swift typecheck、iOS 共享测试、macOS 全部共享测试/应用镜像、Android debug/release、Windows 镜像及模板检查均通过。Apple 完整编译/共享测试仅 CI 验证；尚未做 iOS App 界面与真机验证。证据 `.artifacts/ios-playback-fixes/`。
 
 - PR #68 整合（2026-10-26）：按所有者明确要求，将 `fix/ios-dynamic-island-clipping` 合入当前回放分支。PR 包含灵动岛展开态裁切修复、既有主干的 CITEL 利好变更及作业卡片开始/截止/评分统一、macOS SDK 启动器打包、Widget Swift 编译检查，共 15 个文件。PR 头已含 `5a27fb04`，本地使用快进整合，无冲突；此前 20 项本地未提交路径经 SHA-256 全部原样保留，随后仅 memory.md 为本轮记录更新。备份 `.artifacts/pr68-integration/local-before/`、`local-before-pr68.patch` 和哈希清单。合并结果、测试与远端检查见 `.artifacts/pr68-integration/verification.md`；没有将 main 更新或改成 PR 目标，该次合并未顺带提交本地回放修复；现已按后续要求提交推送为 `059df3e1`。
