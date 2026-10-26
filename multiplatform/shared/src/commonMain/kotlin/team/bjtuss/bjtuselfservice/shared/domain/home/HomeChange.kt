@@ -142,14 +142,15 @@ fun matchExamChange(
 }
 
 /**
- * 对学生有利的变更：作业由未做（未提交、未填写、No attempt）或评测错误变为已提交/已完成/AC，或截止时间延后。
+ * 对学生有利的变更：作业由未做（未提交、未填写、No attempt）或评测错误变为已提交/已完成/AC，或截止时间、
+ * CITEL 折扣时间（过了这个时刻得分打折）延后。
  * 界面把这一行标成绿色。只看单个字段，新增/删除记录由调用方排除。
  */
 fun HomeChangeField.isFavorableChange(): Boolean {
     if (before == after) return false
     return when {
         label == "状态" || label == "完成情况" -> !isDoneStatus(before) && isDoneStatus(after)
-        label.contains("截止") -> {
+        label.contains("截止") || label.contains("折扣") -> {
             val old = deadlineSortKey(before) ?: return false
             val new = deadlineSortKey(after) ?: return false
             new > old
