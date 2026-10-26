@@ -10,9 +10,18 @@ import android.media.MediaMuxer
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.os.SystemClock
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Bundle
+import team.bjtuss.bjtuselfservice.shared.logging.AppLog
 import android.view.Surface
 import java.io.File
 import java.nio.ByteBuffer
+import java.util.concurrent.Executors
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -64,6 +73,9 @@ internal class AndroidMediaCompositor(
     private val rightPath: String,
     private val outputPath: String,
     private val quality: PlaybackCompositeQuality,
+    private val samplesFactory: (String, String) -> AndroidMediaSamples? = { path, kind -> openFileSamples(path, kind) },
+    private val durationUsHint: Long = 0L,
+    private val journal: AndroidCompositionJournal? = null,
 ) {
     suspend fun run(onProgress: (Float) -> Unit, onStatus: (String?) -> Unit) = withContext(Dispatchers.IO) {
         val target = resolveTargetQuality(onStatus)
@@ -74,6 +86,9 @@ internal class AndroidMediaCompositor(
             width = target.width,
             height = target.height,
             bitRate = target.bitRate,
+            samplesFactory = samplesFactory,
+            durationUsHint = durationUsHint,
+            journal = journal,
         )
         var completed = false
         try {
@@ -112,6 +127,9 @@ private class MediaComposePipeline(
     private val width: Int,
     private val height: Int,
     private val bitRate: Int,
+    private val samplesFactory: (String, String) -> AndroidMediaSamples?,
+    private val durationUsHint: Long,
+    private val journal: AndroidCompositionJournal?,
 ) {
     private var muxer: MediaMuxer? = null
     private var encoder: MediaCodec? = null
@@ -119,33 +137,52 @@ private class MediaComposePipeline(
     private var renderer: EglComposerRenderer? = null
     private var left: VideoSide? = null
     private var right: VideoSide? = null
-    private var audioExtractor: MediaExtractor? = null
+    private var audioExtractor: AndroidMediaSamples? = null
     private var audioTrackIndex = -1
-    private var audioTimescale = 1
+    private var audioSampleRate = 44100
+    private var audioFramesRead = 0L
+    private var partAudioFrames = 0L
+    private var audioOriginUs = 0L
+    private var audioFormat: MediaFormat? = null
+    private var videoFormat: MediaFormat? = null
     private var videoTrackIndex = -1
     private var muxerStarted = false
     private var encoderFinished = false
     private val pendingAudio = ArrayDeque<Pair<Long, ByteArray>>()
     private var pendingAudioBytes = 0L
     private val audioSampleBuffer: ByteBuffer = ByteBuffer.allocate(256 * 1024)
+    private val frameThread = HandlerThread("PlaybackFrames").apply { start() }
+    private val startUs = journal?.resumeUs ?: 0L
+    private val skipAudioFrames = journal?.resumeAudioFrames ?: 0L
+    private var partStartUs = startUs
+    private var nextPartUs = startUs + 60_000_000L
+    private var syncRequested = false
+    private var lastEncodedPtsUs = -1L
+    private var submittedFrames = 0L
+    private var encodedFrames = 0L
+    private var partVideoFrames = 0L
+    private val decoderWorkers = Executors.newFixedThreadPool(2) { worker ->
+        Thread(worker, "PlaybackDecode")
+    }
 
     suspend fun run(onProgress: (Float) -> Unit) {
-        val muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val muxer = MediaMuxer(journal?.file()?.absolutePath ?: outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         this.muxer = muxer
         prepareAudioTrack(muxer)
 
         val encoder = MediaCodec.createEncoderByType("video/avc")
         this.encoder = encoder
-        val format = MediaFormat.createVideoFormat("video/avc", width, height).apply {
+        fun encoderFormat() = MediaFormat.createVideoFormat("video/avc", width, height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
             setInteger(MediaFormat.KEY_FRAME_RATE, OUTPUT_FRAME_RATE)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, OUTPUT_I_FRAME_INTERVAL_SECONDS)
         }
-        encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        configureOfflineCodec(encoder, ::encoderFormat, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         val inputSurface = encoder.createInputSurface()
         encoderSurface = inputSurface
         encoder.start()
+        AppLog.d("PlaybackCompose", "encoder=${encoder.name} size=${width}x$height")
 
         val renderer = EglComposerRenderer(inputSurface)
         this.renderer = renderer
@@ -153,19 +190,48 @@ private class MediaComposePipeline(
         // 解码器输出到 SurfaceTexture 时要建外部纹理，所以先让 GL 上下文生效。
         renderer.makeCurrent()
 
-        val left = VideoSide(leftPath)
-        val right = VideoSide(rightPath)
+        val frameHandler = Handler(frameThread.looper)
+        val left = VideoSide(leftPath, frameHandler, samplesFactory, durationUsHint)
+        val right = VideoSide(rightPath, frameHandler, samplesFactory, durationUsHint)
         this.left = left
         this.right = right
+        left.primeBefore(startUs)
+        right.primeBefore(startUs)
 
         val totalUs = maxOf(left.durationUs, right.durationUs).coerceAtLeast(1_000L)
         val frameIntervalUs = 1_000_000L / OUTPUT_FRAME_RATE
-        var timeUs = 0L
+        var timeUs = startUs
         var lastReported = -1
-        while (timeUs <= totalUs) {
+        val started = SystemClock.elapsedRealtimeNanos()
+        var decodeNs = 0L
+        var drawNs = 0L
+        var encodeNs = 0L
+        var frames = 0
+        val decodeContext = coroutineContext
+        fun prepareFrame(targetUs: Long): List<Future<*>> = listOf(
+            decoderWorkers.submit { left.advanceTo(targetUs, decodeContext) },
+            decoderWorkers.submit { right.advanceTo(targetUs, decodeContext) },
+        )
+        var prepared = prepareFrame(timeUs)
+        while (true) {
             coroutineContext.ensureActive()
-            left.advanceTo(timeUs)
-            right.advanceTo(timeUs)
+            if (timeUs > totalUs + 10_000_000L) throw CompositionException("录像实际时长与播放列表不一致")
+            val decodeStart = SystemClock.elapsedRealtimeNanos()
+            prepared.forEach { future ->
+                try { future.get() } catch (error: ExecutionException) { throw error.cause ?: error }
+            }
+            left.updateTexture()
+            right.updateTexture()
+            val nextUs = timeUs + frameIntervalUs
+            val hasNext = nextUs <= totalUs || (journal != null && (!left.hasEnded || !right.hasEnded))
+            // SurfaceTexture 已取得当前帧；解码器现在准备下一帧，与 GL 和编码器同时工作。
+            if (hasNext) prepared = prepareFrame(nextUs)
+            val drawStart = SystemClock.elapsedRealtimeNanos()
+            decodeNs += drawStart - decodeStart
+            if (journal != null && !syncRequested && timeUs >= nextPartUs) {
+                encoder.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) })
+                syncRequested = true
+            }
             renderer.drawFrame(
                 leftTexture = left.textureId,
                 leftSize = left.sourceSize,
@@ -174,29 +240,47 @@ private class MediaComposePipeline(
             )
             renderer.setPresentationTime(timeUs * 1_000L)
             renderer.swapBuffers()
+            submittedFrames++
+            val encodeStart = SystemClock.elapsedRealtimeNanos()
+            drawNs += encodeStart - drawStart
             drainEncoder()
-            drainAudio(timeUs)
+            drainAudio(lastEncodedPtsUs)
+            encodeNs += SystemClock.elapsedRealtimeNanos() - encodeStart
+            frames++
+            if (frames % 1000 == 0) AppLog.d("PlaybackCompose",
+                "frames=$frames elapsedMs=${(SystemClock.elapsedRealtimeNanos()-started)/1_000_000} decodeMs=${decodeNs/1_000_000} drawMs=${drawNs/1_000_000} encodeMs=${encodeNs/1_000_000}")
             val permille = ((timeUs.toDouble() / totalUs) * 1000).toInt()
             if (permille != lastReported) {
                 lastReported = permille
                 onProgress((timeUs.toDouble() / totalUs).toFloat().coerceIn(0f, 1f))
             }
             timeUs += frameIntervalUs
+            if (!hasNext) break
         }
 
         // 收尾：通知编码器输入结束，把剩下的编码输出写进文件。
         encoder.signalEndOfInputStream()
+        val drainDeadline = SystemClock.elapsedRealtime() + 30_000
         while (!encoderFinished) {
+            coroutineContext.ensureActive()
+            if (SystemClock.elapsedRealtime() > drainDeadline) throw CompositionException("编码器收尾超时，已合成分段已保留")
             drainEncoder()
             if (!encoderFinished) Thread.sleep(2)
         }
         drainAudio(Long.MAX_VALUE)
+        if (encodedFrames != submittedFrames) throw CompositionException("编码器丢帧，已保留合成断点，请继续重试")
+        AppLog.d("PlaybackCompose", "frame audit submitted=$submittedFrames encoded=$encodedFrames")
         if (muxerStarted) {
-            runCatching { muxer.stop() }
+            this.muxer?.stop()
+            this.muxer?.release()
+            this.muxer = null
+            journal?.commit(lastEncodedPtsUs + frameIntervalUs, partAudioFrames, final = true)
         }
     }
 
     fun release() {
+        decoderWorkers.shutdownNow()
+        decoderWorkers.awaitTermination(5, TimeUnit.SECONDS)
         runCatching { renderer?.release() }
         renderer = null
         runCatching { encoder?.stop() }
@@ -212,18 +296,19 @@ private class MediaComposePipeline(
         audioExtractor = null
         runCatching { muxer?.release() }
         muxer = null
+        if (journal != null && !journal.complete) journal.file().delete()
+        frameThread.quitSafely()
     }
 
     private fun prepareAudioTrack(muxer: MediaMuxer) {
-        val extractor = MediaExtractor()
+        val extractor = samplesFactory(leftPath, "audio/") ?: return
         try {
-            extractor.setDataSource(leftPath)
-            val track = selectTrack(extractor, "audio/") ?: return
-            extractor.selectTrack(track)
-            val format = extractor.getTrackFormat(track)
-            audioTimescale = runCatching { format.getInteger(KEY_TIME_SCALE) }
-                .getOrDefault(1)
-                .coerceAtLeast(1)
+            val format = extractor.format
+            audioSampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+            audioOriginUs = journal?.audioOriginUs ?: extractor.sampleTime.coerceAtLeast(0)
+            if (journal != null) journal.audioOriginUs = audioOriginUs
+            format.setInteger(MediaFormat.KEY_IS_ADTS, 0)
+            audioFormat = format
             audioTrackIndex = muxer.addTrack(format)
             audioExtractor = extractor
         } catch (_: Throwable) {
@@ -234,7 +319,7 @@ private class MediaComposePipeline(
     /** 编码输出写进 MP4；首次拿到输出格式时开轨道并启动 muxer。 */
     private fun drainEncoder() {
         val encoder = encoder ?: return
-        val muxer = muxer ?: return
+        if (muxer == null) return
         val info = MediaCodec.BufferInfo()
         while (true) {
             val index = encoder.dequeueOutputBuffer(info, 0)
@@ -244,27 +329,29 @@ private class MediaComposePipeline(
                         encoder.releaseOutputBuffer(index, false)
                         continue
                     }
-                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-                        encoder.releaseOutputBuffer(index, false)
-                        encoderFinished = true
-                        continue
-                    }
-                    if (videoTrackIndex >= 0) {
+                    if (videoTrackIndex >= 0 && info.size > 0) {
+                        if (journal != null && info.presentationTimeUs >= nextPartUs &&
+                            info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0) rollPart(info.presentationTimeUs)
                         val buffer = encoder.getOutputBuffer(index)
                         if (buffer != null) {
                             buffer.position(info.offset)
                             buffer.limit(info.offset + info.size)
-                            muxer.writeSampleData(videoTrackIndex, buffer, info)
+                            val local = MediaCodec.BufferInfo().apply { set(info.offset, info.size, info.presentationTimeUs - partStartUs, info.flags) }
+                            this.muxer?.writeSampleData(videoTrackIndex, buffer, local)
+                            encodedFrames++
+                            partVideoFrames++
+                            lastEncodedPtsUs = info.presentationTimeUs
                         }
                     }
                     encoder.releaseOutputBuffer(index, false)
+                    if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) encoderFinished = true
                 }
                 index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                     if (videoTrackIndex < 0) {
-                        videoTrackIndex = muxer.addTrack(encoder.outputFormat)
-                        muxer.start()
+                        videoFormat = encoder.outputFormat
+                        videoTrackIndex = this.muxer!!.addTrack(encoder.outputFormat)
+                        this.muxer!!.start()
                         muxerStarted = true
-                        flushPendingAudio()
                     }
                 }
                 else -> return
@@ -276,52 +363,83 @@ private class MediaComposePipeline(
     private fun drainAudio(untilUs: Long) {
         val extractor = audioExtractor ?: return
         while (true) {
-            val sampleTime = extractor.sampleTime
-            if (sampleTime < 0) return
-            val sampleUs = sampleTime * 1_000_000L / audioTimescale
-            if (sampleUs > untilUs) return
+            val nativeTime = extractor.sampleTime
+            if (nativeTime < 0) break
+            val sampleTime = nativeTime
+            // MediaExtractor 已统一返回微秒，不能再按容器 timescale 换算。
+            if (sampleTime > untilUs) break
+            audioSampleBuffer.clear()
             val size = extractor.readSampleData(audioSampleBuffer, 0)
-            if (size < 0) return
+            if (size < 0) break
             val data = ByteArray(size)
             audioSampleBuffer.position(0)
             audioSampleBuffer.limit(size)
             audioSampleBuffer.get(data)
             extractor.advance()
-            if (muxerStarted) {
-                writeAudio(sampleTime, data)
-            } else {
-                pendingAudio.addLast(sampleTime to data)
-                pendingAudioBytes += size
-                // 正常情况下只会缓冲开头一瞬；超过上限就丢弃，保证不占内存。
-                if (pendingAudioBytes > 8L * 1024 * 1024) {
-                    pendingAudio.clear()
-                    pendingAudioBytes = 0
+            normalizeAacSamples(data, sampleTime, audioSampleRate) { _, frame ->
+                val index = audioFramesRead++
+                val pts = audioOriginUs + index * 1024 * 1_000_000 / audioSampleRate
+                if (index >= skipAudioFrames) {
+                    pendingAudio.addLast(pts to frame)
+                    pendingAudioBytes += frame.size
+                    if (pendingAudioBytes > 8L * 1024 * 1024) throw CompositionException("音频缓冲区未能及时写出")
                 }
             }
         }
+        flushPendingAudio(untilUs)
     }
 
-    private fun flushPendingAudio() {
-        val muxer = muxer ?: return
-        while (pendingAudio.isNotEmpty()) {
+    private fun flushPendingAudio(untilUs: Long) {
+        if (!muxerStarted) return
+        while (pendingAudio.isNotEmpty() && pendingAudio.first().first <= untilUs) {
             val (sampleTime, data) = pendingAudio.removeFirst()
             writeAudio(sampleTime, data)
+            pendingAudioBytes -= data.size
         }
-        pendingAudioBytes = 0
     }
 
     private fun writeAudio(sampleTime: Long, data: ByteArray) {
         val muxer = muxer ?: return
         if (audioTrackIndex < 0) return
         val info = MediaCodec.BufferInfo()
-        info.set(0, data.size, sampleTime, 0)
+        val pts = if (journal == null) sampleTime else (if (partStartUs == 0L) audioOriginUs else 0L) + partAudioFrames * 1024 * 1_000_000 / audioSampleRate
+        info.set(0, data.size, pts, 0)
         muxer.writeSampleData(audioTrackIndex, ByteBuffer.wrap(data), info)
+        partAudioFrames++
+    }
+
+    private fun rollPart(boundaryUs: Long) {
+        val journal = journal ?: return
+        if (partVideoFrames != (boundaryUs - partStartUs) * OUTPUT_FRAME_RATE / 1_000_000)
+            throw CompositionException("当前合成分段帧数不完整，已保留之前的断点")
+        // 编码器输出可能落后输入几帧，先把边界之前的 AAC 排到旧段，不能按 PES 整组分配。
+        drainAudio(boundaryUs - 1)
+        muxer!!.stop()
+        muxer!!.release()
+        muxer = null
+        journal.commit(boundaryUs, partAudioFrames)
+        partAudioFrames = 0
+        partVideoFrames = 0
+        partStartUs = boundaryUs
+        nextPartUs = boundaryUs + 60_000_000L
+        syncRequested = false
+        val next = MediaMuxer(journal.file().absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        muxer = next
+        audioTrackIndex = audioFormat?.let(next::addTrack) ?: -1
+        videoTrackIndex = next.addTrack(checkNotNull(videoFormat))
+        next.start()
+        AppLog.d("PlaybackCompose", "checkpoint parts=${journal.parts.size} throughUs=$boundaryUs")
     }
 }
 
 /** 一路视频：抽取视频轨 → MediaCodec 解码 → SurfaceTexture（供 OpenGL 取样）。 */
-private class VideoSide(private val path: String) {
-    private val extractor = MediaExtractor()
+private class VideoSide(
+    path: String,
+    frameHandler: Handler,
+    samplesFactory: (String, String) -> AndroidMediaSamples?,
+    durationUsHint: Long,
+) {
+    private val extractor = samplesFactory(path, "video/") ?: throw CompositionException("找不到视频轨道")
     private val decoder: MediaCodec
     private val frameLock = Object()
     private var frameAvailable = false
@@ -332,7 +450,9 @@ private class VideoSide(private val path: String) {
     private var primed = false
     private var released = false
     private var idleRetries = 0
-    private var lastRenderedPtsUs = Long.MIN_VALUE
+    private var texturePending = false
+    private data class CompressedFrame(val bytes: ByteArray, val pts: Long, val flags: Int)
+    private val preRoll = ArrayDeque<CompressedFrame>()
 
     val textureId: Int
     val surfaceTexture: SurfaceTexture
@@ -342,50 +462,80 @@ private class VideoSide(private val path: String) {
         private set
 
     val durationUs: Long
+    val hasEnded: Boolean get() = outputDone && pendingIndex < 0
 
     init {
-        extractor.setDataSource(path)
-        val track = selectTrack(extractor, "video/")
-            ?: throw CompositionException("找不到视频轨道")
-        extractor.selectTrack(track)
-        val format = extractor.getTrackFormat(track)
+        val format = extractor.format
         val mime = format.getString(MediaFormat.KEY_MIME) ?: "video/avc"
         val sourceWidth = format.getInteger(MediaFormat.KEY_WIDTH)
         val sourceHeight = format.getInteger(MediaFormat.KEY_HEIGHT)
         sourceSize = sourceWidth to sourceHeight
-        durationUs = runCatching { format.getLong(MediaFormat.KEY_DURATION) }.getOrDefault(0L)
+        durationUs = extractor.durationUs
+            .takeIf { it > 0L } ?: durationUsHint
 
         textureId = createExternalTexture()
         surfaceTexture = SurfaceTexture(textureId)
         surfaceTexture.setDefaultBufferSize(sourceWidth, sourceHeight)
-        surfaceTexture.setOnFrameAvailableListener {
+        surfaceTexture.setOnFrameAvailableListener({
             synchronized(frameLock) {
                 frameAvailable = true
                 frameLock.notifyAll()
             }
-        }
+        }, frameHandler)
         surface = Surface(surfaceTexture)
         decoder = MediaCodec.createDecoderByType(mime)
-        decoder.configure(format, surface, null, 0)
+        configureOfflineCodec(decoder, { extractor.format }, surface, 0)
         decoder.start()
+        AppLog.d("PlaybackCompose", "decoder=${decoder.name} size=${sourceWidth}x$sourceHeight")
+    }
+
+    /** 扫描恢复点以前的压缩数据，只给解码器保留最近一个 GOP，不重做已合成内容。 */
+    suspend fun primeBefore(targetUs: Long) {
+        if (targetUs <= 0L) return
+        var retainedBytes = 0L
+        var scratch = ByteBuffer.allocateDirect(1024 * 1024)
+        while (extractor.sampleTime >= 0 && extractor.sampleTime < targetUs) {
+            coroutineContext.ensureActive()
+            val flags = extractor.sampleFlags
+            if (flags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) { preRoll.clear(); retainedBytes = 0L }
+            val sizeHint = extractor.sampleSize
+            if (sizeHint > 32L * 1024 * 1024) throw CompositionException("单帧过大，无法恢复合成")
+            if (sizeHint > scratch.capacity()) scratch = ByteBuffer.allocateDirect(sizeHint.toInt())
+            scratch.clear()
+            val size = extractor.readSampleData(scratch, 0)
+            if (size < 0) break
+            val bytes = ByteArray(size)
+            scratch.position(0)
+            scratch.get(bytes)
+            preRoll.addLast(CompressedFrame(bytes, extractor.sampleTime, if (flags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0))
+            retainedBytes += size
+            if (retainedBytes > 32L * 1024 * 1024) throw CompositionException("关键帧间隔过长，无法恢复合成")
+            extractor.advance()
+        }
     }
 
     /** 把这一路推进到“最新一帧 pts ≤ targetUs”，并把该帧送进纹理。 */
-    suspend fun advanceTo(targetUs: Long) {
+    fun advanceTo(targetUs: Long, context: CoroutineContext) {
         val info = MediaCodec.BufferInfo()
+        var candidateIndex = -1
         while (true) {
-            coroutineContext.ensureActive()
+            context.ensureActive()
+            if (Thread.currentThread().isInterrupted) throw InterruptedException("decoder stopped")
             if (pendingIndex >= 0) {
-                if (pendingPtsUs <= targetUs || !primed) {
-                    renderPending()
-                    continue
+                if (pendingPtsUs <= targetUs || (!primed && candidateIndex < 0)) {
+                    if (candidateIndex >= 0) decoder.releaseOutputBuffer(candidateIndex, false)
+                    candidateIndex = pendingIndex
+                    pendingIndex = -1
+                    pendingPtsUs = Long.MIN_VALUE
+                } else {
+                    present(candidateIndex)
+                    return
                 }
-                // 下一帧还在后面，当前纹理里的帧就是这一时刻该显示的画面。
-                return
             }
-            if (outputDone) return
+            if (outputDone) { present(candidateIndex); return }
             if (!inputDone) {
-                val inputIndex = decoder.dequeueInputBuffer(TIMEOUT_US)
+                // 离线合成必须先排空输出，不能每帧等 10ms 才发现输入缓冲区已满。
+                val inputIndex = decoder.dequeueInputBuffer(0)
                 if (inputIndex >= 0) {
                     val buffer = decoder.getInputBuffer(inputIndex)
                     if (buffer == null) {
@@ -393,6 +543,11 @@ private class VideoSide(private val path: String) {
                         inputDone = true
                     } else {
                         buffer.clear()
+                        val warmup = preRoll.removeFirstOrNull()
+                        if (warmup != null) {
+                            buffer.put(warmup.bytes)
+                            decoder.queueInputBuffer(inputIndex, 0, warmup.bytes.size, warmup.pts, warmup.flags)
+                        } else {
                         val size = extractor.readSampleData(buffer, 0)
                         if (size < 0) {
                             decoder.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
@@ -401,7 +556,9 @@ private class VideoSide(private val path: String) {
                             decoder.queueInputBuffer(inputIndex, 0, size, extractor.sampleTime, extractor.sampleFlags)
                             extractor.advance()
                         }
+                        }
                     }
+                    // 用不阻塞的查询把可用输入槽填满，硬件可提前解码；随后再取输出。
                     continue
                 }
             }
@@ -421,28 +578,31 @@ private class VideoSide(private val path: String) {
                     val flags = info.flags
                     if (flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
                         decoder.releaseOutputBuffer(outputIndex, false)
-                    } else if (flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                    } else if (flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0 && info.size == 0) {
                         decoder.releaseOutputBuffer(outputIndex, false)
                         outputDone = true
                     } else {
                         pendingIndex = outputIndex
                         pendingPtsUs = info.presentationTimeUs
+                        if (flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
                     }
                 }
             }
         }
     }
 
-    private fun renderPending() {
-        val index = pendingIndex
-        val pts = pendingPtsUs
-        pendingIndex = -1
-        pendingPtsUs = Long.MIN_VALUE
+    private fun present(index: Int) {
+        if (index < 0) return
         decoder.releaseOutputBuffer(index, true)
-        awaitFrame()
-        runCatching { surfaceTexture.updateTexImage() }
+        texturePending = true
         primed = true
-        lastRenderedPtsUs = pts
+    }
+
+    fun updateTexture() {
+        if (!texturePending) return
+        awaitFrame()
+        surfaceTexture.updateTexImage()
+        texturePending = false
     }
 
     private fun awaitFrame(timeoutMs: Long = 3_000L) {
@@ -473,14 +633,6 @@ private class VideoSide(private val path: String) {
     }
 }
 
-private fun selectTrack(extractor: MediaExtractor, prefix: String): Int {
-    for (index in 0 until extractor.trackCount) {
-        val mime = extractor.getTrackFormat(index).getString(MediaFormat.KEY_MIME) ?: continue
-        if (mime.startsWith(prefix, ignoreCase = true)) return index
-    }
-    return -1
-}
-
 /** 建一个可以接 SurfaceTexture 的外部纹理；调用前必须已有 GL 上下文。 */
 private fun createExternalTexture(): Int {
     val ids = IntArray(1)
@@ -495,8 +647,31 @@ private fun createExternalTexture(): Int {
 
 private const val TIMEOUT_US = 10_000L
 
-/** MediaFormat 没有公开的 timescale 常量，音轨时长换算要用这个键。 */
-private const val KEY_TIME_SCALE = "timescale"
+/** 离线工作速率与成片 25fps 分开。设备不接受该提示时用原格式重试，保持兼容性。
+ * 参考 AndroidX Transformer DefaultEncoderFactory / DefaultDecoderFactory 的性能设置。
+ */
+private fun configureOfflineCodec(codec: MediaCodec, format: () -> MediaFormat, surface: Surface?, flags: Int) {
+    val fast = format()
+    if (flags and MediaCodec.CONFIGURE_FLAG_ENCODE != 0) {
+        fast.setInteger(MediaFormat.KEY_PRIORITY, 1)
+        // 1000 高于可行工作速率，同时避开部分高通固件对 Int.MAX_VALUE 的溢出问题。
+        fast.setInteger(MediaFormat.KEY_OPERATING_RATE, 1000)
+    } else {
+        val mime = fast.getString(MediaFormat.KEY_MIME) ?: "video/avc"
+        val maximum = runCatching {
+            codec.codecInfo.getCapabilitiesForType(mime).videoCapabilities
+                .getSupportedFrameRatesFor(fast.getInteger(MediaFormat.KEY_WIDTH), fast.getInteger(MediaFormat.KEY_HEIGHT)).upper
+        }.getOrDefault(240.0)
+        fast.setFloat(MediaFormat.KEY_OPERATING_RATE, maximum.coerceIn(25.0, 1000.0).toFloat())
+    }
+    try {
+        codec.configure(fast, surface, null, flags)
+    } catch (_: Exception) {
+        AppLog.d("PlaybackCompose", "offline rate hint rejected; using codec defaults")
+        codec.reset()
+        codec.configure(format(), surface, null, flags)
+    }
+}
 
 /** 输入结束后的空闲重试次数：10 ms 一次，20 次约 200 ms。 */
 private const val IDLE_RETRY_LIMIT = 20

@@ -54,6 +54,9 @@ internal class EglComposerRenderer(private val encoderSurface: Surface) {
         if (!EGL14.eglMakeCurrent(display, surface, surface, context)) {
             throw CompositionException("无法切换到 OpenGL 上下文")
         }
+        // 编码器 Surface 没有屏幕 VSync；保留同步 BufferQueue 的背压。
+        // interval=0 会启用异步投递，生产快于编码器时可丢弃尚未消费的帧。
+        EGL14.eglSwapInterval(display, 1)
         // 着色器程序必须在上下文已经 current 之后创建，否则 glCreateShader 直接返回 0。
         if (program == 0) createProgram()
     }
