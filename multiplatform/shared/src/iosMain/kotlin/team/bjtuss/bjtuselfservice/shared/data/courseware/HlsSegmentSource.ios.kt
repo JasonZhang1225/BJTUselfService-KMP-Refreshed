@@ -6,6 +6,10 @@ import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.reinterpret
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
@@ -40,7 +44,7 @@ private object IosBackgroundSegmentSource : HlsSegmentSource {
     private val lock = NSLock()
     private val batches = mutableMapOf<String, Batch>()
 
-    private class Batch(val directory: String, val urls: List<String>) {
+    private class Batch(val directory: String, val urls: List<String>, val scope: CoroutineScope, val onRetry: (Int, Long) -> Unit) {
         val results = List(urls.size) { CompletableDeferred<String?>() }
         val attempts = IntArray(urls.size)
     }
@@ -53,15 +57,24 @@ private object IosBackgroundSegmentSource : HlsSegmentSource {
             setHTTPMaximumConnectionsPerHost(4)
             setHTTPShouldSetCookies(false)
         }
-        NSURLSession.sessionWithConfiguration(configuration, delegate = Delegate(this), delegateQueue = NSOperationQueue())
+        NSURLSession.sessionWithConfiguration(configuration, delegate = Delegate(this), delegateQueue = NSOperationQueue().apply {
+            setMaxConcurrentOperationCount(1)
+        })
     }
 
-    override suspend fun fetchInOrder(urls: List<String>, onSegment: suspend (index: Int, bytes: ByteArray) -> Unit) {
+    override suspend fun fetchInOrder(urls: List<String>, onSegment: suspend (index: Int, bytes: ByteArray) -> Unit) =
+        fetchOrdered(urls, { _, _ -> }, onSegment)
+
+    override suspend fun fetchConcurrently(urls: List<String>, concurrency: Int, onRetry: (Int, Long) -> Unit,
+        onSegment: suspend (index: Int, bytes: ByteArray) -> Unit) = fetchOrdered(urls, onRetry, onSegment)
+
+    private suspend fun fetchOrdered(urls: List<String>, onRetry: (Int, Long) -> Unit,
+        onSegment: suspend (index: Int, bytes: ByteArray) -> Unit) = coroutineScope {
         if (urls.any { !isSchoolPlaybackStreamUrl(it) }) throw HlsDownloadException(HlsDownloadFailure.UNSUPPORTED)
         val batchId = NSUUID().UUIDString
         val directory = NSTemporaryDirectory().trimEnd('/') + "/bjtu-segments-" + batchId
         NSFileManager.defaultManager.createDirectoryAtPath(directory, true, null, null)
-        val batch = Batch(directory, urls)
+        val batch = Batch(directory, urls, this, onRetry)
         lock.lock(); batches[batchId] = batch; lock.unlock()
         try {
             urls.indices.forEach { enqueue(batchId, batch, it) }
@@ -131,9 +144,16 @@ private object IosBackgroundSegmentSource : HlsSegmentSource {
         override fun URLSession(session: NSURLSession, task: NSURLSessionTask, didCompleteWithError: NSError?) {
             val (batchId, batch, index) = source.lookup(task) ?: return
             if (batch.results[index].isCompleted) return
-            if (didCompleteWithError?.code == -999L) return // 我们主动取消
             batch.attempts[index]++
-            if (batch.attempts[index] >= 3) batch.results[index].complete(null) else source.enqueue(batchId, batch, index)
+            val attempt = batch.attempts[index]
+            val wait = hlsRetryDelay(attempt)
+            if (wait == null) batch.results[index].complete(null) else batch.scope.launch {
+                batch.onRetry(attempt, wait)
+                delay(wait)
+                // 取消/失败后的批次不再入队；退避协程属于当前下载的结构化作用域。
+                source.lock.lock(); val live = source.batches[batchId] === batch; source.lock.unlock()
+                if (live) source.enqueue(batchId, batch, index)
+            }
         }
     }
 }

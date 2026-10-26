@@ -94,7 +94,10 @@ private val PLAYER_TEMPLATE = """
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; height: 100%; background: #000; color: #f2f2f7;
     font: 15px -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
-  body { display: flex; flex-direction: column; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  #player { display: flex; flex-direction: column; width: 100%; height: 100%; background: #000;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  #player.fullscreen header { display: none; }
+  #player.fullscreen { height: 100%; height: 100dvh; }
   header { padding: 10px 14px 6px; }
   header h1 { margin: 0; font-size: 16px; font-weight: 600; }
   header p { margin: 2px 0 0; font-size: 13px; color: #a1a1a6; }
@@ -118,11 +121,13 @@ private val PLAYER_TEMPLATE = """
 </style>
 </head>
 <body>
+<main id="player">
 <header><h1>__TITLE_HTML__</h1><p>__SUBTITLE_HTML__</p></header>
 <div id="stage"></div>
 <div id="controls">
   <div class="row">
     <button id="play" aria-label="播放">播放</button>
+    <button id="fullscreen" aria-label="全屏" aria-pressed="false">全屏</button>
     <input id="seek" type="range" min="0" max="1000" value="0" aria-label="播放进度">
     <span id="time">00:00:00 / --:--:--</span>
   </div>
@@ -137,11 +142,39 @@ private val PLAYER_TEMPLATE = """
     <span id="status" role="status"></span>
   </div>
 </div>
+</main>
 <script>
 (function () {
   var sources = __SOURCES__;
   var stage = document.getElementById('stage');
   var status = document.getElementById('status');
+  var player = document.getElementById('player'), fullscreenBtn = document.getElementById('fullscreen');
+  function fullscreenElement() { return document.fullscreenElement || document.webkitFullscreenElement; }
+  function syncFullscreen() {
+    var active = !!fullscreenElement();
+    player.classList.toggle('fullscreen', active);
+    fullscreenBtn.textContent = active ? '退出全屏' : '全屏';
+    fullscreenBtn.setAttribute('aria-label', fullscreenBtn.textContent);
+    fullscreenBtn.setAttribute('aria-pressed', String(active));
+    applyLayout();
+  }
+  fullscreenBtn.onclick = function () {
+    try {
+      var result;
+      if (fullscreenElement()) {
+        var exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) result = exit.call(document);
+      } else {
+        // 请求整个双路容器；对单个 video 调用会丢掉另一半画面。
+        var enter = player.requestFullscreen || player.webkitRequestFullscreen;
+        if (!enter) { status.textContent = '此浏览器暂不支持双路全屏，请使用 Safari、Chrome 或 Edge'; return; }
+        result = enter.call(player);
+      }
+      if (result && result.catch) result.catch(function () { status.textContent = '无法进入全屏，请再点一次全屏按钮'; });
+    } catch (_) { status.textContent = '无法进入全屏，请再点一次全屏按钮'; }
+  };
+  document.addEventListener('fullscreenchange', syncFullscreen);
+  document.addEventListener('webkitfullscreenchange', syncFullscreen);
   if (!sources.length) { status.textContent = '没有可播放的画面'; return; }
   var videos = sources.map(function (s, i) {
     var pane = document.createElement('div'); pane.className = 'pane';
@@ -207,6 +240,7 @@ private val PLAYER_TEMPLATE = """
     if (e.target && (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT')) return;
     if (e.key === ' ') { e.preventDefault(); setPlaying(master().paused); }
     else if (e.key === 'ArrowLeft') jump(-15); else if (e.key === 'ArrowRight') jump(15);
+    else if (e.key.toLowerCase() === 'f') fullscreenBtn.click();
   });
 })();
 </script>

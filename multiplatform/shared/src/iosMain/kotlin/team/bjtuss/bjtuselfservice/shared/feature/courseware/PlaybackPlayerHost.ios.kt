@@ -47,6 +47,7 @@ actual fun PlaybackPlayerView(html: String, baseUrl: String, modifier: Modifier,
             val config = WKWebViewConfiguration()
             config.websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore()
             config.allowsInlineMediaPlayback = true
+            config.preferences.elementFullscreenEnabled = true
             config.allowsPictureInPictureMediaPlayback = true
             config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone
             val webView = WKWebView(frame = CGRectMake(0.0, 0.0, 0.0, 0.0), configuration = config)

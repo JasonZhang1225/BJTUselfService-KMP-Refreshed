@@ -144,6 +144,16 @@ jobs:
             -configuration Debug -sdk iphonesimulator \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 
+      - name: Typecheck playback ActivityKit coordinator
+        # ActivityKit 宿主不由 widget 构建或 Kotlin 测试覆盖，单独编译真实源文件。
+        # 下一步仍编译共享层完整调用链。
+        run: |
+          xcrun --sdk iphonesimulator swiftc -typecheck -swift-version 5 \
+            -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
+            -target arm64-apple-ios18.0-simulator \
+            iosApp/CourseScheduleWidget/PlaybackDownloadAttributes.swift \
+            iosApp/iosApp/PlaybackDownloadCoordinator.swift
+
       - name: Compile desktop test sources
         run: |
           chmod +x ./gradlew

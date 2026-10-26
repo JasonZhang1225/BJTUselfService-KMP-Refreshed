@@ -550,6 +550,7 @@ fun AuthenticatedAppShell(
         ExamDetailRoute -> AppSection.EXAMS
         PhyVlabDetailRoute -> AppSection.PHYVLAB
         CitelDetailRoute -> AppSection.CITEL
+        PlaybackDetailRoute -> AppSection.PLAYBACK
         CitelSettingsRoute -> AppSection.CITEL
         MailboxDetailRoute -> AppSection.MAILBOX
         MailboxComposeRoute -> AppSection.MAILBOX
@@ -1858,6 +1859,15 @@ fun AuthenticatedAppShell(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+            PlaybackDetailRoute -> DestinationPage(
+                title = "回放播放与下载", expanded = expanded, refreshable = false,
+                isRefreshing = false, showBack = true, modifier = modifier,
+            ) {
+                session.playbackModel?.let { model ->
+                    team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackDetailWorkspace(
+                        model, coursewareState.courses, homeworkFileGateway, Modifier.fillMaxSize())
+                }
+            }
             AppSection.PLAYBACK -> DestinationPage(
                 title = AppSection.PLAYBACK.title,
                 expanded = expanded,
@@ -1886,6 +1896,12 @@ fun AuthenticatedAppShell(
                         expanded = expanded,
                         onRefresh = refresh,
                         modifier = Modifier.fillMaxSize(),
+                        onOpenDetail = if (platform.family == PlatformFamily.IOS) {
+                            {
+                                if (nativeNavigationEnabled) onOpenNativeRoute(PLAYBACK_DETAIL_ROUTE_ID)
+                                else if (backStack.lastOrNull() != PlaybackDetailRoute) backStack.add(PlaybackDetailRoute)
+                            }
+                        } else null,
                     )
                 }
             }
@@ -2451,6 +2467,14 @@ fun AuthenticatedAppShell(
                             usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family),
                         )
                     }
+                    entry<PlaybackDetailRoute> {
+                        SectionDestination(
+                            route = PlaybackDetailRoute,
+                            expanded = true,
+                            modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family),
+                        )
+                    }
                     entry<PhyVlabDetailRoute> {
                         SectionDestination(
                             route = PhyVlabDetailRoute,
@@ -2683,6 +2707,14 @@ fun AuthenticatedAppShell(
                     entry<CitelDetailRoute> {
                         SectionDestination(
                             route = CitelDetailRoute,
+                            expanded = false,
+                            modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = false,
+                        )
+                    }
+                    entry<PlaybackDetailRoute> {
+                        SectionDestination(
+                            route = PlaybackDetailRoute,
                             expanded = false,
                             modifier = Modifier.fillMaxSize(),
                             usesLegacySmartTransport = false,

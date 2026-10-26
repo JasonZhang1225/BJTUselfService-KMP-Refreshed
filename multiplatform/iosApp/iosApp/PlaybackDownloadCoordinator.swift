@@ -22,8 +22,12 @@ final class PlaybackDownloadCoordinator {
 
     private var activity: Activity<PlaybackDownloadAttributes>?
     private var lastState: PlaybackDownloadAttributes.ContentState?
-    /// 收到状态时 App 还不在前台：先存着，回前台补建。
-    private var pendingState: PlaybackDownloadAttributes.ContentState?
+    private var desiredState: PlaybackDownloadAttributes.ContentState?
+    private var revision = 0
+    private var appliedRevision = -1
+    private var worker: Task<Void, Never>?
+    private var lastPublishedAt = -Double.infinity
+    private var dismissedByUser = false
     private var observers: [NSObjectProtocol] = []
 
     private init() {}
@@ -35,35 +39,61 @@ final class PlaybackDownloadCoordinator {
         observers = [
             center.addObserver(forName: PlaybackDownloadBridge.stateNotification, object: nil, queue: .main) { [weak self] note in
                 let info = note.userInfo ?? [:]
-                Task { @MainActor in self?.apply(PlaybackDownloadCoordinator.state(from: info)) }
+                // queue: .main 保证主线程；同步收下事件，避免 Task 的调度顺序反转结束/更新。
+                MainActor.assumeIsolated {
+                    let usesSystemActivity = (info["systemActivity"] as? NSNumber)?.boolValue ?? false
+                    self?.receive(usesSystemActivity ? nil : Self.state(from: info))
+                }
             },
             // 后台收到的状态在回前台时补上。
             center.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self, let pending = self.pendingState else { return }
-                    self.pendingState = nil
-                    self.apply(pending)
+                MainActor.assumeIsolated {
+                    guard let self, let desired = self.desiredState else { return }
+                    self.receive(desired)
                 }
             },
         ]
-        Task { @MainActor [weak self] in
-            self?.adoptExisting()
-        }
+        receive(nil) // 清理上次进程留下的自绘活动；不影响上课活动或系统后台任务。
     }
 
     /// 进程重启后可能还有活动悬着（App 被杀而活动没结束），接管它。
-    private func adoptExisting() {
+    private func adoptExisting() async {
         for existing in Activity<PlaybackDownloadAttributes>.activities {
-            // 只接管还在进行中的；已经结束（stale/dismissed）的直接收掉，别在锁屏上留僵尸。
-            if existing.activityState == .active || existing.activityState == .stale {
+            if activity == nil && (existing.activityState == .active || existing.activityState == .stale) {
                 activity = existing
-                return
+            } else if existing.id != activity?.id {
+                await existing.end(nil, dismissalPolicy: .immediate)
             }
-            Task { await existing.end(nil, dismissalPolicy: .immediate) }
         }
     }
 
-    private func apply(_ state: PlaybackDownloadAttributes.ContentState?) {
+    private func receive(_ state: PlaybackDownloadAttributes.ContentState?) {
+        desiredState = state // nil 也清掉后台暂存状态，回前台不会复活已结束活动。
+        revision &+= 1
+        guard worker == nil else { return }
+        worker = Task { await self.drain() }
+    }
+
+    /// 单个 worker 串行 update/end；密集进度只交付最新值。
+    private func drain() async {
+        while appliedRevision != revision {
+            let currentRevision = revision
+            let state = desiredState
+            if let state, !state.isTerminal, state.phase == lastState?.phase {
+                let remaining = 2 - (ProcessInfo.processInfo.systemUptime - lastPublishedAt)
+                if remaining > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                    if currentRevision != revision { continue }
+                }
+            }
+            await apply(state)
+            appliedRevision = currentRevision
+            lastPublishedAt = ProcessInfo.processInfo.systemUptime
+        }
+        worker = nil
+    }
+
+    private func apply(_ state: PlaybackDownloadAttributes.ContentState?) async {
         // 终态要短暂留在锁屏上，所以先记住上一个状态是不是终态，再覆盖。
         let wasTerminal = lastState?.isTerminal ?? false
         lastState = state
@@ -72,21 +102,24 @@ final class PlaybackDownloadCoordinator {
             let policy: ActivityUIDismissalPolicy = wasTerminal
                 ? .after(Date().addingTimeInterval(45))
                 : .immediate
-            let ending = activity
             activity = nil
-            Task { await ending?.end(nil, dismissalPolicy: policy) }
+            dismissedByUser = false
+            for existing in Activity<PlaybackDownloadAttributes>.activities {
+                await existing.end(nil, dismissalPolicy: policy)
+            }
             return
         }
+        if activity?.activityState == .dismissed { dismissedByUser = true; activity = nil }
+        guard !dismissedByUser else { return }
+        await adoptExisting()
+        // 清理重复活动期间可能收到结束或系统接管事件，不能再申请旧活动。
+        guard desiredState != nil else { return }
         if let activity {
-            Task { await activity.update(content(for: state)) }
+            await activity.update(content(for: state))
             return
         }
         // 新建活动只能在 App 在前台时做；后台先把状态存着，回前台再补。
-        guard UIApplication.shared.applicationState != .background else {
-            pendingState = state
-            return
-        }
-        pendingState = nil
+        guard UIApplication.shared.applicationState == .active else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         do {
             let created = try Activity.request(

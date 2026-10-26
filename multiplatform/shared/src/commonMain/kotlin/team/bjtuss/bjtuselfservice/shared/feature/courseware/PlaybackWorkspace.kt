@@ -36,6 +36,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -84,6 +85,7 @@ fun PlaybackScreen(
     expanded: Boolean,
     onRefresh: () -> Unit,
     modifier: Modifier,
+    onOpenDetail: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
     val state by model.state.collectAsState()
@@ -130,7 +132,7 @@ fun PlaybackScreen(
                         PlaybackCourseList(courses, state.courseId, selectCourse, Modifier.weight(1f).fillMaxWidth())
                     }
                 }
-                ElevatedCard(modifier = Modifier.weight(0.30f).fillMaxHeight()) {
+                ElevatedCard(modifier = Modifier.weight(if (onOpenDetail != null) 0.76f else 0.30f).fillMaxHeight()) {
                     Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             course?.name ?: "选择课程",
@@ -142,12 +144,12 @@ fun PlaybackScreen(
                         PlaybackLessonList(
                             state = state,
                             onRetry = onRetry,
-                            onSelect = { lesson -> course?.let { model.selectLesson(it, lesson.stableKey) } },
+                            onSelect = { lesson -> course?.let { model.selectLesson(it, lesson.stableKey); onOpenDetail?.invoke() } },
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                         )
                     }
                 }
-                ElevatedCard(modifier = Modifier.weight(0.46f).fillMaxHeight()) {
+                if (onOpenDetail == null) ElevatedCard(modifier = Modifier.weight(0.46f).fillMaxHeight()) {
                     val lesson = state.selectedLesson
                     if (lesson == null) {
                         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -196,7 +198,7 @@ fun PlaybackScreen(
                 PlaybackLessonList(
                     state = state,
                     onRetry = onRetry,
-                    onSelect = { lesson -> course?.let { model.selectLesson(it, lesson.stableKey) } },
+                    onSelect = { lesson -> course?.let { model.selectLesson(it, lesson.stableKey); onOpenDetail?.invoke() } },
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
             }
@@ -204,7 +206,7 @@ fun PlaybackScreen(
     }
 
     if (!expanded) {
-        state.selectedLesson?.let { lesson ->
+        state.selectedLesson?.takeIf { onOpenDetail == null }?.let { lesson ->
             AppleSheet(
                 onDismissRequest = model::clearSelection,
                 title = "课程回放",
@@ -246,6 +248,33 @@ fun PlaybackScreen(
                     ),
                 )
             }
+        }
+    }
+}
+
+/** 原生导航承载的回放详情；保存后在同一页面查看任务，不出现可下滑关闭的 sheet。 */
+@Composable
+fun PlaybackDetailWorkspace(
+    model: PlaybackScreenModel,
+    courses: List<CoursewareCourse>,
+    fileGateway: HomeworkFileGateway,
+    modifier: Modifier = Modifier,
+) {
+    val state by model.state.collectAsState()
+    val tasks by model.taskManager.tasks.collectAsState()
+    var showTasks by remember { mutableStateOf(false) }
+    DisposableEffect(model) { onDispose { model.clearSelection() } }
+    if (showTasks) {
+        PlaybackTasksPage(tasks, model.taskManager, modifier.padding(16.dp))
+        return
+    }
+    val lesson = state.selectedLesson ?: return
+    val course = courses.firstOrNull { it.id == state.courseId }
+    val scroll = rememberScrollState()
+    Column(modifier.verticalScroll(scroll).desktopTouchScroll(scroll).padding(16.dp)) {
+        PlaybackDetailBody(state, lesson, course, model, fileGateway,
+            onOpenTasks = { showTasks = true }) {
+            course?.let { model.selectLesson(it, lesson.stableKey) }
         }
     }
 }

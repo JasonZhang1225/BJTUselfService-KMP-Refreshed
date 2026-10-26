@@ -275,6 +275,8 @@ internal data object PhyVlabDetailRoute : AppRoute
 const val PHYVLAB_DETAIL_ROUTE_ID = "PHYVLAB_DETAIL"
 internal data object CitelDetailRoute : AppRoute
 const val CITEL_DETAIL_ROUTE_ID = "CITEL_DETAIL"
+internal data object PlaybackDetailRoute : AppRoute
+const val PLAYBACK_DETAIL_ROUTE_ID = "PLAYBACK_DETAIL"
 internal data object CitelSettingsRoute : AppRoute
 const val CITEL_SETTINGS_ROUTE_ID = "CITEL_SETTINGS"
 
@@ -315,6 +317,8 @@ internal fun String.toAppRoute(): AppRoute? =
         PhyVlabDetailRoute
     } else if (this == CITEL_DETAIL_ROUTE_ID) {
         CitelDetailRoute
+    } else if (this == PLAYBACK_DETAIL_ROUTE_ID) {
+        PlaybackDetailRoute
     } else if (this == CITEL_SETTINGS_ROUTE_ID) {
         CitelSettingsRoute
     } else if (this == MAILBOX_DETAIL_ROUTE_ID) {

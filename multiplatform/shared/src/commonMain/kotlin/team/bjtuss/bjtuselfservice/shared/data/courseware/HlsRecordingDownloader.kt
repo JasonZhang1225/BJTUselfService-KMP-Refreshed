@@ -232,9 +232,13 @@ internal suspend fun fetchHlsBytes(
         }
         if (body != null) return body
         // 初次失败后再重连三次：默认等待 2、4、8 秒。取消不会当成网络失败重试。
-        if (attempt >= 4) throw HlsDownloadException(HlsDownloadFailure.NETWORK)
-        val delayMillis = retryDelayMillis * (1L shl (attempt - 1))
+        val delayMillis = hlsRetryDelay(attempt, retryDelayMillis)
+            ?: throw HlsDownloadException(HlsDownloadFailure.NETWORK)
         onRetry(attempt, delayMillis)
         waitBeforeRetry(delayMillis)
     }
 }
+
+/** 首次失败后重试三次；供普通传输与 iOS 系统后台会话共用。 */
+internal fun hlsRetryDelay(failedAttempt: Int, baseDelayMillis: Long = 2_000): Long? =
+    if (failedAttempt in 1..3) baseDelayMillis * (1L shl (failedAttempt - 1)) else null
