@@ -88,6 +88,8 @@ interface HomeworkFileGateway {
 
 /** 已选好位置、尚未写完的保存目标。写盘失败抛 [StreamingSinkIoException]。 */
 interface StreamingDestination {
+    /** 平台私有恢复句柄，允许落在应用私有任务记录里；不能包含账号会话或鉴权参数。 */
+    val recoveryToken: String? get() = null
     /** 给用户看的名字（文件名；不含完整路径）。 */
     val displayName: String
     suspend fun write(bytes: ByteArray)

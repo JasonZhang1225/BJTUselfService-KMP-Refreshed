@@ -250,6 +250,7 @@ class AppDataGraph(
     )
     /** 回放任务（下载、转 MP4、合成）放在会话级作用域里，离开页面不中断；退出登录时随 [close] 取消。 */
     private val playbackScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
+    private val playbackRecovery = (homeworkFileGateway as? team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryProvider)?.playbackRecovery
     val playbackTaskManager = team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackTaskManager(
         scope = playbackScope,
         downloader = team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader(
@@ -259,6 +260,8 @@ class AppDataGraph(
         ),
         compositor = { team.bjtuss.bjtuselfservice.shared.media.PlaybackPlatformHooks.effectiveCompositor },
         backgroundHost = { team.bjtuss.bjtuselfservice.shared.media.PlaybackPlatformHooks.backgroundHost },
+        taskStore = playbackRecovery?.storeFor(accountScope),
+        restoreDestination = playbackRecovery?.let { recovery -> { token, name -> recovery.restoreDestination(token, name) } },
     )
     /** 回放下载可能持续数分钟，放在会话级作用域里，离开页面不中断；退出登录时随 [close] 取消。 */
     val playbackModel = team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackScreenModel(

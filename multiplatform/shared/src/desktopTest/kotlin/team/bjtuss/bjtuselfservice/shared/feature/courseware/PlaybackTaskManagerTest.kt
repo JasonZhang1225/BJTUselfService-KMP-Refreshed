@@ -13,6 +13,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader
+import team.bjtuss.bjtuselfservice.shared.data.courseware.HlsSegmentCheckpoint
+import team.bjtuss.bjtuselfservice.shared.media.MediaWorkDirectory
+import team.bjtuss.bjtuselfservice.shared.media.PlaybackBackgroundHost
+import kotlinx.io.files.Path
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackCompositeQuality
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackDetail
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackLesson
@@ -105,6 +109,74 @@ class PlaybackTaskManagerTest {
             delay(20)
         }
         @Suppress("UNREACHABLE_CODE") error("unreachable")
+    }
+
+    @Test
+    fun unchangedActiveProgressNeverStopsBackgroundHost() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val calls = java.util.Collections.synchronizedList(mutableListOf<Boolean>())
+        val host = object : PlaybackBackgroundHost {
+            override fun update(active: Boolean, state: PlaybackBackgroundState?) { calls += active }
+        }
+        transport.segmentDelayMillis = 4000
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { RecordingCompositor() }, { host })
+            val detail = detail()
+            manager.enqueue(detail, detail.streams, "测试课程", true, MemoryGateway())
+            delay(1800) // 跨过几次相同的速度/进度采样。
+            assertTrue(calls.isNotEmpty())
+            assertTrue(calls.all { it }, "有任务时，相同状态不能通知宿主停止")
+        } finally { scope.cancel() }
+    }
+
+    @Test
+    fun persistedPartialDownloadRestoresInNewManagerAndKeepsFinishedHistory() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("playback-recovery-test").toFile()
+        val root = Path(File(directory, "work").absolutePath)
+        var records = emptyList<StoredPlaybackTask>()
+        val store = object : PlaybackTaskStore {
+            override val workRoot = root
+            override suspend fun load() = decodePlaybackTaskRecords(encodePlaybackTaskRecords(records))
+            override suspend fun save(tasks: List<StoredPlaybackTask>) { records = decodePlaybackTaskRecords(encodePlaybackTaskRecords(tasks)) }
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val detail = detail()
+            val id = "t123456789-0"
+            val work = MediaWorkDirectory.forTask(id, root)
+            val urls = listOf("${base}tea/seg-0.ts", "${base}tea/seg-1.ts")
+            HlsSegmentCheckpoint(MediaWorkDirectory(work.file("segments-0"))).apply {
+                prepare(urls)
+                append(0, fixture("synthetic-0.ts"))
+            }
+            // 模拟被杀时写了一半的下一片：不能当作完整断点读回。
+            File(work.file("segments-0").toString(), "1.part").writeText("partial")
+            val output = "recovered.mp4"
+            records = listOf(StoredPlaybackTask(
+                PlaybackTask(id, "测试课程", "测试录像", listOf("教师画面", "屏幕/课件"), true,
+                    phase = PlaybackTaskPhase.DOWNLOADING, outputs = listOf(output)),
+                StoredPlaybackRequest(detail.streams.sortedBy { it.kind.ordinal }.map { StoredPlaybackStream(it.kind.name, it.hlsUrl) },
+                    true, "HIGH", listOf("test:$output"), listOf(false))))
+            val gateway = MemoryGateway()
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0, concurrency = 1),
+                { RecordingCompositor() }, { null }, store,
+                restoreDestination = { _, name -> gateway.openStreamingDestination(name, "video/mp4") })
+            withTimeout(5000) { while (manager.tasks.value.isEmpty()) delay(10) }
+            assertTrue(manager.tasks.value.single().canResume)
+            manager.clearFinished()
+            assertEquals(1, manager.tasks.value.size, "清除已结束不能删除可继续的断点")
+            manager.retry(id)
+            assertEquals(PlaybackTaskPhase.DONE, manager.awaitFinished(id).phase)
+            withTimeout(5000) { while (records.single().task.phase != PlaybackTaskPhase.DONE) delay(10) }
+            assertEquals(0, transport.requested.count { it == urls[0] }, "新对象从磁盘恢复，不重下第一片")
+            assertEquals(1, transport.requested.count { it == urls[1] }, "半片必须重新下载")
+            assertEquals(1, gateway.saved.size)
+            assertEquals(PlaybackTaskPhase.DONE, store.load().single().task.phase)
+        } finally {
+            scope.coroutineContext[kotlinx.coroutines.Job]!!.cancel()
+            scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            directory.deleteRecursively()
+        }
     }
 
     @Test

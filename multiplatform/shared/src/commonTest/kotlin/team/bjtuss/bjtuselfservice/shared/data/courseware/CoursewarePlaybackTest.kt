@@ -271,7 +271,7 @@ class CoursewarePlaybackTest {
                 HlsRecordingDownloader(missing, 0).download(base + "p.m3u8", StreamingFileSink { }) { }
             }.reason,
         )
-        assertEquals(3, missing.requests.count { it.endsWith("s.ts") })
+        assertEquals(4, missing.requests.count { it.endsWith("s.ts") })
     }
 
     @Test

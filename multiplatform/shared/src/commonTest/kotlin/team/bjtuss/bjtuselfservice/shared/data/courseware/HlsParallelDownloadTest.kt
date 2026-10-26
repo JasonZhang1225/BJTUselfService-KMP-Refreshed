@@ -118,7 +118,7 @@ class HlsParallelDownloadTest {
         assertTrue(error.message!!.contains("$base/seg-2.ts"), "失败信息要带地址：${error.message}")
         assertFalse(error.message!!.contains("secret-value"), "失败信息不能带查询串里的 token：${error.message}")
         assertEquals(2, destination.chunks.size, "失败后不再继续写盘")
-        assertEquals(3, transport.requests.count { it == failing }, "单个分片仍重试 3 次")
+        assertEquals(4, transport.requests.count { it == failing }, "初次失败后自动重试 3 次")
 
         // 调用方收尾（PlaybackTaskManager / HomeworkFileGateway 都是失败即 abort）：半成品不保留。
         destination.abort()

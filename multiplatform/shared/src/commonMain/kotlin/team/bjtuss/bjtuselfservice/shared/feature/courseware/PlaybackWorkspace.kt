@@ -744,7 +744,7 @@ fun PlaybackTasksPage(tasks: List<PlaybackTask>, manager: PlaybackTaskManager, m
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (tasks.any { !it.isActive }) {
+            if (tasks.any { !it.isActive && !it.canResume }) {
                 TextButton(onClick = manager::clearFinished) { Text("清除已结束") }
             }
         }

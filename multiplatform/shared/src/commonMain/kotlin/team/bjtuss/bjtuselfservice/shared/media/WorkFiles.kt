@@ -13,9 +13,8 @@ import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.files.SystemTemporaryDirectory
 
 /**
- * 回放任务的临时工作目录（系统临时目录下，Android 即应用 cache 目录）。
- * 中间文件与分片断点只放这里；成功、取消或移除时删除。
- * 网络失败保留至本次会话重试；进程重启后的残余由 purgeStale 清理。
+ * 回放任务的工作目录；默认系统临时目录，支持恢复的平台传入应用私有持久目录。
+ * 成功、取消或移除时删除；网络失败保留分片，启动时仅清理没有记录的残余目录。
  */
 class MediaWorkDirectory(val path: Path) {
     fun file(name: String): Path = Path(path, name)
@@ -27,7 +26,7 @@ class MediaWorkDirectory(val path: Path) {
     companion object {
         val root: Path get() = Path(SystemTemporaryDirectory, "bjtu-playback-tasks")
 
-        fun forTask(id: String): MediaWorkDirectory = MediaWorkDirectory(Path(root, id))
+        fun forTask(id: String, workRoot: Path = root): MediaWorkDirectory = MediaWorkDirectory(Path(workRoot, id))
 
         /**
          * 目录根的锁：登记任务、创建任务目录、清理残余目录三件事都在这把锁里，
@@ -40,10 +39,10 @@ class MediaWorkDirectory(val path: Path) {
         private val liveTasks = mutableSetOf<String>()
 
         /** 任务开始前登记，保证清理目录时不会误删。 */
-        suspend fun markLive(id: String) = withContext(Dispatchers.IO) {
+        suspend fun markLive(id: String, workRoot: Path = root) = withContext(Dispatchers.IO) {
             rootMutex.withLock {
                 liveTasks += id
-                SystemFileSystem.createDirectories(Path(root, id))
+                SystemFileSystem.createDirectories(Path(workRoot, id))
             }
         }
 
@@ -53,11 +52,11 @@ class MediaWorkDirectory(val path: Path) {
         }
 
         /** 启动时清掉上次进程留下的残余（被系统杀掉的任务）；本进程的任务目录不动。 */
-        suspend fun purgeStale(keep: Set<String> = emptySet()) = withContext(Dispatchers.IO) {
+        suspend fun purgeStale(keep: Set<String> = emptySet(), workRoot: Path = root) = withContext(Dispatchers.IO) {
             rootMutex.withLock {
-                if (!SystemFileSystem.exists(root)) return@withLock
+                if (!SystemFileSystem.exists(workRoot)) return@withLock
                 val protected = liveTasks + keep
-                SystemFileSystem.list(root).filter { it.name !in protected }.forEach(::deleteRecursively)
+                SystemFileSystem.list(workRoot).filter { it.name !in protected }.forEach(::deleteRecursively)
             }
         }
     }
@@ -85,8 +84,9 @@ class AppendFile(private val path: Path) : AutoCloseable {
     }
 
     override fun close() {
-        sink?.let { runCatching { it.flush(); it.close() } }
+        val target = sink ?: return
         sink = null
+        try { target.flush() } finally { target.close() }
     }
 }
 

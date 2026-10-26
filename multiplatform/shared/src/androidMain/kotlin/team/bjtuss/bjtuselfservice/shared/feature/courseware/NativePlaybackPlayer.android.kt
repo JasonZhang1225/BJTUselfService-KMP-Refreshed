@@ -6,6 +6,16 @@ import android.media.MediaPlayer
 import android.view.Surface
 import android.view.TextureView
 import android.view.View
+import android.app.Activity
+import android.app.Application
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
+import android.os.Build
+import android.os.Bundle
+import android.view.WindowInsets
+import android.view.WindowInsetsController
+import android.view.WindowManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -17,6 +27,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import kotlinx.coroutines.delay
 import team.bjtuss.bjtuselfservice.shared.data.homework.isSchoolPlaybackStreamUrl
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStream
@@ -35,8 +50,23 @@ actual fun PlaybackPlayerView(html: String, baseUrl: String, modifier: Modifier,
     var rate by remember(sources) { mutableFloatStateOf(1f) }
     var position by remember(sources) { mutableIntStateOf(0) }
     var scrubbing by remember(sources) { mutableStateOf(false) }
+    var fullscreen by remember(sources) { mutableStateOf(false) }
+    val activity = LocalContext.current.findActivity()
     val ready = players.isNotEmpty() && players.all { it.prepared }
     DisposableEffect(players) { onDispose { players.forEach { it.release() } } }
+    DisposableEffect(activity) {
+        val callbacks = object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityStopped(stopped: Activity) { if (stopped === activity) playing = false }
+            override fun onActivityCreated(a: Activity, b: Bundle?) = Unit
+            override fun onActivityStarted(a: Activity) = Unit
+            override fun onActivityResumed(a: Activity) = Unit
+            override fun onActivityPaused(a: Activity) = Unit
+            override fun onActivitySaveInstanceState(a: Activity, b: Bundle) = Unit
+            override fun onActivityDestroyed(a: Activity) = Unit
+        }
+        activity?.application?.registerActivityLifecycleCallbacks(callbacks)
+        onDispose { activity?.application?.unregisterActivityLifecycleCallbacks(callbacks) }
+    }
     LaunchedEffect(players, playing, audio, rate, ready) {
         players.forEachIndexed { index, player ->
             player.volume(index == audio)
@@ -56,17 +86,18 @@ actual fun PlaybackPlayerView(html: String, baseUrl: String, modifier: Modifier,
         }
     }
     fun seek(value: Int) { players.forEach { it.seek(value) }; position = value }
+    @Composable
+    fun content(contentModifier: Modifier) {
     MaterialTheme(colorScheme = darkColorScheme()) {
-    Column(modifier.background(Color.Black).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(contentModifier.background(Color.Black).padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
             @Composable fun pane(index: Int, paneModifier: Modifier) {
                 Column(paneModifier) {
                     Text(sources[index].kind.label, color = Color.White, style = MaterialTheme.typography.labelSmall)
-                    NativeVideoSurface(players[index], Modifier.fillMaxSize(), visible = layout == -1 || layout == index,
-                        onHidden = { playing = false })
+                    NativeVideoSurface(players[index], Modifier.fillMaxSize(), visible = layout == -1 || layout == index)
                 }
             }
-            if (maxWidth < 500.dp && layout == -1) Column(Modifier.fillMaxSize()) {
+            if (!fullscreen && maxWidth < 500.dp && layout == -1) Column(Modifier.fillMaxSize()) {
                 players.indices.forEach { pane(it, Modifier.weight(1f).fillMaxWidth()) }
             } else Row(Modifier.fillMaxSize()) {
                 players.indices.forEach { index ->
@@ -88,6 +119,7 @@ actual fun PlaybackPlayerView(html: String, baseUrl: String, modifier: Modifier,
         @OptIn(ExperimentalLayoutApi::class)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(onClick = { playing = !playing }, enabled = ready) { Text(if (playing) "暂停" else "播放") }
+            TextButton(onClick = { layout = -1; fullscreen = !fullscreen }) { Text(if (fullscreen) "退出全屏" else "全屏") }
             TextButton(onClick = { seek((position - 15_000).coerceAtLeast(0)) }, enabled = ready) { Text("−15 秒") }
             TextButton(onClick = { seek((position + 15_000).coerceAtMost(duration)) }, enabled = ready) { Text("+15 秒") }
             PlayerChoice("倍速 ${rate}×", listOf(0.75f, 1f, 1.25f, 1.5f, 2f).map { "$it×" }) {
@@ -100,6 +132,43 @@ actual fun PlaybackPlayerView(html: String, baseUrl: String, modifier: Modifier,
         }
     }
     }
+    }
+    if (fullscreen) {
+        Box(modifier.background(Color.Black))
+        DisposableEffect(activity) {
+            val previous = activity?.requestedOrientation
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            onDispose { if (previous != null) activity?.requestedOrientation = previous }
+        }
+        Dialog(onDismissRequest = { fullscreen = false }, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+            val view = LocalView.current
+            DisposableEffect(view) {
+                val window = (view.parent as? DialogWindowProvider)?.window
+                window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                view.post {
+                    if (Build.VERSION.SDK_INT >= 30) {
+                        window?.insetsController?.apply {
+                            systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                            hide(WindowInsets.Type.systemBars())
+                        }
+                    } else {
+                        @Suppress("DEPRECATION")
+                        view.systemUiVisibility = View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_FULLSCREEN or
+                            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    }
+                }
+                onDispose { }
+            }
+            content(Modifier.fillMaxSize())
+        }
+    } else content(modifier)
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 @Composable
@@ -127,22 +196,17 @@ actual fun PlaybackFramePreview(url: String, fallbackLabel: String, modifier: Mo
 }
 
 @Composable
-private fun NativeVideoSurface(player: NativeHlsPlayer, modifier: Modifier, visible: Boolean = true, onHidden: () -> Unit = {}) {
+private fun NativeVideoSurface(player: NativeHlsPlayer, modifier: Modifier, visible: Boolean = true) {
     AndroidView(modifier = modifier, factory = { context ->
-        object : TextureView(context) {
-            override fun onWindowVisibilityChanged(visibility: Int) {
-                super.onWindowVisibilityChanged(visibility)
-                if (visibility != View.VISIBLE) { player.play(false); onHidden() }
-            }
-        }.apply {
+        TextureView(context).apply {
             surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                 override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) { player.attach(this@apply, texture) }
                 override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) { player.fit(width, height) }
-                override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean { player.detach(); return true }
+                override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean { player.detach(this@apply); return true }
                 override fun onSurfaceTextureUpdated(texture: SurfaceTexture) { player.capturePreview() }
             }
         }
-    }, update = { it.alpha = if (visible) 1f else 0f }, onRelease = { player.detach() })
+    }, update = { it.alpha = if (visible) 1f else 0f }, onRelease = { player.detach(it) })
 }
 
 private class NativeHlsPlayer(private val url: String, private val preview: Boolean = false) {
@@ -158,14 +222,17 @@ private class NativeHlsPlayer(private val url: String, private val preview: Bool
     private var videoWidth = 0
     private var videoHeight = 0
     private var stopped = false
+    private var desiredPlaying = false
     val position: Int get() = if (prepared) runCatching { media?.currentPosition ?: 0 }.getOrDefault(0) else 0
     val isPlaying: Boolean get() = prepared && runCatching { media?.isPlaying == true }.getOrDefault(false)
 
     fun attach(target: TextureView, texture: SurfaceTexture) {
         view = target
+        surface?.release()
         surface = Surface(texture)
         if (media == null) reload() else media?.setSurface(surface)
         fit(target.width, target.height)
+        if (prepared && desiredPlaying) runCatching { media?.start() }
     }
 
     fun reload() {
@@ -223,11 +290,15 @@ private class NativeHlsPlayer(private val url: String, private val preview: Bool
         prepared = false
         stopped = true
     }
-    fun play(value: Boolean) { if (prepared) runCatching { if (value) media?.start() else media?.pause() } }
+    fun play(value: Boolean) { desiredPlaying = value; if (prepared && surface != null) runCatching { if (value) media?.start() else media?.pause() } }
     fun volume(audible: Boolean) { if (prepared) media?.setVolume(if (audible && !preview) 1f else 0f, if (audible && !preview) 1f else 0f) }
     fun rate(value: Float) { if (prepared) runCatching { media?.let { val wasPlaying = it.isPlaying; it.playbackParams = it.playbackParams.setSpeed(value); if (!wasPlaying) it.pause() } } }
     fun seek(value: Int) { if (prepared) media?.seekTo(value.toLong().coerceIn(0, duration.toLong()), MediaPlayer.SEEK_CLOSEST) }
-    fun detach() { play(false); media?.setSurface(null); surface?.release(); surface = null; view = null }
+    fun detach(target: TextureView) {
+        if (view !== target) return // 全屏切换时旧 View 的迟到回调不能拆掉新 Surface。
+        if (prepared) runCatching { media?.pause() }
+        media?.setSurface(null); surface?.release(); surface = null; view = null
+    }
     fun release() { stopped = true; media?.release(); media = null; prepared = false; surface?.release(); surface = null; view = null }
 }
 

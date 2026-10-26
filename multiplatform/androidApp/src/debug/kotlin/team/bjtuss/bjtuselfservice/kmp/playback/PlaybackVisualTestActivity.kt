@@ -1,6 +1,9 @@
 package team.bjtuss.bjtuselfservice.kmp.playback
 
 import android.os.Bundle
+import android.Manifest
+import android.os.Build
+import android.content.pm.PackageManager
 import android.net.TrafficStats
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,6 +27,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.courseware.*
 import team.bjtuss.bjtuselfservice.shared.files.*
 import team.bjtuss.bjtuselfservice.shared.media.defaultVideoCompositor
 import team.bjtuss.bjtuselfservice.shared.network.*
+import team.bjtuss.bjtuselfservice.kmp.AndroidHomeworkFileGateway
 import java.io.File
 
 /** 只在 debug 包中：脱离账号页验证生产播放器、预览和任务卡；不读取学校凭据。 */
@@ -32,6 +36,7 @@ class PlaybackVisualTestActivity : ComponentActivity() {
     private val transport by lazy { createSchoolHttpTransport() as KtorSchoolHttpTransport }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val file = File(filesDir, "playback-visual-streams.json")
         if (!file.isFile) { finish(); return }
         val streams: List<PlaybackStream> = JsonReader(StringReader(file.readText())).use { reader ->
@@ -53,31 +58,23 @@ class PlaybackVisualTestActivity : ComponentActivity() {
             }
         }
         var offline = false
-        val shortLists = mutableMapOf<String, ByteArray>()
         val testTransport = object : SchoolHttpTransport by transport {
             override suspend fun executePublic(request: SchoolHttpRequest): SchoolHttpResponse {
-                if (offline) throw java.io.IOException("debug-network-interruption")
-                shortLists[request.url]?.let { return SchoolHttpResponse(200, request.url, body = it) }
-                delay(3_000) // 留出稳定的交互窗口，用界面触发中断而不修改模拟器网络设置。
+                if (offline) {
+                    android.util.Log.d("PlaybackVisualTest", "simulated request failure at ${android.os.SystemClock.elapsedRealtime()}")
+                    throw java.io.IOException("debug-network-interruption")
+                }
                 return transport.executePublic(request)
             }
         }
-        val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(testTransport, 1000), { defaultVideoCompositor() }, { null })
-        val gateway = object : HomeworkFileGateway {
-            override val isAvailable = true
-            override val isStreamingSaveAvailable = true
-            override suspend fun pickFiles() = HomeworkFilePickResult.Cancelled
-            override suspend fun saveFile(file: HomeworkFileContent) = HomeworkFileSaveResult.Cancelled
-            override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
-                val output = File(cacheDir, "visual-$fileName")
-                val sink = output.outputStream()
-                return StreamingDestinationResult.Opened(object : StreamingDestination {
-                    override val displayName = fileName
-                    override suspend fun write(bytes: ByteArray) = withContext(Dispatchers.IO) { sink.write(bytes) }
-                    override suspend fun commit(): HomeworkFileSaveResult { sink.close(); return HomeworkFileSaveResult.Saved }
-                    override suspend fun abort() { sink.close(); output.delete() }
-                })
-            }
+        // 使用生产保存面板、可持久化 URI、任务存储和前台服务；仅标题是虚构数据。
+        val gateway = AndroidHomeworkFileGateway(this)
+        val host = AndroidPlaybackBackgroundHost(applicationContext)
+        val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(testTransport), { defaultVideoCompositor() }, { host },
+            taskStore = gateway.playbackRecovery.storeFor("visual-test"),
+            restoreDestination = { token, name -> gateway.playbackRecovery.restoreDestination(token, name) })
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2102)
         }
         setContent {
             var dark by remember { mutableStateOf(false) }
@@ -106,17 +103,11 @@ class PlaybackVisualTestActivity : ComponentActivity() {
                                     Button(onClick = {
                                         scope.launch {
                                             try {
-                                                streams.forEach { stream ->
-                                                    if (stream.hlsUrl !in shortLists) {
-                                                        val list = HlsRecordingDownloader(transport).resolvePlaylist(stream.hlsUrl)
-                                                        shortLists[stream.hlsUrl] = ("#EXTM3U\n" + list.segmentUrls.take(16).joinToString("") { "#EXTINF:10,\n$it\n" } + "#EXT-X-ENDLIST\n").encodeToByteArray()
-                                                    }
-                                                }
                                                 val detail = PlaybackDetail(PlaybackLesson(1, 1, "", "测试录像", "", "", true), true, streams, streams.map { it.kind }, "")
-                                                manager.enqueue(detail, streams, "验证课程", false, gateway)
+                                                message = manager.enqueue(detail, streams, "验证课程", true, gateway).toString()
                                             } catch (_: Exception) { message = "媒体加载失败" }
                                         }
-                                    }) { Text("下载短样本") }
+                                    }) { Text("完整下载并合成") }
                                     TextButton(onClick = { interrupted = !interrupted; offline = interrupted }) { Text(if (interrupted) "恢复网络" else "模拟断网") }
                                 }
                                 Text(message)

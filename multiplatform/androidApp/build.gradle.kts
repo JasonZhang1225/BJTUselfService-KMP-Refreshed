@@ -126,6 +126,8 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     // 桌面小组件读 shared 的时间模型；与 shared 同一版本，不是新依赖。
     implementation(libs.kotlinx.datetime)
+    // 任务持久目录使用 shared 同版本的 Path 类型。
+    implementation(libs.kotlinx.io.core)
     debugImplementation(libs.compose.material3)
     debugImplementation(libs.compose.ui.tooling)
 }

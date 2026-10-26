@@ -103,6 +103,7 @@ interface HlsSegmentSource {
     suspend fun fetchConcurrently(
         urls: List<String>,
         concurrency: Int,
+        onRetry: (Int, Long) -> Unit = { _, _ -> },
         onSegment: suspend (index: Int, bytes: ByteArray) -> Unit,
     ) = fetchInOrder(urls, onSegment)
 }
@@ -113,7 +114,7 @@ interface HlsSegmentSource {
  */
 class DirectHlsSegmentSource(
     private val transport: SchoolHttpTransport,
-    private val retryDelayMillis: Long = 1_000,
+    private val retryDelayMillis: Long = 2_000,
 ) : HlsSegmentSource {
     override suspend fun fetchInOrder(urls: List<String>, onSegment: suspend (index: Int, bytes: ByteArray) -> Unit) {
         urls.forEachIndexed { index, url -> onSegment(index, fetchSegment(index, url)) }
@@ -122,16 +123,17 @@ class DirectHlsSegmentSource(
     override suspend fun fetchConcurrently(
         urls: List<String>,
         concurrency: Int,
+        onRetry: (Int, Long) -> Unit,
         onSegment: suspend (index: Int, bytes: ByteArray) -> Unit,
     ) {
-        fetchInParallelOrdered(urls.size, concurrency, { index -> fetchSegment(index, urls[index]) }) { index, bytes ->
+        fetchInParallelOrdered(urls.size, concurrency, { index -> fetchSegment(index, urls[index], onRetry) }) { index, bytes ->
             onSegment(index, bytes)
         }
     }
 
     /** 失败时补上分片序号和脱敏后的地址，方便看出是哪一段出了问题。 */
-    private suspend fun fetchSegment(index: Int, url: String): ByteArray = try {
-        fetchHlsBytes(transport, url, retryDelayMillis)
+    private suspend fun fetchSegment(index: Int, url: String, onRetry: (Int, Long) -> Unit = { _, _ -> }): ByteArray = try {
+        fetchHlsBytes(transport, url, retryDelayMillis, onRetry = onRetry)
     } catch (error: HlsDownloadException) {
         throw HlsDownloadException(error.reason, "segment ${index + 1}: ${redactUrlQuery(url)}")
     }
@@ -149,17 +151,17 @@ expect fun platformBackgroundSegmentSource(transport: SchoolHttpTransport): HlsS
  */
 class HlsRecordingDownloader(
     private val transport: SchoolHttpTransport,
-    private val retryDelayMillis: Long = 1_000,
+    private val retryDelayMillis: Long = 2_000,
     private val segmentSource: HlsSegmentSource = DirectHlsSegmentSource(transport, retryDelayMillis),
     /** 同时在飞的录播分片数；1 表示退回逐个抓。 */
     private val concurrency: Int = DEFAULT_SEGMENT_CONCURRENCY,
 ) {
-    suspend fun resolvePlaylist(playlistUrl: String): HlsMediaPlaylist {
+    suspend fun resolvePlaylist(playlistUrl: String, onRetry: (Int, Long) -> Unit = { _, _ -> }): HlsMediaPlaylist {
         if (!isSchoolPlaybackStreamUrl(playlistUrl)) throw HlsDownloadException(HlsDownloadFailure.UNSUPPORTED)
         var url = playlistUrl
         repeat(2) {
             val body = try {
-                fetchHlsBytes(transport, url, retryDelayMillis)
+                fetchHlsBytes(transport, url, retryDelayMillis, onRetry = onRetry)
             } catch (error: HlsDownloadException) {
                 throw HlsDownloadException(error.reason, "playlist: ${redactUrlQuery(url)}")
             }
@@ -175,9 +177,10 @@ class HlsRecordingDownloader(
         playlistUrl: String,
         sink: StreamingFileSink,
         checkpoint: HlsSegmentCheckpoint? = null,
+        onRetry: (Int, Long) -> Unit = { _, _ -> },
         onProgress: (HlsDownloadProgress) -> Unit,
     ) {
-        val media = resolvePlaylist(playlistUrl)
+        val media = resolvePlaylist(playlistUrl, onRetry)
         val total = media.segmentUrls.size
         var written = 0L
         var transferred = 0L
@@ -190,7 +193,7 @@ class HlsRecordingDownloader(
             written += bytes.size
             onProgress(HlsDownloadProgress(index + 1, total, written, media.durationSeconds, 0))
         }
-        segmentSource.fetchConcurrently(media.segmentUrls.drop(restored), concurrency) { relative, bytes ->
+        segmentSource.fetchConcurrently(media.segmentUrls.drop(restored), concurrency, onRetry) { relative, bytes ->
             val index = restored + relative
             checkpoint?.append(index, bytes)
             sink.write(bytes)
@@ -201,7 +204,13 @@ class HlsRecordingDownloader(
     }
 }
 
-internal suspend fun fetchHlsBytes(transport: SchoolHttpTransport, url: String, retryDelayMillis: Long): ByteArray {
+internal suspend fun fetchHlsBytes(
+    transport: SchoolHttpTransport,
+    url: String,
+    retryDelayMillis: Long,
+    waitBeforeRetry: suspend (Long) -> Unit = { delay(it) },
+    onRetry: (Int, Long) -> Unit = { _, _ -> },
+): ByteArray {
     var attempt = 0
     while (true) {
         attempt++
@@ -222,7 +231,10 @@ internal suspend fun fetchHlsBytes(transport: SchoolHttpTransport, url: String, 
             null
         }
         if (body != null) return body
-        if (attempt >= 3) throw HlsDownloadException(HlsDownloadFailure.NETWORK)
-        delay(retryDelayMillis * attempt)
+        // 初次失败后再重连三次：默认等待 2、4、8 秒。取消不会当成网络失败重试。
+        if (attempt >= 4) throw HlsDownloadException(HlsDownloadFailure.NETWORK)
+        val delayMillis = retryDelayMillis * (1L shl (attempt - 1))
+        onRetry(attempt, delayMillis)
+        waitBeforeRetry(delayMillis)
     }
 }

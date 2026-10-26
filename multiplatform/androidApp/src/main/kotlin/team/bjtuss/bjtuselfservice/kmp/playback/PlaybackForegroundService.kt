@@ -13,9 +13,11 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.RequiresApi
 import team.bjtuss.bjtuselfservice.kmp.MainActivity
+import team.bjtuss.bjtuselfservice.kmp.R
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackBackgroundState
 import team.bjtuss.bjtuselfservice.shared.media.PlaybackBackgroundHost
 
@@ -43,22 +45,30 @@ private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoi
  * Android 16（API 36）起这条常驻通知就是「实时动态（Live Updates）」：系统按
  * `Notification.ProgressStyle` 画进度（紧凑态是环形），并把它提升到状态栏胶囊。
  *
- * 进程被杀后任务不会恢复（与 iOS/macOS 一致），任务卡片显示失败即可。
+ * 进程被杀后停止通知；下次进入账号时从私有存储恢复记录，由用户继续。
  */
 class PlaybackForegroundService : Service() {
     /** 已经 startForeground 成功过：再次收到命令只刷新通知，不重复 startForeground。 */
     private var foregroundStarted = false
 
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+        // 先满足前台服务时限，不等下载解析或第一次进度回调。
+        promote(latestState ?: defaultState())
+        if (BuildConfigDebug.enabled) Log.d(TAG, "service created")
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val state = intent?.readState() ?: defaultState()
+        val state = latestState ?: intent?.readState() ?: defaultState()
+        if (!foregroundStarted) promote(state) else notify(buildPlaybackNotification(this, state))
+        return START_NOT_STICKY
+    }
+
+    private fun promote(state: PlaybackBackgroundState) {
         val notification = buildPlaybackNotification(this, state)
-        if (foregroundStarted) {
-            // 服务已在跑：只刷新通知。后台重复启动前台服务会被系统拒绝。
-            notify(notification)
-            return START_NOT_STICKY
-        }
         val started = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
@@ -68,10 +78,11 @@ class PlaybackForegroundService : Service() {
         }.onFailure { Log.w(TAG, "startForeground failed: ${it.javaClass.simpleName}") }.isSuccess
         foregroundStarted = started
         isRunning = started
-        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
+        if (BuildConfigDebug.enabled) Log.d(TAG, "service destroyed")
+        if (instance === this) instance = null
         foregroundStarted = false
         isRunning = false
         runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }
@@ -99,6 +110,20 @@ class PlaybackForegroundService : Service() {
         @Volatile
         var isRunning: Boolean = false
             private set
+
+        private var instance: PlaybackForegroundService? = null
+        private var latestState: PlaybackBackgroundState? = null
+
+        /** 主线程调用；正在运行时直接更新同一个通知，不再投递 startService。 */
+        fun publish(context: Context, state: PlaybackBackgroundState, startIfNeeded: Boolean) {
+            latestState = state
+            val service = instance
+            if (service != null) {
+                service.notify(buildPlaybackNotification(service, state))
+            } else if (startIfNeeded) {
+                context.startForegroundService(AndroidPlaybackBackgroundHost.newIntent(context, state))
+            }
+        }
     }
 }
 
@@ -136,7 +161,7 @@ internal fun buildPlaybackNotification(
         state.speedLabel,
     ).joinToString(" · ")
     val builder = Notification.Builder(context, PlaybackForegroundService.CHANNEL_ID)
-        .setSmallIcon(android.R.drawable.stat_sys_download)
+        .setSmallIcon(R.drawable.ic_playback_download)
         .setColor(PLAYBACK_ACCENT)
         // 标题是阶段（下载中/合成中/保存中），课节标题放副标题。
         .setContentTitle(phase)
@@ -232,12 +257,24 @@ class AndroidPlaybackBackgroundHost(private val context: Context) : PlaybackBack
     private val handler = Handler(Looper.getMainLooper())
     /** 最近一次推来的状态；用来判断结束时是不是终态（终态要多留几秒让用户看到结果）。 */
     private var lastState: PlaybackBackgroundState? = null
+    private var started = false
+    private var lastPublished: PlaybackBackgroundState? = null
+    private var lastPublishMillis = 0L
+    private val publishRunnable = Runnable { publishLatest() }
     private val stopRunnable = Runnable {
+        handler.removeCallbacks(publishRunnable)
+        started = false
+        lastPublished = null
         runCatching { context.stopService(Intent(context, PlaybackForegroundService::class.java)) }
             .onFailure { Log.w(TAG, "stopService failed: ${it.javaClass.simpleName}") }
     }
 
     override fun update(active: Boolean, state: PlaybackBackgroundState?) {
+        // 任务回调可能来自合成线程，所有生命周期判断收敛到主线程。
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post { update(active, state) }
+            return
+        }
         if (!active) {
             handler.removeCallbacks(stopRunnable)
             val last = lastState
@@ -252,34 +289,19 @@ class AndroidPlaybackBackgroundHost(private val context: Context) : PlaybackBack
         handler.removeCallbacks(stopRunnable)
         lastState = state
         val payload = state ?: return
-        val intent = newIntent(context, payload)
-        if (PlaybackForegroundService.isRunning) {
-            // 服务已在跑：不能重复启动前台服务（后台启动会被系统拒绝），
-            // 改发一条 startService，让服务收到后只刷新通知。
-            val delivered = runCatching { context.startService(intent) }
-                .onFailure { Log.w(TAG, "startService rejected: ${it.javaClass.simpleName}") }
-                .isSuccess
-            if (!delivered) {
-                // 后台连 startService 都不允许时，直接改通知，保证进度照样更新。
-                notifyDirectly(context, payload)
-            }
-            return
-        }
-        runCatching { context.startForegroundService(intent) }
-            .onFailure {
-                // 已经在后台时系统不允许再启动前台服务；任务在会话作用域里继续跑，不因此失败。
-                Log.w(TAG, "startForegroundService rejected: ${it.javaClass.simpleName}")
-            }
+        if (payload == lastPublished) return
+        val immediate = !started || payload.phaseLabel != lastPublished?.phaseLabel
+        handler.removeCallbacks(publishRunnable)
+        val remaining = (UPDATE_INTERVAL_MILLIS - (SystemClock.elapsedRealtime() - lastPublishMillis)).coerceAtLeast(0)
+        if (immediate || remaining == 0L) publishLatest() else handler.postDelayed(publishRunnable, remaining)
     }
 
-    private fun notifyDirectly(context: Context, state: PlaybackBackgroundState) {
-        val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        runCatching {
-            manager.notify(
-                PlaybackForegroundService.NOTIFICATION_ID,
-                buildPlaybackNotification(context, state),
-            )
-        }.onFailure { Log.w(TAG, "notify failed: ${it.javaClass.simpleName}") }
+    private fun publishLatest() {
+        val state = lastState ?: return
+        val shouldStart = !started
+        runCatching { PlaybackForegroundService.publish(context, state, shouldStart) }
+            .onSuccess { started = true; lastPublished = state; lastPublishMillis = SystemClock.elapsedRealtime() }
+            .onFailure { Log.w(TAG, "publish failed: ${it.javaClass.simpleName}") }
     }
 
     companion object {
@@ -295,6 +317,12 @@ class AndroidPlaybackBackgroundHost(private val context: Context) : PlaybackBack
                 putExtra(PlaybackForegroundService.EXTRA_SPEED, state.speedLabel)
             }
     }
+}
+
+private const val UPDATE_INTERVAL_MILLIS = 2_000L
+
+private object BuildConfigDebug {
+    val enabled: Boolean get() = team.bjtuss.bjtuselfservice.kmp.BuildConfig.DEBUG
 }
 
 /** 终态阶段：通知先留着让用户看到结果，再撤掉。 */

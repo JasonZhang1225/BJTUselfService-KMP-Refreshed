@@ -49,7 +49,9 @@ import team.bjtuss.bjtuselfservice.shared.files.safeExportPathSegment
 
 class AndroidHomeworkFileGateway(
     private val activity: ComponentActivity,
-) : HomeworkFileGateway, CoursewareDirectoryGateway, DefaultLifecycleObserver {
+) : HomeworkFileGateway, CoursewareDirectoryGateway, DefaultLifecycleObserver,
+    team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryProvider {
+    override val playbackRecovery = team.bjtuss.bjtuselfservice.kmp.playback.AndroidPlaybackRecovery(activity.applicationContext)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var pickContinuation: CancellableContinuation<HomeworkFilePickResult>? = null
     private var saveContinuation: CancellableContinuation<HomeworkFileSaveResult>? = null
@@ -258,6 +260,8 @@ class AndroidHomeworkFileGateway(
         } ?: return StreamingDestinationResult.Cancelled
         val resolver = activity.applicationContext.contentResolver
         return try {
+            // CreateDocument 的授权要持久化，进程退出后才能重新打开同一保存目标。
+            runCatching { resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
             val output = withContext(Dispatchers.IO) { resolver.openOutputStream(uri, "wt") }
             if (output == null) {
                 withContext(Dispatchers.IO) { runCatching { DocumentsContract.deleteDocument(resolver, uri) } }
@@ -463,16 +467,21 @@ class AndroidHomeworkFileGateway(
     }
 }
 
-private class ContentStreamingDestination(
+internal class ContentStreamingDestination(
     private val resolver: android.content.ContentResolver,
     private val uri: Uri,
     private var output: java.io.OutputStream?,
     override val displayName: String,
 ) : StreamingDestination {
+    override val recoveryToken: String get() = uri.toString()
+    private var finished = false
     override suspend fun write(bytes: ByteArray) {
-        val stream = output ?: throw StreamingSinkIoException()
         try {
-            withContext(Dispatchers.IO) { stream.write(bytes) }
+            withContext(Dispatchers.IO) {
+                if (finished) throw StreamingSinkIoException()
+                val stream = output ?: resolver.openOutputStream(uri, "wt")?.also { output = it } ?: throw StreamingSinkIoException()
+                stream.write(bytes)
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -485,6 +494,8 @@ private class ContentStreamingDestination(
             output?.flush()
             output?.close()
             output = null
+            finished = true
+            runCatching { resolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
             HomeworkFileSaveResult.Saved
         } catch (_: Exception) {
             HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
@@ -495,8 +506,10 @@ private class ContentStreamingDestination(
         withContext(NonCancellable + Dispatchers.IO) {
             runCatching { output?.close() }
             output = null
+            finished = true
             runCatching { DocumentsContract.deleteDocument(resolver, uri) }
                 .onFailure { android.util.Log.w("AndroidFileGateway", "deleteDocument failed: ${it.javaClass.simpleName}: ${it.message}") }
+            runCatching { resolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
         }
     }
 }

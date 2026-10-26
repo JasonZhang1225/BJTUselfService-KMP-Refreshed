@@ -3,7 +3,8 @@
         android:name="${applicationId}.permission.SECURITY_SMOKE"
         android:protectionLevel="signature" />
     <application>
-        <activity android:name=".playback.PlaybackVisualTestActivity" android:exported="true" android:excludeFromRecents="true" />
+        <activity android:name=".playback.PlaybackVisualTestActivity" android:exported="true" android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|uiMode" />
         <activity
             android:name=".SecuritySmokeActivity"
             android:exported="true"
