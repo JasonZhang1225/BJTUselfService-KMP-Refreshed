@@ -1,5 +1,7 @@
 # BJTUselfService 实时工作记忆
 
+> 2026-10-26 当前分支 `fix/ios-dynamic-island-clipping`，基于最新 `origin/main@4a9c54ec`；灵动岛展开态裁切修复待 PR 审核。
+
 > 当前分支：`main`；作业详情全平台 Markdown 操作提交 `62d2031e` 已按所有者本次明确授权直接推送（无 PR、无强推）；远端旧诊断分支已删除，实际远端只保留 `main`。实现与验证见 `history_full.md` 末尾。
 > Windows 本机既有 MSI 记录（保留接手前未提交修改）：`C:\Users\zjg\Downloads\交大自由行 KMP-1.8.6.msi`（源码 `ab3eac6f` / 1.8.6-Beta2 / Build 43，87678976 字节，SHA256 `9DD504400EAF0968124A1E32C2347F5473C59258CFF8D84AE6575FED96E42645`），ProductCode=`{44161E10-B9DC-4B9F-B257-02DE4C744FE3}`，UpgradeCode 保留；已覆盖上一份 `6f4b07d8` 包，未替换 Program Files 安装版。
 
@@ -13,6 +15,8 @@
 > 已完成工作的细节见 `history_full.md` 末尾日志。
 
 ## 进行中
+
+- 灵动岛展开态裁切修复（2026-10-26）：收紧字号与行距、增加圆角留白，限制中文分钟倒计时宽度并移除向下延伸与无限高度；保留锁屏/通知栏及手表排版。新增 Xcode 展开态/锁屏预览（即将、正在上课），CI 单独编译小组件 Swift。`git diff --check` 通过；本机 Linux 无 Xcode/Swift，未编译及视觉验证，需 PR CI 与 Mac Xcode Canvas/真机确认。
 
 - 作业列表卡片统一（分支 `claude/affectionate-bell-7hpm21`，2026-10-25，未合入）：课程平台／CITEL／物理在线卡片统一为 类型、开始、截止（`2026年10月14日 00:00 · 周三`，开始 00:00 原样、截止 00:00 仍显示前一天 24:00，缺失为“未指定”）、评分（有成绩显示成绩，已提交未出分为“待评分”，未提交为“未公布成绩”）；提交人数仅课程平台保留；CITEL 编程题的“题目分值”卡片标签改为“评分”，折扣按开始时间格式显示。实现：`domain/time/DeadlineText.kt` 的 `assignment*Text`、`domain/assignment/AssignmentGrade.kt`。验证：`./gradlew :shared:desktopTest` 1119 项，仅 `DesktopAgentIntegrationTest.installWritesWorkingScriptAndSkill`（退出码 127，容器缺命令，与改动无关）失败；`:androidApp:compileDebugKotlin :windowsApp:compileKotlinWindows` 成功；`AssignmentVisualTest` 离屏渲染确认三平台卡片文字。物理在线卡片的“待评分”无法区分已出分，因为卡片没有批改成绩数据（详情里才有）。
 - CITEL 利好变更补绿（分支 `claude/affectionate-bell-7hpm21`，2026-10-25，未合入）：`HomeChangeField.isFavorableChange()` 的“状态”只认中文“未提交/未完成”，漏掉 CITEL 原始英文状态（No attempt → Submitted for grading）与空白/“未填写”/评测错误 → AC。现改为“原状态未做（空白、未填写、No attempt、WA 等）且新状态为已提交/已完成/Submitted for grading/AC 才绿”。验证：`./gradlew :shared:desktopTest --tests '*Home*' --tests '*Change*' --tests '*Citel*'` 通过（210 项 0 失败，含新增 `citelStatusFromUnattemptedOrWrongToSubmittedOrAcceptedIsFavorable`），`:androidApp:compileDebugKotlin :windowsApp:compileKotlinWindows` 成功；iOS/macOS 原生未编译，界面截图未在本机复核。

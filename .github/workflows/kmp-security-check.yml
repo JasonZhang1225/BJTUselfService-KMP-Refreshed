@@ -136,6 +136,14 @@ jobs:
               grep -Eq '^[[:space:]]*IPHONEOS_DEPLOYMENT_TARGET = 18\.0$'
           done
 
+      - name: Build iOS widget extension
+        # Widget Swift code is not compiled by the shared Kotlin tests.
+        # This builds only the extension; no simulator install or Keychain access.
+        run: |
+          xcodebuild -project iosApp/iosApp.xcodeproj -target CourseScheduleWidget \
+            -configuration Debug -sdk iphonesimulator \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+
       - name: Compile desktop test sources
         run: |
           chmod +x ./gradlew
