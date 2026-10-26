@@ -178,7 +178,9 @@ class SecurityReleaseConfigTest {
     fun debugSecuritySmokeActivityRequiresSignaturePermission() {
         val manifest = root.resolve("multiplatform/androidApp/src/debug/AndroidManifest.xml").readText()
         assertTrue("android:protectionLevel=\"signature\"" in manifest)
-        assertTrue("android:permission=\"team.bjtuss.bjtuselfservice.kmp.permission.SECURITY_SMOKE\"" in manifest)
+        val permission = "${'$'}{applicationId}.permission.SECURITY_SMOKE"
+        assertTrue("android:name=\"$permission\"" in manifest)
+        assertTrue("android:permission=\"$permission\"" in manifest)
     }
 
     @Test

@@ -8,6 +8,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -16,6 +22,7 @@ import kotlin.time.ExperimentalTime
 import team.bjtuss.bjtuselfservice.shared.data.courseware.HlsDownloadException
 import team.bjtuss.bjtuselfservice.shared.data.courseware.HlsDownloadFailure
 import team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader
+import team.bjtuss.bjtuselfservice.shared.data.courseware.HlsSegmentCheckpoint
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackCompositeQuality
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackDetail
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStream
@@ -72,6 +79,7 @@ data class PlaybackTask(
     val bytesTotal: Long? = null,
     /** 当前下载速度（字节/秒）；还没有速度时为 null。 */
     val bytesPerSecond: Long? = null,
+    val canResume: Boolean = false,
 ) {
     val isActive: Boolean get() = phase in setOf(PlaybackTaskPhase.QUEUED, PlaybackTaskPhase.DOWNLOADING, PlaybackTaskPhase.COMPOSITING, PlaybackTaskPhase.SAVING)
 
@@ -85,7 +93,7 @@ data class PlaybackTask(
 
     /** “9.1 MB/s”。 */
     val speedLabel: String?
-        get() = bytesPerSecond?.takeIf { it > 0 }?.let { formatSpeed(it) }
+        get() = bytesPerSecond?.let { formatSpeed(it) }
 }
 
 sealed interface PlaybackEnqueueResult {
@@ -111,11 +119,30 @@ class PlaybackTaskManager(
     private val runMutex = Mutex()
     private val jobs = mutableMapOf<String, Job>()
     private var nextId = 0
+    private class Request(
+        val streams: List<PlaybackStream>, val composite: Boolean,
+        val destinations: List<StreamingDestination>, val quality: PlaybackCompositeQuality,
+    ) {
+        val committed = BooleanArray(destinations.size)
+        val checkpoints = mutableMapOf<Int, HlsSegmentCheckpoint>()
+        val finished = mutableMapOf<Int, Pair<Long, Double>>()
+    }
+    private val requests = mutableMapOf<String, Request>()
 
     val canComposite: Boolean get() = compositor().isAvailable
 
     init {
         scope.launch { runCatching { MediaWorkDirectory.purgeStale() } }
+        scope.launch {
+            try { awaitCancellation() } finally {
+                withContext(NonCancellable) {
+                    jobs.values.toList().forEach { it.cancelAndJoin() }
+                    // 退出账号时，已经失败并等待继续的任务也要关闭目标与清理分片。
+                    requests.toMap().forEach { (id, request) -> discard(id, request) }
+                    requests.clear()
+                }
+            }
+        }
     }
 
     /** 选位置（会弹系统面板）后入队。合成时只要一个输出文件，否则每一路一个。 */
@@ -160,7 +187,8 @@ class PlaybackTaskManager(
             outputs = destinations.map { it.displayName },
         )
         mutableTasks.value = listOf(task) + mutableTasks.value
-        jobs[id] = scope.launch { run(id, ordered, doComposite, destinations, quality) }
+        requests[id] = Request(ordered, doComposite, destinations, quality)
+        start(id)
         refreshBackground()
         return PlaybackEnqueueResult.Started(id)
     }
@@ -171,22 +199,47 @@ class PlaybackTaskManager(
 
     fun dismiss(id: String) {
         if (mutableTasks.value.firstOrNull { it.id == id }?.isActive == true) return
+        requests.remove(id)?.let { request -> scope.launch { discard(id, request) } }
         mutableTasks.value = mutableTasks.value.filterNot { it.id == id }
     }
 
     fun clearFinished() {
-        mutableTasks.value = mutableTasks.value.filter { it.isActive }
+        mutableTasks.value.filterNot { it.isActive }.forEach { dismiss(it.id) }
+    }
+
+    /** 网络失败后沿用保存位置与分片，不重新选择或重下已完成的画面。 */
+    fun retry(id: String) {
+        if (mutableTasks.value.firstOrNull { it.id == id }?.canResume != true) return
+        update(id) { it.copy(phase = PlaybackTaskPhase.QUEUED, canResume = false, message = null, bytesPerSecond = null) }
+        start(id)
+    }
+
+    private fun start(id: String) {
+        val request = requests[id] ?: return
+        val job = scope.launch(start = CoroutineStart.LAZY) { run(id, request) }
+        jobs[id] = job
+        job.start()
+    }
+
+    private suspend fun discard(id: String, request: Request) = withContext(NonCancellable) {
+        request.destinations.forEachIndexed { index, destination ->
+            if (!request.committed[index]) runCatching { destination.abort() }
+        }
+        runCatching { MediaWorkDirectory.forTask(id).deleteAll() }
+        MediaWorkDirectory.markFinished(id)
     }
 
     private suspend fun run(
         id: String,
-        streams: List<PlaybackStream>,
-        composite: Boolean,
-        destinations: List<StreamingDestination>,
-        quality: PlaybackCompositeQuality,
+        request: Request,
     ) {
+        val streams = request.streams
+        val composite = request.composite
+        val destinations = request.destinations
+        val quality = request.quality
         val work = MediaWorkDirectory.forTask(id)
-        val committed = BooleanArray(destinations.size)
+        val committed = request.committed
+        var resumable = false
         try {
             runMutex.withLock {
                 // 先登记再落目录：清理残余目录时不会把这个正在跑的任务目录删掉。
@@ -198,7 +251,6 @@ class PlaybackTaskManager(
                 // 体积与速度：已下载字节、各路预计总大小、当前速度。
                 var downloadedBytes = 0L
                 var estimatedTotalBytes = 0L
-                var bytesPerSecond = 0L
                 var durationSeconds = 0.0
                 var finishedStreamsBytes = 0L
                 var finishedStreamsCount = 0
@@ -206,9 +258,21 @@ class PlaybackTaskManager(
                     val base = perStream * index
                     val label = stream.kind.label
                     val which = if (streams.size > 1) "（第 ${index + 1}/${streams.size} 路）" else ""
-                    update(id) { it.copy(phase = PlaybackTaskPhase.DOWNLOADING, step = "下载$label$which", progress = base) }
+                    request.finished[index]?.let { (bytes, duration) ->
+                        finishedStreamsBytes += bytes
+                        finishedStreamsCount++
+                        durationSeconds = duration
+                    }
+                    if (index in request.finished) {
+                        if (composite) remuxed += work.file("s$index.mp4").toString()
+                        continue
+                    }
+                    update(id) { it.copy(phase = PlaybackTaskPhase.DOWNLOADING, step = "下载$label$which", progress = maxOf(it.progress ?: base, base)) }
                     val dataPath = work.file("s$index.data")
                     var streamBytes = 0L
+                    val checkpoint = request.checkpoints.getOrPut(index) {
+                        HlsSegmentCheckpoint(MediaWorkDirectory(work.file("segments-$index")))
+                    }
                     val header = AppendFile(dataPath).use { data ->
                         val pending = ByteArrayBuilder()
                         val remuxer = TsToMp4Remuxer { pending.append(it) }
@@ -218,10 +282,21 @@ class PlaybackTaskManager(
                                 pending.clear()
                             }
                         }
+                        coroutineScope {
+                        val speed = DownloadSpeedMeter()
+                        var previousTransferred = 0L
+                        val ticker = launch {
+                            while (true) {
+                                delay(500)
+                                val sampled = speed.sample()
+                                update(id) { it.copy(bytesPerSecond = sampled) }
+                            }
+                        }
+                        try {
                         downloader.download(stream.hlsUrl, StreamingFileSink { segment ->
                             remuxer.feed(segment)
                             flush()
-                        }) { progress ->
+                        }, checkpoint) { progress ->
                             // 下载占这一路的 90%，剩下 10% 是写出 MP4。
                             val fraction = if (progress.totalSegments > 0) {
                                 progress.completedSegments.toFloat() / progress.totalSegments
@@ -231,34 +306,24 @@ class PlaybackTaskManager(
                             streamBytes = progress.writtenBytes
                             downloadedBytes = finishedStreamsBytes + streamBytes
                             durationSeconds = progress.durationSeconds
-                            // 速度按“已下载字节 ÷ 这些字节对应的录像时长”算：直接用字节÷墙钟时间会被
-                            // 首个分片的突发下载放大（2.5 MB 一下到手，算出 6 MB/s，实际整路只有 250 KB/s）。
-                            val segmentSeconds = if (progress.totalSegments > 0) {
-                                progress.durationSeconds / progress.totalSegments
-                            } else {
-                                0.0
-                            }
-                            val mediaSeconds = segmentSeconds * progress.completedSegments
-                            bytesPerSecond = if (mediaSeconds > 0.5) {
-                                (streamBytes / mediaSeconds).toLong()
-                            } else {
-                                0L
-                            }
-                            // 总大小 = 已完成各路的实际字节 + 剩下各路按当前速率×录像时长估算。
-                            estimatedTotalBytes = if (bytesPerSecond > 0 && durationSeconds > 0) {
+                            speed.add(progress.transferredBytes - previousTransferred)
+                            previousTransferred = progress.transferredBytes
+                            // 总量估计仍按分片完成比例，与网络传输速度分开计算。
+                            estimatedTotalBytes = if (fraction > 0) {
                                 finishedStreamsBytes +
-                                    (streams.size - finishedStreamsCount) * (bytesPerSecond * durationSeconds).toLong()
+                                    (streams.size - finishedStreamsCount) * (streamBytes / fraction).toLong()
                             } else {
                                 0L
                             }
                             update(id) {
                                 it.copy(
-                                    progress = base + perStream * 0.9f * fraction,
-                                    bytesDownloaded = downloadedBytes,
+                                    progress = maxOf(it.progress ?: 0f, base + perStream * 0.9f * fraction),
+                                    bytesDownloaded = maxOf(it.bytesDownloaded, downloadedBytes),
                                     bytesTotal = estimatedTotalBytes.takeIf { it > 0 },
-                                    bytesPerSecond = bytesPerSecond,
                                 )
                             }
+                        }
+                        } finally { ticker.cancel() }
                         }
                         remuxer.finish()
                         flush()
@@ -283,7 +348,9 @@ class PlaybackTaskManager(
                         committed[index] = true
                     }
                     runCatching { kotlinx.io.files.SystemFileSystem.delete(dataPath, mustExist = false) }
-                    update(id) { it.copy(progress = base + perStream) }
+                    request.finished[index] = streamBytes to durationSeconds
+                    checkpoint.clear()
+                    update(id) { it.copy(progress = base + perStream, bytesPerSecond = null) }
                 }
                 if (composite) {
                     // 合成输出的体积由码率和录像时长决定，下载阶段估的是源文件大小，这里换成输出估计。
@@ -332,13 +399,18 @@ class PlaybackTaskManager(
             update(id) { it.copy(phase = PlaybackTaskPhase.CANCELLED, notice = null, message = "已取消，未完成的文件已删除。") }
             throw error
         } catch (error: Exception) {
-            update(id) { it.copy(phase = PlaybackTaskPhase.FAILED, notice = null, message = failureMessage(error)) }
+            resumable = error is HlsDownloadException && error.reason == HlsDownloadFailure.NETWORK
+            update(id) { it.copy(phase = PlaybackTaskPhase.FAILED, notice = null, bytesPerSecond = null,
+                message = if (resumable) "连接中断，已保留下载分片。恢复网络后点“继续下载”。" else failureMessage(error)) }
         } finally {
             withContext(NonCancellable) {
-                destinations.forEachIndexed { index, destination -> if (!committed[index]) runCatching { destination.abort() } }
-                runCatching { work.deleteAll() }
-                runCatching { MediaWorkDirectory.markFinished(id) }
                 jobs.remove(id)
+                if (!resumable) {
+                    requests.remove(id)
+                    discard(id, request)
+                } else {
+                    update(id) { it.copy(canResume = true) }
+                }
                 refreshBackground()
             }
         }
@@ -363,8 +435,7 @@ class PlaybackTaskManager(
     }
 
     private fun update(id: String, transform: (PlaybackTask) -> PlaybackTask) {
-        val before = mutableTasks.value
-        mutableTasks.value = before.map { if (it.id == id) transform(it) else it }
+        mutableTasks.update { before -> before.map { if (it.id == id) transform(it) else it } }
         refreshBackground()
     }
 

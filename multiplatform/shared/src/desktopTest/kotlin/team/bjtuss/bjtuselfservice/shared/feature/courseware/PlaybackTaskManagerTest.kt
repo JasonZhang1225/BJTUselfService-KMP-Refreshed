@@ -36,7 +36,9 @@ class PlaybackTaskManagerTest {
     private val transport = object : SchoolHttpTransport {
         val bodies = mutableMapOf<String, ByteArray>()
         var segmentDelayMillis = 0L
+        val requested = java.util.Collections.synchronizedList(mutableListOf<String>())
         override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse {
+            requested += request.url
             if (request.url.endsWith(".ts")) delay(segmentDelayMillis)
             val body = bodies[request.url]
             return SchoolHttpResponse(if (body == null) 404 else 200, request.url, body = body ?: ByteArray(0))
@@ -103,6 +105,70 @@ class PlaybackTaskManagerTest {
             delay(20)
         }
         @Suppress("UNREACHABLE_CODE") error("unreachable")
+    }
+
+    @Test
+    fun networkFailureCanResumeCachedSegmentsAndThenSaveAValidMp4() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val gateway = MemoryGateway()
+            val missing = "${base}tea/seg-1.ts"
+            val saved = transport.bodies.remove(missing)!!
+            val downloader = HlsRecordingDownloader(transport, retryDelayMillis = 0, concurrency = 1)
+            val manager = PlaybackTaskManager(scope, downloader, { RecordingCompositor() }, { null })
+            val detail = detail()
+            val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(
+                detail, detail.streams, "测试课程", composite = true, gateway = gateway,
+            )).taskId
+            withTimeout(5000) { while (manager.tasks.value.first { it.id == id }.canResume != true) delay(10) }
+            assertEquals(PlaybackTaskPhase.FAILED, manager.tasks.value.first().phase)
+            assertTrue(gateway.aborted.isEmpty(), "可继续的失败不能删除保存目标")
+            val completedUrl = "${base}tea/seg-0.ts"
+            assertEquals(1, transport.requested.count { it == completedUrl })
+            transport.bodies[missing] = saved
+            manager.retry(id)
+            assertEquals(PlaybackTaskPhase.DONE, manager.awaitFinished(id).phase)
+            assertEquals(1, transport.requested.count { it == completedUrl }, "已经下载的片不能再请求")
+            assertEquals(1, gateway.saved.size)
+        } finally { scope.cancel() }
+    }
+
+    @Test
+    fun resumingSecondStreamDoesNotRedownloadOrSaveTheFirstStreamTwice() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val gateway = MemoryGateway()
+            val missing = "${base}vga/seg-1.ts"
+            val saved = transport.bodies.remove(missing)!!
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0, concurrency = 1), { RecordingCompositor() }, { null })
+            val detail = detail()
+            val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, detail.streams, "测试课程", false, gateway)).taskId
+            withTimeout(5000) { while (!manager.tasks.value.first().canResume) delay(10) }
+            assertEquals(1, gateway.saved.size)
+            transport.bodies[missing] = saved
+            manager.retry(id)
+            assertEquals(PlaybackTaskPhase.DONE, manager.awaitFinished(id).phase)
+            assertEquals(2, gateway.saved.size)
+            assertEquals(1, transport.requested.count { it == "${base}tea/seg-0.ts" })
+            assertEquals(1, transport.requested.count { it == "${base}tea/seg-1.ts" })
+        } finally { scope.cancel() }
+    }
+
+    @Test
+    fun dismissingResumableFailureAbortsThePendingDestination() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val gateway = MemoryGateway()
+            transport.bodies.remove("${base}tea/seg-1.ts")
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0, concurrency = 1), { RecordingCompositor() }, { null })
+            val detail = detail()
+            val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, detail.streams, "测试课程", true, gateway)).taskId
+            withTimeout(5000) { while (!manager.tasks.value.first().canResume) delay(10) }
+            manager.dismiss(id)
+            withTimeout(5000) { while (gateway.aborted.isEmpty()) delay(10) }
+            assertEquals(1, gateway.aborted.size)
+            assertTrue(manager.tasks.value.isEmpty())
+        } finally { scope.cancel() }
     }
 
     @Test

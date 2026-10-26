@@ -14,7 +14,8 @@ import kotlinx.io.files.SystemTemporaryDirectory
 
 /**
  * 回放任务的临时工作目录（系统临时目录下，Android 即应用 cache 目录）。
- * 中间文件（各路 MP4、合成结果）只放这里；任务结束（成功、失败、取消）都会整目录删除。
+ * 中间文件与分片断点只放这里；成功、取消或移除时删除。
+ * 网络失败保留至本次会话重试；进程重启后的残余由 purgeStale 清理。
  */
 class MediaWorkDirectory(val path: Path) {
     fun file(name: String): Path = Path(path, name)

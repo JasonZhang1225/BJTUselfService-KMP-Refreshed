@@ -38,7 +38,7 @@ private class PlaybackNavigationDelegate : NSObject(), WKNavigationDelegateProto
 
 @OptIn(ExperimentalForeignApi::class)
 @Composable
-actual fun PlaybackPlayerView(html: String, baseUrl: String, modifier: Modifier) {
+actual fun PlaybackPlayerView(html: String, baseUrl: String, modifier: Modifier, streams: List<team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStream>) {
     val delegate = androidx.compose.runtime.remember { PlaybackNavigationDelegate() }
     UIKitView(
         modifier = modifier,

@@ -1,9 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.data.courseware
 
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.launch
 
 /**
  * 并发下载的公共调度：录播分片（HLS）和单个大文件（Range）共用同一套「有上限的并发 + 按序交付」。
@@ -45,33 +43,20 @@ internal suspend fun <T : Any> fetchInParallelOrdered(
         return
     }
     coroutineScope {
-        // 待取任务的队列：索引很小，全部排队也不占内存；真正限流的是 worker 数量。
-        val queue = Channel<Int>(capacity = count)
-        // 取回结果只留 1 格：worker 交付不出去就会卡在这里，不会再去取新的任务（这就是背压）。
-        val ready = Channel<IndexedValue<T>>(capacity = 1)
-        for (index in 0 until count) queue.send(index)
-        queue.close()
-        val workers = List(limit) {
-            launch {
-                for (index in queue) {
-                    val value = fetch(index)
-                    ready.send(IndexedValue(index, value))
-                }
-            }
+        // 滑动窗口：只有最早的一片已交付，才启动下一片。
+        // 仅限制 worker / Channel 容量仍会让接收端的乱序 Map 无界增长。
+        val window = ArrayDeque<Pair<Int, kotlinx.coroutines.Deferred<T>>>()
+        var scheduled = 0
+        repeat(limit) {
+            val index = scheduled++
+            window.addLast(index to async { fetch(index) })
         }
-        launch {
-            workers.joinAll()
-            ready.close()
-        }
-        // 乱序到达的结果先攒着，等齐了再按索引交付。
-        val pending = HashMap<Int, T>()
-        var next = 0
-        for (item in ready) {
-            pending[item.index] = item.value
-            while (true) {
-                val value = pending.remove(next) ?: break
-                onResult(next, value)
-                next++
+        while (window.isNotEmpty()) {
+            val (index, result) = window.removeFirst()
+            onResult(index, result.await())
+            if (scheduled < count) {
+                val next = scheduled++
+                window.addLast(next to async { fetch(next) })
             }
         }
     }

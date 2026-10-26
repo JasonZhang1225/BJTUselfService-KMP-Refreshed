@@ -30,7 +30,7 @@ actual val playbackPlaysInApp: Boolean = false
 
 /** 桌面端不内嵌浏览器内核（见 SchoolWebView.desktop），只在调用方误用时占位。 */
 @Composable
-actual fun PlaybackPlayerView(html: String, baseUrl: String, modifier: Modifier) {
+actual fun PlaybackPlayerView(html: String, baseUrl: String, modifier: Modifier, streams: List<team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStream>) {
     Box(modifier)
 }
 

@@ -442,6 +442,7 @@ private fun PlaybackStreamChooser(
         PlaybackPlayerView(
             html = html,
             baseUrl = originOf(current.first().hlsUrl),
+            streams = current,
             // 竖屏手机两路上下排，需要更高的区域；横屏/平板会自动改成并排。
             modifier = Modifier.fillMaxWidth().height(if (current.size > 1) 560.dp else 360.dp),
         )
@@ -733,7 +734,7 @@ private fun PlaybackTaskProgress(task: PlaybackTask) {
 
 /** “下载任务”页：每个任务的阶段、进度、结果，可取消或移除。 */
 @Composable
-private fun PlaybackTasksPage(tasks: List<PlaybackTask>, manager: PlaybackTaskManager, modifier: Modifier) {
+fun PlaybackTasksPage(tasks: List<PlaybackTask>, manager: PlaybackTaskManager, modifier: Modifier) {
     val listState = rememberLazyListState()
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -843,6 +844,7 @@ private fun PlaybackTaskCard(task: PlaybackTask, manager: PlaybackTaskManager) {
                 if (task.isActive) {
                     TextButton(onClick = { manager.cancel(task.id) }) { Text("取消") }
                 } else {
+                    if (task.canResume) TextButton(onClick = { manager.retry(task.id) }) { Text("继续下载") }
                     TextButton(onClick = { manager.dismiss(task.id) }) { Text("移除") }
                 }
             }

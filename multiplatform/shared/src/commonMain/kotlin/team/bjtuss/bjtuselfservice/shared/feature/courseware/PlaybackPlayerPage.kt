@@ -10,7 +10,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStream
  * 学校网页播放器把“教师画面”和“屏幕/课件”两路 HLS 并排同步播放；系统播放器一次只能放一路，
  * 只放屏幕那一路就会丢掉左边的教室画面。这里用两个原生 `<video>` 复刻：第一路为主时钟，
  * 第二路跟随（偏差超过 0.3 秒就对齐）；“声音”切换哪一路出声；“画面”切换并排/只看某一路。
- * iOS WKWebView、Android WebView、Safari 与 Chrome/Edge 都能原生播放 HLS。
+ * iOS WKWebView、Safari 与 Chrome/Edge 使用此页；Android 使用独立的系统 MediaPlayer。
  */
 fun buildPlaybackPlayerHtml(detail: PlaybackDetail, streams: List<PlaybackStream> = detail.defaultStreams): String {
     val safeStreams = streams.filter { isSchoolPlaybackStreamUrl(it.hlsUrl) }.take(2)

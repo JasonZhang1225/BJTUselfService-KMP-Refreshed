@@ -40,6 +40,8 @@ data class HlsDownloadProgress(
     val totalSegments: Int,
     val writtenBytes: Long,
     val durationSeconds: Double,
+    /** 本次调用实际从网络取回的字节，不含重放的断点缓存。 */
+    val transferredBytes: Long = writtenBytes,
 )
 
 /**
@@ -172,16 +174,29 @@ class HlsRecordingDownloader(
     suspend fun download(
         playlistUrl: String,
         sink: StreamingFileSink,
+        checkpoint: HlsSegmentCheckpoint? = null,
         onProgress: (HlsDownloadProgress) -> Unit,
     ) {
         val media = resolvePlaylist(playlistUrl)
         val total = media.segmentUrls.size
         var written = 0L
+        var transferred = 0L
+        checkpoint?.prepare(media.segmentUrls)
         onProgress(HlsDownloadProgress(0, total, 0, media.durationSeconds))
-        segmentSource.fetchConcurrently(media.segmentUrls, concurrency) { index, bytes ->
+        val restored = checkpoint?.completed ?: 0
+        repeat(restored) { index ->
+            val bytes = checkpoint!!.read(index)
             sink.write(bytes)
             written += bytes.size
-            onProgress(HlsDownloadProgress(index + 1, total, written, media.durationSeconds))
+            onProgress(HlsDownloadProgress(index + 1, total, written, media.durationSeconds, 0))
+        }
+        segmentSource.fetchConcurrently(media.segmentUrls.drop(restored), concurrency) { relative, bytes ->
+            val index = restored + relative
+            checkpoint?.append(index, bytes)
+            sink.write(bytes)
+            written += bytes.size
+            transferred += bytes.size
+            onProgress(HlsDownloadProgress(index + 1, total, written, media.durationSeconds, transferred))
         }
     }
 }

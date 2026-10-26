@@ -24,6 +24,24 @@ class HlsParallelDownloadTest {
     private val base = "https://lmt6.bjtu.edu.cn:8880/vod11/_definst_//a/b.mp4/"
 
     @Test
+    fun stalledFirstSegmentCannotAccumulateAnEntireRecording() = runBlocking {
+        val first = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val started = mutableListOf<Int>()
+        val job = launch {
+            fetchInParallelOrdered(1000, 4, { index ->
+                started += index
+                if (index == 0) first.await()
+                index
+            }) { _, _ -> }
+        }
+        delay(100)
+        assertEquals(listOf(0, 1, 2, 3), started, "第 1 片卡住时只能预取窗口内的 4 片")
+        first.complete(Unit)
+        job.join()
+        assertEquals(1000, started.size)
+    }
+
+    @Test
     fun parallelFetchWritesTheSameBytesAndProgressAsSerial() = runBlocking {
         val count = 12
         val bodies = (0 until count).associate { index -> "$base/seg-$index.ts" to segmentBody(index) }
