@@ -1,10 +1,41 @@
 # BJTUselfService 实时工作记忆
 
-> 2026-10-26：当前分支 `feat/courseware-fallback-playback`。PR #69 已合入此分支，合并提交 `e0e8fa9a`；包含既有 PR #68、安卓修复 `e9a457f4`、iOS/全平台全屏与二级页修复 `358601c7`。源码为 `1.8.6-KMP` / Build 44，iOS 最低 18.0；当前功能分支尚未合入 main。
+> 2026-10-27：分支 `feat/courseware-fallback-playback`，本轮起始同步基线 `6d0609b5`（PR #70），本轮安卓源码已按验收结果提交为 `b05426ec`、`f1f06c79`、`51ad5b3c`、`aae42176`，尚未推送；功能分支未合入 main。源码仍为 `1.8.6-KMP` / Build44，iOS最低18.0。
 >
-> 回放修复代码与相关 CI 已完成，真机验收仍有边界：安卓整节下载合成由用户下午继续检查，尚未收到完整输出结果；iOS App 的实时活动/原生返回/全屏，以及桌面全屏的实际界面尚未验收。不能把编译、短样本或 DOM fixture 当成整节真机成功。
+> 用户持续目标：先完成安卓完整验收并分批少量提交，再做 Windows AMD/NVIDIA/Intel 硬件加速和稳定下载合成。安卓三个验收目标已通过，实测不暂停总耗时约16分15秒，9–10分钟性能目标未达到。接下来进入 Windows；不能把安卓完成当成整个持续目标完成。
 
-## 进行中：CITEL 折扣时间配色与考试 sheet 测高（分支 `claude/awesome-mendel-s7k46w` → PR 到 `feat/courseware-fallback-playback`）
+## 进行中：安卓修复已验收并提交，待功能分支合主干
+
+- `b05426ec`：共享渐进下载接口、TS压缩帧/配置解析与AAC处理；两路各2个分片连接，总并发仍4，无新增媒体依赖。
+- `f1f06c79`：Android两路硬件解码并行、提前一帧，与GL绘制/硬件编码重叠。平板实测为两个 `c2.qti.avc.decoder` 和 `c2.qti.avc.encoder`。此前 `eglSwapInterval(0)` 启用异步队列导致快送时丢帧，已改回1保留编码背压；每段及最终强校验提交/输出帧数。压缩帧和定长索引落盘，不保留整节索引对象；约60–70秒媒体内容提交一个成品段，重启只重做当前未提交段，最终无损整理。旧小MP4和直接MediaDataSource原型已清理。
+- `51ad5b3c`：非用户作用域取消保留PAUSED和保存位置，明确取消/退出账号才清理；历史加载取消不覆盖旧记录，立即暂停也执行收尾。增加暂停/继续、下载/合成/整理/保存独立进度、20秒时间常数的平滑ETA。整理阶段可暂停，继续复用完整编码结果；保存失败可只重做整理/复制。真实AppDataGraph关闭、重建会话仍复用应用执行器的回归测试已过。
+- `aae42176`：Android应用按账号持有唯一执行器、独立公开媒体transport、applicationContext和URI；页面/会话重建不替换下载执行器。明确退出账号/清除数据先等待任务停止写盘。debug独立入口支持实机完整管线、后台返回、重建、断网、覆盖安装和恢复；仅测试包，不读取学校凭据。
+
+### 整节实机验收证据
+
+- 设备：小米平板8 Pro（`6c5a737e`、Android17），独立 `.playbacktest` debug包，原App未替换。无线ADB `192.168.10.2:36171` 已授权，已换AC充电器，电量回升；后续显式指定无线序列号，不能误操作模拟器或原App。
+- 恢复验收 `t1793028955283-0`：10月26日23:35:55→23:51:17 DONE。每路703片，总源3,853,388,624字节；成片 `Downloads/android-goal-final-20261026.mp4`，753,571,868字节、1:57:02.56、1920×540/25fps H.264，175564帧，AAC 44.1kHz单声道302430包。每个视频PTS间隔严格40000us；整段 `ffmpeg -v error -xerror -threads 0 -i goal-final-with-recovery.mp4 -f null -` 退出0。音轨SHA256与原轨完全一致：`61fcd3f23860e39eda9f7f39669d9de62ceb8f24430028bf69e83d91d1f99c09`。
+- 此轮后台返回、页面重建不掉任务，服务同实例且lastStartId=1；下载96%/合成23%手动暂停，保留686/668个原片、23个完成编码段。强停重开继续，从1568280000us恢复，仅补约141MB；最终102个成品段，前23个元数据完全未变，恢复后136357=136357帧。首/中/尾和恢复边界画面、平板媒体查看器实际播放已检查。覆盖安装后DONE仍在。含人工暂停约65秒，总约15分22秒，不作为无干预成绩。
+- 最终不暂停计时 `t1793030228149-0`：10月26日23:57:08→10月27日00:13:23 DONE，目标 `Downloads/android-goal-timed-20261026.mp4`，757,329,607字节。源码增加独立FINALIZING整理进度后再次真实全量下载，无断点复用。175564视频帧、每帧PTS间隔40000us、AAC302430包与上述SHA256完全一致，整段ffmpeg解码退出0。强停重开后DONE保留，原始临时分片已清理，通知服务结束。
+- 该轮下载完成首次观测00:05:22（约8分14秒，源字节平均约7.8MB/s，前慢后快）；编码含等待输入在00:11:33完成，175564提交=175564输出；整理首次观测00:11:35，保存首次观测00:13:06，DONE首次观测00:13:23。整理约1分31秒、保存/收尾约16秒；阶段观测间隔5秒。下载与编码重叠，不能相加；全程约16分15秒，不能声称达到9–10分钟。
+- 同期UI计速约3.9MB/s时系统约3.75MB/s；网络随后恢复，平均仍接近8MB/s。ETA按下载与合成瓶颈估算，最终“整理中”53%及不足1分钟已实机观察。浅/深色、1.4倍字体、预览/双路播放/全屏、三次2/4/8秒重试及耗尽后继续的既有实机证据仍见下方与原目录。
+
+### 构建与未验证边界
+
+- `build-finalizing-progress.log`：Android assembleDebug和66项相关测试全过；新增会话组合根重建测试 `test-session-rebuild.log` 通过。最终完整 `:shared:desktopTest` 共1176项、1171通过，5个既有Windows环境失败仍为DesktopAgentIntegrationTest 3和MacUninstallCleanerTest 2，新增回放相关用例均通过。提交后相关联合复查记录在 `build-committed-android.log`。
+- `:androidApp:minifyReleaseWithR8` 成功（`build-release-r8.log`），只编译/缩减，未签名或安装正式包。正式 `assembleRelease` 因本机缺上传密钥口令在配置阶段停止；正式签名仍待CI。Apple共享目标本轮未构建，不能引用旧CI证明本次源码。
+- 第一轮旧串行整节 `t1793017919242-0` 曾完整解码且音轨一致，纯合成约16分半；不能用它替代新流程验收，也不把已发现丢帧的11秒/160秒原型当性能成绩。
+- 尚保留旧测试任务 `t1793024019616-0`（PAUSED 60.5%，703×2原片、64成品段）和 `t1792993910544-0`（两路完整原始MP4，供性能对照/Windows复用）。不得误当进行中的新任务或误删原App数据。
+- 源码、构建、JSON状态、逐帧时轴、音轨校验、视频和截图证据在忽略目录 `.artifacts/android-full-acceptance/`、`.artifacts/tablet-playback/`。真实账号自动刷新的原现场未直接复现；已用平板页面重建与真实业务组合根回归覆盖取消路径。未复现的ANR/资源过量等历史退出不能宣称已全部根治。
+
+## 接下来：Windows硬件加速与稳定性
+
+- 安卓验收和提交完成后才启动本项；目标为AMD/NVIDIA/Intel可用硬件路径、可观的下载合成速度和稳定恢复。
+- 当前旧Windows实现是软件解码/CPU缩放拼接、编码优先硬件，默认仍无音轨；需先采样和检查实际GPU/工具链，再实施完整GPU路径并验证。尚未宣称全平台硬件加速已完成。
+- 9–10分钟是安卓后续性能目标，当前实测未达到；不能通过降帧/丢帧冒充提速。整个持续目标仍在进行。
+
+
+## 已合入功能分支、待主干：CITEL 折扣时间配色与考试 sheet 测高（PR #70）
 
 - `isFavorableChange` 把“折扣时间”延后与截止时间延后同等视为向好（绿色），补 `HomeChangeFieldTest` 两条断言。
 - 考试页紧凑端“考试详情”和“添加到日历”两个 sheet 由 `needsFullHeight` 改为 `fitContentHeight`：iOS 走按正文定高的自定义 detent，安卓/桌面底部 sheet 按内容高度展开；正文不再自带 verticalScroll，由 sheet 滚动。未在模拟器/真机验收。
@@ -28,7 +59,7 @@
 - PR #69 原头 `e549ed6e` 的安全检查 [40282193442](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/40282193442) 四项全绿，包含 widget Swift 编译。冲突仅 memory.md；先合入最新基线为 `3ecb547e` 再通过 GitHub 合并。PR 应用源码树哈希 `4a2c8e9c56e9cd8199c7df86801338ff04e30abe` 未变，文档整合没有改应用代码。
 - Windows 本地最后联合检查：`:shared:desktopTest --tests '*Playback*' --tests '*Hls*' --tests '*NativeShellBridgeTest' --tests '*SecurityReleaseConfigTest' :androidApp:assembleDebug :windowsApp:compileKotlinWindows` 成功，51 项相关测试 0 失败；完整 1163 项有既有 Windows 环境 5 失败（DesktopAgentIntegrationTest 3、MacUninstallCleanerTest 2），Apple CI 的桌面测试全部通过。日志 `.artifacts/ios-playback-fixes/`。
 - 小米平板 `6c5a737e` 独立 `.playbacktest` debug 包保留原 App 数据，已实测预览/播放/全屏/退出、三次退避约 2.0/4.0/8.0 秒、耗尽后继续、短断网后自动恢复、强停后 206 片与 SAF 目标恢复、短时后台下载，同一前台服务持续运行。实际崩溃根因为 ForegroundServiceDidNotStartInTimeException，非已证实的 OOM。
-- 完整课程任务 `t1792993910544-0` 已启动，两路各 703 片；最后可读采样为 13:56:33 教师流 688/703、1,791,032,384 字节、总任务进度 26.4%。平板随后断开 ADB，无法发送 force-stop，机上可能继续运行；用户决定下午自行检查。接回后先查原任务/输出，不重复发任务或点取消清断点。目标 `Downloads/验证课程_测试录像_教师+课件.mp4`。取证与状态脚本 `.artifacts/tablet-playback/`。
+- 旧任务 `t1792993910544-0` 今晚接回后确认已下载两路并转好 MP4，总源 3,853,388,624 字节，停在合成初期，进程已不在；两路输入保留作同课程性能基准，未将旧部分输出当成完成。
 - 旧模拟器验证仅每路 16 片/约 160 秒，不是整节完成；Windows 合成探针与 iOS 模拟器合成用例也不等于真实 App 端到端成功。iOS 活动去重、详情返回和全屏旋转、PR #69 两阶段对齐/长课名/大字号仍待真机界面验收。Apple 完整编译/共享测试仅 CI 验证。
 - 共享播放器 JS 语法及 DOM fixture（双路容器全屏、退出、播放/位置保持、横屏、WebKit 回退）已过；本地 file:// 页面被浏览器安全策略拒绝，未绕过，因此桌面真实全屏视觉尚未验收。
 - 证据目录：`.artifacts/playback-fixes/`、`.artifacts/pr68-integration/`、`.artifacts/tablet-playback/`、`.artifacts/ios-playback-fixes/`、`.artifacts/pr69-integration/`。完整旧过程可用 `git show e0e8fa9a:memory.md` 查阅；备份在 `.artifacts/pr69-integration/memory-before-consolidation.md`，不把旧“未提交/待 CI”当成当前状态。
@@ -82,7 +113,7 @@
 
 ## 接下来
 
-1. 先获取用户下午的整节下载合成结果，接回平板后核对原任务、最终时长、首尾可解码、左右并排与声音，取新增崩溃证据。
+1. 安卓整节验收与分批提交已完成；按顶部持续目标推进 Windows 硬件加速、速度和稳定性，不重复旧安卓待办。
 2. 用本轮新包验收 iOS 下载活动数量、原生返回/全屏与 PR #69 展开态两阶段对齐、长课名和大字号；桌面验证全屏进入/退出。
 3. 回放分支合 main、改版本或正式发版由用户另行决定；当前只合并 PR #69 到功能分支并手动打包。
 4. 后续新开发从最新 main 建分支；保留以上其他真机待验证与当前痛点，不恢复已解决的旧待办。
