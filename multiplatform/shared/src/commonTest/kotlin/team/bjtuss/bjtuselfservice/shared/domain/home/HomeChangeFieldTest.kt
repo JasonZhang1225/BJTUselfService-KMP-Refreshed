@@ -155,4 +155,18 @@ class HomeChangeFieldTest {
         assertFalse(HomeChangeField("分数", "未公布成绩", "95").isFavorableChange())
         assertFalse(HomeChangeField("状态", "已提交", "已提交").isFavorableChange())
     }
+
+    @Test
+    fun citelStatusFromUnattemptedOrWrongToSubmittedOrAcceptedIsFavorable() {
+        // CITEL 原始状态文字：书面作业用英文，编程题用评测结果，空白显示为“未填写”。
+        assertTrue(HomeChangeField("状态", "No attempt", "Submitted for grading").isFavorableChange())
+        assertTrue(HomeChangeField("状态", "未填写", "AC: Accepted").isFavorableChange())
+        assertTrue(HomeChangeField("状态", "", "AC: Accepted").isFavorableChange())
+        assertTrue(HomeChangeField("状态", "WA: Wrong answer", "AC: Accepted").isFavorableChange())
+        assertTrue(HomeChangeField("状态", "RE: Runtime error", "AC").isFavorableChange())
+        assertFalse(HomeChangeField("状态", "AC: Accepted", "WA: Wrong answer").isFavorableChange())
+        assertFalse(HomeChangeField("状态", "Submitted for grading", "AC: Accepted").isFavorableChange())
+        assertFalse(HomeChangeField("状态", "WA: Wrong answer", "RJ: Running").isFavorableChange())
+        assertFalse(HomeChangeField("状态", "Draft (not submitted)", "No attempt").isFavorableChange())
+    }
 }

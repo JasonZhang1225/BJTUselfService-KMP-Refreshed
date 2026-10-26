@@ -1,6 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.domain.home
 
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeKind
+import team.bjtuss.bjtuselfservice.shared.feature.citel.isCitelAccepted
 
 enum class HomeChangeDomain(val title: String) {
     GRADES("成绩"),
@@ -141,16 +142,13 @@ fun matchExamChange(
 }
 
 /**
- * 对学生有利的变更：作业由未提交变为已提交（物理在线、CITEL 为未完成变为已完成），或截止时间延后。界面把这一行标成绿色。
- * 只看单个字段，新增/删除记录由调用方排除。
+ * 对学生有利的变更：作业由未做（未提交、未填写、No attempt）或评测错误变为已提交/已完成/AC，或截止时间延后。
+ * 界面把这一行标成绿色。只看单个字段，新增/删除记录由调用方排除。
  */
 fun HomeChangeField.isFavorableChange(): Boolean {
     if (before == after) return false
     return when {
-        label == "状态" || label == "完成情况" ->
-            (before.contains("未提交") || before.contains("未完成")) &&
-                (after.contains("已提交") || after.contains("已完成")) &&
-                !after.contains("未提交") && !after.contains("未完成")
+        label == "状态" || label == "完成情况" -> !isDoneStatus(before) && isDoneStatus(after)
         label.contains("截止") -> {
             val old = deadlineSortKey(before) ?: return false
             val new = deadlineSortKey(after) ?: return false
@@ -158,6 +156,15 @@ fun HomeChangeField.isFavorableChange(): Boolean {
         }
         else -> false
     }
+}
+
+/** 已提交、已完成，或 CITEL 编程题 AC；与 CITEL 解析端的判断口径一致。空白、“未填写”、No attempt 都不算。 */
+private fun isDoneStatus(text: String): Boolean {
+    val value = text.trim()
+    return isCitelAccepted(value) ||
+        value.equals("Submitted for grading", ignoreCase = true) ||
+        value.contains("已提交") ||
+        value.contains("已完成")
 }
 
 // 兼容 `2026-10-11 24:00`、`2026年10月11日 24:00 · 周日` 等显示文字；24:00 仍算当天，排序不受影响。

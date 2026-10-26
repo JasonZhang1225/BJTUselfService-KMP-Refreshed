@@ -52,10 +52,55 @@ fun formatChineseDeadline(value: String): String {
     val dateTime = runCatching {
         LocalDateTime(year.toInt(), month.toInt(), day.toInt(), hour.toInt(), minute.toInt())
     }.getOrNull() ?: return value
-    val shown = deadlineDisplay(dateTime)
-    val d = shown.date
-    return "${d.year}年${(d.month.ordinal + 1).pad()}月${d.day.pad()}日 ${shown.clock} · ${d.dayOfWeek.chineseLabel()}"
+    return formatDeadlineDateTime(dateTime)
 }
+
+private const val UNSPECIFIED_TIME = "未指定"
+
+/**
+ * 作业卡片的开始时间（课程平台、CITEL、物理在线统一）：`2026年10月14日 00:00 · 周三`，00:00 原样显示。
+ * 空白显示“未指定”，解析不了时原样返回。
+ */
+fun assignmentStartText(value: String?): String = assignmentDateTimeText(value, ::formatStartDateTime)
+
+/** 作业卡片的截止时间，样式同开始时间；00:00 按截止规则显示为前一天 24:00。 */
+fun assignmentDeadlineText(value: String?): String = assignmentDateTimeText(value, ::formatDeadlineDateTime)
+
+/** CITEL 的 Unix 秒开始时间，按北京时间显示；没有时为“未指定”。 */
+fun assignmentStartText(epochSeconds: Long?): String =
+    epochSeconds?.let { formatStartDateTime(epochDateTime(it)) } ?: UNSPECIFIED_TIME
+
+/** CITEL 的 Unix 秒截止时间，按北京时间显示；没有时为“未指定”。 */
+fun assignmentDeadlineText(epochSeconds: Long?): String =
+    epochSeconds?.let { formatDeadlineDateTime(epochDateTime(it)) } ?: UNSPECIFIED_TIME
+
+private fun assignmentDateTimeText(value: String?, format: (LocalDateTime) -> String): String {
+    val text = value?.trim().orEmpty()
+    if (text.isEmpty()) return UNSPECIFIED_TIME
+    return parseAssignmentDateTime(text)?.let(format) ?: text
+}
+
+/** 课程平台本地时间（`2026-10-14 00:00`）或物理在线中文日期（`2026年10月14日 00:00`）。 */
+private fun parseAssignmentDateTime(text: String): LocalDateTime? {
+    parseSchoolLocalDateTime(text)?.let { return it }
+    val match = chineseDatePattern.find(text) ?: return null
+    val (year, month, day, hour, minute) = match.destructured
+    return runCatching {
+        LocalDateTime(year.toInt(), month.toInt(), day.toInt(), hour.toInt(), minute.toInt())
+    }.getOrNull()
+}
+
+private fun epochDateTime(epochSeconds: Long): LocalDateTime =
+    Instant.fromEpochSeconds(epochSeconds).toLocalDateTime(schoolZone)
+
+private fun formatStartDateTime(dateTime: LocalDateTime): String =
+    chineseDateText(dateTime.date, "${dateTime.hour.pad()}:${dateTime.minute.pad()}")
+
+private fun formatDeadlineDateTime(dateTime: LocalDateTime): String =
+    deadlineDisplay(dateTime).let { chineseDateText(it.date, it.clock) }
+
+private fun chineseDateText(date: LocalDate, clock: String): String =
+    "${date.year}年${(date.month.ordinal + 1).pad()}月${date.day.pad()}日 $clock · ${date.dayOfWeek.chineseLabel()}"
 
 fun DayOfWeek.chineseLabel(): String = when (this) {
     DayOfWeek.MONDAY -> "周一"
