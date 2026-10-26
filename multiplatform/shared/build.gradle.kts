@@ -64,6 +64,7 @@ kotlin {
             implementation(libs.kotlinx.datetime)
             implementation(libs.ksoup)
             implementation(libs.ktor.client.core)
+            implementation(libs.kotlinx.io.core)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.sqldelight.runtime)
             implementation(libs.kotlinx.coroutines.core)

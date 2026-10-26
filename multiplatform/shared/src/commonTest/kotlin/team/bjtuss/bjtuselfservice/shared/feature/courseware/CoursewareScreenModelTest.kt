@@ -241,7 +241,7 @@ class CoursewareScreenModelTest {
     }
 
     @Test
-    fun exportSkipsFilesTheTeacherDidNotOpenForDownload() = runBlocking {
+    fun exportIncludesRestrictedFilesThroughTheFallbackDownload() = runBlocking {
         val events = mutableListOf<String>()
         val restricted = restrictedSnapshot()
         val gateway = RecordingDirectoryGateway(events)
@@ -251,28 +251,49 @@ class CoursewareScreenModelTest {
         val result = model.exportDirectory(null, "程序设计", gateway)
 
         assertEquals(HomeworkFileSaveResult.Saved, assertIs<CoursewareOperationResult.Success<HomeworkFileSaveResult>>(result).value)
-        assertEquals(listOf("说明.pdf"), model.state.value.directoryExportSkipped)
-        assertEquals(1, gateway.files.size)
-        assertFalse("download:3" in events)
+        assertTrue(model.state.value.directoryExportSkipped.isEmpty())
+        assertEquals(2, gateway.files.size)
+        assertTrue("download:3" in events)
         assertTrue("download:2" in events)
         assertTrue(gateway.committed)
     }
 
     @Test
-    fun restrictedFileFailsWithoutNetworkAndRestrictedOnlyFolderReportsWhy() = runBlocking {
+    fun exportSkipsRestrictedFileOnlyWhenTheFallbackAlsoFails() = runBlocking {
+        val events = mutableListOf<String>()
+        val restricted = restrictedSnapshot()
+        val gateway = RecordingDirectoryGateway(events)
+        val model = CoursewareScreenModel(
+            FakeRepository(restricted, restricted, events = events, failingIds = setOf(3)),
+        )
+        model.initialize()
+
+        val result = model.exportDirectory(null, "程序设计", gateway)
+
+        assertEquals(HomeworkFileSaveResult.Saved, assertIs<CoursewareOperationResult.Success<HomeworkFileSaveResult>>(result).value)
+        assertEquals(listOf("说明.pdf"), model.state.value.directoryExportSkipped)
+        assertEquals(1, gateway.files.size)
+        assertTrue(gateway.committed)
+    }
+
+    @Test
+    fun restrictedFileDownloadsThroughRepositoryAndReportsWhyWhenFallbackFails() = runBlocking {
         val events = mutableListOf<String>()
         val restricted = restrictedSnapshot()
         val model = CoursewareScreenModel(FakeRepository(restricted, restricted, events = events))
         model.initialize()
 
         val single = model.downloadResource(description().stableKey)
-        assertEquals(CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED, assertIs<CoursewareOperationResult.Failure>(single).reason)
-        assertEquals(CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED, model.state.value.fileFailure)
-        assertFalse(events.any { it.startsWith("download:") })
+        assertIs<CoursewareOperationResult.Success<HomeworkFileContent>>(single)
+        assertTrue("download:3" in events)
 
-        val onlyRestricted = model.exportDirectory(description().stableKey, "说明", RecordingDirectoryGateway(events))
-        assertEquals(CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED, assertIs<CoursewareOperationResult.Failure>(onlyRestricted).reason)
-        assertFalse(events.any { it.startsWith("open:") })
+        val failing = CoursewareScreenModel(
+            FakeRepository(restricted, restricted, events = mutableListOf(), failingIds = setOf(3)),
+        )
+        failing.initialize()
+        val failed = failing.downloadResource(description().stableKey)
+        assertEquals(CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED, assertIs<CoursewareOperationResult.Failure>(failed).reason)
+        assertEquals(CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED, failing.state.value.fileFailure)
     }
 
     @Test
@@ -543,6 +564,7 @@ class CoursewareScreenModelTest {
         private val events: MutableList<String>? = null,
         private val loadedFolderSnapshot: CoursewareSnapshot? = null,
         private val rootSnapshot: CoursewareSnapshot = refreshed,
+        private val failingIds: Set<Int> = emptySet(),
     ) : CoursewareRepository {
         var courseLoadCount = 0
         var folderLoadCount = 0
@@ -578,6 +600,11 @@ class CoursewareScreenModelTest {
         }
         override suspend fun downloadResource(node: CoursewareNode): CoursewareOperationResult<HomeworkFileContent> {
             events?.add("download:${node.id}")
+            if (node.id in failingIds) {
+                return CoursewareOperationResult.Failure(
+                    team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareSyncFailure.NETWORK,
+                )
+            }
             return CoursewareOperationResult.Success(file)
         }
 

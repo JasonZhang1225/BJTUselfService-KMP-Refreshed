@@ -13,8 +13,11 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNode
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareCourse
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareSnapshot
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNodeKind
+import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackDetail
+import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackLesson
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.findCoursewareNode
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.StreamingFileSink
 
 private const val COURSEWARE_CACHE_KEY = "courseware_tree_v1"
 
@@ -24,8 +27,10 @@ enum class CoursewareSyncFailure {
     MALFORMED_RESPONSE,
     SECURE_CHANNEL_UNAVAILABLE,
     CACHE,
-    /** 老师未开放学生下载（`stu_download` != "2"），服务器会对下载链接返回 500。 */
+    /** 老师未开放学生下载（`stu_download` != "2"），且备用的存储路径也取不到文件。 */
     DOWNLOAD_NOT_ALLOWED,
+    /** 文件太大，不能整块读进内存（目录导出时跳过，改为单独下载边下边存）。 */
+    FILE_TOO_LARGE,
 }
 
 sealed interface CoursewareRefreshResult {
@@ -100,6 +105,23 @@ interface CoursewareRepository {
 
     suspend fun downloadResource(node: CoursewareNode): CoursewareOperationResult<HomeworkFileContent>
     suspend fun downloadTeachingCalendar(course: CoursewareCourse): CoursewareOperationResult<HomeworkFileContent>
+    suspend fun planStoredDownload(node: CoursewareNode): CoursewareOperationResult<CoursewareStoredDownload> =
+        CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
+
+    /** 远端/网络失败以 [CoursewareRemoteException] 抛出（调用方在保存面板的写入回调里使用）。 */
+    suspend fun streamStoredDownload(
+        plan: CoursewareStoredDownload,
+        sink: StreamingFileSink,
+        onProgress: (written: Long, total: Long) -> Unit,
+    ): Unit = throw CoursewareRemoteException(CoursewareRemoteFailure.MALFORMED_RESPONSE)
+
+    suspend fun loadPlaybackLessons(course: CoursewareCourse): CoursewareOperationResult<List<PlaybackLesson>> =
+        CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
+    suspend fun loadPlaybackDetail(
+        course: CoursewareCourse,
+        lesson: PlaybackLesson,
+    ): CoursewareOperationResult<PlaybackDetail> =
+        CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
 }
 
 class DefaultCoursewareRepository(
@@ -355,8 +377,31 @@ class DefaultCoursewareRepository(
 
     override suspend fun downloadTeachingCalendar(
         course: CoursewareCourse,
-    ): CoursewareOperationResult<HomeworkFileContent> = try {
-        CoursewareOperationResult.Success(remote.downloadTeachingCalendar(course))
+    ): CoursewareOperationResult<HomeworkFileContent> = remoteOperation {
+        remote.downloadTeachingCalendar(course)
+    }
+
+    override suspend fun planStoredDownload(
+        node: CoursewareNode,
+    ): CoursewareOperationResult<CoursewareStoredDownload> = remoteOperation { remote.planStoredDownload(node) }
+
+    override suspend fun streamStoredDownload(
+        plan: CoursewareStoredDownload,
+        sink: StreamingFileSink,
+        onProgress: (written: Long, total: Long) -> Unit,
+    ) = remote.streamStoredDownload(plan, sink, onProgress)
+
+    override suspend fun loadPlaybackLessons(
+        course: CoursewareCourse,
+    ): CoursewareOperationResult<List<PlaybackLesson>> = remoteOperation { remote.fetchPlaybackLessons(course) }
+
+    override suspend fun loadPlaybackDetail(
+        course: CoursewareCourse,
+        lesson: PlaybackLesson,
+    ): CoursewareOperationResult<PlaybackDetail> = remoteOperation { remote.fetchPlaybackDetail(course, lesson) }
+
+    private inline fun <T> remoteOperation(block: () -> T): CoursewareOperationResult<T> = try {
+        CoursewareOperationResult.Success(block())
     } catch (error: CancellationException) {
         throw error
     } catch (error: CoursewareRemoteException) {
@@ -509,6 +554,7 @@ private fun CoursewareRemoteFailure.toSyncFailure(): CoursewareSyncFailure = whe
     CoursewareRemoteFailure.SESSION_EXPIRED -> CoursewareSyncFailure.SESSION_EXPIRED
     CoursewareRemoteFailure.MALFORMED_RESPONSE -> CoursewareSyncFailure.MALFORMED_RESPONSE
     CoursewareRemoteFailure.SECURE_CHANNEL_UNAVAILABLE -> CoursewareSyncFailure.SECURE_CHANNEL_UNAVAILABLE
+    CoursewareRemoteFailure.TOO_LARGE -> CoursewareSyncFailure.FILE_TOO_LARGE
 }
 
 private const val COURSEWARE_FOLDER_PREFETCH_DEPTH = 6

@@ -20,6 +20,10 @@
 		C10000000000000000000003 /* CourseLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000011 /* CourseLiveActivityAttributes.swift */; };
 		C10000000000000000000004 /* CourseWidgetData.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* CourseWidgetData.swift */; };
 		C10000000000000000000005 /* CourseLiveActivityCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000013 /* CourseLiveActivityCoordinator.swift */; };
+		C10000000000000000000006 /* PlaybackDownloadAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000014 /* PlaybackDownloadAttributes.swift */; };
+		C10000000000000000000007 /* PlaybackDownloadWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000015 /* PlaybackDownloadWidget.swift */; };
+		C10000000000000000000008 /* PlaybackDownloadAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000014 /* PlaybackDownloadAttributes.swift */; };
+		C10000000000000000000009 /* PlaybackDownloadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000016 /* PlaybackDownloadCoordinator.swift */; };
 		B10000000000000000000003 /* CourseScheduleWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* CourseScheduleWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -63,6 +67,9 @@
 		C10000000000000000000011 /* CourseLiveActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseLiveActivityAttributes.swift; sourceTree = "<group>"; };
 		C10000000000000000000012 /* CourseLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseLiveActivityWidget.swift; sourceTree = "<group>"; };
 		C10000000000000000000013 /* CourseLiveActivityCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseLiveActivityCoordinator.swift; sourceTree = "<group>"; };
+		C10000000000000000000014 /* PlaybackDownloadAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackDownloadAttributes.swift; sourceTree = "<group>"; };
+		C10000000000000000000015 /* PlaybackDownloadWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackDownloadWidget.swift; sourceTree = "<group>"; };
+		C10000000000000000000016 /* PlaybackDownloadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackDownloadCoordinator.swift; sourceTree = "<group>"; };
 		B10000000000000000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B10000000000000000000014 /* CourseScheduleWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CourseScheduleWidget.entitlements; sourceTree = "<group>"; };
 		B10000000000000000000015 /* Widget.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Widget.xcconfig; sourceTree = "<group>"; };
@@ -104,6 +111,7 @@
 				A10000000000000000000012 /* ContentView.swift */,
 				A11000000000000000000002 /* NativeNavigationGlassState.swift */,
 				C10000000000000000000013 /* CourseLiveActivityCoordinator.swift */,
+				C10000000000000000000016 /* PlaybackDownloadCoordinator.swift */,
 				A10000000000000000000015 /* Assets.xcassets */,
 				A10000000000000000000016 /* PrivacyInfo.xcprivacy */,
 				A10000000000000000000013 /* Info.plist */,
@@ -138,6 +146,8 @@
 				B10000000000000000000017 /* WeekCourseWidget.swift */,
 				C10000000000000000000011 /* CourseLiveActivityAttributes.swift */,
 				C10000000000000000000012 /* CourseLiveActivityWidget.swift */,
+				C10000000000000000000014 /* PlaybackDownloadAttributes.swift */,
+				C10000000000000000000015 /* PlaybackDownloadWidget.swift */,
 				B10000000000000000000013 /* Info.plist */,
 				B10000000000000000000014 /* CourseScheduleWidget.entitlements */,
 			);
@@ -270,6 +280,8 @@
 				C10000000000000000000003 /* CourseLiveActivityAttributes.swift in Sources */,
 				C10000000000000000000004 /* CourseWidgetData.swift in Sources */,
 				C10000000000000000000005 /* CourseLiveActivityCoordinator.swift in Sources */,
+				C10000000000000000000009 /* PlaybackDownloadCoordinator.swift in Sources */,
+				C10000000000000000000008 /* PlaybackDownloadAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -282,6 +294,8 @@
 				B10000000000000000000004 /* WeekCourseWidget.swift in Sources */,
 				C10000000000000000000001 /* CourseLiveActivityAttributes.swift in Sources */,
 				C10000000000000000000002 /* CourseLiveActivityWidget.swift in Sources */,
+				C10000000000000000000006 /* PlaybackDownloadAttributes.swift in Sources */,
+				C10000000000000000000007 /* PlaybackDownloadWidget.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

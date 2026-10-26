@@ -22,6 +22,9 @@ import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePreviewResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.StreamingDestination
+import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
+import team.bjtuss.bjtuselfservice.shared.files.StreamingSinkIoException
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryFile
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryOpenResult
@@ -103,6 +106,36 @@ class DesktopHomeworkFileGateway(
             }
         } finally {
             requestMutex.unlock()
+        }
+    }
+
+    override val isStreamingSaveAvailable: Boolean = true
+
+    override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
+        if (!requestMutex.tryLock()) {
+            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        }
+        // 面板只需串行到用户选好位置；之后的长时间写入不占锁，其他保存照常可用。
+        val selected = try {
+            showDialog(FileDialog.SAVE, safeExportFileName(fileName), allowMultiple = false).singleOrNull()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+        } finally {
+            requestMutex.unlock()
+        } ?: return StreamingDestinationResult.Cancelled
+        return try {
+            withContext(Dispatchers.IO) {
+                val parent = selected.absoluteFile.parentFile ?: throw IllegalStateException("Missing destination directory")
+                // 大文件先写到目标目录里的临时文件，commit 才改名覆盖；abort 删除临时文件。
+                val temporary = Files.createTempFile(parent.toPath(), ".bjtu-save-", ".tmp")
+                StreamingDestinationResult.Opened(FileStreamingDestination(selected, temporary))
+            }
+        } catch (_: SecurityException) {
+            StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+        } catch (_: Exception) {
+            StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
         }
     }
 
@@ -326,5 +359,49 @@ class DesktopHomeworkFileGateway(
         }
         SwingUtilities.invokeAndWait { show() }
         selected
+    }
+}
+
+private class FileStreamingDestination(
+    private val target: File,
+    private val temporary: java.nio.file.Path,
+) : StreamingDestination {
+    private var output: java.io.OutputStream? = Files.newOutputStream(temporary)
+    override val displayName: String = target.name
+
+    override suspend fun write(bytes: ByteArray) {
+        val stream = output ?: throw StreamingSinkIoException()
+        try {
+            withContext(Dispatchers.IO) { stream.write(bytes) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            throw StreamingSinkIoException(error)
+        }
+    }
+
+    override suspend fun commit(): HomeworkFileSaveResult = withContext(Dispatchers.IO) {
+        try {
+            output?.close()
+            output = null
+            try {
+                Files.move(temporary, target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(temporary, target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+            HomeworkFileSaveResult.Saved
+        } catch (_: SecurityException) {
+            HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+        } catch (_: Exception) {
+            HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+        }
+    }
+
+    override suspend fun abort() {
+        withContext(NonCancellable + Dispatchers.IO) {
+            runCatching { output?.close() }
+            output = null
+            runCatching { Files.deleteIfExists(temporary) }
+        }
     }
 }
