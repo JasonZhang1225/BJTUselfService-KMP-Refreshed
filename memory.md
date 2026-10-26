@@ -4,6 +4,11 @@
 >
 > 回放修复代码与相关 CI 已完成，真机验收仍有边界：安卓整节下载合成由用户下午继续检查，尚未收到完整输出结果；iOS App 的实时活动/原生返回/全屏，以及桌面全屏的实际界面尚未验收。不能把编译、短样本或 DOM fixture 当成整节真机成功。
 
+## 进行中：CITEL 折扣时间配色与考试 sheet 测高（分支 `claude/awesome-mendel-s7k46w` → PR 到 `feat/courseware-fallback-playback`）
+
+- `isFavorableChange` 把“折扣时间”延后与截止时间延后同等视为向好（绿色），补 `HomeChangeFieldTest` 两条断言。
+- 考试页紧凑端“考试详情”和“添加到日历”两个 sheet 由 `needsFullHeight` 改为 `fitContentHeight`：iOS 走按正文定高的自定义 detent，安卓/桌面底部 sheet 按内容高度展开；正文不再自带 verticalScroll，由 sheet 滚动。未在模拟器/真机验收。
+
 ## 进行中：课程回放分支收尾
 
 ### 已提交的行为

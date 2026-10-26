@@ -28,7 +28,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -167,12 +166,13 @@ fun ExamScheduleWorkspace(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                     state.selectedExam?.let { exam ->
+                        // 详情只有几行：按正文高度展开（iOS 自定义 detent，其他平台底部 sheet 本来就按内容定高），
+                        // 不再一上来铺满全屏；超出可用高度时由 sheet 负责滚动。
                         AppleSheet(
                             onDismissRequest = model::dismissExamDetails,
                             title = "考试详情",
-                            needsFullHeight = true,
+                            fitContentHeight = true,
                         ) {
-                            val detailScrollState = rememberScrollState()
                             ExamDetailSheetBody(
                                 exam = exam,
                                 onAddToCalendar = {
@@ -181,8 +181,6 @@ fun ExamScheduleWorkspace(
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .verticalScroll(detailScrollState)
-                                    .desktopTouchScroll(detailScrollState)
                                     .padding(horizontal = 24.dp)
                                     .padding(bottom = 28.dp),
                             )
@@ -215,7 +213,7 @@ fun ExamScheduleWorkspace(
         AppleSheet(
             onDismissRequest = { examToCalendar = null },
             title = "添加到日历",
-            needsFullHeight = true,
+            fitContentHeight = true,
         ) {
             SingleExamCalendarSheet(
                 exam = exam,
