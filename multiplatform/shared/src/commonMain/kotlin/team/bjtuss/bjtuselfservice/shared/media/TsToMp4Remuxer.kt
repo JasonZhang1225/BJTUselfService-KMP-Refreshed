@@ -9,7 +9,11 @@ package team.bjtuss.bjtuselfservice.shared.media
  *
  * 只处理录播实际使用的流类型：H.264（0x1B，avc1 + avcC）与 AAC-ADTS（0x0F）；其余（如 ID3 元数据）忽略。
  */
-class TsToMp4Remuxer(private val writeSample: suspend (ByteArray) -> Unit) {
+class TsToMp4Remuxer(
+    private val collectSampleTable: Boolean = true,
+    private val onSample: ((TsMediaSample) -> Unit)? = null,
+    private val writeSample: suspend (ByteArray) -> Unit,
+) {
     private val carry = ByteArrayBuilder()
     private var pmtPid = -1
     private var videoPid = -1
@@ -18,6 +22,7 @@ class TsToMp4Remuxer(private val writeSample: suspend (ByteArray) -> Unit) {
 
     private val video = TrackTable()
     private val audio = TrackTable()
+    private var emittedVideo = false
     private var sps: ByteArray? = null
     private var pps: ByteArray? = null
     private var audioConfig: AdtsConfig? = null
@@ -30,6 +35,13 @@ class TsToMp4Remuxer(private val writeSample: suspend (ByteArray) -> Unit) {
     val videoSampleCount: Int get() = video.count
     val audioSampleCount: Int get() = audio.count
     val dataSize: Long get() = dataOffset
+    val videoConfiguration: TsVideoConfiguration? get() = sps?.let { s -> pps?.let { p ->
+        val size = parseSpsDimensions(s) ?: (1920 to 1080)
+        TsVideoConfiguration(size.first, size.second, s.copyOf(), p.copyOf())
+    } }
+    val audioConfiguration: TsAudioConfiguration? get() = audioConfig?.let {
+        TsAudioConfiguration(it.sampleRate, it.channels, it.audioSpecificConfig())
+    }
 
     suspend fun feed(bytes: ByteArray) {
         check(!finished)
@@ -54,12 +66,12 @@ class TsToMp4Remuxer(private val writeSample: suspend (ByteArray) -> Unit) {
         if (videoPid >= 0) pes.remove(videoPid)?.let { flushPes(videoPid, it.toByteArray()) }
         if (audioPid >= 0) pes.remove(audioPid)?.let { flushPes(audioPid, it.toByteArray()) }
         finished = true
-        if (video.count == 0 || sps == null || pps == null) throw RemuxException("没有找到 H.264 视频")
+        if ((!emittedVideo && video.count == 0) || sps == null || pps == null) throw RemuxException("没有找到 H.264 视频")
     }
 
     /** 生成放在数据前面的 `ftyp + moov + mdat` 头；样本偏移按头长度整体后移。 */
     fun buildHeader(): ByteArray {
-        check(finished)
+        check(finished && collectSampleTable)
         val probe = assemble(baseOffset = 0)
         return assemble(baseOffset = probe.size.toLong())
     }
@@ -314,14 +326,15 @@ class TsToMp4Remuxer(private val writeSample: suspend (ByteArray) -> Unit) {
         val bytes = sample.toByteArray()
         if (bytes.isEmpty()) return
         // 首个样本必须是关键帧，否则开头会花屏；之前的帧丢弃。
-        if (video.count == 0 && !keyFrame) return
-        video.add(dataOffset, bytes.size, dts, keyFrame)
+        if (!emittedVideo && video.count == 0 && !keyFrame) return
+        if (collectSampleTable) video.add(dataOffset, bytes.size, dts, keyFrame) else emittedVideo = true
+        onSample?.invoke(TsMediaSample(true, dataOffset, bytes.size, dts, keyFrame))
         writeSample(bytes)
         dataOffset += bytes.size
     }
 
     private suspend fun onAudio(payload: ByteArray, rawPts: Long?) {
-        if (video.count == 0) return // 与视频首个关键帧对齐之前的音频丢弃
+        if (!emittedVideo && video.count == 0) return // 只在整段流的开头对齐首个关键帧。
         var pts90k = rawPts?.let(audioPtsUnwrap::unwrap) ?: nextAudioPts90k ?: return
         var i = 0
         while (i + 7 <= payload.size) {
@@ -340,8 +353,11 @@ class TsToMp4Remuxer(private val writeSample: suspend (ByteArray) -> Unit) {
             val sampleRate = ADTS_SAMPLE_RATES.getOrNull(sfi) ?: break
             if (audioConfig == null) audioConfig = AdtsConfig(profile + 1, sfi, sampleRate, channels)
             val frame = payload.copyOfRange(i + headerLength, i + frameLength)
-            if (audio.count == 0) audio.firstTime90k = pts90k
-            audio.add(dataOffset, frame.size, 1024L, keyFrame = true, explicitDuration = true)
+            if (collectSampleTable) {
+                if (audio.count == 0) audio.firstTime90k = pts90k
+                audio.add(dataOffset, frame.size, 1024L, keyFrame = true, explicitDuration = true)
+            }
+            onSample?.invoke(TsMediaSample(false, dataOffset, frame.size, pts90k, true))
             writeSample(frame)
             dataOffset += frame.size
             pts90k += 1024L * 90_000L / sampleRate
@@ -364,6 +380,10 @@ class TsToMp4Remuxer(private val writeSample: suspend (ByteArray) -> Unit) {
         val ADTS_SAMPLE_RATES = intArrayOf(96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350)
     }
 }
+
+data class TsMediaSample(val video: Boolean, val offset: Long, val size: Int, val timestamp90k: Long, val sync: Boolean)
+data class TsVideoConfiguration(val width: Int, val height: Int, val sps: ByteArray, val pps: ByteArray)
+data class TsAudioConfiguration(val sampleRate: Int, val channels: Int, val specific: ByteArray)
 
 class RemuxException(message: String) : Exception(message)
 

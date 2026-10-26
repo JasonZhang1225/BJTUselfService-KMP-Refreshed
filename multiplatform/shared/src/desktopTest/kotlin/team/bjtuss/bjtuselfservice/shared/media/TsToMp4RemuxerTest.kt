@@ -51,6 +51,28 @@ class TsToMp4RemuxerTest {
     }
 
     @Test
+    fun directSampleStreamMatchesRemuxedPayloadWithoutGrowingTables() = runBlocking {
+        val whole = fixture("synthetic-0.ts") + fixture("synthetic-1.ts")
+        val (_, expected) = remux(listOf(whole))
+        val bytes = ByteArrayBuilder()
+        val samples = mutableListOf<TsMediaSample>()
+        val parser = TsToMp4Remuxer(collectSampleTable = false, onSample = samples::add) { bytes.append(it) }
+        whole.toList().chunked(1000).forEach { parser.feed(it.toByteArray()) }
+        parser.finish()
+        assertEquals(100, samples.count { it.video })
+        assertEquals(189, samples.count { !it.video })
+        assertEquals(0, parser.videoSampleCount)
+        assertEquals(0, parser.audioSampleCount)
+        assertEquals(64, parser.videoConfiguration?.width)
+        assertEquals(48, parser.videoConfiguration?.height)
+        assertEquals(48000, parser.audioConfiguration?.sampleRate)
+        var offset = 0L
+        samples.forEach { assertEquals(offset, it.offset); offset += it.size }
+        val mdat = topLevelBoxes(expected).last().second
+        assertContentEquals(expected.copyOfRange(mdat + 16, expected.size), bytes.toByteArray())
+    }
+
+    @Test
     fun rejectsStreamWithoutVideo() = runBlocking {
         val remuxer = TsToMp4Remuxer { }
         remuxer.feed(ByteArray(188 * 3) { if (it % 188 == 0) 0x47 else 0x00 })

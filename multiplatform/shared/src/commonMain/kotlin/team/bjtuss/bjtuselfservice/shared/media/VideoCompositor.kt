@@ -27,6 +27,26 @@ interface VideoCompositor {
     )
 }
 
+/** 支持边接收 MPEG-TS 边合成的离线管线。其他平台继续使用完整 MP4 输入。 */
+interface ProgressiveVideoCompositor : VideoCompositor {
+    suspend fun openProgressive(
+        work: MediaWorkDirectory,
+        durationSeconds: Double,
+        quality: PlaybackCompositeQuality,
+    ): ProgressiveComposition
+}
+
+interface ProgressiveComposition {
+    /** 已持久化的合成边界；恢复时不重新编码这一段。 */
+    val resumeSeconds: Double
+    val isComplete: Boolean get() = false
+    suspend fun append(index: Int, bytes: ByteArray)
+    suspend fun finishInput(index: Int)
+    suspend fun compose(onProgress: (Float) -> Unit, onStatus: (String?) -> Unit,
+        onFinalizing: (Float) -> Unit = {})
+    suspend fun close()
+}
+
 class CompositionException(message: String) : Exception(message)
 
 object UnavailableVideoCompositor : VideoCompositor {

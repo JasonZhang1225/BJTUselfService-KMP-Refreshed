@@ -156,6 +156,11 @@ class HlsRecordingDownloader(
     /** 同时在飞的录播分片数；1 表示退回逐个抓。 */
     private val concurrency: Int = DEFAULT_SEGMENT_CONCURRENCY,
 ) {
+    /** 流水线两路各两个分片，总连接数仍不超过原来的四个。 */
+    fun withConcurrency(count: Int): HlsRecordingDownloader {
+        require(count in 1..DEFAULT_SEGMENT_CONCURRENCY)
+        return HlsRecordingDownloader(transport, retryDelayMillis, segmentSource, count)
+    }
     suspend fun resolvePlaylist(playlistUrl: String, onRetry: (Int, Long) -> Unit = { _, _ -> }): HlsMediaPlaylist {
         if (!isSchoolPlaybackStreamUrl(playlistUrl)) throw HlsDownloadException(HlsDownloadFailure.UNSUPPORTED)
         var url = playlistUrl
@@ -181,6 +186,16 @@ class HlsRecordingDownloader(
         onProgress: (HlsDownloadProgress) -> Unit,
     ) {
         val media = resolvePlaylist(playlistUrl, onRetry)
+        downloadResolved(media, sink, checkpoint, onRetry, onProgress)
+    }
+
+    suspend fun downloadResolved(
+        media: HlsMediaPlaylist,
+        sink: StreamingFileSink,
+        checkpoint: HlsSegmentCheckpoint? = null,
+        onRetry: (Int, Long) -> Unit = { _, _ -> },
+        onProgress: (HlsDownloadProgress) -> Unit,
+    ) {
         val total = media.segmentUrls.size
         var written = 0L
         var transferred = 0L
