@@ -7,6 +7,10 @@
     <!-- 实时动态在课前 N 分钟、开课、下课准点出现/换状态（息屏也要准）；安装时授予，不弹框。只登记下一个时刻。 -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
+    <!-- 课程回放下载/合成：前台服务保活，通知栏显示进度。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
     <!-- Android 11+ 默认看不到其他应用。附件“打开方式”、打开完美校园 App 和微信扫一扫都要声明。 -->
     <queries>
         <package android:name="com.newcapec.mobile.ncp" />
@@ -54,6 +58,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_previews" />
         </provider>
+        <!-- 课程回放下载/合成：前台服务保活，任务本身在会话作用域里跑。 -->
+        <service
+            android:name=".playback.PlaybackForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <!-- 课程桌面小组件：与 iOS 小组件同一份快照与版式规则。 -->
         <receiver
             android:name=".widget.UpNextCourseWidgetProvider"

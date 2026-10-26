@@ -111,6 +111,7 @@ internal fun rememberAuthenticatedSession(
             examScheduleModel = graph.examScheduleModel,
             homeworkModel = graph.homeworkModel,
             coursewareModel = graph.coursewareModel,
+            playbackModel = graph.playbackModel,
             otherFunctionModel = graph.otherFunctionModel,
             classroomModel = graph.classroomModel,
             classroomOccupancyModel = graph.classroomOccupancyModel,

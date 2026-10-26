@@ -34,6 +34,10 @@ local.properties
 # Local packaged app builds (APK/app/DMG); do not commit.
 /builtapps/
 
+# jpackage 生成的 WiX 中间文件（本地打包副产物；仓库里跟踪的 main.wxs 不受影响）。
+/*.wxs
+/multiplatform/*.wxs
+
 # Android signing keys; never commit.
 *.jks
 *.keystore

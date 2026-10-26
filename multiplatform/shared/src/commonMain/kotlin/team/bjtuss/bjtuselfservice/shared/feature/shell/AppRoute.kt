@@ -197,6 +197,7 @@ internal enum class AppSection(
     HOMEWORK("课程平台作业"),
     ASSIGNMENTS("作业"),
     COURSEWARE("课件下载"),
+    PLAYBACK("课程回放"),
     CLASSROOM_OCCUPANCY("教室查询"),
     CLASSROOMS("教室人数估计"),
     MAILBOX("邮箱"),

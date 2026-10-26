@@ -105,6 +105,17 @@ fun CoursewareWorkspace(
         }
         scope.launch {
             fileFeedback = null
+            if (!node.downloadAllowed && fileGateway.isStreamingSaveAvailable) {
+                when (val saved = model.saveRestrictedResource(node.stableKey, fileGateway)) {
+                    is CoursewareOperationResult.Failure -> Unit
+                    is CoursewareOperationResult.Success -> fileFeedback = when (saved.value) {
+                        HomeworkFileSaveResult.Saved -> "文件已通过备用方式保存。"
+                        HomeworkFileSaveResult.Cancelled -> "已取消保存，没有写入文件。"
+                        is HomeworkFileSaveResult.Failed -> "保存失败，未完成的文件已删除，请重新选择位置。"
+                    }
+                }
+                return@launch
+            }
             when (val downloaded = model.downloadResource(node.stableKey)) {
                 is CoursewareOperationResult.Failure -> Unit
                 is CoursewareOperationResult.Success -> {
@@ -139,7 +150,7 @@ fun CoursewareWorkspace(
                                 if (skipped.isEmpty()) {
                                     "目录已完整导出。"
                                 } else {
-                                    "已导出可下载的文件；跳过 ${skipped.size} 个老师未开放下载的文件：" +
+                                    "目录已导出；有 ${skipped.size} 个未开放下载的文件没有包含（备用方式没取到或文件过大，可单独下载）：" +
                                         skipped.take(3).joinToString("、") + if (skipped.size > 3) " 等。" else "。"
                                 }
                             }
@@ -199,6 +210,19 @@ fun CoursewareWorkspace(
                         onClick = ::cancelDirectoryExport,
                     ) { Text("取消") }
                 }
+            }
+        }
+        state.streamProgress?.let { (written, total) ->
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                LinearProgressIndicator(
+                    progress = { if (total > 0) written.toFloat() / total else 0f },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "正在通过备用方式下载 ${formatByteSize(written)} / ${formatByteSize(total)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         if (directoryJob != null && state.directoryDownloadTotal == 0) {
@@ -829,7 +853,7 @@ private fun CoursewareDetailSheetBody(
         if (node.isFolder) {
             DetailLine("包含", "${node.children.size} 个直接子项目")
             node.restrictedResourceCount().takeIf { it > 0 }?.let { count ->
-                DetailLine("未开放下载", "$count 个文件（导出时跳过）")
+                DetailLine("未开放下载", "$count 个文件（导出时改用备用方式获取）")
             }
             Button(
                 onClick = { onExportDirectory(node.stableKey, node.name) },
@@ -857,18 +881,23 @@ private fun CoursewareDetailSheetBody(
             node.teacherName.takeIf { it.isNotBlank() }?.let { DetailLine("上传教师", it) }
             node.inputTime.takeIf { it.isNotBlank() }?.let { DetailLine("上传时间", it) }
             DetailLine("下载次数", node.downloadCount.toString())
-            if (!node.downloadAllowed) {
-                DetailLine("下载权限", "老师未开放下载，只能在智慧教学网页中在线查看")
-            }
+            DetailLine(
+                "下载权限",
+                if (node.downloadAllowed) {
+                    "老师已开放下载"
+                } else {
+                    "老师未开放下载（网页只能在线查看）。App 会改从课件的存储地址获取原文件；原文件取不到时保存在线预览用的 PDF。"
+                },
+            )
             Button(
                 onClick = { onDownload(node) },
-                enabled = fileGatewayAvailable && !isDownloading && node.downloadAllowed,
+                enabled = fileGatewayAvailable && !isDownloading,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     when {
-                        !node.downloadAllowed -> "未开放下载"
                         isDownloading -> "正在读取文件"
+                        !node.downloadAllowed -> "用备用方式下载并保存"
                         else -> "下载并选择保存位置"
                     },
                 )
@@ -915,7 +944,8 @@ private fun CoursewareFileFailureBanner(failure: CoursewareSyncFailure, onDismis
             CoursewareSyncFailure.MALFORMED_RESPONSE -> "学校平台返回了无效的文件信息。"
             CoursewareSyncFailure.SECURE_CHANNEL_UNAVAILABLE -> "该资源地址不在允许的学校通道范围内。"
             CoursewareSyncFailure.CACHE -> "本地课件缓存不可用。"
-            CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED -> "老师未开放下载，只能在智慧教学网页中在线查看。"
+            CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED -> "老师未开放下载，备用方式也没有取到这个文件，请稍后重试或在网页中在线查看。"
+            CoursewareSyncFailure.FILE_TOO_LARGE -> "文件太大，请单独下载这个文件（会边下边存）。"
         },
         onDismiss = onDismiss,
     )
@@ -932,7 +962,8 @@ private fun failureMessage(failure: CoursewareSyncFailure, hasContent: Boolean):
     // 已授权明文后勿再写「没有 HTTPS」，与顶部授权 banner 矛盾。
     CoursewareSyncFailure.SECURE_CHANNEL_UNAVAILABLE -> "该资源地址不在允许的学校通道范围内。"
     CoursewareSyncFailure.CACHE -> "本地课件缓存操作失败。"
-    CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED -> "老师未开放下载，只能在智慧教学网页中在线查看。"
+    CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED -> "老师未开放下载，备用方式也没有取到这个文件。"
+    CoursewareSyncFailure.FILE_TOO_LARGE -> "文件太大，请单独下载这个文件。"
 }
 
 @Composable
@@ -972,6 +1003,13 @@ internal fun formatCoursewareSize(raw: String): String {
     // 纯数字 / 小数
     if (trimmed.matches(Regex("""\d+(\.\d+)?"""))) return "$trimmed MB"
     return trimmed
+}
+
+internal fun formatByteSize(bytes: Long): String = when {
+    bytes >= 1024L * 1024 * 1024 -> "${(bytes * 10 / (1024L * 1024 * 1024)) / 10.0} GB"
+    bytes >= 1024L * 1024 -> "${bytes / (1024L * 1024)} MB"
+    bytes >= 1024L -> "${bytes / 1024L} KB"
+    else -> "$bytes B"
 }
 
 /** 列表左侧短徽章：RAR / PDF / PPTX。 */

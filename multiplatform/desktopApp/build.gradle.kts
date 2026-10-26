@@ -137,6 +137,9 @@ abstract class FinalizeMacDistributable : DefaultTask() {
     @get:InputFile
     abstract val calendarHelper: RegularFileProperty
 
+    @get:InputFile
+    abstract val videoFrameHelper: RegularFileProperty
+
     @get:Input
     abstract val displayName: Property<String>
 
@@ -173,6 +176,12 @@ abstract class FinalizeMacDistributable : DefaultTask() {
         val calendarHelperTarget = calendarDirectory.resolve("BJTUCalendarHelper")
         calendarHelper.get().asFile.copyTo(calendarHelperTarget, overwrite = true)
         calendarHelperTarget.setExecutable(true, false)
+        val videoFrameDirectory = resourcesDirectory.resolve("VideoFrame")
+        videoFrameDirectory.deleteRecursively()
+        videoFrameDirectory.mkdirs()
+        val videoFrameHelperTarget = videoFrameDirectory.resolve("BJTUVideoFrameHelper")
+        videoFrameHelper.get().asFile.copyTo(videoFrameHelperTarget, overwrite = true)
+        videoFrameHelperTarget.setExecutable(true, false)
         // App Store 导出合规：仅使用系统 HTTPS/Keychain，无非豁免加密。
         // createDistributable 可能为 UP-TO-DATE，因此收尾任务必须可重复执行。
         val encryptionKey = ":ITSAppUsesNonExemptEncryption"
@@ -502,6 +511,7 @@ compose.desktop {
         val inputSourceHelperFile =
             layout.buildDirectory.file("generated/input-source/libBJTUInputSourceHelper.dylib")
         val calendarHelperFile = layout.buildDirectory.file("generated/calendar/BJTUCalendarHelper")
+        val videoFrameHelperFile = layout.buildDirectory.file("generated/video-frame/BJTUVideoFrameHelper")
         jvmArgs += listOf(
             "--enable-native-access=ALL-UNNAMED",
             // `run` 直接启动 JVM，不经过打包后的 Info.plist；显式设置后 Dock
@@ -511,6 +521,7 @@ compose.desktop {
             "-Dapple.awt.application.appearance=system",
             "-Dbjtu.input-source.helper=${inputSourceHelperFile.get().asFile.absolutePath}",
             "-Dbjtu.calendar.helper=${calendarHelperFile.get().asFile.absolutePath}",
+            "-Dbjtu.video-frame.helper=${videoFrameHelperFile.get().asFile.absolutePath}",
         )
 
         nativeDistributions {
@@ -543,6 +554,8 @@ val inputSourceHelperSource = project.file("src/main/native/InputSourceHelper.m"
 val inputSourceHelperFile =
     layout.buildDirectory.file("generated/input-source/libBJTUInputSourceHelper.dylib")
 val calendarHelperFile = layout.buildDirectory.file("generated/calendar/BJTUCalendarHelper")
+val videoFrameSwiftSource = project.file("src/main/swift/VideoFrameHelper.swift")
+val videoFrameHelperFile = layout.buildDirectory.file("generated/video-frame/BJTUVideoFrameHelper")
 
 // 不改全局 xcode-select：显式环境优先，否则项目局部选择完整 Xcode。
 val xcodeDeveloperDirectory = sequenceOf(
@@ -557,6 +570,13 @@ val compileMacCalendarHelper by tasks.registering(CompileMacCalendarHelper::clas
     xcodeDeveloperDirectory?.let(developerDirectory::set)
 }
 
+// 课程回放画面预览用的截帧小程序；与日历助手同一个 swiftc 任务类型（Swift 会自动链接 AVFoundation 等框架）。
+val compileMacVideoFrameHelper by tasks.registering(CompileMacCalendarHelper::class) {
+    swiftSource.set(videoFrameSwiftSource)
+    executable.set(videoFrameHelperFile)
+    xcodeDeveloperDirectory?.let(developerDirectory::set)
+}
+
 val compileMacInputSourceHelper by tasks.registering(CompileMacInputSourceHelper::class) {
     source.set(inputSourceHelperSource)
     library.set(inputSourceHelperFile)
@@ -568,10 +588,11 @@ val compileMacInputSourceHelper by tasks.registering(CompileMacInputSourceHelper
 // Until formal Developer ID signing is configured, finish the local app image by
 // copying the manifest to the bundle root and renewing its existing ad-hoc seal.
 val finalizeMacDistributable by tasks.registering(FinalizeMacDistributable::class) {
-    dependsOn(compileMacInputSourceHelper, compileMacCalendarHelper)
+    dependsOn(compileMacInputSourceHelper, compileMacCalendarHelper, compileMacVideoFrameHelper)
     privacyManifest.set(macPrivacyManifest)
     inputSourceHelper.set(inputSourceHelperFile)
     calendarHelper.set(calendarHelperFile)
+    videoFrameHelper.set(videoFrameHelperFile)
     displayName.set(macDisplayName)
     // 显式选择启动器，避免普通打包依赖本机试验产物或静默提升最低系统要求。
     providers.gradleProperty("macosSdkLauncher").orNull?.let { sdkLauncher.set(file(it)) }
@@ -605,5 +626,5 @@ tasks.matching { it.name == "packageDmg" }.configureEach {
 }
 
 tasks.matching { it.name == "run" }.configureEach {
-    dependsOn(compileMacInputSourceHelper, compileMacCalendarHelper)
+    dependsOn(compileMacInputSourceHelper, compileMacCalendarHelper, compileMacVideoFrameHelper)
 }

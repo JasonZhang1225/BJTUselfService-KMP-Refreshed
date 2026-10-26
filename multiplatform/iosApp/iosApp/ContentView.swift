@@ -1597,6 +1597,7 @@ private final class AppTabBarController: UIViewController, UITabBarDelegate, Nat
         "MORE": "square.grid.2x2",
         "EXAMS": "clock",
         "COURSEWARE": "books.vertical",
+        "PLAYBACK": "play.rectangle",
         "CLASSROOM_OCCUPANCY": "building.2",
         "MAILBOX": "envelope",
         "CALENDAR": "calendar",

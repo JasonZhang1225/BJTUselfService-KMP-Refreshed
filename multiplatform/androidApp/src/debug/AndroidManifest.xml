@@ -12,5 +12,11 @@
             android:name=".LiveUpdateSmokeActivity"
             android:exported="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <!-- 仅 debug 构建：回放管线自测入口（remux / compose / notify），release 包不含。 -->
+        <activity
+            android:name=".playback.PlaybackSelfTestActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
     </application>
 </manifest>

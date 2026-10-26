@@ -209,7 +209,7 @@ private fun applicationIconColor(section: AppSection): Color {
             if (dark) Color(0xFFEAB477) else Color(0xFFA96620)
         AppSection.HOMEWORK, AppSection.CITEL, AppSection.ASSIGNMENTS ->
             if (dark) Color(0xFF91CFAD) else Color(0xFF347A53)
-        AppSection.COURSEWARE ->
+        AppSection.COURSEWARE, AppSection.PLAYBACK ->
             if (dark) Color(0xFF9EAFE9) else Color(0xFF566DAF)
         AppSection.CLASSROOM_OCCUPANCY, AppSection.CLASSROOMS, AppSection.PHYSICS_LAB ->
             if (dark) Color(0xFF85CBD1) else Color(0xFF267B83)

@@ -218,7 +218,19 @@ jobs:
           $files = @(Get-ChildItem $apps[0].FullName -Recurse -File)
           $obsolete = @($files | Where-Object { $_.Name -match 'BJTUCaptcha|onnxruntime|pytorch' })
           if ($obsolete.Count -gt 0) { throw "Obsolete captcha files in Windows app image" }
+          # 课程回放合成小程序（Media Foundation，不打包 ffmpeg）必须真的进了安装包：
+          # 它以资源形式放在主 jar 里，缺了就说明打包机没有 C++ 工具链，Windows 合成会静默失效。
           Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $helperEntry = $null
+          foreach ($jar in @($files | Where-Object { $_.Extension -eq ".jar" })) {
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($jar.FullName)
+            $helperEntry = $zip.Entries | Where-Object { $_.FullName -eq "native/BJTUPlaybackCompositor.exe" } | Select-Object -First 1
+            $zip.Dispose()
+            if ($helperEntry) { break }
+          }
+          if (-not $helperEntry) { throw "Windows playback compositor helper missing from app image" }
+          if ($helperEntry.Length -gt 5MB) { throw "Playback compositor helper too large: $($helperEntry.Length) bytes" }
+          Write-Host "Playback compositor helper: $($helperEntry.Length) bytes"
           foreach ($pair in @(@("sqlite-jdbc-*.jar", "org/sqlite/native/Windows/x86_64/"), @("jna-5*.jar", "com/sun/jna/win32-x86-64/"))) {
             $jar = @($files | Where-Object { $_.Name -like $pair[0] })
             if ($jar.Count -ne 1) { throw "Expected one $($pair[0])" }

@@ -248,6 +248,25 @@ class AppDataGraph(
         repository = coursewareRepository,
         reauthenticate = sessionRecovery::attempt,
     )
+    /** 回放任务（下载、转 MP4、合成）放在会话级作用域里，离开页面不中断；退出登录时随 [close] 取消。 */
+    private val playbackScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
+    val playbackTaskManager = team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackTaskManager(
+        scope = playbackScope,
+        downloader = team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader(
+            transport = transport,
+            segmentSource = team.bjtuss.bjtuselfservice.shared.data.courseware.platformBackgroundSegmentSource(transport)
+                ?: team.bjtuss.bjtuselfservice.shared.data.courseware.DirectHlsSegmentSource(transport),
+        ),
+        compositor = { team.bjtuss.bjtuselfservice.shared.media.PlaybackPlatformHooks.effectiveCompositor },
+        backgroundHost = { team.bjtuss.bjtuselfservice.shared.media.PlaybackPlatformHooks.backgroundHost },
+    )
+    /** 回放下载可能持续数分钟，放在会话级作用域里，离开页面不中断；退出登录时随 [close] 取消。 */
+    val playbackModel = team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackScreenModel(
+        repository = coursewareRepository,
+        taskManager = playbackTaskManager,
+        scope = playbackScope,
+        reauthenticate = sessionRecovery::attempt,
+    )
     val phyVlabRepository = DefaultPhyVlabRepository(SchoolPhyVlabRemoteDataSource(transport))
     // 物理在线不再走学校统一认证：MoodleSession 缺失时用独立账号登录，账号由设置页保存。
     // 协议与账号模型互相引用（协议读账号、账号保存前用协议校验），用单元素持有者打破初始化环。
@@ -329,5 +348,6 @@ class AppDataGraph(
 
     fun close() {
         refreshCoordinator.close()
+        playbackModel.close()
     }
 }

@@ -47,7 +47,66 @@ interface HomeworkFileGateway {
      */
     suspend fun previewFile(file: HomeworkFileContent): HomeworkFilePreviewResult =
         HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+
+    /** 能否边下载边写盘（课程回放动辄 1–2 GB，不能整块放进内存再保存）。 */
+    val isStreamingSaveAvailable: Boolean get() = false
+
+    /**
+     * 先让用户在系统面板选好位置，返回一个可以稍后（甚至在后台任务里）分块写入的目标。
+     * 写入期间文件是临时的，[StreamingDestination.commit] 后才出现在用户选的位置；
+     * [StreamingDestination.abort] 会删除未完成的内容。
+     */
+    suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult =
+        StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+
+    /**
+     * 选位置后立即把 [produce] 写进来的字节依次写入，全部成功才落盘。
+     * [produce] 抛出的异常（网络失败、取消）在删除未完成文件后原样抛给调用方；
+     * 写盘本身失败返回 [HomeworkFileGatewayFailure.IO]。
+     */
+    suspend fun saveStreamingFile(
+        fileName: String,
+        contentType: String,
+        produce: suspend (StreamingFileSink) -> Unit,
+    ): HomeworkFileSaveResult {
+        val destination = when (val opened = openStreamingDestination(fileName, contentType)) {
+            StreamingDestinationResult.Cancelled -> return HomeworkFileSaveResult.Cancelled
+            is StreamingDestinationResult.Failed -> return HomeworkFileSaveResult.Failed(opened.reason)
+            is StreamingDestinationResult.Opened -> opened.destination
+        }
+        var committed = false
+        try {
+            produce(StreamingFileSink(destination::write))
+            return destination.commit().also { committed = it == HomeworkFileSaveResult.Saved }
+        } catch (_: StreamingSinkIoException) {
+            return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+        } finally {
+            if (!committed) kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { destination.abort() }
+        }
+    }
 }
+
+/** 已选好位置、尚未写完的保存目标。写盘失败抛 [StreamingSinkIoException]。 */
+interface StreamingDestination {
+    /** 给用户看的名字（文件名；不含完整路径）。 */
+    val displayName: String
+    suspend fun write(bytes: ByteArray)
+    suspend fun commit(): HomeworkFileSaveResult
+    suspend fun abort()
+}
+
+sealed interface StreamingDestinationResult {
+    class Opened(val destination: StreamingDestination) : StreamingDestinationResult
+    data object Cancelled : StreamingDestinationResult
+    data class Failed(val reason: HomeworkFileGatewayFailure) : StreamingDestinationResult
+}
+
+fun interface StreamingFileSink {
+    suspend fun write(bytes: ByteArray)
+}
+
+/** 平台实现包装写盘异常用，好与生产者（网络）异常区分开。 */
+class StreamingSinkIoException(cause: Throwable? = null) : Exception("Streaming file write failed", cause)
 
 object UnavailableHomeworkFileGateway : HomeworkFileGateway {
     override val isAvailable: Boolean = false

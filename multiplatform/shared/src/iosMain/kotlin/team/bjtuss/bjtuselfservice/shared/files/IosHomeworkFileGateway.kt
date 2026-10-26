@@ -3,6 +3,11 @@ package team.bjtuss.bjtuselfservice.shared.files
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.ObjCObjectVar
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.value
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.readBytes
@@ -22,6 +27,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import platform.Foundation.NSData
+import platform.Foundation.NSError
+import platform.Foundation.NSFileHandle
+import platform.Foundation.fileHandleForWritingAtPath
+import platform.Foundation.writeData
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileCoordinator
 import platform.Foundation.NSTemporaryDirectory
@@ -158,6 +167,57 @@ class IosHomeworkFileGateway(
                 }
             }
         }
+    }
+
+    override val isStreamingSaveAvailable: Boolean = true
+
+    /**
+     * 系统导出面板只能导出已经写完的文件；回放动辄 1–2 GB，先下到临时目录再导出会占双倍空间。
+     * 因此先让用户选一个文件夹（与课件目录导出同一面板），之后在里面边下边写 `.part`，
+     * commit 时改成正式文件名（重名追加序号）；abort 删除 `.part`。
+     */
+    override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
+        if (activeDelegate != null) {
+            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        }
+        val folder = pickFolder() ?: return StreamingDestinationResult.Cancelled
+        val scoped = folder.startAccessingSecurityScopedResource()
+        val folderPath = folder.path
+        val partPath = folderPath?.let { "$it/.${NSUUID().UUIDString}.part" }
+        if (folderPath == null || partPath == null ||
+            !NSFileManager.defaultManager.createFileAtPath(partPath, contents = null, attributes = null)
+        ) {
+            if (scoped) folder.stopAccessingSecurityScopedResource()
+            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+        }
+        val handle = NSFileHandle.fileHandleForWritingAtPath(partPath)
+        if (handle == null) {
+            NSFileManager.defaultManager.removeItemAtPath(partPath, error = null)
+            if (scoped) folder.stopAccessingSecurityScopedResource()
+            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+        }
+        return StreamingDestinationResult.Opened(
+            IosStreamingDestination(folder, scoped, folderPath, partPath, safeExportFileName(fileName), handle),
+        )
+    }
+
+    private suspend fun pickFolder(): NSURL? = suspendCancellableCoroutine { continuation ->
+        lateinit var delegate: IosDocumentPickerDelegate
+        delegate = IosDocumentPickerDelegate(
+            onPicked = { urls -> finish(delegate, continuation, urls.singleOrNull()) },
+            onCancelled = { finish(delegate, continuation, null) },
+        )
+        val picker = UIDocumentPickerViewController(
+            forOpeningContentTypes = listOf(UTTypeFolder),
+            asCopy = false,
+        ).apply {
+            allowsMultipleSelection = false
+            this.delegate = delegate
+        }
+        activeDelegate = delegate
+        activePicker = picker
+        continuation.invokeOnCancellation { cancel(delegate) }
+        presentFromTop(picker) { finish(delegate, continuation, null) }
     }
 
     override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult {
@@ -330,6 +390,88 @@ private class IosQuickLookSource(
     override fun previewControllerDidDismiss(controller: QLPreviewController) {
         onDismissed()
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private class IosStreamingDestination(
+    private val folder: NSURL,
+    private val scoped: Boolean,
+    private val folderPath: String,
+    private val partPath: String,
+    private val fileName: String,
+    private var handle: NSFileHandle?,
+) : StreamingDestination {
+    override var displayName: String = fileName
+        private set
+
+    override suspend fun write(bytes: ByteArray) {
+        val current = handle ?: throw StreamingSinkIoException()
+        val written = withContext(Dispatchers.Default) {
+            memScoped {
+                val error = alloc<ObjCObjectVar<NSError?>>()
+                current.writeData(bytes.toNSData(), error = error.ptr) && error.value == null
+            }
+        }
+        if (!written) throw StreamingSinkIoException()
+    }
+
+    override suspend fun commit(): HomeworkFileSaveResult = withContext(Dispatchers.Default) {
+        close()
+        val finalPath = uniqueChildPath(folderPath, fileName)
+        val moved = memScoped {
+            val error = alloc<ObjCObjectVar<NSError?>>()
+            NSFileManager.defaultManager.moveItemAtPath(partPath, toPath = finalPath, error = error.ptr)
+        }
+        release()
+        if (moved) {
+            displayName = finalPath.substringAfterLast('/')
+            HomeworkFileSaveResult.Saved
+        } else {
+            NSFileManager.defaultManager.removeItemAtPath(partPath, error = null)
+            HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+        }
+    }
+
+    override suspend fun abort() {
+        withContext(NonCancellable + Dispatchers.Default) {
+            close()
+            NSFileManager.defaultManager.removeItemAtPath(partPath, error = null)
+            release()
+        }
+    }
+
+    private fun close() {
+        handle?.let { current ->
+            memScoped {
+                val error = alloc<ObjCObjectVar<NSError?>>()
+                current.closeAndReturnError(error.ptr)
+            }
+        }
+        handle = null
+    }
+
+    private var released = false
+    private fun release() {
+        if (released) return
+        released = true
+        if (scoped) folder.stopAccessingSecurityScopedResource()
+    }
+}
+
+/** 同名文件已存在时追加“ (2)”“ (3)”，不覆盖用户已有的录像。 */
+@OptIn(ExperimentalForeignApi::class)
+private fun uniqueChildPath(folderPath: String, fileName: String): String {
+    val manager = NSFileManager.defaultManager
+    val dot = fileName.lastIndexOf('.')
+    val base = if (dot > 0) fileName.substring(0, dot) else fileName
+    val extension = if (dot > 0) fileName.substring(dot) else ""
+    var candidate = "$folderPath/$fileName"
+    var index = 2
+    while (manager.fileExistsAtPath(candidate) && index < 1000) {
+        candidate = "$folderPath/$base ($index)$extension"
+        index++
+    }
+    return candidate
 }
 
 @OptIn(ExperimentalForeignApi::class)

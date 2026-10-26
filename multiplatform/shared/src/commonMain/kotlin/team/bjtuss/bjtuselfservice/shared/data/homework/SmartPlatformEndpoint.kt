@@ -56,6 +56,22 @@ class SmartPlatformEndpoint private constructor(
     }
 
     /**
+     * 课件在服务器上的存储路径（`queryRpInfoById` 的 `RP_PATH_1/2`，如 `2026/09/12/x.pptx`）
+     * 映射到同源 `/ve/pdf/rp/` 静态目录。逐段校验并编码，拒绝绝对路径、`..` 与控制字符，
+     * 因此结果始终落在 [acceptsResourceUrl] 允许的 origin 与 `/ve/` 前缀内。
+     */
+    fun storedResourceUrl(relativePath: String): String? {
+        val trimmed = relativePath.trim()
+        if (trimmed.isEmpty() || trimmed.startsWith('/') || '\\' in trimmed || trimmed.length > 512) return null
+        val segments = trimmed.split('/')
+        if (segments.any { it.isEmpty() || it == "." || it == ".." || it.any(Char::isISOControl) || '?' in it || '#' in it || '%' in it }) {
+            return null
+        }
+        val resolved = "$apiOrigin/ve/pdf/rp/" + segments.joinToString("/") { it.smartUrlEncode() }
+        return resolved.takeIf(::acceptsResourceUrl)
+    }
+
+    /**
      * HTTPS 策略只接受同源地址。旧明文策略从 iframe 路径提取旧版所需的末 5 段，
      * 再重建为固定的 1936/kk/rp 地址，绝不沿用 iframe 提供的主机或端口。
      */
@@ -129,6 +145,19 @@ class SmartPlatformEndpoint private constructor(
             calendarOrigin = "http://123.121.147.7:1936",
         )
     }
+}
+
+/**
+ * 录播回放只允许学校录播服务器的 HTTPS 地址（实测为 `https://lmtN.bjtu.edu.cn:8880/`）。
+ * 不随智慧教学明文授权放宽：同一节课的 RTMP/明文地址一律不用。
+ */
+fun isSchoolPlaybackStreamUrl(url: String): Boolean {
+    if (url.any(Char::isISOControl) || '#' in url) return false
+    val parsed = runCatching { Url(url) }.getOrNull() ?: return false
+    if (parsed.protocol.name != "https" || !url.startsWith("https://", ignoreCase = true)) return false
+    val host = parsed.host.lowercase()
+    if (!(host == "bjtu.edu.cn" || host.endsWith(".bjtu.edu.cn"))) return false
+    return !parsed.encodedPath.split('/').any { it == ".." || it.equals("%2e%2e", ignoreCase = true) }
 }
 
 private fun acceptsOriginPath(url: String, origin: String, requiredPathPrefix: String): Boolean {

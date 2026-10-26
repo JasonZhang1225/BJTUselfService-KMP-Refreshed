@@ -166,6 +166,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.library.LibraryWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.CoursewareContentSource
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.CoursewareScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.CoursewareWorkspace
+import team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackScreen
 import team.bjtuss.bjtuselfservice.shared.feature.otherfunction.OtherFunctionScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.otherfunction.SCHOOL_CALENDAR_ARTICLE_URL
 import team.bjtuss.bjtuselfservice.shared.feature.otherfunction.SchoolCalendarArticleWorkspace
@@ -749,7 +750,7 @@ fun AuthenticatedAppShell(
                     operation = homeworkModel::refresh,
                     sessionExpired = { homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED },
                 )
-                AppSection.COURSEWARE -> refreshModule(
+                AppSection.COURSEWARE, AppSection.PLAYBACK -> refreshModule(
                     operation = coursewareModel::refresh,
                     sessionExpired = { coursewareModel.state.value.failure == CoursewareSyncFailure.SESSION_EXPIRED },
                 )
@@ -875,7 +876,7 @@ fun AuthenticatedAppShell(
                     operation = homeworkModel::refresh,
                     sessionExpired = { homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED },
                 )
-                AppSection.COURSEWARE -> retryIfExpired(
+                AppSection.COURSEWARE, AppSection.PLAYBACK -> retryIfExpired(
                     operation = coursewareModel::refresh,
                     sessionExpired = { coursewareModel.state.value.failure == CoursewareSyncFailure.SESSION_EXPIRED },
                 )
@@ -930,6 +931,7 @@ fun AuthenticatedAppShell(
                 AppCommand.NAVIGATE_EXAMS -> navigateToSection(AppSection.EXAMS)
                 AppCommand.NAVIGATE_HOMEWORK -> navigateToSection(AppSection.HOMEWORK)
                 AppCommand.NAVIGATE_COURSEWARE -> navigateToSection(AppSection.COURSEWARE)
+                AppCommand.NAVIGATE_PLAYBACK -> navigateToSection(AppSection.PLAYBACK)
                 AppCommand.NAVIGATE_CLASSROOMS -> navigateToSection(AppSection.CLASSROOMS)
                 AppCommand.NAVIGATE_CLASSROOM_OCCUPANCY ->
                     navigateToSection(AppSection.CLASSROOM_OCCUPANCY)
@@ -1855,6 +1857,37 @@ fun AuthenticatedAppShell(
                     onRefresh = refresh,
                     modifier = Modifier.fillMaxSize(),
                 )
+            }
+            AppSection.PLAYBACK -> DestinationPage(
+                title = AppSection.PLAYBACK.title,
+                expanded = expanded,
+                refreshable = true,
+                isRefreshing = coursewareState.isRefreshing,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
+                modifier = modifier,
+                staticTopBar = true,
+                idleStatusText = when {
+                    coursewareState.failure != null -> "同步失败"
+                    coursewareState.source != null -> "已同步"
+                    else -> "未同步"
+                },
+            ) {
+                val playbackModel = session.playbackModel
+                if (playbackModel == null) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("当前会话不支持课程回放。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    PlaybackScreen(
+                        coursewareState = coursewareState,
+                        coursewareModel = coursewareModel,
+                        model = playbackModel,
+                        fileGateway = homeworkFileGateway,
+                        expanded = expanded,
+                        onRefresh = refresh,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
             AppSection.LIBRARY -> DestinationPage(
                 title = AppSection.LIBRARY.title,

@@ -22,6 +22,8 @@ class HostRequestGateTest {
         assertEquals(1, defaultHostRequestPolicy("cas.bjtu.edu.cn").maxConcurrent)
         assertEquals(5, defaultHostRequestPolicy("123.121.147.7").maxConcurrent)
         assertEquals(5, defaultHostRequestPolicy("bksycenter.bjtu.edu.cn").maxConcurrent)
+        // 录播服务器要并发抓分片。
+        assertEquals(4, defaultHostRequestPolicy("lmt1.bjtu.edu.cn").maxConcurrent)
         assertEquals(2, defaultHostRequestPolicy("mail.bjtu.edu.cn").maxConcurrent)
     }
 

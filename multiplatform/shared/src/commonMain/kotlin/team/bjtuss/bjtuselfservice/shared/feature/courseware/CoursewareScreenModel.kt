@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareOperationResult
 import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareRefreshResult
+import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareRemoteException
 import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareRepository
 import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareSyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareCourse
@@ -27,6 +28,7 @@ import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryFile
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryOpenResult
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryWriteSession
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareExportNameAllocator
+import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
 
@@ -48,8 +50,10 @@ data class CoursewareUiState(
     val loadingFolderKeys: Set<String> = emptySet(),
     val directoryDownloadCompleted: Int = 0,
     val directoryDownloadTotal: Int = 0,
-    /** 最近一次目录导出中因老师未开放下载而跳过的文件名。 */
+    /** 最近一次目录导出中老师未开放下载、备用方式也没取到而跳过的文件名。 */
     val directoryExportSkipped: List<String> = emptyList(),
+    /** 未开放下载文件边下边存时的进度（已写入字节, 总字节）。 */
+    val streamProgress: Pair<Long, Long>? = null,
     val source: CoursewareContentSource? = null,
     val failure: CoursewareSyncFailure? = null,
     val fileFailure: CoursewareSyncFailure? = null,
@@ -256,27 +260,77 @@ class CoursewareScreenModel(
         val node = findCoursewareNode(course.children, stableKey)
             ?.takeIf { !it.isFolder }
             ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
-        if (!node.downloadAllowed) {
-            // 不访问网络：服务器对这类链接只会返回 500，界面会误报成网络问题。
-            mutableState.value = mutableState.value.copy(
-                selectedNodeKey = node.stableKey,
-                fileFailure = CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED,
-            )
-            return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED)
-        }
         mutableState.value = mutableState.value.copy(
             isDownloading = true,
             selectedNodeKey = node.stableKey,
             fileFailure = null,
         )
         try {
-            downloadFileWithRecovery { repository.downloadResource(node) }.also { result ->
+            downloadRestrictedAware(node).also { result ->
                 if (result is CoursewareOperationResult.Failure) {
                     mutableState.value = mutableState.value.copy(fileFailure = result.reason)
                 }
             }
         } finally {
             mutableState.value = mutableState.value.copy(isDownloading = false)
+        }
+    }
+
+    /**
+     * 未开放下载的文件由数据层改走服务器存储路径；那条路也失败时，
+     * 网络/数据格式错误统一说成“未开放下载且备用方式失败”，不误导成断网。
+     */
+    private suspend fun downloadRestrictedAware(node: CoursewareNode): CoursewareOperationResult<HomeworkFileContent> {
+        val result = downloadFileWithRecovery { repository.downloadResource(node) }
+        if (node.downloadAllowed || result !is CoursewareOperationResult.Failure) return result
+        return when (result.reason) {
+            CoursewareSyncFailure.NETWORK, CoursewareSyncFailure.MALFORMED_RESPONSE ->
+                CoursewareOperationResult.Failure(CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED)
+            else -> result
+        }
+    }
+
+    /**
+     * 老师未开放下载的单个文件：先确认备用地址与文件名，再弹保存面板，按 4 MB 区间边下边写，
+     * 几百 MB 的课程视频也不会整块读进内存。
+     */
+    suspend fun saveRestrictedResource(
+        stableKey: String,
+        gateway: HomeworkFileGateway,
+    ): CoursewareOperationResult<HomeworkFileSaveResult> = operationMutex.withLock {
+        val course = mutableState.value.selectedCourse
+            ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
+        val node = findCoursewareNode(course.children, stableKey)?.takeIf { !it.isFolder }
+            ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
+        mutableState.value = mutableState.value.copy(isDownloading = true, selectedNodeKey = node.stableKey, fileFailure = null)
+        try {
+            val plan = when (val planned = recoverOperation { repository.planStoredDownload(node) }) {
+                is CoursewareOperationResult.Failure -> {
+                    val reason = when (planned.reason) {
+                        CoursewareSyncFailure.NETWORK, CoursewareSyncFailure.MALFORMED_RESPONSE ->
+                            CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED
+                        else -> planned.reason
+                    }
+                    mutableState.value = mutableState.value.copy(fileFailure = reason)
+                    return@withLock CoursewareOperationResult.Failure(reason)
+                }
+                is CoursewareOperationResult.Success -> planned.value
+            }
+            val saved = try {
+                gateway.saveStreamingFile(plan.fileName, plan.contentType) { sink ->
+                    repository.streamStoredDownload(plan, sink) { written, total ->
+                        mutableState.value = mutableState.value.copy(streamProgress = written to total)
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: CoursewareRemoteException) {
+                mutableState.value = mutableState.value.copy(fileFailure = CoursewareSyncFailure.NETWORK)
+                return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.NETWORK)
+            }
+            CoursewareOperationResult.Success(saved)
+        } finally {
+            mutableState.value = mutableState.value.copy(isDownloading = false, streamProgress = null)
         }
     }
 
@@ -292,17 +346,11 @@ class CoursewareScreenModel(
             if (hydrationFailure != null) return@withLock CoursewareOperationResult.Failure(hydrationFailure)
             val course = mutableState.value.courses.firstOrNull { it.id == courseId }
                 ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
-            val (resources, restricted) = course.resourcesWithFolders(stableKey)
-                .partition { it.node.downloadAllowed }
-            // 未开放下载的文件跳过并在结果里说明，不能让一个文件拖垮整次导出。
-            val skipped = restricted.map { it.node.name }
-            mutableState.value = mutableState.value.copy(directoryExportSkipped = skipped)
+            // 未开放下载的文件也一并导出（数据层走存储路径）；只有那条路也失败的才跳过并说明。
+            val resources = course.resourcesWithFolders(stableKey)
+            mutableState.value = mutableState.value.copy(directoryExportSkipped = emptyList())
             if (resources.isEmpty()) {
-                val reason = if (skipped.isNotEmpty()) {
-                    CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED
-                } else {
-                    CoursewareSyncFailure.MALFORMED_RESPONSE
-                }
+                val reason = CoursewareSyncFailure.MALFORMED_RESPONSE
                 mutableState.value = mutableState.value.copy(fileFailure = reason)
                 return@withLock CoursewareOperationResult.Failure(reason)
             }
@@ -346,9 +394,20 @@ class CoursewareScreenModel(
         var committed = false
         val nameAllocator = CoursewareExportNameAllocator()
         return try {
+            val skipped = mutableListOf<String>()
             for ((index, item) in resources.withIndex()) {
-                val downloaded = when (val result = downloadFileWithRecovery { repository.downloadResource(item.node) }) {
+                val downloaded = when (val result = downloadRestrictedAware(item.node)) {
                     is CoursewareOperationResult.Failure -> {
+                        if (result.reason == CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED ||
+                            result.reason == CoursewareSyncFailure.FILE_TOO_LARGE
+                        ) {
+                            skipped += item.node.name
+                            mutableState.value = mutableState.value.copy(
+                                directoryDownloadCompleted = index + 1,
+                                directoryExportSkipped = skipped.toList(),
+                            )
+                            continue
+                        }
                         mutableState.value = mutableState.value.copy(fileFailure = result.reason)
                         return result
                     }
@@ -417,6 +476,21 @@ class CoursewareScreenModel(
      * - 会话失效：恢复学校登录态后再取一次下载票；
      * - 网络切换或临时无效响应：短暂等待后再请求一次。
      */
+    private suspend fun <T> recoverOperation(
+        operation: suspend () -> CoursewareOperationResult<T>,
+    ): CoursewareOperationResult<T> {
+        val result = operation()
+        if (result !is CoursewareOperationResult.Failure || result.reason != CoursewareSyncFailure.SESSION_EXPIRED) return result
+        val recovered = try {
+            reauthenticate?.invoke() == true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
+        return if (recovered) operation() else result
+    }
+
     private suspend fun downloadFileWithRecovery(
         operation: suspend () -> CoursewareOperationResult<HomeworkFileContent>,
     ): CoursewareOperationResult<HomeworkFileContent> {

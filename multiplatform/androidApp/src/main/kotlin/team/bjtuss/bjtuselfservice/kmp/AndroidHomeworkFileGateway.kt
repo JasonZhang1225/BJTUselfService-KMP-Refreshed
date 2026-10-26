@@ -36,6 +36,9 @@ import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePreviewResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.StreamingDestination
+import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
+import team.bjtuss.bjtuselfservice.shared.files.StreamingSinkIoException
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryFile
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryOpenResult
@@ -54,6 +57,17 @@ class AndroidHomeworkFileGateway(
     private var directoryContinuation: CancellableContinuation<CoursewareDirectoryOpenResult>? = null
     private var pendingDirectoryName: String? = null
     private var directoryOpenJob: Job? = null
+    private var streamUriContinuation: CancellableContinuation<Uri?>? = null
+
+    private val streamSaveLauncher = activity.registerForActivityResult(
+        // 用通用类型而不是具体媒体类型：系统“创建文档”会按 MIME 补扩展名，
+        // 之前写死 video/mp2t 会把回放下载的 MP4 存成“xxx.mp4.ts”。文件名里已经带正确扩展名。
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri ->
+        val continuation = streamUriContinuation ?: return@registerForActivityResult
+        streamUriContinuation = null
+        if (continuation.isActive) continuation.resume(uri)
+    }
 
     private val pickLauncher = activity.registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
@@ -224,6 +238,42 @@ class AndroidHomeworkFileGateway(
         }
     }
 
+    override val isStreamingSaveAvailable: Boolean = true
+
+    /**
+     * 回放等大文件：先用系统“创建文档”选好位置，之后（可在后台服务里）分块写入该文档。
+     * 写入在 applicationContext 的 ContentResolver 上进行，发起页面关掉也不影响；
+     * abort 时删除这个未完成的文档。
+     */
+    override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
+        if (hasActiveRequest()) {
+            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        }
+        val uri = suspendCancellableCoroutine<Uri?> { continuation ->
+            streamUriContinuation = continuation
+            continuation.invokeOnCancellation {
+                if (streamUriContinuation === continuation) streamUriContinuation = null
+            }
+            streamSaveLauncher.launch(safeExportFileName(fileName))
+        } ?: return StreamingDestinationResult.Cancelled
+        val resolver = activity.applicationContext.contentResolver
+        return try {
+            val output = withContext(Dispatchers.IO) { resolver.openOutputStream(uri, "wt") }
+            if (output == null) {
+                withContext(Dispatchers.IO) { runCatching { DocumentsContract.deleteDocument(resolver, uri) } }
+                StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+            } else {
+                StreamingDestinationResult.Opened(
+                    ContentStreamingDestination(resolver, uri, output, displayName(uri) ?: safeExportFileName(fileName)),
+                )
+            }
+        } catch (_: SecurityException) {
+            StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+        } catch (_: FileNotFoundException) {
+            StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+        }
+    }
+
     override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult {
         if (hasActiveRequest()) {
             return CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
@@ -255,6 +305,8 @@ class AndroidHomeworkFileGateway(
                 CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE),
             )
         }
+        if (streamUriContinuation?.isActive == true) streamUriContinuation?.resume(null)
+        streamUriContinuation = null
         pickContinuation = null
         saveContinuation = null
         pendingSaveFile = null
@@ -395,7 +447,8 @@ class AndroidHomeworkFileGateway(
     }
 
     private fun hasActiveRequest(): Boolean =
-        pickContinuation != null || saveContinuation != null || directoryContinuation != null
+        pickContinuation != null || saveContinuation != null || directoryContinuation != null ||
+            streamUriContinuation != null
 
     private fun displayName(uri: Uri): String? = activity.contentResolver.query(
         uri,
@@ -407,5 +460,43 @@ class AndroidHomeworkFileGateway(
         if (!cursor.moveToFirst()) return@use null
         val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
         if (index < 0) null else cursor.getString(index)
+    }
+}
+
+private class ContentStreamingDestination(
+    private val resolver: android.content.ContentResolver,
+    private val uri: Uri,
+    private var output: java.io.OutputStream?,
+    override val displayName: String,
+) : StreamingDestination {
+    override suspend fun write(bytes: ByteArray) {
+        val stream = output ?: throw StreamingSinkIoException()
+        try {
+            withContext(Dispatchers.IO) { stream.write(bytes) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            throw StreamingSinkIoException(error)
+        }
+    }
+
+    override suspend fun commit(): HomeworkFileSaveResult = withContext(Dispatchers.IO) {
+        try {
+            output?.flush()
+            output?.close()
+            output = null
+            HomeworkFileSaveResult.Saved
+        } catch (_: Exception) {
+            HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+        }
+    }
+
+    override suspend fun abort() {
+        withContext(NonCancellable + Dispatchers.IO) {
+            runCatching { output?.close() }
+            output = null
+            runCatching { DocumentsContract.deleteDocument(resolver, uri) }
+                .onFailure { android.util.Log.w("AndroidFileGateway", "deleteDocument failed: ${it.javaClass.simpleName}: ${it.message}") }
+        }
     }
 }
