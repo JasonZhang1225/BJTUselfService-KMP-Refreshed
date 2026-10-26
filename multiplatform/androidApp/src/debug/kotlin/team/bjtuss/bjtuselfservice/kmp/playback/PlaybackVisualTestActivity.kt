@@ -33,9 +33,13 @@ import java.io.File
 /** 只在 debug 包中：脱离账号页验证生产播放器、预览和任务卡；不读取学校凭据。 */
 class PlaybackVisualTestActivity : ComponentActivity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val transport by lazy { createSchoolHttpTransport() as KtorSchoolHttpTransport }
+    private companion object {
+        val transport by lazy { createSchoolHttpTransport() as KtorSchoolHttpTransport }
+        var offline = false
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        team.bjtuss.bjtuselfservice.shared.logging.AppLog.enabled = true
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val file = File(filesDir, "playback-visual-streams.json")
         if (!file.isFile) { finish(); return }
@@ -57,29 +61,26 @@ class PlaybackVisualTestActivity : ComponentActivity() {
                 reader.endArray()
             }
         }
-        var offline = false
+        val publicTransport = transport
         val testTransport = object : SchoolHttpTransport by transport {
             override suspend fun executePublic(request: SchoolHttpRequest): SchoolHttpResponse {
                 if (offline) {
                     android.util.Log.d("PlaybackVisualTest", "simulated request failure at ${android.os.SystemClock.elapsedRealtime()}")
                     throw java.io.IOException("debug-network-interruption")
                 }
-                return transport.executePublic(request)
+                return publicTransport.executePublic(request)
             }
         }
         // 使用生产保存面板、可持久化 URI、任务存储和前台服务；仅标题是虚构数据。
         val gateway = AndroidHomeworkFileGateway(this)
-        val host = AndroidPlaybackBackgroundHost(applicationContext)
-        val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(testTransport), { defaultVideoCompositor() }, { host },
-            taskStore = gateway.playbackRecovery.storeFor("visual-test"),
-            restoreDestination = { token, name -> gateway.playbackRecovery.restoreDestination(token, name) })
+        val manager = (gateway.playbackRecovery as AndroidPlaybackRecovery).managerFor("visual-test", testTransport)
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2102)
         }
         setContent {
             var dark by remember { mutableStateOf(false) }
             var large by remember { mutableStateOf(false) }
-            var downloads by remember { mutableStateOf(false) }
+            var downloads by remember { mutableStateOf(true) }
             var interrupted by remember { mutableStateOf(false) }
             var playing by remember { mutableStateOf(false) }
             var message by remember { mutableStateOf("") }
@@ -96,6 +97,7 @@ class PlaybackVisualTestActivity : ComponentActivity() {
                                 TextButton(onClick = { downloads = !downloads; playing = false }) { Text(if (downloads) "画面验证" else "下载验证") }
                                 TextButton(onClick = { dark = !dark }) { Text("浅/深色") }
                                 TextButton(onClick = { large = !large }) { Text("字号") }
+                                TextButton(onClick = { recreate() }) { Text("重建页面") }
                             }
                             if (downloads) {
                                 Text("系统累计接收：${received / 1024} KB", style = MaterialTheme.typography.bodySmall)
@@ -126,5 +128,5 @@ class PlaybackVisualTestActivity : ComponentActivity() {
             }
         }
     }
-    override fun onDestroy() { scope.cancel(); transport.close(); super.onDestroy() }
+    override fun onDestroy() { scope.cancel(); super.onDestroy() }
 }

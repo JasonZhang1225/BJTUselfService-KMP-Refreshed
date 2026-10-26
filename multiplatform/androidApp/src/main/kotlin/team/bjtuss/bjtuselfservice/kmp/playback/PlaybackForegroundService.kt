@@ -39,7 +39,7 @@ private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoi
 /**
  * 课程回放下载/合成的保活前台服务。
  *
- * 任务本身跑在会话级作用域里（`PlaybackTaskManager`），这里只负责让系统不要在下载、
+ * 任务本身由应用按账号持有（`PlaybackTaskManager`），这里只负责让系统不要在下载、
  * 合成期间把 App 挂起或杀掉，并在通知栏显示进度。任务全部结束后服务自己停掉。
  *
  * Android 16（API 36）起这条常驻通知就是「实时动态（Live Updates）」：系统按

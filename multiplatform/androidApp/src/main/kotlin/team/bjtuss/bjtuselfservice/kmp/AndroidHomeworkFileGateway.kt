@@ -475,6 +475,10 @@ internal class ContentStreamingDestination(
 ) : StreamingDestination {
     override val recoveryToken: String get() = uri.toString()
     private var finished = false
+    override suspend fun closeForRecovery() = withContext(NonCancellable + Dispatchers.IO) {
+        runCatching { output?.close() }
+        output = null
+    }
     override suspend fun write(bytes: ByteArray) {
         try {
             withContext(Dispatchers.IO) {

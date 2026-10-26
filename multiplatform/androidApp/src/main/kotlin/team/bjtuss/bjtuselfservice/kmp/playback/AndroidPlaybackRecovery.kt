@@ -8,6 +8,8 @@ import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.io.files.Path
 import team.bjtuss.bjtuselfservice.kmp.ContentStreamingDestination
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.*
@@ -16,6 +18,24 @@ import team.bjtuss.bjtuselfservice.shared.files.*
 /** 不持有 Activity；任务记录和原始分片按账号摘要隔离在应用私有 files 下。 */
 class AndroidPlaybackRecovery(context: Context) : PlaybackRecoveryAccess {
     private val app = context.applicationContext
+    override fun retainedManager(accountScope: String): PlaybackTaskManager = managerFor(accountScope)
+
+    /** 只保存 applicationContext、公开媒体 transport 与目标 URI，不保存 Activity/登录会话。 */
+    fun managerFor(accountScope: String, transport: team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport? = null): PlaybackTaskManager =
+        synchronized(managers) {
+            managers.getOrPut(accountScope) {
+                val publicTransport = transport ?: team.bjtuss.bjtuselfservice.shared.network.createSchoolHttpTransport()
+                val host = AndroidPlaybackBackgroundHost(app)
+                PlaybackTaskManager(CoroutineScope(SupervisorJob() + Dispatchers.Main),
+                    team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader(publicTransport),
+                    { team.bjtuss.bjtuselfservice.shared.media.PlaybackPlatformHooks.effectiveCompositor },
+                    { host }, storeFor(accountScope), ::restoreDestination)
+            }
+        }
+
+    private companion object {
+        val managers = mutableMapOf<String, PlaybackTaskManager>()
+    }
     override fun storeFor(accountScope: String): PlaybackTaskStore {
         val owner = MessageDigest.getInstance("SHA-256").digest(accountScope.toByteArray()).joinToString("") { "%02x".format(it) }
         return AndroidPlaybackTaskStore(File(app.filesDir, "playback-tasks/$owner"))

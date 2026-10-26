@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.util.Log
 import java.io.File
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackCompositeQuality
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackBackgroundState
 import team.bjtuss.bjtuselfservice.shared.media.CompositionException
@@ -26,6 +27,7 @@ import team.bjtuss.bjtuselfservice.shared.media.defaultVideoCompositor
 class PlaybackSelfTestActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        team.bjtuss.bjtuselfservice.shared.logging.AppLog.enabled = true
         val mode = intent.getStringExtra("mode").orEmpty()
         // `am` 的 --esa 只接受一个值，这里用逗号分隔多个输入路径。
         val inputs = (intent.getStringExtra("inputs") ?: "")
@@ -42,6 +44,7 @@ class PlaybackSelfTestActivity : Activity() {
                 when (mode) {
                     "remux" -> remux(workDir, inputs, outputName)
                     "compose" -> compose(workDir, left, right, outputName, qualityName)
+                    "progressive" -> progressive(workDir, left, right, outputName)
                     "notify" -> notify()
                     else -> error("未知 mode：$mode")
                 }
@@ -101,6 +104,42 @@ class PlaybackSelfTestActivity : Activity() {
     }
 
     /** 相对路径按工作目录解析，绝对路径原样使用。 */
+    private fun progressive(workDir: File, left: String, right: String, outputName: String): String = runBlocking {
+        val compositor = defaultVideoCompositor() as team.bjtuss.bjtuselfservice.shared.media.ProgressiveVideoCompositor
+        val work = team.bjtuss.bjtuselfservice.shared.media.MediaWorkDirectory(kotlinx.io.files.Path(File(workDir, "$outputName.work").absolutePath))
+        val session = compositor.openProgressive(work, 160.005, PlaybackCompositeQuality.HIGH)
+        val finished = java.util.concurrent.atomic.AtomicInteger(0)
+        var reported = false
+        try {
+            kotlinx.coroutines.coroutineScope {
+                listOf(left, right).forEachIndexed { index, path ->
+                    launch(kotlinx.coroutines.Dispatchers.IO) {
+                        File(resolve(workDir, path)).inputStream().use { input ->
+                            val buffer = ByteArray(intent.getIntExtra("inputChunkBytes", 256 * 1024).coerceIn(188, 8 * 1024 * 1024))
+                            while (true) {
+                                val n = input.read(buffer)
+                                if (n < 0) break
+                                session.append(index, buffer.copyOf(n))
+                                kotlinx.coroutines.delay(intent.getLongExtra("feedDelayMillis", 100).coerceAtLeast(0))
+                            }
+                        }
+                        session.finishInput(index)
+                        Log.i(TAG, "producer $index complete ${finished.incrementAndGet()}/2")
+                    }
+                }
+                session.compose(onProgress = { fraction ->
+                    if (!reported && fraction > 0) {
+                        reported = true
+                        Log.i(TAG, "first progressive frame; finished producers=${finished.get()}/2")
+                    }
+                }, onStatus = { Log.i(TAG, "progressive status $it") })
+            }
+            val output = File(workDir, outputName)
+            File(work.file("composite.mp4").toString()).copyTo(output, overwrite = true)
+            "progressive -> ${output.length()} bytes; early=$reported"
+        } finally { session.close() }
+    }
+
     private fun resolve(workDir: File, path: String): String {
         val file = File(path)
         return if (file.isAbsolute) file.absolutePath else File(workDir, path).absolutePath
