@@ -12,6 +12,7 @@ internal class DownloadSpeedMeter(private val millis: () -> Long = monotonicMill
     init { samples.addLast(millis() to 0L) }
 
     fun add(bytes: Long) { transferred.update { it + bytes.coerceAtLeast(0) } }
+    val totalTransferred: Long get() = transferred.value
 
     fun sample(): Long? {
         val now = millis()

@@ -94,6 +94,8 @@ interface StreamingDestination {
     val displayName: String
     suspend fun write(bytes: ByteArray)
     suspend fun commit(): HomeworkFileSaveResult
+    /** 保留所选文件和权限，关闭未完成写入；重试时由平台重新从文件开头写。 */
+    suspend fun closeForRecovery() = Unit
     suspend fun abort()
 }
 

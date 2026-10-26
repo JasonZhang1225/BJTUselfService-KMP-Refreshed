@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
 import kotlinx.serialization.Serializable
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -49,13 +50,17 @@ import team.bjtuss.bjtuselfservice.shared.media.PlaybackBackgroundHost
 import team.bjtuss.bjtuselfservice.shared.media.RemuxException
 import team.bjtuss.bjtuselfservice.shared.media.TsToMp4Remuxer
 import team.bjtuss.bjtuselfservice.shared.media.VideoCompositor
+import team.bjtuss.bjtuselfservice.shared.media.ProgressiveVideoCompositor
 import team.bjtuss.bjtuselfservice.shared.media.readFileInChunks
 
 @Serializable
 enum class PlaybackTaskPhase(val label: String) {
     QUEUED("排队中"),
+    PAUSED("已暂停"),
     DOWNLOADING("下载中"),
+    PIPELINING("下载并合成"),
     COMPOSITING("拼接中"),
+    FINALIZING("整理中"),
     SAVING("保存中"),
     DONE("已完成"),
     FAILED("失败"),
@@ -89,13 +94,22 @@ data class PlaybackTask(
     /** 当前下载速度（字节/秒）；还没有速度时为 null。 */
     val bytesPerSecond: Long? = null,
     val canResume: Boolean = false,
+    val stageProgress: Float? = null,
+    val remainingSeconds: Long? = null,
+    val progressive: Boolean = false,
+    val downloadProgress: Float? = null,
 ) {
-    val isActive: Boolean get() = phase in setOf(PlaybackTaskPhase.QUEUED, PlaybackTaskPhase.DOWNLOADING, PlaybackTaskPhase.COMPOSITING, PlaybackTaskPhase.SAVING)
+    val isActive: Boolean get() = phase in setOf(PlaybackTaskPhase.QUEUED, PlaybackTaskPhase.DOWNLOADING, PlaybackTaskPhase.PIPELINING, PlaybackTaskPhase.COMPOSITING, PlaybackTaskPhase.FINALIZING, PlaybackTaskPhase.SAVING)
+    val canPause: Boolean get() = phase == PlaybackTaskPhase.QUEUED || phase == PlaybackTaskPhase.DOWNLOADING ||
+        phase == PlaybackTaskPhase.PIPELINING || (progressive && phase in setOf(PlaybackTaskPhase.COMPOSITING, PlaybackTaskPhase.FINALIZING))
 
     /** “1.2 MB / 约 5.4 GB”；估不出总量时只显示已下载部分。 */
     val sizeLabel: String?
         get() = when {
             bytesDownloaded <= 0L -> null
+            progressive && phase in setOf(PlaybackTaskPhase.COMPOSITING, PlaybackTaskPhase.FINALIZING) -> "已下载 ${formatSize(bytesDownloaded)}"
+            composite && (phase == PlaybackTaskPhase.COMPOSITING || phase == PlaybackTaskPhase.SAVING) ->
+                "已下载 ${formatSize(bytesDownloaded)}" + (bytesTotal?.let { " · 预计输出 ${formatSize(it)}" } ?: "")
             bytesTotal != null && bytesTotal > 0L -> "${formatSize(bytesDownloaded)} / 约 ${formatSize(bytesTotal)}"
             else -> formatSize(bytesDownloaded)
         }
@@ -103,6 +117,18 @@ data class PlaybackTask(
     /** “9.1 MB/s”。 */
     val speedLabel: String?
         get() = bytesPerSecond?.let { formatSpeed(it) }
+
+    val remainingLabel: String? get() = if (!isActive || phase == PlaybackTaskPhase.QUEUED) null else {
+        val estimate = remainingSeconds?.let { (if (it < 60) "" else "约 ") + formatRemainingSeconds(it) } ?: "估算中"
+        when (phase) {
+            PlaybackTaskPhase.PIPELINING -> "预计剩余$estimate（下载与合成并行）"
+            PlaybackTaskPhase.DOWNLOADING -> "下载剩余$estimate" + if (composite) " · 合成时间另计" else ""
+            PlaybackTaskPhase.COMPOSITING -> "合成剩余$estimate · 随后保存文件"
+            PlaybackTaskPhase.FINALIZING -> "整理剩余$estimate · 随后保存文件"
+            PlaybackTaskPhase.SAVING -> "保存剩余$estimate"
+            else -> null
+        }
+    }
 }
 
 sealed interface PlaybackEnqueueResult {
@@ -112,7 +138,7 @@ sealed interface PlaybackEnqueueResult {
 }
 
 /**
- * 回放下载任务：先在系统面板选好保存位置，然后在会话级作用域里排队执行
+ * 回放下载任务：先在系统面板选好保存位置，然后在宿主提供的长生命周期作用域里排队执行
  * （下载 → 无损转 MP4 → 可选的左右并排合成 → 写到所选位置）。离开页面不影响；
  * 同一时间只跑一个任务，避免两个大任务抢带宽和编码器。
  */
@@ -129,10 +155,13 @@ class PlaybackTaskManager(
 
     private val runMutex = Mutex()
     private val jobs = mutableMapOf<String, Job>()
+    private enum class Stop { PAUSE, DISCARD }
+    private val stops = mutableMapOf<String, Stop>()
     private var nextId = 0
     private class Request(
         val streams: List<PlaybackStream>, val composite: Boolean,
         val destinations: List<StreamingDestination>, val quality: PlaybackCompositeQuality,
+        val progressive: Boolean = false,
     ) {
         val committed = BooleanArray(destinations.size)
         val checkpoints = mutableMapOf<Int, HlsSegmentCheckpoint>()
@@ -145,6 +174,7 @@ class PlaybackTaskManager(
     private val initialized = CompletableDeferred<Unit>()
     private val workRoot get() = taskStore?.workRoot ?: MediaWorkDirectory.root
     private var persistenceAvailable = true
+    private var historyLoaded = false
 
     val canComposite: Boolean get() = compositor().isAvailable
 
@@ -152,8 +182,12 @@ class PlaybackTaskManager(
         scope.launch {
             try {
                 restoreTasks()
+                historyLoaded = true
                 MediaWorkDirectory.purgeStale(requests.keys.toSet(), workRoot)
-            } catch (error: CancellationException) { throw error }
+            } catch (error: CancellationException) {
+                persistenceAvailable = false // 读取未完成，不能用空列表覆盖上次运行的记录。
+                throw error
+            }
             catch (_: Exception) {
                 persistenceAvailable = false // 不用空记录覆盖可能损坏但尚可恢复的旧文件。
                 mutableTasks.value = listOf(PlaybackTask("history-error", "", "下载记录", emptyList(), false,
@@ -168,10 +202,7 @@ class PlaybackTaskManager(
             try { awaitCancellation() } finally {
                 withContext(NonCancellable) {
                     jobs.values.toList().forEach { it.cancelAndJoin() }
-                    // 退出账号时，已经失败并等待继续的任务也要关闭目标与清理分片。
-                    requests.toMap().forEach { (id, request) -> discard(id, request) }
-                    requests.clear()
-                    storedRequests.value = emptyMap()
+                    // 宿主销毁不是用户取消：保留断点。退出账号通过 cancelAllAndJoin 明确取消。
                     runCatching { persistNow() }
                 }
             }
@@ -192,6 +223,7 @@ class PlaybackTaskManager(
         if (!gateway.isStreamingSaveAvailable) return PlaybackEnqueueResult.Failed("当前平台还不能保存大文件。")
         val ordered = streams.sortedBy { it.kind.ordinal }
         val doComposite = composite && ordered.size == 2 && compositor().isAvailable
+        val doProgressive = doComposite && compositor() is ProgressiveVideoCompositor
         val names = if (doComposite) {
             listOf(playbackFileName(courseName, detail.lesson, ordered.joinToString("+") { it.kind.fileLabel }))
         } else {
@@ -218,10 +250,11 @@ class PlaybackTaskManager(
             lessonTitle = detail.lesson.title,
             streamLabels = ordered.map { it.kind.label },
             composite = doComposite,
+            progressive = doProgressive,
             outputs = destinations.map { it.displayName },
         )
         mutableTasks.value = listOf(task) + mutableTasks.value
-        requests[id] = Request(ordered, doComposite, destinations, quality)
+        requests[id] = Request(ordered, doComposite, destinations, quality, doProgressive)
         rememberRequest(id, requests.getValue(id))
         try { persistNow() } catch (error: CancellationException) { throw error }
         catch (_: Exception) {
@@ -236,11 +269,49 @@ class PlaybackTaskManager(
     }
 
     fun cancel(id: String) {
+        stops[id] = Stop.DISCARD
+        val job = jobs[id]
+        if (job != null) job.cancel() else {
+            requests.remove(id)?.let { request -> scope.launch {
+                discard(id, request)
+                storedRequests.update { it - id }
+                update(id) { it.copy(phase = PlaybackTaskPhase.CANCELLED, canResume = false, remainingSeconds = null,
+                    message = "已取消，未完成的文件已删除。") }
+                persistNow()
+            } }
+        }
+    }
+
+    fun cancelAll() {
+        requests.keys.toList().forEach(::cancel)
+    }
+
+    /** 清除账号数据前先停止写盘，避免清理结束后又被在途任务写回。 */
+    suspend fun cancelAllAndJoin() = withContext(NonCancellable) {
+        initialized.await()
+        val running = jobs.toMap()
+        running.forEach { (id, job) -> stops[id] = Stop.DISCARD; job.cancel() }
+        running.values.forEach { it.join() }
+        requests.toMap().forEach { (id, request) ->
+            requests.remove(id)
+            discard(id, request)
+            storedRequests.update { it - id }
+            update(id) { it.copy(phase = PlaybackTaskPhase.CANCELLED, canResume = false, remainingSeconds = null,
+                message = "已取消，未完成的文件已删除。") }
+        }
+        persistNow()
+    }
+
+    /** 暂停下载保留分片；已进入合成/保存时避免丢掉编码器状态或写了一半的输出。 */
+    fun pause(id: String) {
+        val task = tasks.value.firstOrNull { it.id == id } ?: return
+        if (!task.canPause) return
+        stops[id] = Stop.PAUSE
         jobs[id]?.cancel()
     }
 
     fun dismiss(id: String) {
-        if (mutableTasks.value.firstOrNull { it.id == id }?.isActive == true) return
+        if (jobs[id] != null || mutableTasks.value.firstOrNull { it.id == id }?.isActive == true) return
         requests.remove(id)?.let { request -> scope.launch { discard(id, request) } }
         mutableTasks.value = mutableTasks.value.filterNot { it.id == id }
         storedRequests.update { it - id }
@@ -251,18 +322,21 @@ class PlaybackTaskManager(
         mutableTasks.value.filterNot { it.isActive || it.canResume }.forEach { dismiss(it.id) }
     }
 
-    /** 网络失败后沿用保存位置与分片，不重新选择或重下已完成的画面。 */
+    /** 暂停/网络失败后沿用保存位置与分片，不重新选择或重下已完成的画面。 */
     fun retry(id: String) {
-        if (mutableTasks.value.firstOrNull { it.id == id }?.canResume != true) return
-        update(id) { it.copy(phase = PlaybackTaskPhase.QUEUED, canResume = false, message = null, bytesPerSecond = null) }
+        if (jobs[id] != null || mutableTasks.value.firstOrNull { it.id == id }?.canResume != true) return
+        stops.remove(id)
+        update(id) { it.copy(phase = PlaybackTaskPhase.QUEUED, canResume = false, message = null, bytesPerSecond = null, remainingSeconds = null) }
         start(id)
     }
 
+    @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
     private fun start(id: String) {
         val request = requests[id] ?: return
-        val job = scope.launch(start = CoroutineStart.LAZY) { run(id, request) }
+        // 即使刚入队就暂停/退出，也必须进入 run 的 finally，不能留下不可继续的幽灵任务。
+        val job = scope.launch(start = CoroutineStart.ATOMIC) { run(id, request) }
         jobs[id] = job
-        job.start()
+        if (job.isCompleted) jobs.remove(id)
     }
 
     private suspend fun discard(id: String, request: Request) = withContext(NonCancellable) {
@@ -289,6 +363,11 @@ class PlaybackTaskManager(
                 // 先登记再落目录：清理残余目录时不会把这个正在跑的任务目录删掉。
                 MediaWorkDirectory.markLive(id, workRoot)
                 work.create()
+                if (request.progressive) {
+                    val streaming = compositor() as? ProgressiveVideoCompositor
+                        ?: throw CompositionException("当前平台不能继续此合成断点")
+                    runProgressive(id, request, work, streaming)
+                } else {
                 val downloadShare = if (composite) 0.6f else 1f
                 val perStream = downloadShare / streams.size
                 val remuxed = mutableListOf<String>()
@@ -328,12 +407,16 @@ class PlaybackTaskManager(
                         }
                         coroutineScope {
                         val speed = DownloadSpeedMeter()
+                        val eta = RemainingTimeEstimator()
                         var previousTransferred = 0L
                         val ticker = launch {
                             while (true) {
                                 delay(500)
                                 val sampled = speed.sample()
-                                update(id) { it.copy(bytesPerSecond = sampled) }
+                                val task = tasks.value.first { it.id == id }
+                                val remaining = task.bytesTotal?.let { (it - task.bytesDownloaded).coerceAtLeast(0).toDouble() }
+                                val seconds = eta.sample(speed.totalTransferred.toDouble(), remaining ?: -1.0)
+                                update(id) { it.copy(bytesPerSecond = sampled, remainingSeconds = seconds) }
                             }
                         }
                         try {
@@ -365,6 +448,7 @@ class PlaybackTaskManager(
                             update(id) {
                                 it.copy(
                                     progress = maxOf(it.progress ?: 0f, base + perStream * 0.9f * fraction),
+                                    stageProgress = maxOf(it.stageProgress ?: 0f, (index + fraction) / streams.size),
                                     bytesDownloaded = maxOf(it.bytesDownloaded, downloadedBytes),
                                     bytesTotal = estimatedTotalBytes.takeIf { it > 0 },
                                     notice = if (progress.transferredBytes > 0) null else it.notice,
@@ -416,20 +500,42 @@ class PlaybackTaskManager(
                             progress = 0.6f,
                             bytesTotal = outputEstimate.takeIf { it > 0 },
                             bytesPerSecond = null,
+                            stageProgress = 0f,
+                            remainingSeconds = null,
                         )
                     }
                     val output = work.file("composite.mp4").toString()
+                    val compositionEta = RemainingTimeEstimator()
                     compositor().composeSideBySide(
                         leftPath = remuxed[0],
                         rightPath = remuxed[1],
                         outputPath = output,
                         quality = quality,
-                        onProgress = { fraction -> update(id) { it.copy(progress = 0.6f + 0.37f * fraction.coerceIn(0f, 1f)) } },
+                        onProgress = { fraction ->
+                            val stage = fraction.coerceIn(0f, 1f)
+                            val seconds = compositionEta.sample(stage.toDouble(), 1.0 - stage)
+                            update(id) { it.copy(progress = 0.6f + 0.37f * stage, stageProgress = stage, remainingSeconds = seconds) }
+                        },
                         onStatus = { notice -> update(id) { it.copy(notice = notice) } },
                     )
-                    update(id) { it.copy(phase = PlaybackTaskPhase.SAVING, step = "保存合成视频", progress = 0.97f, notice = null) }
+                }
+                }
+                if (composite) {
+                    val output = work.file("composite.mp4").toString()
+                    update(id) { it.copy(phase = PlaybackTaskPhase.SAVING, step = "保存合成视频", progress = 0.97f, notice = null,
+                        stageProgress = 0f, remainingSeconds = null) }
                     val destination = destinations.single()
-                    readFileInChunks(kotlinx.io.files.Path(output)) { destination.write(it) }
+                    val outputSize = kotlinx.io.files.SystemFileSystem.metadataOrNull(kotlinx.io.files.Path(output))?.size ?: 0L
+                    update(id) { it.copy(bytesTotal = outputSize.takeIf { size -> size > 0 }) }
+                    val saveEta = RemainingTimeEstimator()
+                    var written = 0L
+                    readFileInChunks(kotlinx.io.files.Path(output)) {
+                        destination.write(it)
+                        written += it.size
+                        val stage = if (outputSize > 0) written.toFloat() / outputSize else 0f
+                        val seconds = saveEta.sample(written.toDouble(), (outputSize - written).toDouble())
+                        update(id) { task -> task.copy(stageProgress = stage, remainingSeconds = seconds) }
+                    }
                     val saved = destination.commit()
                     if (saved != HomeworkFileSaveResult.Saved) throw SaveFailure(saved)
                     committed[0] = true
@@ -446,12 +552,19 @@ class PlaybackTaskManager(
                 )
             }
         } catch (error: CancellationException) {
-            update(id) { it.copy(phase = PlaybackTaskPhase.CANCELLED, notice = null, message = "已取消，未完成的文件已删除。") }
+            resumable = stops.remove(id) != Stop.DISCARD
+            update(id) { it.copy(phase = if (resumable) PlaybackTaskPhase.PAUSED else PlaybackTaskPhase.CANCELLED,
+                notice = null, bytesPerSecond = null, remainingSeconds = null,
+                message = if (resumable && request.progressive) "下载和已合成分段均已保留。继续时最多重做约 1 分钟。"
+                    else if (resumable) "已保留下载与保存位置，点“继续处理”恢复。" else "已取消，未完成的文件已删除。") }
             throw error
         } catch (error: Exception) {
-            resumable = error is HlsDownloadException && error.reason == HlsDownloadFailure.NETWORK
+            resumable = (error is HlsDownloadException && error.reason == HlsDownloadFailure.NETWORK) ||
+                (request.progressive && error !is HlsDownloadException)
             update(id) { it.copy(phase = PlaybackTaskPhase.FAILED, notice = null, bytesPerSecond = null,
-                message = if (resumable) "连接中断，已保留下载分片。恢复网络后点“继续下载”。" else failureMessage(error)) }
+                remainingSeconds = null,
+                message = if (error is HlsDownloadException && resumable) "连接中断，已保留下载和已合成分段。恢复网络后点“继续处理”。"
+                    else failureMessage(error) + if (resumable) " 已保留处理断点，可继续处理。" else "") }
         } finally {
             withContext(NonCancellable) {
                 jobs.remove(id)
@@ -460,12 +573,80 @@ class PlaybackTaskManager(
                     storedRequests.update { it - id }
                     discard(id, request)
                 } else {
+                    request.destinations.forEachIndexed { index, destination ->
+                        if (!request.committed[index]) runCatching { destination.closeForRecovery() }
+                    }
                     update(id) { it.copy(canResume = true) }
                 }
                 refreshBackground()
                 runCatching { persistNow() }
             }
         }
+    }
+
+    private suspend fun runProgressive(id: String, request: Request, work: MediaWorkDirectory,
+        streaming: ProgressiveVideoCompositor) = coroutineScope {
+        val speed = DownloadSpeedMeter()
+        val downloadEta = RemainingTimeEstimator()
+        val compositionEta = RemainingTimeEstimator()
+        val finalizingEta = RemainingTimeEstimator()
+        val compositionSeconds = MutableStateFlow<Long?>(null)
+        val finalizingSeconds = MutableStateFlow<Long?>(null)
+        val transferred = MutableStateFlow(0L)
+        var initialFraction: Float? = null
+        update(id) { it.copy(phase = PlaybackTaskPhase.PIPELINING, step = "准备两路下载与合成", remainingSeconds = null) }
+        val ticker = launch {
+            while (true) {
+                delay(500)
+                val sampled = speed.sample()
+                val current = tasks.value.first { it.id == id }
+                val remaining = current.bytesTotal?.let { (it - current.bytesDownloaded).coerceAtLeast(0).toDouble() } ?: -1.0
+                val downloadSeconds = downloadEta.sample(speed.totalTransferred.toDouble(), remaining)
+                val compositeSeconds = compositionSeconds.value
+                val allSeconds = if (downloadSeconds != null && compositeSeconds != null) maxOf(downloadSeconds, compositeSeconds) else null
+                update(id) { it.copy(bytesPerSecond = sampled.takeIf { _ -> it.phase == PlaybackTaskPhase.PIPELINING },
+                    remainingSeconds = when (it.phase) {
+                        PlaybackTaskPhase.FINALIZING -> finalizingSeconds.value
+                        PlaybackTaskPhase.COMPOSITING -> compositeSeconds
+                        else -> allSeconds
+                    }) }
+            }
+        }
+        try {
+            ProgressiveRecordingPipeline(downloader).run(request.streams, work, request.quality, streaming, request.checkpoints,
+                onDownload = { values ->
+                    val total = values.sumOf { it.transferredBytes }
+                    val delta = (total - transferred.getAndUpdate { maxOf(it, total) }).coerceAtLeast(0)
+                    speed.add(delta)
+                    val known = values.mapNotNull { p -> if (p.completedSegments > 0) p.writtenBytes.toDouble() * p.totalSegments / p.completedSegments else null }
+                    val estimate = if (known.isEmpty()) null else (known.sum() * values.size / known.size).toLong()
+                    val fraction = values.sumOf { it.completedSegments }.toFloat() / values.sumOf { it.totalSegments }.coerceAtLeast(1)
+                    val written = values.sumOf { it.writtenBytes }
+                    update(id) { it.copy(downloadProgress = maxOf(it.downloadProgress ?: 0f, fraction),
+                        bytesDownloaded = maxOf(it.bytesDownloaded, written), bytesTotal = estimate ?: it.bytesTotal,
+                        step = if (total == 0L && written > 0) "恢复本地分片，继续已合成部分" else "两路下载与合成同时进行",
+                        notice = if (delta > 0) null else it.notice) }
+                },
+                onInputsComplete = { update(id) { it.copy(phase = PlaybackTaskPhase.COMPOSITING, downloadProgress = 1f,
+                    bytesPerSecond = null, step = "下载已完成，继续合成") } },
+                onComposition = { fraction ->
+                    val start = initialFraction ?: fraction.also { initialFraction = it }
+                    val seconds = compositionEta.sample((fraction - start).coerceAtLeast(0f).toDouble(), (1.0 - fraction).coerceAtLeast(0.0))
+                    compositionSeconds.value = seconds
+                    update(id) { it.copy(stageProgress = fraction, progress = .94f * fraction,
+                        remainingSeconds = if (it.phase == PlaybackTaskPhase.COMPOSITING) seconds else it.remainingSeconds) }
+                },
+                onFinalizing = { fraction ->
+                    val seconds = finalizingEta.sample(fraction.toDouble(), (1.0 - fraction).coerceAtLeast(0.0))
+                    finalizingSeconds.value = seconds
+                    update(id) { it.copy(phase = PlaybackTaskPhase.FINALIZING, stageProgress = fraction,
+                        progress = .94f + .03f * fraction, bytesPerSecond = null, remainingSeconds = seconds,
+                        step = "正在整理合成视频") }
+                },
+                onRetry = { attempt, wait -> update(id) { it.copy(notice = "连接中断，${wait / 1000} 秒后自动重连（第 $attempt/3 次）") } },
+                onStatus = { notice -> update(id) { it.copy(notice = notice) } },
+            )
+        } finally { ticker.cancel() }
     }
 
     private class SaveFailure(val result: HomeworkFileSaveResult) : Exception("save failed")
@@ -499,6 +680,7 @@ class PlaybackTaskManager(
             request.streams.map { StoredPlaybackStream(it.kind.name, it.hlsUrl) }, request.composite,
             request.quality.name, request.destinations.map { it.recoveryToken }, request.committed.toList(),
             request.finished.mapValues { (_, result) -> StoredPlaybackStreamResult(result.first, result.second) },
+            request.progressive,
         )
         storedRequests.update { it + (id to saved) }
         recordVersion.update { it + 1 }
@@ -506,11 +688,11 @@ class PlaybackTaskManager(
 
     private suspend fun persistNow() {
         val store = taskStore ?: return
-        if (!persistenceAvailable) return
+        if (!persistenceAvailable || !historyLoaded) return
         persistenceMutex.withLock {
             val requestSnapshot = storedRequests.value
             store.save(mutableTasks.value.map { task ->
-                StoredPlaybackTask(task.copy(bytesPerSecond = null, notice = null), requestSnapshot[task.id])
+                StoredPlaybackTask(task.copy(bytesPerSecond = null, notice = null, remainingSeconds = null), requestSnapshot[task.id])
             })
         }
     }
@@ -544,7 +726,7 @@ class PlaybackTaskManager(
                 }
                 if (destinations.size == request.destinations.size) {
                     val resumed = Request(request.streams.map { PlaybackStream(PlaybackStreamKind.valueOf(it.kind), it.url) },
-                        request.composite, destinations, PlaybackCompositeQuality.valueOf(request.quality))
+                        request.composite, destinations, PlaybackCompositeQuality.valueOf(request.quality), request.progressive)
                     request.committed.forEachIndexed { index, value -> resumed.committed[index] = value }
                     request.finished.forEach { (index, value) -> resumed.finished[index] = value.bytes to value.durationSeconds }
                     recovered = resumed
@@ -553,9 +735,10 @@ class PlaybackTaskManager(
                     MediaWorkDirectory.markLive(task.id, workRoot)
                 }
             }
-            restored += task.copy(phase = PlaybackTaskPhase.FAILED, bytesPerSecond = null, notice = null,
+            restored += task.copy(phase = if (recovered != null) PlaybackTaskPhase.PAUSED else PlaybackTaskPhase.FAILED,
+                bytesPerSecond = null, notice = null, remainingSeconds = null,
                 canResume = recovered != null,
-                message = if (recovered != null) "上次运行中断，下载记录与分片已恢复。点“继续下载”接着处理。"
+                message = if (recovered != null) "上次运行中断，下载记录与分片已恢复。点“继续处理”接着处理。"
                     else "上次运行中断，下载记录已恢复；保存位置已不可用，请重新发起下载。")
         }
         mutableTasks.value = restored
@@ -569,9 +752,10 @@ class PlaybackTaskManager(
         phaseLabel = phase.label,
         detail = buildString {
             step.takeIf(String::isNotBlank)?.let(::append)
+            remainingLabel?.let { append(" · ").append(it) }
             if (queuedCount > 1) append("（另有 ${queuedCount - 1} 个任务排队）")
         },
-        progress = progress,
+        progress = stageProgress ?: progress,
         sizeLabel = sizeLabel,
         speedLabel = speedLabel,
     )

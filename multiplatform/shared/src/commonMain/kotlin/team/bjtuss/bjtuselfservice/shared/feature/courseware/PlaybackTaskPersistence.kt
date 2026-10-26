@@ -18,6 +18,8 @@ interface PlaybackTaskStore {
 interface PlaybackRecoveryAccess {
     fun storeFor(accountScope: String): PlaybackTaskStore
     suspend fun restoreDestination(token: String, displayName: String): StreamingDestinationResult
+    /** Android 的前台任务由应用持有，重建登录页/Activity 不得换掉执行器。 */
+    fun retainedManager(accountScope: String): PlaybackTaskManager? = null
 }
 
 interface PlaybackRecoveryProvider {
@@ -35,6 +37,7 @@ data class StoredPlaybackRequest(
     val destinations: List<String?>,
     val committed: List<Boolean>,
     val finished: Map<Int, StoredPlaybackStreamResult> = emptyMap(),
+    val progressive: Boolean = false,
 )
 
 @Serializable

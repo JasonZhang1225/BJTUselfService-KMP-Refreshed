@@ -753,7 +753,12 @@ private fun PlaybackActiveTaskBanner(tasks: List<PlaybackTask>, onOpen: () -> Un
 
 @Composable
 private fun PlaybackTaskProgress(task: PlaybackTask) {
-    val progress = task.progress
+    if (task.phase == PlaybackTaskPhase.PIPELINING) {
+        Text("下载 ${((task.downloadProgress ?: 0f) * 100).toInt()}% · 合成 ${((task.stageProgress ?: 0f) * 100).toInt()}%",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        LinearProgressIndicator(progress = { task.downloadProgress ?: 0f }, modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.secondary)
+    }
+    val progress = task.stageProgress ?: task.progress
     if (progress != null) {
         LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
     } else {
@@ -765,6 +770,7 @@ private fun PlaybackTaskProgress(task: PlaybackTask) {
 @Composable
 fun PlaybackTasksPage(tasks: List<PlaybackTask>, manager: PlaybackTaskManager, modifier: Modifier) {
     val listState = rememberLazyListState()
+    LaunchedEffect(tasks.firstOrNull()?.id) { if (tasks.isNotEmpty()) listState.scrollToItem(0) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -809,7 +815,7 @@ private fun PlaybackTaskCard(task: PlaybackTask, manager: PlaybackTaskManager) {
                     )
                 }
                 Text(
-                    task.phase.label + (task.progress?.takeIf { task.isActive }?.let { " ${(it * 100).toInt()}%" } ?: ""),
+                    task.phase.label + ((task.stageProgress ?: task.progress)?.takeIf { task.isActive || task.phase == PlaybackTaskPhase.PAUSED }?.let { " ${(it * 100).toInt()}%" } ?: ""),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = when (task.phase) {
@@ -819,7 +825,7 @@ private fun PlaybackTaskCard(task: PlaybackTask, manager: PlaybackTaskManager) {
                     },
                 )
             }
-            if (task.isActive) {
+            if (task.isActive || task.phase == PlaybackTaskPhase.PAUSED) {
                 PlaybackTaskProgress(task)
                 task.step.takeIf(String::isNotBlank)?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -853,6 +859,9 @@ private fun PlaybackTaskCard(task: PlaybackTask, manager: PlaybackTaskManager) {
             task.notice?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.SemiBold)
             }
+            task.remainingLabel?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             task.message?.let {
                 Text(
                     it,
@@ -871,9 +880,12 @@ private fun PlaybackTaskCard(task: PlaybackTask, manager: PlaybackTaskManager) {
             }
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                 if (task.isActive) {
+                    if (task.canPause) {
+                        TextButton(onClick = { manager.pause(task.id) }) { Text("暂停") }
+                    }
                     TextButton(onClick = { manager.cancel(task.id) }) { Text("取消") }
                 } else {
-                    if (task.canResume) TextButton(onClick = { manager.retry(task.id) }) { Text("继续下载") }
+                    if (task.canResume) TextButton(onClick = { manager.retry(task.id) }) { Text("继续处理") }
                     TextButton(onClick = { manager.dismiss(task.id) }) { Text("移除") }
                 }
             }

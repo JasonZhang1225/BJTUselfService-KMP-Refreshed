@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.courseware
 
+import kotlin.test.assertFalse
+
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -34,16 +36,256 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
 class PlaybackTaskManagerTest {
+    @Test
+    fun rebuildingAuthenticatedGraphKeepsApplicationDownloadExecutor() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val gateway = MemoryGateway()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        transport.segmentGate = gate
+        val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { RecordingCompositor() }, { null })
+        val driver = app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver(app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver.IN_MEMORY)
+        team.bjtuss.bjtuselfservice.shared.cache.db.CacheDatabaseSql.Schema.create(driver).value
+        val cache = team.bjtuss.bjtuselfservice.shared.cache.CacheStore(driver)
+        val recoveryGateway = object : HomeworkFileGateway by gateway, PlaybackRecoveryProvider {
+            override val playbackRecovery = object : PlaybackRecoveryAccess {
+                override fun retainedManager(accountScope: String): PlaybackTaskManager {
+                    assertEquals("fixture-student", accountScope)
+                    return manager
+                }
+                override fun storeFor(accountScope: String): PlaybackTaskStore = error("不能重建任务存储")
+                override suspend fun restoreDestination(token: String, displayName: String): StreamingDestinationResult = error("不能重建保存目标")
+            }
+        }
+        val preferences = object : team.bjtuss.bjtuselfservice.shared.security.AccountPreferences {
+            override suspend fun shouldRememberCredentials() = false
+            override suspend fun setShouldRememberCredentials(enabled: Boolean) = Unit
+            override suspend fun clearRememberCredentialsSetting() = Unit
+        }
+        fun graph() = team.bjtuss.bjtuselfservice.shared.sync.AppDataGraph(
+            team.bjtuss.bjtuselfservice.shared.auth.StudentProfile("测试", "fixture-student", "学生", "测试"),
+            transport, team.bjtuss.bjtuselfservice.shared.auth.SchoolLoginProtocol(transport), cache,
+            team.bjtuss.bjtuselfservice.shared.PlatformFamily.Android,
+            team.bjtuss.bjtuselfservice.shared.cache.AppPreferences(), { true },
+            team.bjtuss.bjtuselfservice.shared.security.AccountSecurityCoordinator(
+                team.bjtuss.bjtuselfservice.shared.security.AccountSecurityStore(null, preferences)),
+            team.bjtuss.bjtuselfservice.shared.auth.UnavailableCaptchaRecognizer, { null }, recoveryGateway, {}, Dispatchers.Default,
+        )
+        try {
+            val detail = detail()
+            val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, detail.streams, "测试课程", true, gateway)).taskId
+            withTimeout(5000) { while (manager.tasks.value.single().phase != PlaybackTaskPhase.DOWNLOADING) delay(10) }
+            val first = graph()
+            kotlin.test.assertSame(manager, first.playbackTaskManager)
+            first.close()
+            val second = graph()
+            kotlin.test.assertSame(manager, second.playbackTaskManager)
+            second.close()
+            assertTrue(manager.tasks.value.single().isActive)
+            assertTrue(gateway.aborted.isEmpty())
+            gate.complete(Unit)
+            assertEquals(PlaybackTaskPhase.DONE, manager.awaitFinished(id).phase)
+        } finally { gate.complete(Unit); scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join(); cache.close() }
+    }
+
+    @Test
+    fun progressiveTaskStartsEncodingBeforeBothInputsFinishAndRetainsFailureCheckpoints() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val gateway = MemoryGateway()
+        val compositor = RecordingProgressive().apply { failEncoding = 1 }
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { compositor }, { null })
+            val detail = detail()
+            val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, detail.streams, "测试课程", true, gateway)).taskId
+            withTimeout(5000) { while (!manager.tasks.value.single().canResume) delay(10) }
+            assertTrue(compositor.encodedBeforeDownloadCompleted)
+            assertEquals(PlaybackTaskPhase.FAILED, manager.tasks.value.single().phase)
+            assertTrue(gateway.aborted.isEmpty(), "编码中断不能删除已选保存目标")
+            val first = transport.requested.count { it == "${base}tea/seg-0.ts" }
+            manager.retry(id)
+            assertEquals(PlaybackTaskPhase.DONE, manager.awaitFinished(id).phase)
+            assertEquals(first, transport.requested.count { it == "${base}tea/seg-0.ts" }, "恢复流水线不重下已缓存的分片")
+            assertEquals("progressive", gateway.saved.values.single().decodeToString())
+        } finally { scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join() }
+    }
+
+    @Test
+    fun saveFailureReusesCompletedCompositionAndRewindsUncommittedDestination() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val gateway = MemoryGateway().apply { failCommits = 1 }
+        val compositor = RecordingProgressive()
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { compositor }, { null })
+            val detail = detail()
+            val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, detail.streams, "测试课程", true, gateway)).taskId
+            withTimeout(5000) { while (!manager.tasks.value.single().canResume) delay(10) }
+            assertEquals(1, compositor.encodedRuns)
+            val downloads = transport.requested.count { it.endsWith(".ts") }
+            manager.retry(id)
+            assertEquals(PlaybackTaskPhase.DONE, manager.awaitFinished(id).phase)
+            assertEquals(1, compositor.encodedRuns, "保存失败不能从头重编码")
+            assertEquals(downloads, transport.requested.count { it.endsWith(".ts") })
+            assertEquals("progressive", gateway.saved.values.single().decodeToString(), "重试保存不能把旧半成品追加两遍")
+        } finally { scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join() }
+    }
+
+    private class RecordingProgressive : team.bjtuss.bjtuselfservice.shared.media.ProgressiveVideoCompositor {
+        var finalizingGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+        var failEncoding = 0
+        var encodedRuns = 0
+        var encodedBeforeDownloadCompleted = false
+        private var completed = false
+        override val isAvailable = true
+        override suspend fun composeSideBySide(leftPath: String, rightPath: String, outputPath: String,
+            quality: PlaybackCompositeQuality, onProgress: (Float) -> Unit, onStatus: (String?) -> Unit): Unit = error("必须走渐进管线")
+        override suspend fun openProgressive(work: MediaWorkDirectory, durationSeconds: Double,
+            quality: PlaybackCompositeQuality): team.bjtuss.bjtuselfservice.shared.media.ProgressiveComposition =
+            object : team.bjtuss.bjtuselfservice.shared.media.ProgressiveComposition {
+                val firstInput = kotlinx.coroutines.CompletableDeferred<Unit>()
+                val encoding = kotlinx.coroutines.CompletableDeferred<Unit>()
+                val inputsDone = kotlinx.coroutines.CompletableDeferred<Unit>()
+                val finished = java.util.concurrent.atomic.AtomicInteger(0)
+                override val resumeSeconds = 0.0
+                override val isComplete get() = completed
+                override suspend fun append(index: Int, bytes: ByteArray) {
+                    if (firstInput.complete(Unit)) encoding.await()
+                }
+                override suspend fun finishInput(index: Int) { if (finished.incrementAndGet() == 2) inputsDone.complete(Unit) }
+                override suspend fun compose(onProgress: (Float) -> Unit, onStatus: (String?) -> Unit,
+                    onFinalizing: (Float) -> Unit) {
+                    if (!completed) {
+                        firstInput.await()
+                        encodedBeforeDownloadCompleted = finished.get() < 2
+                        encodedRuns++
+                        onProgress(.1f)
+                        encoding.complete(Unit)
+                        if (failEncoding > 0) { failEncoding--; throw team.bjtuss.bjtuselfservice.shared.media.CompositionException("测试编码中断") }
+                        inputsDone.await()
+                        completed = true
+                    }
+                    onProgress(1f)
+                    onFinalizing(.5f)
+                    finalizingGate?.await()
+                    File(work.file("composite.mp4").toString()).writeText("progressive")
+                    onFinalizing(1f)
+                }
+                override suspend fun close() = Unit
+            }
+    }
+    @Test
+    fun finalizationShowsSeparateProgressAndCanResumeWithoutEncodingAgain() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val compositor = RecordingProgressive().apply { finalizingGate = gate }
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { compositor }, { null })
+            val detail = detail()
+            val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, detail.streams, "测试课程", true, MemoryGateway())).taskId
+            withTimeout(5000) { while (manager.tasks.value.single().phase != PlaybackTaskPhase.FINALIZING) delay(10) }
+            val task = manager.tasks.value.single()
+            assertEquals(.5f, task.stageProgress)
+            assertTrue(task.isActive && task.canPause)
+            assertTrue(task.remainingLabel.orEmpty().startsWith("整理剩余"))
+            manager.pause(id)
+            withTimeout(5000) { while (!manager.tasks.value.single().canResume) delay(10) }
+            assertEquals(PlaybackTaskPhase.PAUSED, manager.tasks.value.single().phase)
+            gate.complete(Unit)
+            manager.retry(id)
+            assertEquals(PlaybackTaskPhase.DONE, manager.awaitFinished(id).phase)
+            assertEquals(1, compositor.encodedRuns)
+        } finally { gate.complete(Unit); scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join() }
+    }
+
+    @Test
+    fun closingWhileHistoryIsLoadingNeverOverwritesItWithEmptyRecords() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val loading = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var saves = 0
+        val directory = java.nio.file.Files.createTempDirectory("playback-load-cancel").toFile()
+        val store = object : PlaybackTaskStore {
+            override val workRoot = Path(directory.absolutePath)
+            override suspend fun load(): List<StoredPlaybackTask> {
+                loading.complete(Unit)
+                kotlinx.coroutines.awaitCancellation()
+            }
+            override suspend fun save(tasks: List<StoredPlaybackTask>) { saves++ }
+        }
+        try {
+            PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { RecordingCompositor() }, { null }, store)
+            loading.await()
+            scope.cancel()
+            scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            assertEquals(0, saves)
+        } finally { scope.cancel(); directory.deleteRecursively() }
+    }
+
+    @Test
+    fun logoutDiscardsPausedTaskAndWaitsForDestinationCleanup() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val gateway = MemoryGateway()
+        transport.segmentDelayMillis = 1000
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { RecordingCompositor() }, { null })
+            val detail = detail()
+            val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, detail.streams, "测试课程", true, gateway)).taskId
+            manager.pause(id) // 入队后立刻暂停也要经过收尾。
+            withTimeout(5000) { while (!manager.tasks.value.single().canResume) delay(10) }
+            assertTrue(gateway.aborted.isEmpty())
+            manager.cancelAllAndJoin()
+            assertEquals(PlaybackTaskPhase.CANCELLED, manager.tasks.value.single().phase)
+            assertFalse(manager.tasks.value.single().canResume)
+            assertEquals(1, gateway.aborted.size)
+        } finally { scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join() }
+    }
+    @Test
+    fun pausingKeepsDestinationAndResumesInsteadOfCancelling() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val gateway = MemoryGateway()
+        transport.segmentDelayMillis = 500
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0, concurrency = 1), { RecordingCompositor() }, { null })
+            val detail = detail()
+            val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, detail.streams, "测试课程", true, gateway)).taskId
+            withTimeout(5000) { while (manager.tasks.value.first().bytesDownloaded == 0L) delay(10) }
+            manager.pause(id)
+            withTimeout(5000) { while (!manager.tasks.value.first().canResume) delay(10) }
+            assertEquals(PlaybackTaskPhase.PAUSED, manager.tasks.value.first().phase)
+            assertTrue(gateway.aborted.isEmpty())
+            val first = transport.requested.count { it == "${base}tea/seg-0.ts" }
+            manager.clearFinished()
+            assertEquals(1, manager.tasks.value.size)
+            transport.segmentDelayMillis = 0
+            manager.retry(id)
+            assertEquals(PlaybackTaskPhase.DONE, manager.awaitFinished(id).phase)
+            assertEquals(first, transport.requested.count { it == "${base}tea/seg-0.ts" })
+        } finally { scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join() }
+    }
+
+    @Test
+    fun disposingOwnerPreservesInterruptedDownloadInsteadOfDeletingIt() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val gateway = MemoryGateway()
+        transport.segmentDelayMillis = 2000
+        val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { RecordingCompositor() }, { null })
+        val detail = detail()
+        manager.enqueue(detail, detail.streams, "测试课程", true, gateway)
+        delay(150)
+        scope.cancel()
+        scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+        assertEquals(PlaybackTaskPhase.PAUSED, manager.tasks.value.single().phase)
+        assertTrue(manager.tasks.value.single().canResume)
+        assertTrue(gateway.aborted.isEmpty(), "宿主销毁不能触发删除用户保存目标")
+    }
     private val base = "https://lmt6.bjtu.edu.cn:8880/vod/a/"
     private fun fixture(name: String) = checkNotNull(javaClass.getResourceAsStream("/media/$name")).use { it.readBytes() }
 
     private val transport = object : SchoolHttpTransport {
         val bodies = mutableMapOf<String, ByteArray>()
         var segmentDelayMillis = 0L
+        var segmentGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
         val requested = java.util.Collections.synchronizedList(mutableListOf<String>())
         override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse {
             requested += request.url
-            if (request.url.endsWith(".ts")) delay(segmentDelayMillis)
+            if (request.url.endsWith(".ts")) { segmentGate?.await(); delay(segmentDelayMillis) }
             val body = bodies[request.url]
             return SchoolHttpResponse(if (body == null) 404 else 200, request.url, body = body ?: ByteArray(0))
         }
@@ -61,6 +303,7 @@ class PlaybackTaskManagerTest {
     }
 
     private class MemoryGateway : HomeworkFileGateway {
+        var failCommits = 0
         val saved = mutableMapOf<String, ByteArray>()
         val aborted = mutableListOf<String>()
         override val isAvailable = true
@@ -72,7 +315,11 @@ class PlaybackTaskManagerTest {
                 val data = java.io.ByteArrayOutputStream()
                 override val displayName = fileName
                 override suspend fun write(bytes: ByteArray) = data.write(bytes)
-                override suspend fun commit(): HomeworkFileSaveResult { saved[fileName] = data.toByteArray(); return HomeworkFileSaveResult.Saved }
+                override suspend fun commit(): HomeworkFileSaveResult {
+                    if (failCommits > 0) { failCommits--; return HomeworkFileSaveResult.Failed(team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure.IO) }
+                    saved[fileName] = data.toByteArray(); return HomeworkFileSaveResult.Saved
+                }
+                override suspend fun closeForRecovery() { data.reset() }
                 override suspend fun abort() { aborted += fileName }
             })
     }

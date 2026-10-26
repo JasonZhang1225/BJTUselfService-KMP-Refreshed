@@ -199,12 +199,14 @@ class AppDataGraph(
             runCatching { cacheStore.clearAccount(accountScope) }.isSuccess
         },
         prepareUninstall = {
+            playbackTaskManager.cancelAllAndJoin()
             val cleaner = team.bjtuss.bjtuselfservice.shared.feature.settings.platformLocalDataCleaner()
             val wiped = cleaner?.clearLocalData(cacheStore, removeAgent = true) == true
             if (wiped) onPurgeLogout(accountScope)
             wiped
         },
         wipeAllLocalData = {
+            playbackTaskManager.cancelAllAndJoin()
             val cleaner = team.bjtuss.bjtuselfservice.shared.feature.settings.platformLocalDataCleaner()
             if (cleaner != null) {
                 val wiped = cleaner.clearLocalData(cacheStore)
@@ -248,10 +250,10 @@ class AppDataGraph(
         repository = coursewareRepository,
         reauthenticate = sessionRecovery::attempt,
     )
-    /** 回放任务（下载、转 MP4、合成）放在会话级作用域里，离开页面不中断；退出登录时随 [close] 取消。 */
+    /** 页面模型的作用域；Android 下载执行器另外由应用按账号持有，不随 [close] 销毁。 */
     private val playbackScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
     private val playbackRecovery = (homeworkFileGateway as? team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryProvider)?.playbackRecovery
-    val playbackTaskManager = team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackTaskManager(
+    val playbackTaskManager = playbackRecovery?.retainedManager(accountScope) ?: team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackTaskManager(
         scope = playbackScope,
         downloader = team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader(
             transport = transport,
@@ -263,7 +265,7 @@ class AppDataGraph(
         taskStore = playbackRecovery?.storeFor(accountScope),
         restoreDestination = playbackRecovery?.let { recovery -> { token, name -> recovery.restoreDestination(token, name) } },
     )
-    /** 回放下载可能持续数分钟，放在会话级作用域里，离开页面不中断；退出登录时随 [close] 取消。 */
+    /** 页面请求随会话释放；下载任务由独立执行器管理，明确退出账号时才清理。 */
     val playbackModel = team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackScreenModel(
         repository = coursewareRepository,
         taskManager = playbackTaskManager,
