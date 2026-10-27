@@ -221,6 +221,11 @@ fun HomeWorkspace(
     val agendaNow = remember(now.date, now.hour, now.minute) {
         LocalDateTime(now.date, LocalTime(now.hour, now.minute))
     }
+    val dueSoonItems = remember(homework, exams, phyVlabEvents, agendaNow, timeZone) {
+        val agenda = buildHomeAgenda(homework, exams, agendaNow.date, agendaNow, timeZone, phyVlabEvents)
+        dueSoonSummaryItems(agenda.dueSoonHomework, agenda.dueSoonEvents, timeZone)
+    }
+    val hasMeaningfulChanges = remember(changes) { meaningfulHomeChanges(changes).isNotEmpty() }
     val status = state.status
     Box(
         modifier = modifier.fillMaxSize(),
@@ -249,6 +254,22 @@ fun HomeWorkspace(
             item(key = "home-now") {
                 HomeNowSection(timeZone = timeZone)
             }
+            // 正在进行与 48 小时内截止之后先看数据变动，再看日程窗格。
+            // 两栏为空时不建列表项，避免空项在日程上方多出一份间距。
+            if (dueSoonItems.isNotEmpty()) {
+                item(key = "home-due-soon") {
+                    HomeDueSoonSection(dueSoonItems, expanded, onOpenHomework)
+                }
+            }
+            if (hasMeaningfulChanges) {
+                item(key = "home-change-feed") {
+                    HomeChangeFeedSection(
+                        changes = changes,
+                        onSelectDomain = { selectedChangeDomain = it },
+                        onClearAll = onClearAllChanges,
+                    )
+                }
+            }
             if (expanded) {
                 item(key = "home-agenda") {
                     HomeAgendaSection(
@@ -265,7 +286,6 @@ fun HomeWorkspace(
                         isLoading = isAgendaLoading,
                         expanded = expanded,
                         isWeekResolved = isWeekResolved,
-                        onOpenHomework = onOpenHomework,
                         onOpenHomeworkDetail = onOpenHomeworkDetail,
                         onOpenExams = onOpenExams,
                         onOpenPhyVlab = onOpenPhyVlab,
@@ -296,7 +316,6 @@ fun HomeWorkspace(
                         isLoading = isAgendaLoading,
                         expanded = expanded,
                         isWeekResolved = isWeekResolved,
-                        onOpenHomework = onOpenHomework,
                         onOpenHomeworkDetail = onOpenHomeworkDetail,
                         onOpenExams = onOpenExams,
                         onOpenPhyVlab = onOpenPhyVlab,
@@ -310,13 +329,6 @@ fun HomeWorkspace(
                         LibraryCard(reminder, onOpenLibrary, Modifier.fillMaxWidth())
                     }
                 }
-            }
-            item(key = "home-change-feed") {
-                HomeChangeFeedSection(
-                    changes = changes,
-                    onSelectDomain = { selectedChangeDomain = it },
-                    onClearAll = onClearAllChanges,
-                )
             }
         }
     }
@@ -438,6 +450,37 @@ private fun StatusCard(
     }
 }
 
+/** 48 小时内截止的作业与事项。 */
+@Composable
+private fun HomeDueSoonSection(
+    dueSoonItems: List<DueSoonSummaryItem>,
+    expanded: Boolean,
+    onOpenHomework: () -> Unit,
+) {
+    HomeCard(modifier = Modifier.fillMaxWidth()) {
+        if (expanded) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                DueSoonHomeworkSummary(dueSoonItems, Modifier.weight(1f))
+                OutlinedButton(onClick = onOpenHomework) { Text("查看作业") }
+            }
+        } else {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                DueSoonHomeworkSummary(dueSoonItems)
+                OutlinedButton(onClick = onOpenHomework, modifier = Modifier.fillMaxWidth()) {
+                    Text("查看作业")
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun HomeAgendaSection(
     todayRequest: Int,
@@ -454,7 +497,6 @@ private fun HomeAgendaSection(
     expanded: Boolean,
     /** 周数是否已由本学期校历确认；未确认时首页显示「日程加载中」。 */
     isWeekResolved: Boolean = true,
-    onOpenHomework: () -> Unit,
     onOpenHomeworkDetail: (Homework) -> Unit,
     onOpenExams: (ExamSchedule) -> Unit,
     onOpenPhyVlab: (PhyVlabEvent) -> Unit,
@@ -464,10 +506,6 @@ private fun HomeAgendaSection(
     // 校历确认之前不显示任何周数（含缓存值），统一显示「日程加载中」，
     // 拿到确切结果后一次性显示最终周；这样卡片不会随中间值反复弹跳。
     val weekValueIsPending = !isWeekResolved
-    val dueSoonItems = remember(homework, exams, phyVlabEvents, today, now, timeZone) {
-        val agenda = buildHomeAgenda(homework, exams, today, now, timeZone, phyVlabEvents)
-        dueSoonSummaryItems(agenda.dueSoonHomework, agenda.dueSoonEvents, timeZone)
-    }
     val weekSlots = remember(currentWeek, academicWeeks, today) {
         homeAgendaWeekSlots(currentWeek, today, academicWeeks)
     }
@@ -531,31 +569,6 @@ private fun HomeAgendaSection(
     LaunchedEffect(currentWeek, academicWeeks, isWeekResolved) {
         nextAutoFollowedWeekSlot(selectedSlot, automaticSlot, weekWasManuallySelected)?.let { slot ->
             selectedSlot = slot
-        }
-    }
-
-    if (dueSoonItems.isNotEmpty()) {
-        HomeCard(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
-            if (expanded) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    DueSoonHomeworkSummary(dueSoonItems, Modifier.weight(1f))
-                    OutlinedButton(onClick = onOpenHomework) { Text("查看作业") }
-                }
-            } else {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    DueSoonHomeworkSummary(dueSoonItems)
-                    OutlinedButton(onClick = onOpenHomework, modifier = Modifier.fillMaxWidth()) {
-                        Text("查看作业")
-                    }
-                }
-            }
         }
     }
 
@@ -1585,6 +1598,9 @@ private fun formatPhyVlabAgendaDate(event: PhyVlabEvent): String {
 
 private fun shortDate(date: LocalDate): String = "${date.month.ordinal + 1}月${date.day}日"
 
+internal fun meaningfulHomeChanges(changes: List<HomeChangeRecord>): List<HomeChangeRecord> =
+    changes.filterNot { it.kind == DataChangeKind.MODIFIED && it.beforeDetail == it.afterDetail }
+
 @Composable
 internal fun HomeChangeFeedSection(
     changes: List<HomeChangeRecord>,
@@ -1592,9 +1608,7 @@ internal fun HomeChangeFeedSection(
     onClearAll: () -> Unit,
 ) {
     // 过滤历史误报：原/现文案完全相同的「修改」不算变动。
-    val meaningful = changes.filterNot {
-        it.kind == DataChangeKind.MODIFIED && it.beforeDetail == it.afterDetail
-    }
+    val meaningful = meaningfulHomeChanges(changes)
     if (meaningful.isEmpty()) return
     HomeCard(modifier = Modifier.fillMaxWidth()) {
         Column(
