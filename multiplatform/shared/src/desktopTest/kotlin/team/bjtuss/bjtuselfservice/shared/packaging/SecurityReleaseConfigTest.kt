@@ -205,6 +205,22 @@ class SecurityReleaseConfigTest {
             assertTrue(Regex("<key>CFBundleVersion</key>\\s*<string>$build</string>").containsMatchIn(text), plist)
         }
     }
+
+    @Test
+    fun releaseVersionMatchesEveryPlatform() {
+        val version = team.bjtuss.bjtuselfservice.shared.update.AppUpdateChecker.CURRENT_VERSION
+        val numericVersion = version.substringBefore('-')
+        val android = root.resolve("multiplatform/androidApp/build.gradle.kts").readText()
+        assertTrue("versionName = \"$version\"" in android)
+        val desktop = root.resolve("multiplatform/desktopApp/build.gradle.kts").readText()
+        assertTrue("desktopPackageVersion = \"$numericVersion\"" in desktop)
+        val windows = root.resolve("multiplatform/windowsApp/build.gradle.kts").readText()
+        assertTrue("packageVersion = \"$numericVersion\"" in windows)
+        listOf("iosApp/Info.plist", "CourseScheduleWidget/Info.plist").forEach { plist ->
+            val text = root.resolve("multiplatform/iosApp/$plist").readText()
+            assertTrue(Regex("<key>CFBundleShortVersionString</key>\\s*<string>${Regex.escape(numericVersion)}</string>").containsMatchIn(text), plist)
+        }
+    }
 }
 
 private fun sha256(file: File): String {

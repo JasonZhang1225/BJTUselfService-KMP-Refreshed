@@ -215,9 +215,9 @@ compose.desktop {
             // 打成 `?????` 并报 311；CI 用 -Duser.language=zh 让它选代码页 936 的中文 .wxl。
             // WINDOWS_PACKAGE_NAME/… 仍可手动传 ASCII 兜底。
             packageName = windowsPackageDisplayName
-            // jpackage 版本必须是三段数字。应用内显示版本为 1.8.6-KMP / Build 44；
-            // 安装器使用数值版本 1.8.6，靠 main.wxs IncludeMaximum=yes 覆盖同一大版本。
-            packageVersion = "1.8.6"
+            // jpackage 版本必须是三段数字。应用内显示版本为 2.0.0-Alpha / Build 45；
+            // 安装器使用数值版本 2.0.0，靠 main.wxs IncludeMaximum=yes 覆盖同一大版本。
+            packageVersion = "2.0.0"
             description = windowsPackageDescription
             vendor = "BJTUselfService Contributors"
             windows {

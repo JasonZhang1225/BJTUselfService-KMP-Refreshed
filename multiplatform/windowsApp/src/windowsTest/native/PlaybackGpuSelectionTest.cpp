@@ -1,8 +1,9 @@
 #include "../../main/native/PlaybackGpuSelection.h"
 
 #include <algorithm>
-#include <cassert>
 #include <vector>
+
+#define REQUIRE(...) do { if (!(__VA_ARGS__)) return __LINE__; } while (false)
 
 struct Candidate {
     std::uint32_t vendor;
@@ -16,11 +17,11 @@ int main() {
     std::stable_sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
         return before(a.vendor, a.memory, b.vendor, b.memory);
     });
-    assert(candidates[0].vendor == kNvidia);
-    assert(candidates[1].vendor == kIntel);
-    assert(candidates[2].vendor == kAmd);
-    assert(matches(L"auto", kNvidia) && matches(L"auto", kIntel) && matches(L"auto", kAmd));
-    assert(matches(L"intel", kIntel) && !matches(L"intel", kNvidia));
+    REQUIRE(candidates[0].vendor == kNvidia);
+    REQUIRE(candidates[1].vendor == kIntel);
+    REQUIRE(candidates[2].vendor == kAmd);
+    REQUIRE(matches(L"auto", kNvidia) && matches(L"auto", kIntel) && matches(L"auto", kAmd));
+    REQUIRE(matches(L"intel", kIntel) && !matches(L"intel", kNvidia));
 
     // 首选 NVIDIA 不能启动时继续尝试 Intel；全部不可用时交给软件回退。
     std::vector<Candidate> fallback{{kNvidia, 1}, {kIntel, 0}};
@@ -29,14 +30,14 @@ int main() {
         tried.push_back(candidate.vendor);
         return candidate.vendor == kNvidia ? 2 : 0;
     });
-    assert(success == 0 && tried == std::vector<std::uint32_t>({kNvidia, kIntel}));
-    assert(tryAdapters(fallback, [](const Candidate&) { return 2; }) == 2);
+    REQUIRE(success == 0 && tried == std::vector<std::uint32_t>({kNvidia, kIntel}));
+    REQUIRE(tryAdapters(fallback, [](const Candidate&) { return 2; }) == 2);
 
     // 处理已经开始后遇到的真实错误不能静默切换并把失败当作成功。
     tried.clear();
-    assert(tryAdapters(fallback, [&](const Candidate& candidate) {
+    REQUIRE(tryAdapters(fallback, [&](const Candidate& candidate) {
         tried.push_back(candidate.vendor);
         return 1;
     }) == 1);
-    assert(tried == std::vector<std::uint32_t>({kNvidia}));
+    REQUIRE(tried == std::vector<std::uint32_t>({kNvidia}));
 }

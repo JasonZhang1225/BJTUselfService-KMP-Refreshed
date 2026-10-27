@@ -548,7 +548,7 @@ private fun PlaybackStreamChooser(
                 Column(Modifier.weight(1f)) {
                     Text("合成为一个左右并排视频", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "左：${selected[0].kind.label}，右：${selected[1].kind.label}。用系统硬件编码，不额外占安装包体积；合成需要十几到几十分钟。",
+                        "左：${selected[0].kind.label}，右：${selected[1].kind.label}。支持硬件加速，耗时取决于设备和录像长度。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -900,7 +900,7 @@ private fun PlaybackTaskCard(task: PlaybackTask, manager: PlaybackTaskManager) {
 
 /**
  * 合成清晰度选择。学校每路录像只有 1080p 一个源，清晰度只能在合成时由编码器决定：
- * 分辨率和码率一起降，体积按比例下降，合成耗时不变。
+ * 分辨率和码率一起降低；文件体积及合成耗时还受录像内容与设备影响。
  */
 @Composable
 private fun PlaybackCompositeQualitySelector(

@@ -17,7 +17,7 @@ import javax.inject.Inject
 
 /** jpackage 的 --name / .app 文件名必须是 ASCII；用户看见的名字用这个中文。 */
 val desktopPackageName = "BJTUselfServiceKMP"
-val desktopPackageVersion = "1.8.6"
+val desktopPackageVersion = "2.0.0"
 val macDisplayName = "交大自由行 KMP"
 
 fun resolveDesktopPackageJavaHome(): String {
@@ -528,7 +528,7 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg)
             modules("java.sql")
             packageName = desktopPackageName
-            // Compose Desktop 的 packageVersion 仅允许 MAJOR.MINOR.PATCH；应用内版本 1.8.6-KMP / Build 44。
+            // Compose Desktop 的 packageVersion 仅允许 MAJOR.MINOR.PATCH；应用内版本 2.0.0-Alpha / Build 45。
             packageVersion = desktopPackageVersion
             description = "交大自由行 Kotlin Multiplatform macOS 应用"
             vendor = "BJTUselfService Contributors"
@@ -539,7 +539,7 @@ compose.desktop {
                 dockName = macDisplayName
                 appCategory = "public.app-category.education"
                 minimumSystemVersion = "12.0"
-                packageBuildVersion = "44"
+                packageBuildVersion = "45"
             }
         }
     }
