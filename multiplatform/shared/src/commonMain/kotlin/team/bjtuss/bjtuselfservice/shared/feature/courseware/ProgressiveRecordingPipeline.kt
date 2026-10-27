@@ -48,10 +48,14 @@ internal class ProgressiveRecordingPipeline(private val downloader: HlsRecording
             val progress = MutableStateFlow(playlists.map { HlsDownloadProgress(0, it.segmentUrls.size, 0, it.durationSeconds, 0) })
             val finishedInputs = MutableStateFlow(0)
             val limited = downloader.withConcurrency(2)
+            // 两路 worker 可能在不同线程上启动，不能同时修改共享的普通 Map。
+            val streamCheckpoints = playlists.indices.map { index ->
+                checkpoints.getOrPut(index) { HlsSegmentCheckpoint(MediaWorkDirectory(work.file("segments-$index"))) }
+            }
             coroutineScope {
                 playlists.forEachIndexed { index, playlist ->
                     launch {
-                        val checkpoint = checkpoints.getOrPut(index) { HlsSegmentCheckpoint(MediaWorkDirectory(work.file("segments-$index"))) }
+                        val checkpoint = streamCheckpoints[index]
                         limited.downloadResolved(playlist, StreamingFileSink { bytes ->
                             session.append(index, bytes)
                         }, checkpoint, onRetry) { latest ->

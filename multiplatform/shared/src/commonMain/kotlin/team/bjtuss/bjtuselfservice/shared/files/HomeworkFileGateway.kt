@@ -96,7 +96,11 @@ interface StreamingDestination {
     suspend fun commit(): HomeworkFileSaveResult
     /** 保留所选文件和权限，关闭未完成写入；重试时由平台重新从文件开头写。 */
     suspend fun closeForRecovery() = Unit
+    /** 上次保存可能已经完成但记录尚未更新时，不能自动覆盖目标。 */
+    suspend fun isRecoveryCommitAmbiguous(): Boolean = false
     suspend fun abort()
+    /** 任务清理需要知道是否成功；支持的平台在失败时抛出异常供记录重试。 */
+    suspend fun abortForCleanup() = abort()
 }
 
 sealed interface StreamingDestinationResult {

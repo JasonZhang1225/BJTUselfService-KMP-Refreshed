@@ -6,8 +6,10 @@ import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.BasicFileAttributes
 import javax.swing.SwingUtilities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -136,9 +138,8 @@ class WindowsHomeworkFileGateway(
         return try {
             withContext(Dispatchers.IO) {
                 val parent = selected.absoluteFile.parentFile ?: throw IllegalStateException("Missing destination directory")
-                // 大文件先写到目标目录里的临时文件，commit 才改名覆盖；abort 删除临时文件。
-                val temporary = Files.createTempFile(parent.toPath(), ".bjtu-save-", ".tmp")
-                StreamingDestinationResult.Opened(FileStreamingDestination(selected, temporary))
+                // 仅分配不可预测的名称。任务记录先保存该名称，第一次写入才创建文件。
+                StreamingDestinationResult.Opened(prepareFileStreamingDestination(selected, parent))
             }
         } catch (_: SecurityException) {
             StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
@@ -334,9 +335,11 @@ class WindowsHomeworkFileGateway(
 
 internal class FileStreamingDestination(
     private val target: File,
-    private val temporary: java.nio.file.Path,
+    internal val temporary: java.nio.file.Path,
+    private var temporaryOwned: Boolean = true,
 ) : StreamingDestination {
     private var output: java.io.OutputStream? = null
+    private var committed = false
     override val displayName: String = target.name
     override val recoveryToken: String get() = windowsDestinationToken(target, temporary.toFile())
 
@@ -345,11 +348,24 @@ internal class FileStreamingDestination(
         output = null
     }
 
+    override suspend fun isRecoveryCommitAmbiguous(): Boolean = withContext(Dispatchers.IO) {
+        fun exists(path: java.nio.file.Path): Boolean = try {
+            Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            true
+        } catch (_: NoSuchFileException) { false }
+        !exists(temporary) && exists(target.toPath())
+    }
+
     override suspend fun write(bytes: ByteArray) {
         try {
             withContext(Dispatchers.IO) {
-                val stream = output ?: Files.newOutputStream(temporary, StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS).also { output = it }
+                val stream = output ?: (if (temporaryOwned) {
+                    Files.newOutputStream(temporary, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                        StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)
+                } else {
+                    Files.newOutputStream(temporary, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE,
+                        LinkOption.NOFOLLOW_LINKS).also { temporaryOwned = true }
+                }).also { output = it }
                 stream.write(bytes)
             }
         } catch (error: CancellationException) {
@@ -368,6 +384,8 @@ internal class FileStreamingDestination(
             } catch (_: AtomicMoveNotSupportedException) {
                 Files.move(temporary, target.toPath(), StandardCopyOption.REPLACE_EXISTING)
             }
+            committed = true
+            temporaryOwned = false
             HomeworkFileSaveResult.Saved
         } catch (_: SecurityException) {
             HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
@@ -377,10 +395,21 @@ internal class FileStreamingDestination(
     }
 
     override suspend fun abort() {
+        runCatching { abortForCleanup() }
+    }
+
+    override suspend fun abortForCleanup() {
         withContext(NonCancellable + Dispatchers.IO) {
-            runCatching { output?.close() }
-            output = null
-            runCatching { Files.deleteIfExists(temporary) }
+            try { output?.close() } finally { output = null }
+            if (!committed && temporaryOwned) {
+                check(!Files.isSymbolicLink(temporary)) { "保存临时文件已被替换" }
+                Files.deleteIfExists(temporary)
+            }
         }
     }
+}
+
+internal fun prepareFileStreamingDestination(target: File, parent: File = target.absoluteFile.parentFile): FileStreamingDestination {
+    val temporary = parent.toPath().resolve(".bjtu-save-${java.util.UUID.randomUUID()}.tmp")
+    return FileStreamingDestination(target, temporary, temporaryOwned = false)
 }

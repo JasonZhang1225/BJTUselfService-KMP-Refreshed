@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -40,6 +41,108 @@ class PlaybackTaskManagerTest {
     @Test fun queuedTasksAdvanceAfterFailure() = runBlocking { exerciseThreeTaskQueue("fail") }
     @Test fun queuedTasksAdvanceAfterPause() = runBlocking { exerciseThreeTaskQueue("pause") }
     @Test fun queuedTasksAdvanceAfterCancellation() = runBlocking { exerciseThreeTaskQueue("cancel") }
+
+    @Test fun concurrentSubmissionKeepsAllThreeTasksAndOnlyOneRuns() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("playback-concurrent-enqueue-test-").toFile()
+        val root = File(directory, "work")
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val gateway = MemoryGateway()
+        val compositor = QueueCompositor()
+        val store = DiskTestStore(root)
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0, concurrency = 1),
+                { compositor }, { null }, store)
+            val detail = detail()
+            val go = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val submissions = (1..3).map { number -> async(Dispatchers.Default) {
+                go.await()
+                assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, detail.streams, "并发课程$number", true, gateway)).taskId
+            } }
+            go.complete(Unit)
+            val ids = submissions.map { it.await() }
+            assertEquals(3, ids.toSet().size)
+            assertEquals(ids.toSet(), manager.tasks.value.map { it.id }.toSet())
+            val first = withTimeout(10_000) { compositor.started.receive() }
+            assertTrue(first in ids)
+            assertEquals(2, manager.tasks.value.count { it.phase == PlaybackTaskPhase.QUEUED })
+            compositor.release(first, false)
+            val second = withTimeout(10_000) { compositor.started.receive() }
+            compositor.release(second, false)
+            val third = withTimeout(10_000) { compositor.started.receive() }
+            compositor.release(third, false)
+            assertEquals(ids.toSet(), setOf(first, second, third))
+            withTimeout(10_000) { while (manager.tasks.value.any { it.phase != PlaybackTaskPhase.DONE } ||
+                ids.any { File(root, it).exists() }) delay(10) }
+            assertEquals(1, compositor.maximumActive.get())
+        } finally {
+            scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun concurrentRetryStartsOnlyOneNewExecution() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("playback-concurrent-retry-test-").toFile()
+        val root = File(directory, "work")
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val gateway = MemoryGateway()
+        val compositor = QueueCompositor()
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0, concurrency = 1),
+                { compositor }, { null }, DiskTestStore(root))
+            val detail = detail()
+            val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, detail.streams, "测试", true, gateway)).taskId
+            assertEquals(id, withTimeout(10_000) { compositor.started.receive() })
+            compositor.release(id, true)
+            withTimeout(10_000) { while (!manager.tasks.value.first { it.id == id }.canResume) delay(10) }
+            val go = kotlinx.coroutines.CompletableDeferred<Unit>()
+            val attempts = (1..8).map { async(Dispatchers.Default) { go.await(); manager.retry(id) } }
+            go.complete(Unit)
+            attempts.forEach { it.await() }
+            assertEquals(id, withTimeout(10_000) { compositor.started.receive() })
+            compositor.release(id, false)
+            withTimeout(10_000) { while (manager.tasks.value.first { it.id == id }.phase != PlaybackTaskPhase.DONE ||
+                File(root, id).exists()) delay(10) }
+            assertTrue(compositor.started.tryReceive().isFailure, "重复点击继续不能创建第二次执行")
+            assertEquals(1, compositor.maximumActive.get())
+        } finally {
+            scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun cancellationDuringInitialRecordWriteNeverStartsTheTask() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("playback-register-cancel-test-").toFile()
+        val root = File(directory, "work")
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val blockOnce = java.util.concurrent.atomic.AtomicBoolean(true)
+        val store = object : PlaybackTaskStore {
+            override val workRoot = Path(root.absolutePath)
+            override suspend fun load() = emptyList<StoredPlaybackTask>()
+            override suspend fun save(tasks: List<StoredPlaybackTask>) {
+                if (tasks.isNotEmpty() && blockOnce.compareAndSet(true, false)) { entered.complete(Unit); release.await() }
+            }
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val gateway = MemoryGateway()
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { RecordingCompositor() }, { null }, store)
+            val detail = detail()
+            val submitting = async(Dispatchers.Default) { manager.enqueue(detail, detail.streams, "测试", true, gateway) }
+            withTimeout(5000) { entered.await() }
+            val id = manager.tasks.value.single().id
+            manager.cancel(id)
+            release.complete(Unit)
+            assertEquals(id, assertIs<PlaybackEnqueueResult.Started>(submitting.await()).taskId)
+            withTimeout(5000) { while (manager.tasks.value.single().phase != PlaybackTaskPhase.CANCELLED || gateway.aborted.isEmpty()) delay(10) }
+            assertTrue(transport.requested.isEmpty(), "取消在登记阶段发生时不能启动网络")
+            assertFalse(File(root, id).exists())
+        } finally {
+            release.complete(Unit)
+            scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            directory.deleteRecursively()
+        }
+    }
 
     @Test fun cancellingQueuedTaskCannotLetLaterTaskOvertakeItsPredecessor() = runBlocking {
         val directory = java.nio.file.Files.createTempDirectory("playback-queue-cancel-test-").toFile()
@@ -165,6 +268,209 @@ class PlaybackTaskManagerTest {
                 if (gate.await()) throw team.bjtuss.bjtuselfservice.shared.media.CompositionException("测试失败")
                 File(outputPath).writeText("complete")
             } finally { active.decrementAndGet() }
+        }
+    }
+
+    private class DiskTestStore(root: File) : PlaybackTaskStore {
+        override val workRoot = Path(root.absolutePath)
+        val records = kotlinx.coroutines.flow.MutableStateFlow<List<StoredPlaybackTask>>(emptyList())
+        val failSave = java.util.concurrent.atomic.AtomicBoolean(false)
+        override suspend fun load() = decodePlaybackTaskRecords(encodePlaybackTaskRecords(records.value))
+        override suspend fun save(tasks: List<StoredPlaybackTask>) {
+            if (failSave.get()) throw java.io.IOException("模拟磁盘空间不足")
+            records.value = decodePlaybackTaskRecords(encodePlaybackTaskRecords(tasks))
+        }
+    }
+
+    private class DiskTestGateway(private val directory: File) : HomeworkFileGateway {
+        val failWrite = java.util.concurrent.atomic.AtomicBoolean(false)
+        val failAbort = java.util.concurrent.atomic.AtomicBoolean(false)
+        lateinit var temporary: File
+        lateinit var target: File
+        override val isAvailable = true
+        override val isStreamingSaveAvailable = true
+        override suspend fun pickFiles() = HomeworkFilePickResult.Cancelled
+        override suspend fun saveFile(file: HomeworkFileContent) = HomeworkFileSaveResult.Cancelled
+        override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
+            target = File(directory, fileName).apply { writeText("用户已有视频") }
+            temporary = File(directory, ".bjtu-save-test.tmp").apply { writeText("未完成") }
+            return StreamingDestinationResult.Opened(object : StreamingDestination {
+                override val displayName = fileName
+                override val recoveryToken = "test:$fileName"
+                private var first = true
+                override suspend fun write(bytes: ByteArray) {
+                    if (failWrite.get()) throw team.bjtuss.bjtuselfservice.shared.files.StreamingSinkIoException()
+                    if (first) { temporary.writeBytes(bytes); first = false } else temporary.appendBytes(bytes)
+                }
+                override suspend fun closeForRecovery() { first = true }
+                override suspend fun commit(): HomeworkFileSaveResult {
+                    java.nio.file.Files.move(temporary.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                    return HomeworkFileSaveResult.Saved
+                }
+                override suspend fun abort() {
+                    if (failAbort.get()) throw java.io.IOException("模拟临时文件被占用")
+                    java.nio.file.Files.deleteIfExists(temporary.toPath())
+                }
+            })
+        }
+    }
+
+    @Test fun diskWriteFailurePreservesSegmentsAndRetryRemovesAllTemporaryFiles() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("playback-disk-failure-test-").toFile()
+        val store = DiskTestStore(File(directory, "work"))
+        val gateway = DiskTestGateway(directory).apply { failWrite.set(true) }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0, concurrency = 1),
+                { RecordingCompositor() }, { null }, store)
+            val detail = detail()
+            val teacher = detail.streams.filter { it.kind == PlaybackStreamKind.TEACHER }
+            val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, teacher, "测试", false, gateway)).taskId
+            withTimeout(10_000) { while (!manager.tasks.value.first { it.id == id }.canResume) delay(10) }
+            val taskWork = File(directory, "work/$id")
+            assertTrue(File(taskWork, "segments-0/0.ts").isFile, "写盘失败必须保留已下载分片")
+            assertTrue(File(taskWork, "s0.data").isFile)
+            assertEquals("用户已有视频", gateway.target.readText())
+            gateway.failWrite.set(false)
+            manager.retry(id)
+            withTimeout(10_000) { while (manager.tasks.value.first { it.id == id }.phase != PlaybackTaskPhase.DONE || taskWork.exists()) delay(10) }
+            assertFalse(gateway.temporary.exists())
+            assertEquals("ftyp", gateway.target.readBytes().copyOfRange(4, 8).decodeToString())
+        } finally {
+            scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun failedCleanupKeepsItsRecordAndRetriesWithoutDeletingExistingVideo() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("playback-cleanup-failure-test-").toFile()
+        val store = DiskTestStore(File(directory, "work"))
+        val gateway = DiskTestGateway(directory).apply { failAbort.set(true) }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        transport.segmentGate = kotlinx.coroutines.CompletableDeferred()
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0, concurrency = 1),
+                { RecordingCompositor() }, { null }, store)
+            val detail = detail()
+            val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, detail.streams, "测试", true, gateway)).taskId
+            withTimeout(10_000) { while (manager.tasks.value.first { it.id == id }.phase != PlaybackTaskPhase.DOWNLOADING) delay(10) }
+            manager.cancel(id)
+            withTimeout(10_000) { while (manager.tasks.value.first { it.id == id }.message?.contains("未能处理") != true) delay(10) }
+            assertTrue(gateway.temporary.isFile, "清理失败后不能声称临时文件已删除")
+            assertEquals("用户已有视频", gateway.target.readText())
+            assertTrue(store.records.value.single { it.task.id == id }.task.cleanupPending)
+            assertTrue(store.records.value.single { it.task.id == id }.request != null)
+            gateway.failAbort.set(false)
+            withTimeout(10_000) { while (manager.tasks.value.any { it.id == id } || gateway.temporary.exists()) {
+                manager.dismiss(id); delay(10)
+            } }
+            assertEquals("用户已有视频", gateway.target.readText())
+            assertFalse(File(directory, "work/$id").exists())
+            withTimeout(10_000) { while (store.records.value.any { it.task.id == id }) delay(10) }
+        } finally {
+            scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun fullDiskWhileRecordingCleanupKeepsFilesUntilRecordCanBeSaved() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("playback-record-full-test-").toFile()
+        val store = DiskTestStore(File(directory, "work"))
+        val gateway = DiskTestGateway(directory)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        transport.segmentGate = kotlinx.coroutines.CompletableDeferred()
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0, concurrency = 1),
+                { RecordingCompositor() }, { null }, store)
+            val detail = detail()
+            val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, detail.streams, "测试", true, gateway)).taskId
+            withTimeout(10_000) { while (manager.tasks.value.first { it.id == id }.phase != PlaybackTaskPhase.DOWNLOADING) delay(10) }
+            val cache = File(directory, "work/$id/retained.part").apply { writeText("未完成分片") }
+            store.failSave.set(true)
+            manager.cancel(id)
+            withTimeout(10_000) { while (manager.tasks.value.first { it.id == id }.message?.contains("未能处理") != true) delay(10) }
+            assertTrue(cache.isFile, "清理意图未能持久化时不能先删缓存")
+            assertTrue(gateway.temporary.isFile)
+            assertEquals("用户已有视频", gateway.target.readText())
+            store.failSave.set(false)
+            withTimeout(10_000) { while (manager.tasks.value.any { it.id == id } || gateway.temporary.exists()) {
+                manager.dismiss(id); delay(10)
+            } }
+            assertFalse(cache.exists())
+            assertEquals("用户已有视频", gateway.target.readText())
+        } finally {
+            scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun unsafeHistoryTaskIdCannotDeleteFilesOutsideWorkRoot() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("playback-invalid-record-test-").toFile()
+        val store = DiskTestStore(File(directory, "work"))
+        val outside = File(directory, "outside/video.mp4").apply { parentFile.mkdirs(); writeText("用户视频") }
+        store.records.value = listOf(StoredPlaybackTask(PlaybackTask("../outside", "测试", "损坏记录", emptyList(), false,
+            phase = PlaybackTaskPhase.CANCELLED, cleanupPending = true)))
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { RecordingCompositor() }, { null }, store)
+            withTimeout(5000) { while (manager.tasks.value.isEmpty()) delay(10) }
+            assertEquals("history-error", manager.tasks.value.single().id)
+            delay(600)
+            assertEquals("用户视频", outside.readText())
+            assertEquals("../outside", store.records.value.single().task.id)
+        } finally {
+            scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun transientRecordWriteFailureRetriesWithoutAnotherTaskUpdate() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("playback-record-retry-test-").toFile()
+        val firstFailure = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val saved = kotlinx.coroutines.CompletableDeferred<List<StoredPlaybackTask>>()
+        val attempts = java.util.concurrent.atomic.AtomicInteger()
+        val original = StoredPlaybackTask(PlaybackTask("t456-0", "测试", "测试课节", listOf("教师"), false,
+            phase = PlaybackTaskPhase.DOWNLOADING, outputs = listOf("视频.mp4")))
+        val store = object : PlaybackTaskStore {
+            override val workRoot = Path(File(directory, "work").absolutePath)
+            override suspend fun load() = listOf(original)
+            override suspend fun save(tasks: List<StoredPlaybackTask>) {
+                if (attempts.incrementAndGet() == 1) { firstFailure.complete(Unit); throw java.io.IOException("记录文件暂时被占用") }
+                saved.complete(tasks)
+            }
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { RecordingCompositor() }, { null }, store)
+            withTimeout(5000) { firstFailure.await() }
+            val records = withTimeout(5000) { saved.await() }
+            assertEquals(PlaybackTaskPhase.FAILED, manager.tasks.value.single().phase)
+            assertEquals(PlaybackTaskPhase.FAILED, records.single().task.phase)
+            assertTrue(attempts.get() >= 2)
+        } finally {
+            scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test fun secretUrlIsNotPersistedButItsDestinationRemainsTrackedForCleanup() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("playback-private-url-test-").toFile()
+        val store = DiskTestStore(File(directory, "work"))
+        val gateway = DiskTestGateway(directory)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { RecordingCompositor() }, { null }, store)
+            val detail = detail()
+            val stream = detail.streams.first { it.kind == PlaybackStreamKind.TEACHER }.let { it.copy(hlsUrl = it.hlsUrl + "?token=test-secret") }
+            val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, listOf(stream), "测试", false, gateway)).taskId
+            withTimeout(5000) { while (store.records.value.none { it.task.id == id && it.request != null }) delay(10) }
+            val saved = store.records.value.single { it.task.id == id }.request!!
+            assertTrue(saved.streams.isEmpty())
+            assertTrue(saved.destinations.single() != null, "即使地址不可持久化，也要记录临时文件归属")
+            assertFalse(encodePlaybackTaskRecords(store.records.value).contains("test-secret"))
+        } finally {
+            scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            directory.deleteRecursively()
         }
     }
 
@@ -863,7 +1169,7 @@ class PlaybackTaskManagerTest {
             val id = assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, detail.streams, "测试课程", true, gateway)).taskId
             withTimeout(5000) { while (!manager.tasks.value.first().canResume) delay(10) }
             manager.dismiss(id)
-            withTimeout(5000) { while (gateway.aborted.isEmpty()) delay(10) }
+            withTimeout(5000) { while (gateway.aborted.isEmpty() || manager.tasks.value.isNotEmpty()) delay(10) }
             assertEquals(1, gateway.aborted.size)
             assertTrue(manager.tasks.value.isEmpty())
         } finally { scope.cancel() }

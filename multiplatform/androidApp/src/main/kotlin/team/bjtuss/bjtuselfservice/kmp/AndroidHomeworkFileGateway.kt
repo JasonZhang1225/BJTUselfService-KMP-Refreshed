@@ -475,6 +475,7 @@ internal class ContentStreamingDestination(
 ) : StreamingDestination {
     override val recoveryToken: String get() = uri.toString()
     private var finished = false
+    private var committed = false
     override suspend fun closeForRecovery() = withContext(NonCancellable + Dispatchers.IO) {
         runCatching { output?.close() }
         output = null
@@ -499,6 +500,7 @@ internal class ContentStreamingDestination(
             output?.close()
             output = null
             finished = true
+            committed = true
             runCatching { resolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
             HomeworkFileSaveResult.Saved
         } catch (_: Exception) {
@@ -507,12 +509,20 @@ internal class ContentStreamingDestination(
     }
 
     override suspend fun abort() {
+        runCatching { abortForCleanup() }.onFailure {
+            android.util.Log.w("AndroidFileGateway", "deleteDocument failed: ${it.javaClass.simpleName}")
+        }
+    }
+
+    override suspend fun abortForCleanup() {
         withContext(NonCancellable + Dispatchers.IO) {
+            if (committed) return@withContext
             runCatching { output?.close() }
             output = null
             finished = true
-            runCatching { DocumentsContract.deleteDocument(resolver, uri) }
-                .onFailure { android.util.Log.w("AndroidFileGateway", "deleteDocument failed: ${it.javaClass.simpleName}: ${it.message}") }
+            if (!DocumentsContract.deleteDocument(resolver, uri)) {
+                throw java.io.IOException("无法删除未完成的保存目标")
+            }
             runCatching { resolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
         }
     }

@@ -21,7 +21,7 @@ class MediaWorkDirectory(val path: Path) {
 
     suspend fun create() = withContext(Dispatchers.IO) { SystemFileSystem.createDirectories(path) }
 
-    suspend fun deleteAll() = withContext(Dispatchers.IO) { deleteRecursively(path) }
+    suspend fun deleteAll() = withContext(Dispatchers.IO) { deleteWorkTree(path) }
 
     companion object {
         val root: Path get() = Path(SystemTemporaryDirectory, "bjtu-playback-tasks")
@@ -56,19 +56,13 @@ class MediaWorkDirectory(val path: Path) {
             rootMutex.withLock {
                 if (!SystemFileSystem.exists(workRoot)) return@withLock
                 val protected = liveTasks + keep
-                SystemFileSystem.list(workRoot).filter { it.name !in protected }.forEach(::deleteRecursively)
+                SystemFileSystem.list(workRoot).filter { it.name !in protected }.forEach(::deleteWorkTree)
             }
         }
     }
 }
 
-private fun deleteRecursively(path: Path) {
-    if (!SystemFileSystem.exists(path)) return
-    if (SystemFileSystem.metadataOrNull(path)?.isDirectory == true) {
-        SystemFileSystem.list(path).forEach(::deleteRecursively)
-    }
-    runCatching { SystemFileSystem.delete(path, mustExist = false) }
-}
+internal expect fun deleteWorkTree(path: Path)
 
 /** 顺序追加写入的文件。 */
 class AppendFile(private val path: Path) : AutoCloseable {
