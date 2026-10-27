@@ -830,6 +830,11 @@ private fun PlaybackTaskCard(task: PlaybackTask, manager: PlaybackTaskManager) {
                 task.step.takeIf(String::isNotBlank)?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                task.compositionDevice?.takeIf {
+                    task.phase == PlaybackTaskPhase.PIPELINING || task.phase == PlaybackTaskPhase.COMPOSITING
+                }?.let {
+                    Text("合成设备：$it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 // 体积与速度放在进度条下面一行：左边已下载/预计总量，右边当前速度。
                 if (task.sizeLabel != null || task.speedLabel != null) {
                     Row(

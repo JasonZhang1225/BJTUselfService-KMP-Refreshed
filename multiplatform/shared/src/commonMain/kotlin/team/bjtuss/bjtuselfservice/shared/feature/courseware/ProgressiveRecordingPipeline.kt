@@ -27,6 +27,7 @@ internal class ProgressiveRecordingPipeline(private val downloader: HlsRecording
         onFinalizing: (Float) -> Unit,
         onRetry: (Int, Long) -> Unit,
         onStatus: (String?) -> Unit,
+        onDevice: (String?) -> Unit,
     ) {
         val playlists = coroutineScope { streams.map { stream -> async { downloader.resolvePlaylist(stream.hlsUrl, onRetry) } }.awaitAll() }
         if (playlists.any { it.durationSeconds <= 0 })
@@ -39,7 +40,7 @@ internal class ProgressiveRecordingPipeline(private val downloader: HlsRecording
                 onStatus("从已保存的第 ${(session.resumeSeconds / 60).toInt()} 分钟继续，最多重做约 1 分钟")
             if (session.isComplete) {
                 onInputsComplete()
-                session.compose(onComposition, onStatus, onFinalizing)
+                session.compose(onComposition, onStatus, onFinalizing, onDevice)
                 return
             }
             // 恢复仍读原始时间轴；原生端只扫描已完成部分的压缩数据，不重新编码。
@@ -62,7 +63,7 @@ internal class ProgressiveRecordingPipeline(private val downloader: HlsRecording
                         if (finishedInputs.value == streams.size) onInputsComplete()
                     }
                 }
-                session.compose(onComposition, onStatus, onFinalizing)
+                session.compose(onComposition, onStatus, onFinalizing, onDevice)
             }
         } finally { session.close() }
     }

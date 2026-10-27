@@ -18,6 +18,7 @@ class TsToMp4Remuxer(
     private var pmtPid = -1
     private var videoPid = -1
     private var audioPid = -1
+    private var completeProgramMapSeen = false
     private val pes = mutableMapOf<Int, ByteArrayBuilder>()
 
     private val video = TrackTable()
@@ -35,6 +36,8 @@ class TsToMp4Remuxer(
     val videoSampleCount: Int get() = video.count
     val audioSampleCount: Int get() = audio.count
     val dataSize: Long get() = dataOffset
+    /** 完整 PMT 到达后才能判断有没有 AAC 轨，避免把尚未解析的音频当成无声录像。 */
+    val hasAudioTrack: Boolean? get() = if (completeProgramMapSeen) audioPid >= 0 else null
     val videoConfiguration: TsVideoConfiguration? get() = sps?.let { s -> pps?.let { p ->
         val size = parseSpsDimensions(s) ?: (1920 to 1080)
         TsVideoConfiguration(size.first, size.second, s.copyOf(), p.copyOf())
@@ -290,6 +293,7 @@ class TsToMp4Remuxer(
             }
             i += 5 + infoLength
         }
+        if (p + 3 + sectionLength <= end) completeProgramMapSeen = true
     }
 
     private suspend fun flushPes(pid: Int, data: ByteArray) {

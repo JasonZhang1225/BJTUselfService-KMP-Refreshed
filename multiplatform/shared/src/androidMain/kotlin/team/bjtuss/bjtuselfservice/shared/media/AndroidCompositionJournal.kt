@@ -7,18 +7,12 @@ import android.media.MediaMuxer
 import android.util.AtomicFile
 import java.io.File
 import java.nio.ByteBuffer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlin.coroutines.CoroutineContext
-
-@Serializable
-internal data class EncodedPart(val startUs: Long, val endUs: Long, val audioFrames: Long? = null)
-@Serializable
-private data class EncodedIndex(val quality: String, val parts: List<EncodedPart>, val complete: Boolean = false,
-    val audioOriginUs: Long? = null)
 
 /** 只提交已 stop/release 的独立 MP4；崩溃最多重做当前约一分钟媒体内容。 */
 internal class AndroidCompositionJournal(private val directory: File, private val quality: String) {
@@ -28,6 +22,8 @@ internal class AndroidCompositionJournal(private val directory: File, private va
     var complete = false
         private set
     var audioOriginUs: Long? = null
+    var encoderName: String? = null
+        private set
     val resumeUs: Long get() = parts.lastOrNull()?.endUs ?: 0L
     val resumeAudioFrames: Long get() = parts.sumOf { it.audioFrames ?: 0L }
     fun file(index: Int = parts.size): File = File(directory, "part-$index.mp4")
@@ -38,6 +34,7 @@ internal class AndroidCompositionJournal(private val directory: File, private va
             val saved = json.decodeFromString<EncodedIndex>(index.openRead().bufferedReader().use { it.readText() })
             if (saved.quality != quality) throw CompositionException("合成断点清晰度不一致")
             audioOriginUs = saved.audioOriginUs
+            encoderName = saved.encoderName
             var end = 0L
             for ((i, part) in saved.parts.withIndex()) {
                 if (part.startUs != end || part.endUs <= end || !file(i).isFile || file(i).length() == 0L) break
@@ -50,13 +47,21 @@ internal class AndroidCompositionJournal(private val directory: File, private va
         if (!complete) file().delete()
     }
 
+    /** 已完成的分段必须沿用同一编码器，避免恢复后拼接不同的编码配置。 */
+    fun bindEncoder(name: String) {
+        if (parts.isNotEmpty() && encoderName != null && encoderName != name) {
+            throw CompositionException("原编码器暂不可用，已保留合成分段")
+        }
+        encoderName = name
+    }
+
     fun commit(endUs: Long, audioFrames: Long, final: Boolean = false) {
         check(endUs > resumeUs && file().length() > 0)
         parts += EncodedPart(resumeUs, endUs, audioFrames)
         complete = final
         val stream = index.startWrite()
         try {
-            stream.write(json.encodeToString(EncodedIndex(quality, parts.toList(), complete, audioOriginUs)).toByteArray())
+            stream.write(json.encodeToString(EncodedIndex(quality, parts.toList(), complete, audioOriginUs, encoderName)).toByteArray())
             index.finishWrite(stream)
         } catch (error: Throwable) { index.failWrite(stream); throw error }
     }
@@ -64,6 +69,22 @@ internal class AndroidCompositionJournal(private val directory: File, private va
     /** 无重编码整理各段。用原来的全局时间戳，不累加各容器尾部的四舍五入时长。 */
     fun concatenate(output: File, context: CoroutineContext, onProgress: (Float) -> Unit) {
         check(complete && parts.isNotEmpty())
+        try {
+            FastMp4PartJoiner.concatenate(parts.mapIndexed { index, part ->
+                Mp4JoinPart(file(index), part.startUs, part.endUs, part.audioFrames)
+            }, audioOriginUs, output, context, onProgress)
+            return
+        } catch (error: CancellationException) {
+            output.delete()
+            throw error
+        } catch (error: Exception) {
+            output.delete()
+            android.util.Log.d("PlaybackCompose", "快速整理不可用，退回系统封装：${error::class.simpleName}")
+        }
+        concatenateWithMediaMuxer(output, context, onProgress)
+    }
+
+    private fun concatenateWithMediaMuxer(output: File, context: CoroutineContext, onProgress: (Float) -> Unit) {
         val muxer = MediaMuxer(output.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         val formats = mutableMapOf<String, MediaFormat>()
         val targets = mutableMapOf<String, Int>()

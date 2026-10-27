@@ -1,10 +1,10 @@
 # BJTUselfService 实时工作记忆
 
-> 2026-10-27：分支 `feat/courseware-fallback-playback`，本轮起始同步基线 `6d0609b5`（PR #70），本轮安卓源码已按验收结果提交为 `b05426ec`、`f1f06c79`、`51ad5b3c`、`aae42176`，已推送到远端 `feat/courseware-fallback-playback`（头 `3c1740c`）；功能分支未合入 main。安卓提速与跨芯片兼容的调研计划在 `claude/intelligent-mendel-557os7` 分支提交。源码仍为 `1.8.6-KMP` / Build44，iOS最低18.0。
+> 2026-10-27：分支 `feat/courseware-fallback-playback`，已快进至 `247b54e8`（PR #71，远端安卓性能计划）；安卓既有验收提交已推送，功能分支未合入 main。当前安卓和 Windows 新改动未提交；源码仍为 `1.8.6-KMP` / Build44，iOS最低18.0。
 >
-> 用户持续目标：先完成安卓完整验收并分批少量提交，再做 Windows AMD/NVIDIA/Intel 硬件加速和稳定下载合成。安卓三个验收目标已通过，实测不暂停总耗时约16分15秒，9–10分钟性能目标未达到。
+> 用户持续目标：Windows 硬件加速与下载合成并行已完成本机隔离验收，改动仍未提交；安卓计划及现有修改保留，设备暂不在身边，ADB 与实机验收留待后续。安卓旧版整节验收实测不暂停总耗时约16分15秒，9–10分钟性能目标未达到。
 >
-> **下一步计划：`docs/plans/playback-android-performance.md`**（安卓下载合成提速与跨芯片兼容，2026-10-27 调研完成、未实施）。先按其中 P0 采样，再做 P1；Windows 项见下文。不能把安卓完成当成整个持续目标完成。
+> **安卓计划：`docs/plans/playback-android-performance.md`**。设备可用时补 P0 硬件采样及每项实机验收；现有修改不得视为实机通过。Windows 工作见下文。
 
 ## 进行中：安卓修复已验收并提交，待功能分支合主干
 
@@ -15,7 +15,7 @@
 
 ### 整节实机验收证据
 
-- 设备：小米平板8 Pro（`6c5a737e`、Android17），独立 `.playbacktest` debug包，原App未替换。无线ADB `192.168.10.2:36171` 已授权，已换AC充电器，电量回升；后续显式指定无线序列号，不能误操作模拟器或原App。
+- 设备：小米平板8 Pro（Android17），独立 `.playbacktest` debug包，原App未替换。无线ADB曾授权，已换AC充电器，电量回升；后续确认连接状态并显式指定平板，不能误操作模拟器或原App。
 - 恢复验收 `t1793028955283-0`：10月26日23:35:55→23:51:17 DONE。每路703片，总源3,853,388,624字节；成片 `Downloads/android-goal-final-20261026.mp4`，753,571,868字节、1:57:02.56、1920×540/25fps H.264，175564帧，AAC 44.1kHz单声道302430包。每个视频PTS间隔严格40000us；整段 `ffmpeg -v error -xerror -threads 0 -i goal-final-with-recovery.mp4 -f null -` 退出0。音轨SHA256与原轨完全一致：`61fcd3f23860e39eda9f7f39669d9de62ceb8f24430028bf69e83d91d1f99c09`。
 - 此轮后台返回、页面重建不掉任务，服务同实例且lastStartId=1；下载96%/合成23%手动暂停，保留686/668个原片、23个完成编码段。强停重开继续，从1568280000us恢复，仅补约141MB；最终102个成品段，前23个元数据完全未变，恢复后136357=136357帧。首/中/尾和恢复边界画面、平板媒体查看器实际播放已检查。覆盖安装后DONE仍在。含人工暂停约65秒，总约15分22秒，不作为无干预成绩。
 - 最终不暂停计时 `t1793030228149-0`：10月26日23:57:08→10月27日00:13:23 DONE，目标 `Downloads/android-goal-timed-20261026.mp4`，757,329,607字节。源码增加独立FINALIZING整理进度后再次真实全量下载，无断点复用。175564视频帧、每帧PTS间隔40000us、AAC302430包与上述SHA256完全一致，整段ffmpeg解码退出0。强停重开后DONE保留，原始临时分片已清理，通知服务结束。
@@ -30,18 +30,30 @@
 - 尚保留旧测试任务 `t1793024019616-0`（PAUSED 60.5%，703×2原片、64成品段）和 `t1792993910544-0`（两路完整原始MP4，供性能对照/Windows复用）。不得误当进行中的新任务或误删原App数据。
 - 源码、构建、JSON状态、逐帧时轴、音轨校验、视频和截图证据在忽略目录 `.artifacts/android-full-acceptance/`、`.artifacts/tablet-playback/`。真实账号自动刷新的原现场未直接复现；已用平板页面重建与真实业务组合根回归覆盖取消路径。未复现的ANR/资源过量等历史退出不能宣称已全部根治。
 
-## 接下来：安卓合成提速与跨芯片兼容（计划见 `docs/plans/playback-android-performance.md`）
+## 进行中：安卓合成提速与跨芯片兼容（计划见 `docs/plans/playback-android-performance.md`）
 
 - 基线拆解：下载8分14秒（≈14.2×实时）与合成重叠，合成到14分25秒才完（≈8.1×实时、约203帧/秒），之后整理≈1分31秒、保存≈16秒。瓶颈是合成而非网络；按公开规格粗算视频单元已用约六七成（未实测）。
-- 已识别问题：整理逐样本重封装（约8MB/s）；保存二次复制且每1MB刷新一次状态；合成主循环逐帧串行、解码只提前一帧；解码器未设优先级、需查 `offline rate hint rejected`；课件路34.5fps约27%帧解码后即丢弃。
-- 跨芯片：只用标准MediaCodec/Surface/EGL，不依赖高通私有接口。风险为中低端芯片速度、三个并发硬件会话被拒无回退、编码器自行丢帧会令帧数核对反复失败、着色器未用 `SurfaceTexture.getTransformMatrix()`（1088对齐裁剪隐患）。
+- 基线问题：整理逐样本重封装（约8MB/s）；保存二次复制且每1MB刷新一次状态；合成主循环逐帧串行、解码只提前一帧；解码器未设优先级。现已增加受限快速整理、保存进度节流与纹理矩阵，均待设备验证。
+- 跨芯片：只用标准 MediaCodec/Surface/EGL，不依赖高通私有接口。现已按硬件优先、软件随后尝试编解码器，并在启动失败时释放资源；仍没有两路串行回退，编码器自行丢帧也可能令帧数核对反复失败。这些路径与纹理矩阵修正均未跨设备验收。
 - 推荐顺序：P0 采样（日志三项耗时、只解码/只编码/完整流程基准、源帧参考类型）→ P1 分段盒层面直接拼接+增量整理+直写目标（预计尾段≈1分47秒→≈10秒）与变换矩阵修正 → P2 按采样结论选两条流水线并行或跳过不被选中的非参考帧 → P3 下载并发A/B；兼容性加固并行推进，需一台天玑设备验收。
-- 预期：只做P1约14.5分钟；合成≥14×实时后约8.5–9分钟。均未实施、未实测，不能当作已达成。
+- 预期：只做P1约14.5分钟；合成≥14×实时后约8.5–9分钟。尚未实测，不能当作已达成；增量整理、SAF 随机写、P2/P3 和跨芯片回退仍未完成。
+- 2026-10-27 本地新改动：两路 SurfaceTexture 每次更新后读取各自变换矩阵，着色器按矩阵采样；大文件保存进度最多每 250ms 更新。MP4 盒快速整理仅接受严格检查通过的分段，否则回退原 MediaMuxer。编解码器按名称创建并在资源不足时尝试其他候选；新索引记录编码器名，恢复已提交分段时沿用原编码器，旧索引没有名称时仍依赖分段配置核验。第二路初始化失败会释放第一路和已创建资源；渐进输入每次提供独立格式，速率提示被拒时可真正退回默认格式。Android debug 和 release R8 已构建，尚未做 ADB、画面或跨芯片验证。
+- Kotlin 快速整理离线复用 3 个既有 Android MediaMuxer 分段，与原整理结果的 2493 视频包、6891 音频包逐包内容、PTS、DTS、大小和关键帧标志完全一致，ffmpeg 全解码退出 0。重复分段构成 102 段、444 MB 的压力样本，84,762 视频包和 234,294 音频包的内容及时间戳均正确，全解码退出 0；Windows 本机仅作逻辑/容器验证，不代表平板速度或整节新版本验收。
+- 既有整节日志 `goal-android-live.log` 的 175000 帧累计 `decodeMs=240737 / drawMs=376512 / encodeMs=236458`（这些是主循环等待/工作时间，不等于硬件利用率）；该日志未见 `offline rate hint rejected`。已有两路重封装 MP4 的前 60 秒分别只有 I/P 帧；屏幕路前三秒 trace 的 VCL 参考值均非零。此样本不足以支持计划中“约 27% 可跳过非参考帧”的推断，勿直接跳帧优化。设备恢复后仍需解码/编码单项基准。
 
-## 接下来：Windows硬件加速与稳定性
+## 进行中：Windows硬件加速与稳定性（未提交）
 
-- 按用户安排与安卓提速计划排序后启动；目标为AMD/NVIDIA/Intel可用硬件路径、可观的下载合成速度和稳定恢复。
-- 当前旧Windows实现是软件解码/CPU缩放拼接、编码优先硬件，默认仍无音轨；需先采样和检查实际GPU/工具链，再实施完整GPU路径并验证。尚未宣称全平台硬件加速已完成。
+- Windows 原生辅助程序正在改为 D3D11 共享纹理硬件解码、双路缩放和编码，并原样保留左路 AAC。AAC 原问题是类型硬编码及配置丢失；更正后短样本通过。无可用 GPU 时回退 CPU；增加进程退出时关闭 helper、下载记录和保存目标恢复。全部仍未提交。
+- 最终 MSI 内相同 helper（SHA256 `cca44b0d…`）已分别完成整节双路合成（不含下载）：NVIDIA RTX 4060 笔记本 GPU 用 318.41 秒，VideoDecode 峰值 98.5%、VideoEncode 40.7%；AMD Radeon 780M 用 530.45 秒，Video Codec 峰值 100%。两份成片均 175564 帧、7022.56 秒、AAC 302430 包，逐包视频 PTS 间隔 40000us，音轨 SHA256 与原始一致，ffmpeg 全解码退出 0，中间帧教师/课件左右位置正确。样本、计数器和校验结果在 `.artifacts/windows-gpu-playback/gpu-{nvidia,amd}-final-full.*`。Intel 设备用户暂时没有，留待后续实测。
+- Windows 已改为两路 HLS 分片下载时同步建立压缩帧索引，原生 Media Foundation 源在输入增长时供 GPU 解码和拼接；暂停/中断保留下载分片，但 Windows 尚不能保留中途编码结果，继续时从头合成。完整成片持久化后可恢复保存。新增自动优先 NVIDIA、启动失败尝试其他硬件（含 Intel）再回退 CPU，任务卡片显示实际合成设备。当前 helper SHA256 `1ea7c434926e1a1bdbb97c23d0fb22bdda4da39931cb646349e3f14f7542fccf`；整节计时使用此前的 `35ff3b64…`，新 helper 已验证 NVIDIA/AMD/CPU 短片与界面，未重新跑整节。
+- 为渐进 H.264 输入从 SPS/PPS 生成标准 `stsd` 视频描述，恢复系统硬件解码吞吐；160 秒真实录像的 NVIDIA 普通输入/渐进输入分别约 8.8/8.5 秒（修复前渐进输入约 25.2 秒），AMD 约 13.8/13.7 秒。两份渐进成片均 4001 帧、6891 AAC 包，40ms 视频时间间隔、音轨 SHA256 与输入一致，ffmpeg 完整解码通过；两块显卡均验证输入尚未结束就已有合成输出。Intel 未实测。
+- Windows 隔离 UI 真实录像已完整下载两路共 3,853,388,624 字节，刷新页面不丢任务；合成中暂停后保留两路各 703 个分片，关闭重开后恢复记录。新 helper 从本地断点重新合成并保存约 5 分半，输出 2,220,228,617 字节，175564 视频帧、302430 AAC 包、时长 7022.56 秒，视频每帧 40ms，音轨 SHA256 `61fcd3f23860e39eda9f7f39669d9de62ceb8f24430028bf69e83d91d1f99c09`，整段 ffmpeg 解码通过，首/中/尾左右画面正确。恢复过程 NVIDIA 解码约 98%、编码约 40%。
+- 同一版本在独立空目录从零下载、合成、保存，2026-10-27 20:26:37→20:32:14（5 秒采样），总约 5 分 37 秒；两路 3,853,388,624 字节下载约 1 分 37 秒，下载完成时合成约 29%，全程无暂停。成片帧数、时长、音轨哈希、40ms 视频时间间隔及完整 ffmpeg 解码均与恢复验收一致；Computer Use 打开 VLC，实际播放并跳转到约 1:04，教师和课件正常并排。此轮网络均速约 39.7 MB/s，不等同于 8 MB/s 网络下的实测；测试中磁盘空余最多减少约 9.8 GB（含成片及临时文件，受同盘其他活动影响），完成后下载分片和渐进索引已清理。强制纯软件兼容路径用 10 秒样本检查了 251 帧、431 个 AAC 包、音轨哈希及完整解码，未测整节性能。
+- 此前串行版本的 Windows 隔离 UI 验收使用 `.artifacts/windows-gpu-playback/ui-harness/`：13% 暂停、关闭重开并继续，刷新不丢任务；完成下载后合成中关闭，helper 随主进程退出，两路 MP4 保留。继续后整节保存成功、重开仍显示完成；成片帧数、时长和音轨校验均正确。一次测试中误在窗口运行时重建共享 jar 导致类加载失败，随后关闭窗口、重建并完整复测；此窗口不代表正式安装版或真实账号流程。
+- Windows 测试覆盖恢复目标、账号隔离、helper 管道与取消、合成暂停/中断恢复和保存失败复用已合成文件；独立主进程强制退出探针证实 helper 结束。CPU 处理配硬件编码及强制纯软件编码 10 秒均通过：251 帧、431 AAC 包、音轨哈希与源一致、ffmpeg 全解码退出 0，画面抽查正常；软件样本不能外推整节速度。
+- 此前离线联合构建 `:androidApp:assembleDebug :androidApp:minifyReleaseWithR8`、47 项共享回放相关测试、4 项 Windows 恢复测试、`:windowsApp:createDistributable :windowsApp:packageMsi` 成功，镜像及 MSI 包内 helper 是 `35ff3b64…`，不含后来的显卡选择和设备显示。新改动运行共享任务/设备状态等 30 项测试、4 项 Windows 恢复测试、Android debug 构建通过；NVIDIA 自动选择、强制 AMD、软件模式短片和模拟 NVIDIA 启动失败后转 AMD 均校验音视频，Intel 优先级及回退经模拟测试，未在 Intel 真机验证。隔离界面验证 NVIDIA 具体型号、CPU 软件模式、页面刷新与暂停状态。另以无音轨 H.264 High profile 合成样本在 NVIDIA/AMD 各检查 100 帧和完整解码。Apple 目标在 Windows 不可构建；安卓新改动未连接 ADB 或做实机验收。使用本机既有 Gradle 缓存与 WiX，未安装依赖。真实账号/正式安装流程未测。
+- 完整 `:shared:desktopTest` 在干净进程环境下运行 1193 项、1188 项通过；仍有既有的 `DesktopAgentIntegrationTest` 3 项和 `MacUninstallCleanerTest` 2 项在 Windows 因符号链接权限、macOS 脚本/路径假设失败，回放相关用例无失败。日志 `.artifacts/windows-gpu-playback/desktop-full-test-clean-env.log`。初次运行误将禁用的可选环境变量设置为空字符串，触发 4 个诊断用例；已清理该次生成的空文件，后用真正移除变量的环境重跑。
+- 当前 MSI 在 `multiplatform/windowsApp/build/compose/binaries/main/msi/`，只生成未安装；它使用项目现有升级码，安装可能替换既有安装版，不能当作隔离测试包。此前 `.artifacts/windows-gpu-playback/package-msi.log` 记录的是旧版本，不代表当前包。
 - 9–10分钟是安卓后续性能目标，当前实测未达到，路径见上节计划；不能通过降帧/丢帧冒充提速。整个持续目标仍在进行。
 
 
@@ -68,7 +80,7 @@
 - `358601c7` 的安全检查 [40281987671](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/40281987671) 四项全绿：真实 ActivityKit 宿主 Swift typecheck、iOS 共享测试、macOS 全部共享测试/应用镜像、Android debug/release、Windows 镜像及模板检查。
 - PR #69 原头 `e549ed6e` 的安全检查 [40282193442](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/40282193442) 四项全绿，包含 widget Swift 编译。冲突仅 memory.md；先合入最新基线为 `3ecb547e` 再通过 GitHub 合并。PR 应用源码树哈希 `4a2c8e9c56e9cd8199c7df86801338ff04e30abe` 未变，文档整合没有改应用代码。
 - Windows 本地最后联合检查：`:shared:desktopTest --tests '*Playback*' --tests '*Hls*' --tests '*NativeShellBridgeTest' --tests '*SecurityReleaseConfigTest' :androidApp:assembleDebug :windowsApp:compileKotlinWindows` 成功，51 项相关测试 0 失败；完整 1163 项有既有 Windows 环境 5 失败（DesktopAgentIntegrationTest 3、MacUninstallCleanerTest 2），Apple CI 的桌面测试全部通过。日志 `.artifacts/ios-playback-fixes/`。
-- 小米平板 `6c5a737e` 独立 `.playbacktest` debug 包保留原 App 数据，已实测预览/播放/全屏/退出、三次退避约 2.0/4.0/8.0 秒、耗尽后继续、短断网后自动恢复、强停后 206 片与 SAF 目标恢复、短时后台下载，同一前台服务持续运行。实际崩溃根因为 ForegroundServiceDidNotStartInTimeException，非已证实的 OOM。
+- 小米平板独立 `.playbacktest` debug 包保留原 App 数据，已实测预览/播放/全屏/退出、三次退避约 2.0/4.0/8.0 秒、耗尽后继续、短断网后自动恢复、强停后 206 片与 SAF 目标恢复、短时后台下载，同一前台服务持续运行。实际崩溃根因为 ForegroundServiceDidNotStartInTimeException，非已证实的 OOM。
 - 旧任务 `t1792993910544-0` 今晚接回后确认已下载两路并转好 MP4，总源 3,853,388,624 字节，停在合成初期，进程已不在；两路输入保留作同课程性能基准，未将旧部分输出当成完成。
 - 旧模拟器验证仅每路 16 片/约 160 秒，不是整节完成；Windows 合成探针与 iOS 模拟器合成用例也不等于真实 App 端到端成功。iOS 活动去重、详情返回和全屏旋转、PR #69 两阶段对齐/长课名/大字号仍待真机界面验收。Apple 完整编译/共享测试仅 CI 验证。
 - 共享播放器 JS 语法及 DOM fixture（双路容器全屏、退出、播放/位置保持、横屏、WebKit 回退）已过；本地 file:// 页面被浏览器安全策略拒绝，未绕过，因此桌面真实全屏视觉尚未验收。
@@ -76,8 +88,8 @@
 
 ### 当前明确限制
 
-- Windows 原生 Media Foundation helper 不打包 ffmpeg，MSI 已验证约 84.27 MiB。当前默认合成仍无音轨；解码+AAC 共存会报 MF_E_SINK_HEADERS_NOT_FOUND，with-audio 仅实验入口。没有可用硬件 H.264 编码器时兼容兜底未完成，约 28 ms/帧的旧探针不能证明整节性能。详见 `docs/plans/playback-composite-android-windows.md`。
-- 跨进程任务持久化目前只有 Android 网关接入；iOS 没有同等的任务记录恢复保证。系统后台会话或继续处理任务不等于 App 进程重启后能恢复任务队列。
+- 已提交的旧 Windows helper 默认无音轨；本轮未提交实现已修 AAC 并验证硬件合成，当前 MSI 尚未安装。纯软件兜底仅经过 10 秒样本验证；`docs/plans/playback-composite-android-windows.md` 只代表历史状态。
+- 跨进程任务持久化已由 Android 网关接入，Windows 本轮未提交实现也已接入并在隔离 UI 重启测试中验证；iOS 没有同等的任务记录恢复保证。系统后台会话或继续处理任务不等于 App 进程重启后能恢复任务队列。
 - 原生前台服务、后台会话和继续处理任务不保证永不被系统终止；已验证的 Android 断点能恢复，不应把旧版本丢失的内存记录声称为已找回。
 
 ## 构建与交付
@@ -123,8 +135,7 @@
 
 ## 接下来
 
-1. 按 `docs/plans/playback-android-performance.md` 推进安卓提速：先 P0 采样，再 P1（直接拼接/直写目标、变换矩阵），P2/P3 依采样结论决定；每步单独验收与提交。
-2. 之后按顶部持续目标推进 Windows 硬件加速、速度和稳定性，不重复旧安卓待办。
-3. 用本轮新包验收 iOS 下载活动数量、原生返回/全屏与 PR #69 展开态两阶段对齐、长课名和大字号；桌面验证全屏进入/退出。
-4. 回放分支合 main、改版本或正式发版由用户另行决定；当前只合并 PR #69 到功能分支并手动打包。
-5. 后续新开发从最新 main 建分支；保留以上其他真机待验证与当前痛点，不恢复已解决的旧待办。
+1. Windows 在 Intel 设备上验证硬解/处理/硬编与整节稳定性；用最终打包版本复验真实账号和安装流程。Android 设备恢复后按计划采样、测试新快速整理/纹理矩阵/编解码器回退并跑整节；增量整理、SAF 直写、P2/P3 仍待实现和验收。9–10 分钟仅优化目标，不以降帧达成。
+2. 用本轮新包验收 iOS 下载活动数量、原生返回/全屏与 PR #69 展开态两阶段对齐、长课名和大字号；桌面验证全屏进入/退出。
+3. 回放分支合 main、改版本或正式发版由用户另行决定；当前只合并 PR #69 到功能分支并手动打包。
+4. 后续新开发从最新 main 建分支；保留以上其他真机待验证与当前痛点，不恢复已解决的旧待办。

@@ -69,7 +69,8 @@ internal class AndroidIndexedTsInput(private val directory: File, private val du
     fun open(kind: String): AndroidMediaSamples? {
         val track = if (kind == "video/") 0 else 1
         if (!awaitSample(track, 0)) return null
-        val format = synchronized(lock) {
+        // configureOfflineCodec 会给格式加速率提示；每次返回新对象，提示被拒时才能真正回退默认配置。
+        fun freshFormat() = synchronized(lock) {
             if (track == 0) {
                 val config = checkNotNull(remuxer.videoConfiguration)
                 MediaFormat.createVideoFormat("video/avc", config.width, config.height).apply {
@@ -95,7 +96,7 @@ internal class AndroidIndexedTsInput(private val directory: File, private val du
             var flags = 0
             var bytes = ByteArray(256 * 1024)
             init { advance() }
-            override val format = format
+            override val format get() = freshFormat()
             override val durationUs get() = durationHintUs
             override val sampleTime get() = time
             override val sampleFlags get() = flags

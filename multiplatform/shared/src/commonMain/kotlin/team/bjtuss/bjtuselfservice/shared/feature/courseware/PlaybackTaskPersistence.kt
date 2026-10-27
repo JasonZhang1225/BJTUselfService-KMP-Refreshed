@@ -38,6 +38,8 @@ data class StoredPlaybackRequest(
     val committed: List<Boolean>,
     val finished: Map<Int, StoredPlaybackStreamResult> = emptyMap(),
     val progressive: Boolean = false,
+    /** 完整合成成功后才置位，可在保存失败或重启后复用结果。 */
+    val compositionComplete: Boolean = false,
 )
 
 @Serializable

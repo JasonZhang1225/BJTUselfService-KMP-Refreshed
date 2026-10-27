@@ -13,6 +13,7 @@ import android.os.SystemClock
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Bundle
+import android.os.Build
 import team.bjtuss.bjtuselfservice.shared.logging.AppLog
 import android.view.Surface
 import java.io.File
@@ -23,6 +24,7 @@ import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
@@ -34,31 +36,87 @@ private const val OUTPUT_FRAME_RATE = 25
 /** I 帧间隔（秒）：10 秒一个关键帧，兼顾体积与拖动。 */
 private const val OUTPUT_I_FRAME_INTERVAL_SECONDS = 10
 
+private fun isHardwareCodec(info: MediaCodecInfo): Boolean = if (Build.VERSION.SDK_INT >= 29) {
+    info.isHardwareAccelerated
+} else {
+    !info.name.startsWith("OMX.google.", ignoreCase = true) && !info.name.startsWith("c2.android.", ignoreCase = true)
+}
+
 /** 合成器支持的系统 H.264 编码器查询。 */
 internal object H264SurfaceEncoder {
     private const val MIME = "video/avc"
 
-    fun isAvailable(): Boolean = findEncoder() != null
+    fun isAvailable(): Boolean = candidates().isNotEmpty()
 
-    fun supportsSize(width: Int, height: Int): Boolean {
-        val info = findEncoder() ?: return false
-        val capabilities = runCatching { info.getCapabilitiesForType(MIME) }.getOrNull() ?: return false
-        val video = capabilities.videoCapabilities ?: return false
-        return runCatching { video.isSizeSupported(width, height) }.getOrDefault(false)
-    }
+    fun supportsSize(width: Int, height: Int): Boolean = candidates(width, height).isNotEmpty()
 
-    private fun findEncoder(): MediaCodecInfo? {
-        val list = MediaCodecList(MediaCodecList.REGULAR_CODECS)
-        for (info in list.codecInfos) {
-            if (!info.isEncoder) continue
-            if (info.supportedTypes.none { it.equals(MIME, ignoreCase = true) }) continue
-            val capabilities = runCatching { info.getCapabilitiesForType(MIME) }.getOrNull() ?: continue
-            if (capabilities.colorFormats.any { it == MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface }) {
-                return info
+    private fun candidates(width: Int? = null, height: Int? = null): List<MediaCodecInfo> =
+        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter { info ->
+            if (!info.isEncoder || info.supportedTypes.none { it.equals(MIME, ignoreCase = true) }) return@filter false
+            val capabilities = runCatching { info.getCapabilitiesForType(MIME) }.getOrNull() ?: return@filter false
+            if (capabilities.colorFormats.none { it == MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface }) return@filter false
+            if (width == null || height == null) return@filter true
+            runCatching { capabilities.videoCapabilities?.isSizeSupported(width, height) == true }.getOrDefault(false)
+        }
+
+    data class Started(val name: String, val codec: MediaCodec, val surface: Surface)
+
+    /** 尺寸检查与实际创建使用同一候选；资源不足时再试其他兼容编码器。 */
+    fun start(width: Int, height: Int, bitRate: Int, pinnedName: String?, onStatus: (String?) -> Unit): Started {
+        val eligible = prioritizedCodecCandidates(candidates(width, height), pinnedName, { it.name }, ::isHardwareCodec)
+        for ((index, info) in eligible.withIndex()) {
+            var codec: MediaCodec? = null
+            var surface: Surface? = null
+            try {
+                codec = MediaCodec.createByCodecName(info.name)
+                fun format() = MediaFormat.createVideoFormat(MIME, width, height).apply {
+                    setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+                    setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
+                    setInteger(MediaFormat.KEY_FRAME_RATE, OUTPUT_FRAME_RATE)
+                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, OUTPUT_I_FRAME_INTERVAL_SECONDS)
+                }
+                configureOfflineCodec(codec, ::format, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+                surface = codec.createInputSurface()
+                codec.start()
+                if (!isHardwareCodec(info)) onStatus("硬件编码器不可用，正在使用软件编码，可能较慢。")
+                else if (index > 0) onStatus("默认编码器不可用，已切换到另一硬件编码器。")
+                return Started(info.name, codec, surface)
+            } catch (error: Throwable) {
+                runCatching { surface?.release() }
+                runCatching { codec?.stop() }
+                runCatching { codec?.release() }
+                if (error is CancellationException || error !is Exception) throw error
+                AppLog.d("PlaybackCompose", "encoder candidate ${info.name} unavailable (${error::class.simpleName})")
             }
         }
-        return null
+        throw CompositionException(if (pinnedName != null) "原编码器暂不可用，已保留合成分段，请稍后继续。"
+            else "没有可用的 H.264 编码器，请稍后重试。")
     }
+}
+
+private data class StartedVideoDecoder(val codec: MediaCodec, val hardware: Boolean, val alternate: Boolean)
+
+/** 某个硬件解码器资源不足时，释放它并尝试其他兼容实现。 */
+private fun startVideoDecoder(mime: String, format: () -> MediaFormat, surface: Surface): StartedVideoDecoder {
+    val candidates = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter { info ->
+        !info.isEncoder && info.supportedTypes.any { it.equals(mime, ignoreCase = true) }
+    }
+    val eligible = prioritizedCodecCandidates(candidates, null, { it.name }, ::isHardwareCodec)
+    for ((index, info) in eligible.withIndex()) {
+        var codec: MediaCodec? = null
+        try {
+            codec = MediaCodec.createByCodecName(info.name)
+            configureOfflineCodec(codec, format, surface, 0)
+            codec.start()
+            return StartedVideoDecoder(codec, isHardwareCodec(info), index > 0)
+        } catch (error: Throwable) {
+            runCatching { codec?.stop() }
+            runCatching { codec?.release() }
+            if (error is CancellationException || error !is Exception) throw error
+            AppLog.d("PlaybackCompose", "decoder candidate ${info.name} unavailable (${error::class.simpleName})")
+        }
+    }
+    throw CompositionException("视频解码器暂不可用，已保留合成断点，请稍后继续。")
 }
 
 /**
@@ -89,6 +147,7 @@ internal class AndroidMediaCompositor(
             samplesFactory = samplesFactory,
             durationUsHint = durationUsHint,
             journal = journal,
+            onStatus = onStatus,
         )
         var completed = false
         try {
@@ -130,6 +189,7 @@ private class MediaComposePipeline(
     private val samplesFactory: (String, String) -> AndroidMediaSamples?,
     private val durationUsHint: Long,
     private val journal: AndroidCompositionJournal?,
+    private val onStatus: (String?) -> Unit,
 ) {
     private var muxer: MediaMuxer? = null
     private var encoder: MediaCodec? = null
@@ -170,18 +230,13 @@ private class MediaComposePipeline(
         this.muxer = muxer
         prepareAudioTrack(muxer)
 
-        val encoder = MediaCodec.createEncoderByType("video/avc")
+        val pinnedEncoder = journal?.encoderName?.takeIf { journal.parts.isNotEmpty() }
+        val encoderStarted = H264SurfaceEncoder.start(width, height, bitRate, pinnedEncoder, onStatus)
+        val encoder = encoderStarted.codec
         this.encoder = encoder
-        fun encoderFormat() = MediaFormat.createVideoFormat("video/avc", width, height).apply {
-            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
-            setInteger(MediaFormat.KEY_FRAME_RATE, OUTPUT_FRAME_RATE)
-            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, OUTPUT_I_FRAME_INTERVAL_SECONDS)
-        }
-        configureOfflineCodec(encoder, ::encoderFormat, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-        val inputSurface = encoder.createInputSurface()
+        val inputSurface = encoderStarted.surface
         encoderSurface = inputSurface
-        encoder.start()
+        journal?.bindEncoder(encoderStarted.name)
         AppLog.d("PlaybackCompose", "encoder=${encoder.name} size=${width}x$height")
 
         val renderer = EglComposerRenderer(inputSurface)
@@ -191,9 +246,9 @@ private class MediaComposePipeline(
         renderer.makeCurrent()
 
         val frameHandler = Handler(frameThread.looper)
-        val left = VideoSide(leftPath, frameHandler, samplesFactory, durationUsHint)
-        val right = VideoSide(rightPath, frameHandler, samplesFactory, durationUsHint)
+        val left = VideoSide(leftPath, frameHandler, samplesFactory, durationUsHint, onStatus)
         this.left = left
+        val right = VideoSide(rightPath, frameHandler, samplesFactory, durationUsHint, onStatus)
         this.right = right
         left.primeBefore(startUs)
         right.primeBefore(startUs)
@@ -235,8 +290,10 @@ private class MediaComposePipeline(
             renderer.drawFrame(
                 leftTexture = left.textureId,
                 leftSize = left.sourceSize,
+                leftTransform = left.textureTransform,
                 rightTexture = right.textureId,
                 rightSize = right.sourceSize,
+                rightTransform = right.textureTransform,
             )
             renderer.setPresentationTime(timeUs * 1_000L)
             renderer.swapBuffers()
@@ -438,6 +495,7 @@ private class VideoSide(
     frameHandler: Handler,
     samplesFactory: (String, String) -> AndroidMediaSamples?,
     durationUsHint: Long,
+    onStatus: (String?) -> Unit,
 ) {
     private val extractor = samplesFactory(path, "video/") ?: throw CompositionException("找不到视频轨道")
     private val decoder: MediaCodec
@@ -456,6 +514,7 @@ private class VideoSide(
 
     val textureId: Int
     val surfaceTexture: SurfaceTexture
+    val textureTransform = FloatArray(16).apply { android.opengl.Matrix.setIdentityM(this, 0) }
     private val surface: Surface
 
     var sourceSize: Pair<Int, Int> = 0 to 0
@@ -465,28 +524,48 @@ private class VideoSide(
     val hasEnded: Boolean get() = outputDone && pendingIndex < 0
 
     init {
-        val format = extractor.format
-        val mime = format.getString(MediaFormat.KEY_MIME) ?: "video/avc"
-        val sourceWidth = format.getInteger(MediaFormat.KEY_WIDTH)
-        val sourceHeight = format.getInteger(MediaFormat.KEY_HEIGHT)
-        sourceSize = sourceWidth to sourceHeight
-        durationUs = extractor.durationUs
-            .takeIf { it > 0L } ?: durationUsHint
+        var createdTexture = 0
+        var createdSurfaceTexture: SurfaceTexture? = null
+        var createdSurface: Surface? = null
+        var createdDecoder: MediaCodec? = null
+        try {
+            val format = extractor.format
+            val mime = format.getString(MediaFormat.KEY_MIME) ?: "video/avc"
+            val sourceWidth = format.getInteger(MediaFormat.KEY_WIDTH)
+            val sourceHeight = format.getInteger(MediaFormat.KEY_HEIGHT)
+            sourceSize = sourceWidth to sourceHeight
+            durationUs = extractor.durationUs.takeIf { it > 0L } ?: durationUsHint
 
-        textureId = createExternalTexture()
-        surfaceTexture = SurfaceTexture(textureId)
-        surfaceTexture.setDefaultBufferSize(sourceWidth, sourceHeight)
-        surfaceTexture.setOnFrameAvailableListener({
-            synchronized(frameLock) {
-                frameAvailable = true
-                frameLock.notifyAll()
-            }
-        }, frameHandler)
-        surface = Surface(surfaceTexture)
-        decoder = MediaCodec.createDecoderByType(mime)
-        configureOfflineCodec(decoder, { extractor.format }, surface, 0)
-        decoder.start()
-        AppLog.d("PlaybackCompose", "decoder=${decoder.name} size=${sourceWidth}x$sourceHeight")
+            createdTexture = createExternalTexture()
+            val texture = SurfaceTexture(createdTexture)
+            createdSurfaceTexture = texture
+            texture.setDefaultBufferSize(sourceWidth, sourceHeight)
+            texture.setOnFrameAvailableListener({
+                synchronized(frameLock) {
+                    frameAvailable = true
+                    frameLock.notifyAll()
+                }
+            }, frameHandler)
+            val output = Surface(texture)
+            createdSurface = output
+            val started = startVideoDecoder(mime, { extractor.format }, output)
+            createdDecoder = started.codec
+            if (!started.hardware) onStatus("硬件解码器不可用，正在使用软件解码，可能较慢。")
+            else if (started.alternate) onStatus("默认解码器不可用，已切换到另一硬件解码器。")
+            AppLog.d("PlaybackCompose", "decoder=${started.codec.name} size=${sourceWidth}x$sourceHeight")
+            textureId = createdTexture
+            surfaceTexture = texture
+            surface = output
+            decoder = started.codec
+        } catch (error: Throwable) {
+            runCatching { createdDecoder?.stop() }
+            runCatching { createdDecoder?.release() }
+            runCatching { createdSurface?.release() }
+            runCatching { createdSurfaceTexture?.release() }
+            if (createdTexture != 0) GLES20.glDeleteTextures(1, intArrayOf(createdTexture), 0)
+            runCatching { extractor.release() }
+            throw error
+        }
     }
 
     /** 扫描恢复点以前的压缩数据，只给解码器保留最近一个 GOP，不重做已合成内容。 */
@@ -602,6 +681,7 @@ private class VideoSide(
         if (!texturePending) return
         awaitFrame()
         surfaceTexture.updateTexImage()
+        surfaceTexture.getTransformMatrix(textureTransform)
         texturePending = false
     }
 

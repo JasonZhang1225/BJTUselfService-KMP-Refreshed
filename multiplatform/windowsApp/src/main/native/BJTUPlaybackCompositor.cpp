@@ -1,24 +1,19 @@
 // 课程回放的 Windows 原生小程序（只用系统 Media Foundation，不额外打包编解码库）：
 //
 //   BJTUPlaybackCompositor.exe compose <左.mp4> <右.mp4> <输出.mp4> <宽> <高> <码率>
-//                                  [--duration <秒>] [--software] [--with-audio]
+//                                  [--duration <秒>] [--cpu] [--software] [--adapter auto|amd|nvidia|intel]
+//                                  [--without-audio] [--parent-pid <进程号>]
 //
-// 管线：两个 IMFSourceReader 解码出 NV12 画面 → 在 YUV 域做等比缩放并左右并排 →
-//       IMFSinkWriter 用系统 H.264 编码器写成 MP4。
+// 优先使用共享 D3D11 设备进行解码、缩放与硬件编码；不可用时回退 CPU 管线。
+// 左路 AAC 原样写入成片。
 //
 // 标准输出逐行打印 `progress 0.123`；退出码 0 成功，非 0 失败（stderr 一行原因）。
 //
 // 说明：
 // 1) Media Foundation 的属性名在不同 Windows SDK 里换过名字（MFMediaType_MajorType /
 //    MF_MT_MAJOR_TYPE 等），这里直接写死 GUID 取值，保证任何 SDK 都能编译。
-// 2) 只用 Vista 时代就有的 MF 接口（不碰 MF2 的 MFCreateMediaBufferFromMediaType），
-//    这样在旧版 Windows 上程序也能正常启动，不会因为导入符号缺失而起不来。
-// 3) 新版 Windows 的 Sink Writer 匹配不到旧式软件 H.264 编码器，但硬件编码器（DX12/NVIDIA/AMD）
-//    正常，所以默认开硬件变换，失败再退回软件。
-// 4) 声音：左路的 AAC 压缩流理论上可以直通，但实测"解码器 + AAC 轨"同时存在时
-//    MP4 写入器收尾会报 MF_E_SINK_HEADERS_NOT_FOUND（同一段代码在独立探针里能写成功，
-//    差异尚未定位）。因此默认不带声音，--with-audio 保留实验入口。
-// 5) 时长：Media Foundation 不给可靠的轨道时长，这里自己读 MP4 的 moov（mvhd/mdhd）；
+// 2) AAC 轨保留原始媒体类型和 AudioSpecificConfig，避免写入器丢失轨道配置。
+// 3) 时长：Media Foundation 不给可靠的轨道时长，这里自己读 MP4 的 moov（mvhd/mdhd）；
 //    真正的结束点始终是"解码到文件末尾"。
 
 #define COBJMACROS
@@ -31,15 +26,24 @@
 #include <mferror.h>
 #include <objbase.h>
 #include <windows.h>
+#include <d3d11.h>
+#include <d3d10.h>
+#include <dxgi1_2.h>
+#include <wrl.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <mutex>
 #include <string>
 #include <vector>
+#include <chrono>
+#include <thread>
+#include <cwctype>
 
 namespace {
 
@@ -68,9 +72,6 @@ constexpr GUID kAttrAudioBlockAlignment = {0x322de230, 0x9eeb, 0x43bd, {0xab, 0x
 constexpr GUID kAttrAudioAvgBytesPerSecond = {0x1aab75c8, 0xcfef, 0x451c, {0xab, 0x95, 0xac, 0x03, 0x4b, 0x8e, 0x17, 0x31}};
 constexpr GUID kAttrAudioSamplesPerFrame = {0xaab15aac, 0xe13a, 0x4995, {0x92, 0x22, 0x50, 0x1e, 0xa1, 0x5c, 0x68, 0x77}};
 constexpr GUID kAttrUserData = {0xb6bc765f, 0x4c3b, 0x40a4, {0xbd, 0x51, 0x25, 0x35, 0xb6, 0x6f, 0xe0, 0x9d}};
-
-// AAC 压缩流子类型（WAVE_FORMAT_MPEG_HEAAC）。
-constexpr GUID kSubtypeAac = {0x00000061, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}};
 
 std::string describe(HRESULT hr) {
     char buffer[32];
@@ -269,6 +270,8 @@ HRESULT createMediaType(const GUID& majorType, const GUID& subtype, IMFMediaType
     return S_OK;
 }
 
+#include "PlaybackLiveSource.h"
+
 /** 解码出来的一帧（统一成 NV12 存放）。 */
 struct VideoFrame {
     int width = 0;
@@ -288,14 +291,20 @@ struct VideoFrame {
  */
 class VideoDecoder {
 public:
-    bool open(const std::wstring& path) {
+    bool open(const std::wstring& path, bool indexed = false, long long duration100ns = 0) {
         ComPtr<IMFAttributes> attributes;
         HRESULT hr = MFCreateAttributes(attributes.put(), 0);
         if (FAILED(hr)) return failHr("创建属性集失败", hr);
 
         UINT32 processing = 1;
         attributes->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, processing);
-        hr = MFCreateSourceReaderFromURL(path.c_str(), attributes.get(), reader_.put());
+        if (indexed) {
+            ComPtr<IMFMediaSource> source;
+            hr = createLiveMediaSource(path, duration100ns, source.put());
+            if (SUCCEEDED(hr)) hr = MFCreateSourceReaderFromMediaSource(source.get(), attributes.get(), reader_.put());
+        } else {
+            hr = MFCreateSourceReaderFromURL(path.c_str(), attributes.get(), reader_.put());
+        }
         if (FAILED(hr)) return failHr("打开录像失败", hr);
 
         // 找视频轨：原生类型里 major type 是 video 的那条。
@@ -315,6 +324,7 @@ public:
             width_ = static_cast<int>(frameSize >> 32);
             height_ = static_cast<int>(frameSize & 0xFFFFFFFFull);
             if (width_ <= 0 || height_ <= 0) return fail("录像画面尺寸非法");
+            bufferHeight_ = height_;
 
             UINT64 frameRate = 0;
             if (SUCCEEDED(native->GetUINT64(kAttrFrameRate, &frameRate))) {
@@ -344,29 +354,45 @@ public:
 
     /** 读取下一帧；到流末尾返回 false。 */
     bool read(VideoFrame& frame) {
+        if (exhausted_ || failed_) return false;
         ComPtr<IMFSample> sample;
         DWORD actualStream = 0;
         DWORD flags = 0;
         long long pts = 0;
-        HRESULT hr = reader_->ReadSample(streamIndex_, 0, &actualStream, &flags, &pts, sample.put());
-        if (hr == MF_E_END_OF_STREAM) {
-            exhausted_ = true;
-            return false;
-        }
-        if (FAILED(hr)) {
-            failHr("读取画面失败", hr);
-            exhausted_ = true;
-            return false;
-        }
-        if (!sample) {
-            // 读到末尾时 Media Foundation 可能返回"成功但没有样本"，也要当作结束。
-            exhausted_ = true;
-            return false;
+        HRESULT hr;
+        while (true) {
+            hr = reader_->ReadSample(streamIndex_, 0, &actualStream, &flags, &pts, sample.put());
+            if (hr == MF_E_END_OF_STREAM) { exhausted_ = true; return false; }
+            if (FAILED(hr)) { failed_ = true; return failHr("读取画面失败", hr); }
+            if (flags & MF_SOURCE_READERF_ERROR) { failed_ = true; return fail("解码中断"); }
+            if (flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) {
+                ComPtr<IMFMediaType> current;
+                UINT w = 0, h = 0; GUID subtype{};
+                const HRESULT typeHr = reader_->GetCurrentMediaType(streamIndex_, current.put());
+                const HRESULT sizeHr = SUCCEEDED(typeHr) ? MFGetAttributeSize(current.get(), MF_MT_FRAME_SIZE, &w, &h) : typeHr;
+                const HRESULT subtypeHr = SUCCEEDED(typeHr) ? current->GetGUID(MF_MT_SUBTYPE, &subtype) : typeHr;
+                const UINT maxW = (static_cast<UINT>(width_) + 63u) & ~63u;
+                const UINT maxH = (static_cast<UINT>(height_) + 63u) & ~63u;
+                if (FAILED(typeHr) || FAILED(sizeHr) || FAILED(subtypeHr) ||
+                    subtype != (layoutIsNv12_ ? MFVideoFormat_NV12 : MFVideoFormat_I420) ||
+                    w < static_cast<UINT>(width_) || w > maxW || h < static_cast<UINT>(height_) || h > maxH) {
+                    fprintf(stderr, "cpu type change: requested=%dx%d actual=%ux%u subtype=0x%08X hr=%08X/%08X/%08X\n",
+                        width_, height_, w, h, subtype.Data1, static_cast<unsigned>(typeHr),
+                        static_cast<unsigned>(sizeHr), static_cast<unsigned>(subtypeHr));
+                    failed_ = true; return fail("画面格式发生不兼容变化");
+                }
+                readCurrentStride();
+            }
+            if (flags & MF_SOURCE_READERF_ENDOFSTREAM) exhausted_ = true;
+            if (sample) break;
+            if (exhausted_) return false;
+            // 成功但无样本可能是 stream tick，不能当作结束。
         }
 
         ComPtr<IMFMediaBuffer> buffer;
         hr = sample->GetBufferByIndex(0, buffer.put());
         if (FAILED(hr)) {
+            failed_ = true;
             failHr("取画面缓冲失败", hr);
             return false;
         }
@@ -375,6 +401,7 @@ public:
         DWORD currentLength = 0;
         hr = buffer->Lock(&data, &maxLength, &currentLength);
         if (FAILED(hr)) {
+            failed_ = true;
             failHr("锁定画面缓冲失败", hr);
             return false;
         }
@@ -382,9 +409,9 @@ public:
         frame.height = height_;
         frame.pts = pts;
         frame.nv12.assign(static_cast<size_t>(width_) * height_ * 3 / 2, 0);
-        copyToNv12(data, currentLength != 0 ? currentLength : maxLength, frame);
+        const bool copied = copyToNv12(data, currentLength != 0 ? currentLength : maxLength, frame);
         buffer->Unlock();
-
+        if (!copied) { failed_ = true; return fail("解码画面缓冲不完整"); }
         return true;
     }
 
@@ -405,7 +432,8 @@ public:
     const VideoFrame* current() const { return hasCurrent_ ? &currentFrame_ : nullptr; }
 
     /** 已经读到文件末尾（后面只剩最后一帧可以继续用）。 */
-    bool exhausted() const { return exhausted_; }
+    bool exhausted() const { return exhausted_ && !hasNext_; }
+    bool failed() const { return failed_; }
 
     long long duration() const { return duration_; }
 
@@ -453,6 +481,11 @@ private:
         stride_ = width_;
         ComPtr<IMFMediaType> current;
         if (FAILED(reader_->GetCurrentMediaType(streamIndex_, current.put()))) return;
+        UINT currentWidth = 0, currentHeight = 0;
+        if (SUCCEEDED(MFGetAttributeSize(current.get(), MF_MT_FRAME_SIZE, &currentWidth, &currentHeight)) &&
+            currentHeight >= static_cast<UINT>(height_) && currentHeight <= ((static_cast<UINT>(height_) + 63u) & ~63u)) {
+            bufferHeight_ = static_cast<int>(currentHeight);
+        }
         UINT32 value = 0;
         if (SUCCEEDED(current->GetUINT32(kAttrDefaultStride, &value)) && value > 0) {
             stride_ = static_cast<int>(value);
@@ -483,15 +516,14 @@ private:
         }
     }
 
-    void copyToNv12(const BYTE* data, DWORD length, VideoFrame& frame) {
+    bool copyToNv12(const BYTE* data, DWORD length, VideoFrame& frame) {
         const int width = width_;
         const int height = height_;
         int stride = stride_;
+        int bufferHeight = bufferHeight_;
         const size_t tight = static_cast<size_t>(width) * height * 3 / 2;
-        if (length < tight) {
-            memset(frame.nv12.data(), 0, frame.nv12.size());
-            return;
-        }
+        if (length < tight) return false;
+        if (static_cast<size_t>(stride) * bufferHeight * 3 / 2 > length) bufferHeight = height;
         if (static_cast<size_t>(stride) * height * 3 / 2 > length) {
             stride = width;  // 缓冲不够宽，说明没有对齐填充
         }
@@ -505,7 +537,7 @@ private:
 
         uint8_t* dstUv = frame.chroma();
         if (layoutIsNv12_) {
-            const uint8_t* srcUv = data + static_cast<size_t>(stride) * height;
+            const uint8_t* srcUv = data + static_cast<size_t>(stride) * bufferHeight;
             const int chromaHeight = height / 2;
             for (int row = 0; row < chromaHeight; row++) {
                 memcpy(dstUv + static_cast<size_t>(row) * width,
@@ -515,29 +547,33 @@ private:
             // I420：Y + U + V 三块平面，转成 NV12（UV 交错）。
             const int chromaWidth = width / 2;
             const int chromaHeight = height / 2;
-            const uint8_t* srcU = data + static_cast<size_t>(stride) * height;
-            const uint8_t* srcV = srcU + static_cast<size_t>(stride) * chromaHeight;
+            const int chromaStride = stride / 2;
+            const uint8_t* srcU = data + static_cast<size_t>(stride) * bufferHeight;
+            const uint8_t* srcV = srcU + static_cast<size_t>(chromaStride) * (bufferHeight / 2);
             for (int row = 0; row < chromaHeight; row++) {
                 for (int column = 0; column < chromaWidth; column++) {
                     dstUv[static_cast<size_t>(row) * width + column * 2] =
-                        srcU[static_cast<size_t>(row) * stride + column];
+                        srcU[static_cast<size_t>(row) * chromaStride + column];
                     dstUv[static_cast<size_t>(row) * width + column * 2 + 1] =
-                        srcV[static_cast<size_t>(row) * stride + column];
+                        srcV[static_cast<size_t>(row) * chromaStride + column];
                 }
             }
         }
+        return true;
     }
 
     ComPtr<IMFSourceReader> reader_;
     DWORD streamIndex_ = 0;
     int width_ = 0;
     int height_ = 0;
+    int bufferHeight_ = 0;
     int stride_ = 0;
     bool layoutIsNv12_ = true;
     UINT32 frameRateNumerator_ = 25;
     UINT32 frameRateDenominator_ = 1;
     long long duration_ = 0;
     bool exhausted_ = false;
+    bool failed_ = false;
     VideoFrame currentFrame_;
     VideoFrame nextFrame_;
     bool hasCurrent_ = false;
@@ -684,7 +720,8 @@ private:
 class Mp4Writer {
 public:
     bool open(const std::wstring& path, int width, int height, int bitrate, bool preferHardware,
-              IMFMediaType* audioType) {
+              IMFMediaType* audioType, IMFDXGIDeviceManager* manager = nullptr) {
+        if (manager) return create(path, width, height, bitrate, true, audioType, manager);
         // 新版 Windows 的 Sink Writer 匹配不到旧式软件编码器，但硬件编码器正常：
         // 先试硬件，失败再退回软件（老版本 Windows 只有软件路径可用）。
         if (preferHardware && create(path, width, height, bitrate, true, audioType)) return true;
@@ -750,6 +787,13 @@ public:
         return true;
     }
 
+    bool writeGpuVideo(IMFSample* sample, long long pts) {
+        sample->SetSampleTime(pts);
+        sample->SetSampleDuration(kFrameDuration100ns);
+        HRESULT hr = writer_->WriteSample(videoStream_, sample);
+        return SUCCEEDED(hr) || failHr("写入GPU画面失败", hr);
+    }
+
     bool finish() {
         HRESULT hr = writer_->Finalize();
         if (FAILED(hr)) return failHr("结束写入失败", hr);
@@ -758,12 +802,16 @@ public:
 
 private:
     bool create(const std::wstring& path, int width, int height, int bitrate, bool hardware,
-                IMFMediaType* audioType) {
+                IMFMediaType* audioType, IMFDXGIDeviceManager* manager = nullptr) {
         ComPtr<IMFAttributes> attributes;
         HRESULT hr = MFCreateAttributes(attributes.put(), 0);
         if (FAILED(hr)) return failHr("创建属性集失败", hr);
         UINT32 disableThrottling = 1;
         attributes->SetUINT32(MF_SINK_WRITER_DISABLE_THROTTLING, disableThrottling);
+        if (manager) {
+            attributes->SetUnknown(MF_SINK_WRITER_D3D_MANAGER, manager);
+            attributes->SetUINT32(MF_READWRITE_D3D_OPTIONAL, FALSE);
+        }
         if (hardware) {
             UINT32 enableHardware = 1;
             attributes->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, enableHardware);
@@ -788,6 +836,8 @@ private:
         UINT64 frameRate = (static_cast<UINT64>(kOutputFps) << 32) |
                            static_cast<UINT64>(1);
         target->SetUINT64(kAttrFrameRate, frameRate);
+        target->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+        MFSetAttributeRatio(target.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
         hr = writer_->AddStream(target.get(), &videoStream_);
         if (FAILED(hr)) return failHr("添加视频轨失败", hr);
 
@@ -802,6 +852,8 @@ private:
         input->SetUINT32(kAttrSampleSize, inputSampleSize);
         input->SetUINT64(kAttrFrameSize, frameSize);
         input->SetUINT64(kAttrFrameRate, frameRate);
+        input->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+        MFSetAttributeRatio(input.get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
         hr = writer_->SetInputMediaType(videoStream_, input.get(), nullptr);
         if (FAILED(hr)) return failHr("设置视频输入类型失败", hr);
         return true;
@@ -820,95 +872,46 @@ private:
 /** 左路的音轨：直接取压缩的 AAC 样本搬进输出文件。 */
 class AudioTrack {
 public:
-    /**
-     * 打开录像文件里的音轨，把整条压缩音轨读进内存后立刻关掉读取器。
-     *
-     * 必须单独读、读完就关：解码器和 MP4 写入器同时活着时，写入器给 AAC 轨收尾会失败
-     * （MF_E_SINK_HEADERS_NOT_FOUND）。一小时 AAC 只有几 MB，放内存里没有压力。
-     */
-    bool open(const std::wstring& path) {
-        ComPtr<IMFSourceReader> reader;
-        HRESULT hr = MFCreateSourceReaderFromURL(path.c_str(), nullptr, reader.put());
-        if (FAILED(hr)) return false;
-        DWORD streamIndex = 0;
+    /** 只选声音轨，按样本流式搬运；不把整条音轨或未消费的视频轨缓存在内存。 */
+    bool open(const std::wstring& path, bool indexed = false) {
+        indexed_ = indexed;
+        if (indexed_) return live_.open(path);
+        HRESULT hr = MFCreateSourceReaderFromURL(path.c_str(), nullptr, reader_.put());
+        if (FAILED(hr)) { failed_ = true; reportFailure("打开音轨失败 (" + describe(hr) + ")"); return false; }
+        reader_->SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS, FALSE);
         for (DWORD index = 0;; index++) {
             ComPtr<IMFMediaType> native;
-            if (FAILED(reader->GetNativeMediaType(index, 0, native.put()))) break;
+            if (FAILED(reader_->GetNativeMediaType(index, 0, native.put()))) break;
             GUID major{};
             if (FAILED(native->GetGUID(kAttrMajorType, &major))) continue;
             if (major != MFMediaType_Audio) continue;
             nativeType_ = std::move(native);
-            streamIndex = index;
+            streamIndex_ = index;
             break;
         }
         if (!nativeType_) return false;  // 没有音轨也不致命
-        while (true) {
-            ComPtr<IMFSample> sample;
-            DWORD actualStream = 0;
-            DWORD flags = 0;
-            long long pts = 0;
-            hr = reader->ReadSample(streamIndex, 0, &actualStream, &flags, &pts, sample.put());
-            if (hr == MF_E_END_OF_STREAM || !sample) break;
-            if (FAILED(hr)) {
-                reportFailure("读取声音失败 (" + describe(hr) + ")");
-                break;
-            }
-            AudioChunk chunk;
-            chunk.pts = pts;
-            sample->GetSampleDuration(&chunk.duration);
-            ComPtr<IMFMediaBuffer> buffer;
-            if (SUCCEEDED(sample->GetBufferByIndex(0, buffer.put()))) {
-                BYTE* data = nullptr;
-                DWORD maxLength = 0;
-                DWORD currentLength = 0;
-                if (SUCCEEDED(buffer->Lock(&data, &maxLength, &currentLength))) {
-                    chunk.data.assign(data, data + currentLength);
-                    buffer->Unlock();
-                }
-            }
-            chunks_.push_back(std::move(chunk));
+        hr = reader_->SetCurrentMediaType(streamIndex_, nullptr, nativeType_.get());
+        if (SUCCEEDED(hr)) hr = reader_->SetStreamSelection(streamIndex_, TRUE);
+        if (FAILED(hr)) {
+            failed_ = true; reportFailure("配置压缩音轨失败 (" + describe(hr) + ")"); return false;
         }
-        reader.reset();  // 读完就关，别和写入器抢解码器
-        return !chunks_.empty();
+        return readNext(first_.put());
     }
 
-    bool available() const { return !chunks_.empty(); }
+    bool failed() const { return indexed_ ? live_.failed() : failed_; }
 
-    /**
-     * 造一个 MP4 写入器能接受的 AAC 类型。
-     *
-     * 源文件解出来的原生类型缺了"每帧采样数"，块对齐也是 1，直接交给写入器会被拒
-     * （MF_E_INVALIDTYPE）。这里按 AAC-LC 的规范值补齐：采样率与声道数沿用源文件，
-     * 每帧 1024 个采样，块对齐 4，平均字节数取源文件码率换算。
-     */
+    /** 保留源的真实 AAC 配置，交给 MP4 sink 无损写入。 */
     bool buildSinkType(IMFMediaType** out) {
+        if (indexed_) return live_.buildSinkType(out);
         ComPtr<IMFMediaType> type;
         HRESULT hr = MFCreateMediaType(type.put());
         if (FAILED(hr)) return false;
-        hr = type->SetGUID(kAttrMajorType, MFMediaType_Audio);
-        if (FAILED(hr)) return false;
-        hr = type->SetGUID(kAttrSubtype, kSubtypeAac);
-        if (FAILED(hr)) return false;
-
-        UINT32 sampleRate = 48000;
-        UINT32 channels = 2;
-        UINT32 bitrate = 128000;
-        if (nativeType_) {
-            UINT32 value = 0;
-            if (SUCCEEDED(nativeType_->GetUINT32(kAttrAudioSampleRate, &value)) && value > 0) {
-                sampleRate = value;
-            }
-            if (SUCCEEDED(nativeType_->GetUINT32(kAttrAudioChannels, &value)) && value > 0) {
-                channels = value;
-            }
-        }
-        type->SetUINT32(kAttrAudioSampleRate, sampleRate);
-        type->SetUINT32(kAttrAudioChannels, channels);
-        type->SetUINT32(kAttrAudioBitsPerSample, 16);
-        type->SetUINT32(kAttrAudioBlockAlignment, 4);
+        if (!nativeType_ || FAILED(nativeType_->CopyAllItems(type.get()))) return false;
+        // 使用源的真实 AAC 子类型和 AudioSpecificConfig，不能猜 GUID 或丢掉 MF_MT_USER_DATA。
+        // WAVE_FORMAT_MPEG_HEAAC 是 0x1610，旧硬编码的 0x61 不是 AAC。
+        GUID subtype{};
+        if (FAILED(type->GetGUID(MF_MT_SUBTYPE, &subtype)) || subtype != MFAudioFormat_AAC) return false;
         type->SetUINT32(kAttrAudioSamplesPerFrame, 1024);
-        type->SetUINT32(kAttrAudioAvgBytesPerSecond, bitrate / 8);
-        type->SetUINT32(kAttrAvgBitrate, bitrate);
 
         *out = type.get();
         type.detach();
@@ -917,40 +920,35 @@ public:
 
     /** 取下一个压缩音频样本；到末尾返回 false。 */
     bool read(IMFSample** sample) {
-        if (cursor_ >= chunks_.size()) return false;
-        const AudioChunk& chunk = chunks_[cursor_++];
-        ComPtr<IMFMediaBuffer> buffer;
-        HRESULT hr = MFCreateMemoryBuffer(static_cast<DWORD>(chunk.data.size()), buffer.put());
-        if (FAILED(hr)) return false;
-        BYTE* target = nullptr;
-        DWORD maxLength = 0;
-        DWORD currentLength = 0;
-        if (SUCCEEDED(buffer->Lock(&target, &maxLength, &currentLength))) {
-            if (!chunk.data.empty()) memcpy(target, chunk.data.data(), chunk.data.size());
-            buffer->SetCurrentLength(static_cast<DWORD>(chunk.data.size()));
-            buffer->Unlock();
-        }
-        ComPtr<IMFSample> created;
-        hr = MFCreateSample(created.put());
-        if (FAILED(hr)) return false;
-        hr = created->AddBuffer(buffer.get());
-        if (FAILED(hr)) return false;
-        created->SetSampleTime(chunk.pts);
-        created->SetSampleDuration(chunk.duration);
-        *sample = created.get();
-        created.detach();
-        return true;
+        if (indexed_) return live_.read(sample);
+        if (first_) { *sample = first_.get(); first_.detach(); return true; }
+        return readNext(sample);
     }
 
 private:
-    struct AudioChunk {
-        long long pts = 0;
-        long long duration = 0;
-        std::vector<uint8_t> data;
-    };
-
-    std::vector<AudioChunk> chunks_;
-    size_t cursor_ = 0;
+    bool readNext(IMFSample** result) {
+        if (ended_ || failed_) return false;
+        while (true) {
+            ComPtr<IMFSample> sample;
+            DWORD stream = 0, flags = 0;
+            LONGLONG pts = 0;
+            HRESULT hr = reader_->ReadSample(streamIndex_, 0, &stream, &flags, &pts, sample.put());
+            if (hr == MF_E_END_OF_STREAM) { ended_ = true; return false; }
+            if (FAILED(hr)) { failed_ = true; reportFailure("读取声音失败 (" + describe(hr) + ")"); return false; }
+            if (flags & (MF_SOURCE_READERF_ERROR | MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED)) {
+                failed_ = true; reportFailure("声音读取中断或音频格式发生变化"); return false;
+            }
+            if (flags & MF_SOURCE_READERF_ENDOFSTREAM) ended_ = true;
+            if (!sample) { if (ended_) return false; continue; }
+            *result = sample.get(); sample.detach(); return true;
+        }
+    }
+    ComPtr<IMFSourceReader> reader_;
+    ComPtr<IMFSample> first_;
+    DWORD streamIndex_ = 0;
+    bool failed_ = false, ended_ = false;
+    bool indexed_ = false;
+    LiveAudioTrack live_;
     ComPtr<IMFMediaType> nativeType_;
 };
 
@@ -961,9 +959,12 @@ struct Options {
     int width = 0;
     int height = 0;
     int bitrate = 0;
+    bool cpuOnly = false;
     bool softwareOnly = false;
-    // 是否带上声音（实验开关：Media Foundation 的 MP4 写入器在有解码器时无法给 AAC 轨收尾）。
-    bool withAudio = false;
+    bool withAudio = true;
+    bool indexed = false;
+    std::wstring adapter = L"auto";
+    DWORD parentPid = 0;
     // 已知时长（秒）：用来算进度百分比，缺省时按一小时估算。
     long long durationSeconds = 0;
 };
@@ -971,14 +972,16 @@ struct Options {
 void printUsage() {
     fprintf(stderr,
             "用法：BJTUPlaybackCompositor.exe compose <左.mp4> <右.mp4> <输出.mp4> <宽> <高> <码率>"
-            " [--duration <秒>] [--software] [--with-audio]\n");
+            " [--duration <秒>] [--cpu] [--software] [--adapter auto|amd|nvidia|intel]"
+            " [--without-audio] [--parent-pid <进程号>]\n");
 }
 
 bool parseOptions(int argc, wchar_t** argv, Options& options) {
-    if (argc < 8 || std::wstring(argv[1]) != L"compose") {
+    if (argc < 8 || (std::wstring(argv[1]) != L"compose" && std::wstring(argv[1]) != L"compose-indexed")) {
         printUsage();
         return false;
     }
+    options.indexed = std::wstring(argv[1]) == L"compose-indexed";
     options.left = argv[2];
     options.right = argv[3];
     options.output = argv[4];
@@ -987,26 +990,42 @@ bool parseOptions(int argc, wchar_t** argv, Options& options) {
     options.bitrate = _wtoi(argv[7]);
     for (int index = 8; index < argc; index++) {
         const std::wstring argument = argv[index];
-        if (argument == L"--software") {
+        if (argument == L"--cpu") {
+            options.cpuOnly = true;
+        } else if (argument == L"--software") {
             options.softwareOnly = true;
         } else if (argument == L"--with-audio") {
             options.withAudio = true;
+        } else if (argument == L"--without-audio") {
+            options.withAudio = false;
+        } else if (argument == L"--adapter" && index + 1 < argc) {
+            options.adapter = argv[++index];
         } else if (argument == L"--duration" && index + 1 < argc) {
             options.durationSeconds = _wtoi(argv[++index]);
+        } else if (argument == L"--parent-pid" && index + 1 < argc) {
+            wchar_t* end = nullptr;
+            unsigned long pid = wcstoul(argv[++index], &end, 10);
+            if (!end || *end || !pid) return false;
+            options.parentPid = static_cast<DWORD>(pid);
+        } else {
+            printUsage();
+            return false;
         }
     }
-    if (options.width <= 0 || options.height <= 0 || options.bitrate <= 0) {
+    if (options.width <= 0 || options.height <= 0 || options.bitrate <= 0 ||
+        (options.adapter != L"auto" && options.adapter != L"amd" && options.adapter != L"nvidia" && options.adapter != L"intel")) {
         printUsage();
         return false;
     }
     return true;
 }
 
-int compose(const Options& options) {
-    // 声音先整轨读进内存并立刻关掉读取器：解码器和 MP4 写入器同时活着时，
-    // 写入器给 AAC 轨收尾会失败（MF_E_SINK_HEADERS_NOT_FOUND）。
+#include "PlaybackGpuPipeline.h"
+
+int composeCpu(const Options& options) {
     AudioTrack audio;
-    const bool hasAudio = options.withAudio && audio.open(options.left);
+    const bool hasAudio = options.withAudio && audio.open(options.left, options.indexed);
+    if (audio.failed()) return 1;
     ComPtr<IMFMediaType> audioType;
     if (hasAudio) {
         if (!audio.buildSinkType(audioType.put())) {
@@ -1018,8 +1037,8 @@ int compose(const Options& options) {
 
     VideoDecoder left;
     VideoDecoder right;
-    if (!left.open(options.left)) return 1;
-    if (!right.open(options.right)) return 1;
+    if (!left.open(options.left, options.indexed, options.durationSeconds * 10000000LL)) return 1;
+    if (!right.open(options.right, options.indexed, options.durationSeconds * 10000000LL)) return 1;
 
     // 进度用的总帧数：优先用调用方给的时长，其次读 MP4 自己的 moov，最后退回 MF 元数据。
     // 时长只用来算进度，真正的结束点是"两路都解码到文件末尾"。
@@ -1075,6 +1094,7 @@ int compose(const Options& options) {
 
         left.advanceTo(pts);
         right.advanceTo(pts);
+        if (left.failed() || right.failed()) return 1;
         const VideoFrame* leftImage = left.current();
         const VideoFrame* rightImage = right.current();
 
@@ -1105,11 +1125,11 @@ int compose(const Options& options) {
         return 1;
     }
 
-    if (hasAudio && hasPendingAudio) {
-        if (!writer.writeAudio(pendingAudio.get())) return 1;
+    if (hasAudio) {
+        if (hasPendingAudio && !writer.writeAudio(pendingAudio.get())) return 1;
+        while (audio.read(pendingAudio.put())) if (!writer.writeAudio(pendingAudio.get())) return 1;
     }
-
-
+    if (audio.failed()) return 1;
     if (!writer.finish()) return 1;
     printf("progress 1.000\n");
     fflush(stdout);
@@ -1121,19 +1141,39 @@ int compose(const Options& options) {
 int wmain(int argc, wchar_t** argv) {
     Options options;
     if (!parseOptions(argc, argv, options)) return 64;
+    if (options.parentPid) {
+        HANDLE parent = OpenProcess(SYNCHRONIZE, FALSE, options.parentPid);
+        if (!parent) { reportFailure("无法监视应用进程"); return 1; }
+        std::thread([parent] {
+            const DWORD state = WaitForSingleObject(parent, INFINITE);
+            CloseHandle(parent);
+            if (state == WAIT_OBJECT_0) TerminateProcess(GetCurrentProcess(), 1);
+        }).detach();
+    }
+    const HRESULT initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(initialized)) { reportFailure("初始化COM失败"); return 1; }
     HRESULT startup = MFStartup(MF_VERSION, MFSTARTUP_LITE);
     if (FAILED(startup)) {
         reportFailure("启动 Media Foundation 失败 (" + describe(startup) + ")");
+        CoUninitialize();
         return 1;
     }
     int code = 1;
     try {
-        code = compose(options);
+        code = (options.softwareOnly || options.cpuOnly) ? 2 : composeWithGpu(options);
+        if (code == 2) {
+            fprintf(stderr, "gpu unavailable; using CPU pipeline\n");
+            printf("status 硬件合成不可用，使用兼容模式\n"); fflush(stdout);
+            printf("device %s\n", options.softwareOnly ? "CPU · 软件合成" : "CPU · 画面处理（编码器自动选择）");
+            fflush(stdout);
+            code = composeCpu(options);
+        }
     } catch (const std::exception& error) {
         reportFailure(std::string("合成失败: ") + error.what());
         code = 1;
     }
     MFShutdown();
+    CoUninitialize();
     if (code != 0) {
         DeleteFileW(options.output.c_str());
     }

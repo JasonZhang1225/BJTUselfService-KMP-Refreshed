@@ -36,6 +36,8 @@ kotlin {
 
     iosArm64()
     iosSimulatorArm64()
+    // 手动添加 JVM 共用源集前先保留默认 Apple 层级。
+    applyDefaultHierarchyTemplate()
 
     targets.withType<KotlinNativeTarget>().configureEach {
         compilations.getByName("main") {
@@ -54,6 +56,11 @@ kotlin {
     }
 
     sourceSets {
+        // JVM 与 Android 共用 MP4 盒处理代码；Apple 仍使用原生 AVFoundation。
+        val mediaJvmMain = maybeCreate("mediaJvmMain")
+        mediaJvmMain.dependsOn(getByName("commonMain"))
+        getByName("androidMain").dependsOn(mediaJvmMain)
+        getByName("desktopMain").dependsOn(mediaJvmMain)
         commonMain.dependencies {
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)

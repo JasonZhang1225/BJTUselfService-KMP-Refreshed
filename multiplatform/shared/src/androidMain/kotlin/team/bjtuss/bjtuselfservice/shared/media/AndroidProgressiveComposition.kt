@@ -26,7 +26,7 @@ internal class AndroidProgressiveComposition(
     override suspend fun append(index: Int, bytes: ByteArray) = sources[index].append(bytes)
     override suspend fun finishInput(index: Int) = sources[index].finish()
     override suspend fun compose(onProgress: (Float) -> Unit, onStatus: (String?) -> Unit,
-        onFinalizing: (Float) -> Unit) {
+        onFinalizing: (Float) -> Unit, onDevice: (String?) -> Unit) {
         sources.forEach { it.readerJob = coroutineContext[Job] }
         val factory: (String, String) -> AndroidMediaSamples? = { path, kind ->
             sources[directories.indexOfFirst { it.absolutePath == path }].open(kind)

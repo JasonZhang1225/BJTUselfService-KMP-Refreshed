@@ -7,7 +7,6 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackCompositeQuality
 
@@ -19,9 +18,15 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackCompositeQua
  * `%LOCALAPPDATA%\BJTUselfServiceKMP\tools\`；没编译过（打包机没有 C++ 工具链）时
  * [isAvailable] 为 false，任务改为分别保存两路视频。
  */
-internal object WindowsPlaybackCompositor : VideoCompositor {
+internal object WindowsPlaybackCompositor : ProgressiveVideoCompositor {
 
     override val isAvailable: Boolean get() = locateHelper() != null
+    override val retainsEncodedSegmentsOnInterrupt: Boolean get() = false
+
+    override suspend fun openProgressive(work: MediaWorkDirectory, durationSeconds: Double,
+        quality: PlaybackCompositeQuality): ProgressiveComposition = withContext(Dispatchers.IO) {
+        WindowsProgressiveComposition(work, durationSeconds, quality)
+    }
 
     override suspend fun composeSideBySide(
         leftPath: String,
@@ -41,19 +46,17 @@ internal object WindowsPlaybackCompositor : VideoCompositor {
             quality.width.toString(),
             quality.height.toString(),
             quality.bitRate.toString(),
+            "--parent-pid",
+            ProcessHandle.current().pid().toString(),
         )
             .redirectError(ProcessBuilder.Redirect.PIPE)
             .start()
         try {
-            process.inputStream.bufferedReader().useLines { lines ->
-                for (line in lines) {
-                    coroutineContext.ensureActive()
-                    line.removePrefix("progress ").toFloatOrNull()?.let(onProgress)
-                }
+            val result = awaitPlaybackHelper(process, onProgress, onStatus) { device ->
+                onStatus(device?.let { "合成设备：$it" })
             }
-            val code = process.waitFor()
-            if (code != 0) {
-                val reason = process.errorStream.bufferedReader().readText().trim().ifBlank { "退出码 $code" }
+            if (result.code != 0) {
+                val reason = result.diagnostic.ifBlank { "退出码 ${result.code}" }
                 File(outputPath).delete()
                 throw CompositionException(reason)
             }

@@ -43,10 +43,16 @@ val compileWindowsPlaybackCompositor by tasks.registering {
     // 配置缓存不允许 doLast 捕获脚本对象，所以这里把要用到的路径抄成局部值，
     // 下面的 doLast 里只碰局部值与 Task 自己的成员。
     val sourcePath = playbackCompositorSource.absolutePath
+    val selectionTestSourcePath = file("src/windowsTest/native/PlaybackGpuSelectionTest.cpp").absolutePath
     val exePath = playbackCompositorExe.get().asFile.absolutePath
     val buildDirPath = playbackCompositorBuildDir.get().asFile.absolutePath
+    val selectionTestExePath = File(buildDirPath, "playback-gpu-selection-test.exe").absolutePath
     val resourcesDirPath = playbackCompositorResourcesDir.get().asFile.absolutePath
     inputs.file(playbackCompositorSource)
+    inputs.file("src/main/native/PlaybackGpuPipeline.h")
+    inputs.file("src/main/native/PlaybackLiveSource.h")
+    inputs.file("src/main/native/PlaybackGpuSelection.h")
+    inputs.file(selectionTestSourcePath)
     outputs.file(playbackCompositorExe)
     doLast {
         val target = File(exePath)
@@ -119,7 +125,12 @@ val compileWindowsPlaybackCompositor by tasks.registering {
             call "$vcvars" >nul
             if errorlevel 1 exit /b 1
             cd /d "${scriptDirectory.absolutePath}"
-            cl /nologo /utf-8 /EHsc /std:c++17 /O2 /W3 /MT /DWINVER=0x0A00 /D_WIN32_WINNT=0x0A00 "$sourcePath" /Fe:"${target.absolutePath}" /link mfplat.lib mfreadwrite.lib mfuuid.lib propsys.lib ole32.lib /ENTRY:wmainCRTStartup
+            cl /nologo /utf-8 /EHsc /std:c++17 /O2 /W3 /MT /DWINVER=0x0A00 /D_WIN32_WINNT=0x0A00 "$sourcePath" /Fe:"${target.absolutePath}" /link mfplat.lib mfreadwrite.lib mfuuid.lib propsys.lib ole32.lib d3d11.lib dxgi.lib /ENTRY:wmainCRTStartup
+            if errorlevel 1 exit /b 1
+            cl /nologo /utf-8 /EHsc /std:c++17 /O2 /W3 /MT "$selectionTestSourcePath" /Fe:"$selectionTestExePath"
+            if errorlevel 1 exit /b 1
+            "$selectionTestExePath"
+            if errorlevel 1 exit /b 1
             """.trimIndent() + "\n",
             Charsets.UTF_8,
         )
@@ -169,6 +180,7 @@ kotlin {
         val windowsTest by getting {
             dependencies {
                 implementation(kotlin("test"))
+                implementation(libs.compose.material3)
                 implementation(libs.kotlinx.serialization.json)
             }
         }

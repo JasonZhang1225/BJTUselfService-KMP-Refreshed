@@ -29,6 +29,8 @@ interface VideoCompositor {
 
 /** 支持边接收 MPEG-TS 边合成的离线管线。其他平台继续使用完整 MP4 输入。 */
 interface ProgressiveVideoCompositor : VideoCompositor {
+    /** 是否能在中断后复用已编码部分；不能时仍可恢复已下载的原始分片。 */
+    val retainsEncodedSegmentsOnInterrupt: Boolean get() = true
     suspend fun openProgressive(
         work: MediaWorkDirectory,
         durationSeconds: Double,
@@ -42,8 +44,9 @@ interface ProgressiveComposition {
     val isComplete: Boolean get() = false
     suspend fun append(index: Int, bytes: ByteArray)
     suspend fun finishInput(index: Int)
+    /** [onDevice] 报告当前实际使用的合成设备；未知或没有在合成时为 null。 */
     suspend fun compose(onProgress: (Float) -> Unit, onStatus: (String?) -> Unit,
-        onFinalizing: (Float) -> Unit = {})
+        onFinalizing: (Float) -> Unit = {}, onDevice: (String?) -> Unit = {})
     suspend fun close()
 }
 

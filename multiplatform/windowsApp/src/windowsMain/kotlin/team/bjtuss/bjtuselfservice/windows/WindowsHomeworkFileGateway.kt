@@ -5,7 +5,9 @@ import java.awt.Frame
 import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
 import javax.swing.SwingUtilities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -37,7 +39,10 @@ import team.bjtuss.bjtuselfservice.shared.files.safeExportPathSegment
  */
 class WindowsHomeworkFileGateway(
     private val owner: () -> Frame? = { null },
-) : HomeworkFileGateway, CoursewareDirectoryGateway {
+    recoveryRoot: File = File(System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), "BJTUselfServiceKMP/playback-tasks"),
+) : HomeworkFileGateway, CoursewareDirectoryGateway,
+    team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryProvider {
+    override val playbackRecovery = WindowsPlaybackRecovery(recoveryRoot)
     private val requestMutex = Mutex()
 
     override val isAvailable: Boolean = true
@@ -327,17 +332,26 @@ class WindowsHomeworkFileGateway(
     }
 }
 
-private class FileStreamingDestination(
+internal class FileStreamingDestination(
     private val target: File,
     private val temporary: java.nio.file.Path,
 ) : StreamingDestination {
-    private var output: java.io.OutputStream? = Files.newOutputStream(temporary)
+    private var output: java.io.OutputStream? = null
     override val displayName: String = target.name
+    override val recoveryToken: String get() = windowsDestinationToken(target, temporary.toFile())
+
+    override suspend fun closeForRecovery() = withContext(NonCancellable + Dispatchers.IO) {
+        runCatching { output?.close() }
+        output = null
+    }
 
     override suspend fun write(bytes: ByteArray) {
-        val stream = output ?: throw StreamingSinkIoException()
         try {
-            withContext(Dispatchers.IO) { stream.write(bytes) }
+            withContext(Dispatchers.IO) {
+                val stream = output ?: Files.newOutputStream(temporary, StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS).also { output = it }
+                stream.write(bytes)
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {

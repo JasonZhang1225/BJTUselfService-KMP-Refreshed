@@ -17,7 +17,7 @@ import java.nio.FloatBuffer
  * 把两张外部纹理（解码器输出到 SurfaceTexture）左右并排画进编码器的输入 Surface。
  *
  * 左半、右半各占画面一半，每一路按比例缩放后居中，不足处留黑边（保持 16:9 不变形）。
- * 画面坐标用 GL 的左下角原点；片元着色器里再把 v 轴翻转回来（SurfaceTexture 的第一行在 v=0）。
+ * 使用每路 SurfaceTexture 的变换矩阵处理方向和解码缓冲裁剪。
  */
 internal class EglComposerRenderer(private val encoderSurface: Surface) {
     private var display: EGLDisplay = EGL14.EGL_NO_DISPLAY
@@ -27,6 +27,7 @@ internal class EglComposerRenderer(private val encoderSurface: Surface) {
     private var positionHandle = 0
     private var texCoordHandle = 0
     private var textureHandle = 0
+    private var transformHandle = 0
     private var rectHandle = 0
     private var canvasWidth = 0
     private var canvasHeight = 0
@@ -112,6 +113,7 @@ internal class EglComposerRenderer(private val encoderSurface: Surface) {
         positionHandle = GLES20.glGetAttribLocation(program, "aPosition")
         texCoordHandle = GLES20.glGetAttribLocation(program, "aTexCoord")
         textureHandle = GLES20.glGetUniformLocation(program, "uTexture")
+        transformHandle = GLES20.glGetUniformLocation(program, "uTexTransform")
         rectHandle = GLES20.glGetUniformLocation(program, "uRect")
     }
 
@@ -128,8 +130,10 @@ internal class EglComposerRenderer(private val encoderSurface: Surface) {
     fun drawFrame(
         leftTexture: Int,
         leftSize: Pair<Int, Int>,
+        leftTransform: FloatArray,
         rightTexture: Int,
         rightSize: Pair<Int, Int>,
+        rightTransform: FloatArray,
     ) {
         if (canvasWidth <= 0 || canvasHeight <= 0) return
         GLES20.glViewport(0, 0, canvasWidth, canvasHeight)
@@ -149,15 +153,16 @@ internal class EglComposerRenderer(private val encoderSurface: Surface) {
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
 
         val halfWidth = canvasWidth / 2
-        drawHalf(leftTexture, leftSize, 0, halfWidth)
-        drawHalf(rightTexture, rightSize, halfWidth, halfWidth)
+        drawHalf(leftTexture, leftSize, leftTransform, 0, halfWidth)
+        drawHalf(rightTexture, rightSize, rightTransform, halfWidth, halfWidth)
     }
 
-    private fun drawHalf(texture: Int, sourceSize: Pair<Int, Int>, xOffset: Int, halfWidth: Int) {
+    private fun drawHalf(texture: Int, sourceSize: Pair<Int, Int>, transform: FloatArray, xOffset: Int, halfWidth: Int) {
         val sourceWidth = sourceSize.first
         val sourceHeight = sourceSize.second
         val rect = fitRect(sourceWidth, sourceHeight, xOffset, halfWidth, canvasHeight)
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, texture)
+        GLES20.glUniformMatrix4fv(transformHandle, 1, false, transform, 0)
         GLES20.glUniform4f(rectHandle, rect[0], rect[1], rect[2], rect[3])
         GLES20.glViewport(xOffset, 0, halfWidth, canvasHeight)
         GLES20.glEnable(GLES20.GL_SCISSOR_TEST)
@@ -259,13 +264,15 @@ internal class EglComposerRenderer(private val encoderSurface: Surface) {
             varying vec2 vTexCoord;
             uniform samplerExternalOES uTexture;
             uniform vec4 uRect;
+            uniform mat4 uTexTransform;
             void main() {
                 vec2 rel = gl_FragCoord.xy - uRect.xy;
                 if (rel.x < 0.0 || rel.y < 0.0 || rel.x > uRect.z || rel.y > uRect.w) {
                     gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
                 } else {
                     vec2 uv = rel / uRect.zw;
-                    gl_FragColor = texture2D(uTexture, vec2(uv.x, 1.0 - uv.y));
+                    vec2 sampleUv = (uTexTransform * vec4(uv, 0.0, 1.0)).xy;
+                    gl_FragColor = texture2D(uTexture, sampleUv);
                 }
             }
         """
