@@ -1,5 +1,7 @@
 # BJTUselfService 实时工作记忆
 
+> 2026-10-28：`feat/courseware-fallback-playback` 的队列修复 `a9bd0b52`、缓存与恢复修复 `c5b70c28` 已推送，跨平台安全检查四项通过；沿用 2.0.0-Alpha / Build 45，不改版本号。
+>
 > 2026-10-27：分支 `feat/courseware-fallback-playback`，回放与设备显示已提交 `19585a4a`，已合并远端 PR #72（`8847b785`），功能分支尚未合入 main。源码版本为 `2.0.0-Alpha` / Build 45，发布说明草稿 `docs/releases/v2.0.0-KMP.md`；iOS 系统版本与桌面安装器使用数字 `2.0.0`，iOS 最低 18.0。
 >
 > 用户持续目标：Windows 硬件加速与下载合成并行已完成本机隔离验收；安卓计划及现有修改保留，设备暂不在身边，ADB 与实机验收留待后续。安卓旧版整节验收实测不暂停总耗时约16分15秒，9–10分钟性能目标未达到。
@@ -55,6 +57,14 @@
 - 完整 `:shared:desktopTest` 在干净进程环境下运行 1193 项、1188 项通过；仍有既有的 `DesktopAgentIntegrationTest` 3 项和 `MacUninstallCleanerTest` 2 项在 Windows 因符号链接权限、macOS 脚本/路径假设失败，回放相关用例无失败。日志 `.artifacts/windows-gpu-playback/desktop-full-test-clean-env.log`。初次运行误将禁用的可选环境变量设置为空字符串，触发 4 个诊断用例；已清理该次生成的空文件，后用真正移除变量的环境重跑。
 - 先前 MSI 在 `multiplatform/windowsApp/build/compose/binaries/main/msi/`，只生成未安装；它不含最新设备显示和版本号，不能代表当前源码。MSI 使用项目现有升级码，安装可能替换既有安装版，不能当作隔离测试包。此前 `.artifacts/windows-gpu-playback/package-msi.log` 记录的是旧版本。
 - 9–10分钟是安卓后续性能目标，当前实测未达到，路径见上节计划；不能通过降帧/丢帧冒充提速。整个持续目标仍在进行。
+
+## 进行中：Windows 课程回放多任务、缓存与恢复验收
+
+- `a9bd0b52` 修复任务到达锁的调度次序可能与入队次序不同的问题；隔离测试覆盖三个任务的并发提交、先前任务完成/失败/暂停/取消和取消排队项，不改变 GPU 管线。
+- `c5b70c28`：Windows 保存临时文件在记录落盘后才创建；取消、移除或完成先记录清理意图，失败保留记录并提示重试；无法恢复的记录、未关联工作目录和损坏记录不再被猜测清理。写盘失败保留分片；保存完成与记录更新之间的异常退出若结果不明确，提示先检查视频，避免覆盖。JVM 清理不跟随符号链接或 Windows junction；共享状态使用原子更新，安卓已提交目标在取消时不再删除。
+- 文件归属：账号工作目录保存 `segments-*` 的 TS/`.part`/播放列表指纹、`windows-input-*` 的压缩样本/索引/配置、`composite.partial.mp4`、完成标记和 `composite.mp4`；用户目标目录只按记录定位 `.bjtu-save-*.tmp` 与最终输出；账号目录的 `tasks.json` / `tasks.json.new` 是任务记录及其原子写入文件。无法归属的旧临时文件不扫描用户目录、不自动删除。
+- Windows 独立 JVM 在保存阶段被强制结束后，新管理器恢复已合成文件并完成保存；测试核对已存在视频、缓存与临时文件。隔离界面已观察一运行两排队、失败后下一项推进，以及浅色/深色和大字号提示。未使用正式安装、真实账号或原有下载。
+- 当前共享回放/课件等测试 144 项全过；Windows 全量测试 31 项、0 失败、1 跳过；Android 使用已有 debug keystore 的 `:androidApp:assembleDebug` 通过，未安装。完整 `:shared:desktopTest` 1211 项中 5 项是既有 Windows 环境失败（DesktopAgentIntegrationTest 3、MacUninstallCleanerTest 2）。代码提交 `c5b70c28` 的跨平台安全检查 [40545883628](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/40545883628) 四项通过，包含 macOS 全部共享测试、iOS 共享测试、Windows 镜像和 Android debug/优化版；安卓实际设备未验收，旧的无归属 `.bjtu-save-*.tmp` 无法安全自动定位。
 
 
 ## 已合入功能分支、待主干：CITEL 折扣时间配色与考试 sheet 测高（PR #70）
