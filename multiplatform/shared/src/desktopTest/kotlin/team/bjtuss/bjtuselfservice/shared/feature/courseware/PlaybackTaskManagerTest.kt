@@ -150,7 +150,9 @@ class PlaybackTaskManagerTest {
                 override val resumeSeconds = 0.0
                 override val isComplete get() = completed
                 override suspend fun append(index: Int, bytes: ByteArray) {
-                    if (firstInput.complete(Unit)) encoding.await()
+                    // 只在教师路（index 0）首片进入后再开始编码，避免课件路先到时
+                    // 编码失败取消把尚未落盘的 tea/seg-0 预取请求算成“已缓存”。
+                    if (index == 0 && firstInput.complete(Unit)) encoding.await()
                 }
                 override suspend fun finishInput(index: Int) { if (finished.incrementAndGet() == 2) inputsDone.complete(Unit) }
                 override suspend fun compose(onProgress: (Float) -> Unit, onStatus: (String?) -> Unit,

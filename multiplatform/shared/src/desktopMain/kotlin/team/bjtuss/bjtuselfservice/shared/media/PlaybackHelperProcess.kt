@@ -52,6 +52,11 @@ internal suspend fun awaitPlaybackHelper(
         PlaybackHelperExit(process.waitFor(), diagnostic.await())
     } finally {
         if (process.isAlive) process.destroyForcibly()
-        withContext(NonCancellable) { cancellation.cancelAndJoin(); diagnostic.join() }
+        withContext(NonCancellable) {
+            cancellation.cancelAndJoin()
+            // destroyForcibly 之后 stdout/stderr 可能先关掉，进程在 macOS 上还要等 waitFor 才真正退出。
+            withContext(Dispatchers.IO) { runCatching { process.waitFor() } }
+            diagnostic.join()
+        }
     }
 }
