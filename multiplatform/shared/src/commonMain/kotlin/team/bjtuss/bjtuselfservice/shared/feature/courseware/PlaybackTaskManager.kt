@@ -158,6 +158,8 @@ class PlaybackTaskManager(
 
     private val runMutex = Mutex()
     private val jobs = mutableMapOf<String, Job>()
+    // Mutex 只保证等待者的先后，不保证被调度的协程按入队顺序抵达锁。
+    private var queueTail: CompletableDeferred<Unit>? = null
     private enum class Stop { PAUSE, DISCARD }
     private val stops = mutableMapOf<String, Stop>()
     private var nextId = 0
@@ -338,8 +340,21 @@ class PlaybackTaskManager(
     @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
     private fun start(id: String) {
         val request = requests[id] ?: return
+        val predecessor = queueTail
+        val turnFinished = CompletableDeferred<Unit>()
+        queueTail = turnFinished
         // 即使刚入队就暂停/退出，也必须进入 run 的 finally，不能留下不可继续的幽灵任务。
-        val job = scope.launch(start = CoroutineStart.ATOMIC) { run(id, request) }
+        val job = scope.launch(start = CoroutineStart.ATOMIC) {
+            try {
+                try { predecessor?.await() } finally { run(id, request) }
+            } finally {
+                // 排队任务被取消时也不能让后面的任务越过其尚未完成的前驱。
+                withContext(NonCancellable) {
+                    predecessor?.await()
+                    turnFinished.complete(Unit)
+                }
+            }
+        }
         jobs[id] = job
         if (job.isCompleted) jobs.remove(id)
     }

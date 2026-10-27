@@ -36,6 +36,138 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 
 class PlaybackTaskManagerTest {
+    @Test fun queuedTasksAdvanceAfterCompletion() = runBlocking { exerciseThreeTaskQueue("complete") }
+    @Test fun queuedTasksAdvanceAfterFailure() = runBlocking { exerciseThreeTaskQueue("fail") }
+    @Test fun queuedTasksAdvanceAfterPause() = runBlocking { exerciseThreeTaskQueue("pause") }
+    @Test fun queuedTasksAdvanceAfterCancellation() = runBlocking { exerciseThreeTaskQueue("cancel") }
+
+    @Test fun cancellingQueuedTaskCannotLetLaterTaskOvertakeItsPredecessor() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("playback-queue-cancel-test-").toFile()
+        val root = File(directory, "work")
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val gateway = MemoryGateway()
+        val compositor = QueueCompositor()
+        val store = object : PlaybackTaskStore {
+            override val workRoot = Path(root.absolutePath)
+            override suspend fun load() = emptyList<StoredPlaybackTask>()
+            override suspend fun save(tasks: List<StoredPlaybackTask>) = Unit
+        }
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0, concurrency = 1),
+                { compositor }, { null }, store)
+            val detail = detail()
+            suspend fun enqueue(name: String) = assertIs<PlaybackEnqueueResult.Started>(
+                manager.enqueue(detail, detail.streams, name, true, gateway)).taskId
+            val first = enqueue("第一节")
+            assertEquals(first, withTimeout(10_000) { compositor.started.receive() })
+            val second = enqueue("第二节")
+            val third = enqueue("第三节")
+            manager.cancel(second)
+            withTimeout(10_000) { while (manager.tasks.value.first { it.id == second }.phase != PlaybackTaskPhase.CANCELLED) delay(10) }
+            val fourth = enqueue("第四节")
+            compositor.release(first, false)
+            assertEquals(third, withTimeout(10_000) { compositor.started.receive() })
+            compositor.release(third, false)
+            assertEquals(fourth, withTimeout(10_000) { compositor.started.receive() })
+            compositor.release(fourth, false)
+            withTimeout(10_000) { while (File(root, first).exists() || File(root, third).exists() ||
+                File(root, fourth).exists() || manager.tasks.value.first { it.id == fourth }.phase != PlaybackTaskPhase.DONE) delay(10) }
+            assertFalse(File(root, second).exists())
+            assertEquals(1, compositor.maximumActive.get())
+            assertEquals(3, gateway.saved.size)
+        } finally {
+            scope.cancel()
+            scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            directory.deleteRecursively()
+        }
+    }
+
+    private suspend fun exerciseThreeTaskQueue(firstAction: String) {
+        val directory = java.nio.file.Files.createTempDirectory("playback-queue-test-").toFile()
+        val root = File(directory, "work")
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val gateway = MemoryGateway()
+        val compositor = QueueCompositor()
+        val store = object : PlaybackTaskStore {
+            override val workRoot = Path(root.absolutePath)
+            override suspend fun load() = emptyList<StoredPlaybackTask>()
+            override suspend fun save(tasks: List<StoredPlaybackTask>) = Unit
+        }
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0, concurrency = 1),
+                { compositor }, { null }, store)
+            val detail = detail()
+            suspend fun enqueue(name: String) = assertIs<PlaybackEnqueueResult.Started>(
+                manager.enqueue(detail, detail.streams, name, true, gateway)).taskId
+            val first = enqueue("第一节")
+            assertEquals(first, withTimeout(10_000) { compositor.started.receive() })
+            val second = enqueue("第二节")
+            val third = enqueue("第三节")
+            assertEquals(PlaybackTaskPhase.QUEUED, manager.tasks.value.first { it.id == second }.phase)
+            assertEquals(PlaybackTaskPhase.QUEUED, manager.tasks.value.first { it.id == third }.phase)
+            assertFalse(File(root, second).exists(), "排队任务不应提前创建工作目录")
+            assertFalse(File(root, third).exists(), "排队任务不应提前创建工作目录")
+            when (firstAction) {
+                "complete" -> compositor.release(first, false)
+                "fail" -> compositor.release(first, true)
+                "pause" -> manager.pause(first)
+                "cancel" -> manager.cancel(first)
+                else -> error(firstAction)
+            }
+            assertEquals(second, withTimeout(10_000) { compositor.started.receive() })
+            compositor.release(second, false)
+            assertEquals(third, withTimeout(10_000) { compositor.started.receive() })
+            compositor.release(third, false)
+            withTimeout(10_000) {
+                while (manager.tasks.value.first { it.id == third }.phase != PlaybackTaskPhase.DONE ||
+                    File(root, second).exists() || File(root, third).exists()) delay(10)
+            }
+            assertEquals(1, compositor.maximumActive.get(), "同一个管理器只能运行一个合成任务")
+            val expected = when (firstAction) {
+                "complete" -> PlaybackTaskPhase.DONE
+                "fail" -> PlaybackTaskPhase.FAILED
+                "pause" -> PlaybackTaskPhase.PAUSED
+                else -> PlaybackTaskPhase.CANCELLED
+            }
+            withTimeout(10_000) {
+                while (manager.tasks.value.first { it.id == first }.phase != expected) delay(10)
+            }
+            if (firstAction == "pause" || firstAction == "fail") {
+                assertTrue(File(root, first).exists(), "暂停或失败后必须保留恢复数据")
+                withTimeout(10_000) { while (!manager.tasks.value.first { it.id == first }.canResume) delay(10) }
+                manager.dismiss(first)
+            }
+            withTimeout(10_000) { while (File(root, first).exists()) delay(10) }
+            assertEquals(if (firstAction == "complete") 3 else 2, gateway.saved.size)
+        } finally {
+            scope.cancel()
+            scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            directory.deleteRecursively()
+        }
+    }
+
+    private class QueueCompositor : VideoCompositor {
+        val started = kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+        val maximumActive = java.util.concurrent.atomic.AtomicInteger()
+        private val active = java.util.concurrent.atomic.AtomicInteger()
+        private val gates = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.CompletableDeferred<Boolean>>()
+        override val isAvailable = true
+        fun release(id: String, fail: Boolean) { gates.getValue(id).complete(fail) }
+        override suspend fun composeSideBySide(leftPath: String, rightPath: String, outputPath: String,
+            quality: PlaybackCompositeQuality, onProgress: (Float) -> Unit, onStatus: (String?) -> Unit) {
+            val id = File(outputPath).parentFile.name
+            val gate = kotlinx.coroutines.CompletableDeferred<Boolean>()
+            gates[id] = gate
+            val count = active.incrementAndGet()
+            maximumActive.updateAndGet { maxOf(it, count) }
+            try {
+                started.send(id)
+                if (gate.await()) throw team.bjtuss.bjtuselfservice.shared.media.CompositionException("测试失败")
+                File(outputPath).writeText("complete")
+            } finally { active.decrementAndGet() }
+        }
+    }
+
     @Test
     fun rebuildingAuthenticatedGraphKeepsApplicationDownloadExecutor() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
