@@ -583,6 +583,30 @@ private class IosCoursewareDirectoryWriteSession(
     private val lifecycleMutex = Mutex()
     private var closed = false
 
+    override val supportsStreamingFiles: Boolean = true
+
+    override suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult = lifecycleMutex.withLock {
+        if (closed) return@withLock StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        withContext(Dispatchers.Default) {
+            val manager = NSFileManager.defaultManager
+            val rootPath = rootUrl.path ?: return@withContext StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+            val folderPath = file.relativeFolders.fold(rootPath) { path, segment -> "$path/${safeExportPathSegment(segment)}" }
+            if (!manager.createDirectoryAtPath(folderPath, withIntermediateDirectories = true, attributes = null, error = null)) {
+                return@withContext StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+            }
+            val name = safeExportFileName(file.content.fileName)
+            if (manager.fileExistsAtPath("$folderPath/$name")) return@withContext StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+            val part = "$folderPath/.${NSUUID().UUIDString}.part"
+            if (!manager.createFileAtPath(part, contents = null, attributes = null)) return@withContext StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+            val handle = NSFileHandle.fileHandleForWritingAtPath(part)
+            if (handle == null) {
+                manager.removeItemAtPath(part, error = null)
+                return@withContext StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+            }
+            StreamingDestinationResult.Opened(IosStreamingDestination(selectedDirectory, false, folderPath, part, name, handle))
+        }
+    }
+
     override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult =
         lifecycleMutex.withLock {
             if (closed) return@withLock HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)

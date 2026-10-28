@@ -5,6 +5,12 @@ import kotlin.test.assertEquals
 
 class CoursewareSizeFormatTest {
     @Test
+    fun downloadProgressDistinguishesActualAndListedSize() {
+        assertEquals("正在下载 2 MB / 10 MB", formatCoursewareDownloadProgress(2L * 1024 * 1024, 10L * 1024 * 1024, "12"))
+        assertEquals("正在下载 2 MB / 10.5 MB（课件标注大小）", formatCoursewareDownloadProgress(2L * 1024 * 1024, 0, "10.5"))
+        assertEquals("正在下载 2 MB（总大小未知）", formatCoursewareDownloadProgress(2L * 1024 * 1024, 0, null))
+    }
+    @Test
     fun bareNumberGetsMbUnit() {
         assertEquals("5.34 MB", formatCoursewareSize("5.34"))
         assertEquals("8 MB", formatCoursewareSize("8"))

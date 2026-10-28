@@ -149,6 +149,17 @@ interface SchoolHttpTransport {
      */
     suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse
 
+    /** 接收响应头后分块消费正文；实现不得在回调返回前释放响应。 */
+    suspend fun stream(
+        request: SchoolHttpRequest,
+        onHeaders: suspend (SchoolHttpResponse) -> Unit,
+        onChunk: suspend (ByteArray) -> Unit,
+    ) {
+        val response = execute(request)
+        onHeaders(response.copy(body = byteArrayOf()))
+        if (response.body.isNotEmpty()) onChunk(response.body)
+    }
+
     /**
      * 不自动跟随重定向的会话请求，供需要逐跳白名单验证的握手使用。
      * 默认实现回退到 [execute]；Ktor 实现使用共享 Cookie jar 的独立客户端。

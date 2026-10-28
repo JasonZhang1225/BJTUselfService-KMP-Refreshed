@@ -179,7 +179,7 @@ fun main(args: Array<String>) {
                     toolkit.addAWTEventListener(clickListener, AWTEvent.MOUSE_EVENT_MASK)
                     onDispose { toolkit.removeAWTEventListener(clickListener) }
                 }
-                val homeworkFileGateway = remember { WindowsHomeworkFileGateway() }
+                val homeworkFileGateway = remember(window) { WindowsHomeworkFileGateway(owner = { window }) }
                 CompositionLocalProvider(LocalRemoteAgentController provides remoteController, LocalAppStartupHost provides startupHost) {
                 App(
                     accountSecurityStore = accountSecurityStore,

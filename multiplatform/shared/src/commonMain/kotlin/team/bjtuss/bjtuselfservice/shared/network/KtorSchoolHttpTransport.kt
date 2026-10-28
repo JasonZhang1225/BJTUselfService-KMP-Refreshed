@@ -16,8 +16,11 @@ import io.ktor.client.request.forms.MultiPartFormDataContent
 import io.ktor.client.request.forms.formData
 import io.ktor.client.request.headers
 import io.ktor.client.request.request
+import io.ktor.client.request.prepareGet
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsBytes
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.utils.io.readAvailable
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
 import io.ktor.http.Headers as KtorHeaders
@@ -76,6 +79,36 @@ class KtorSchoolHttpTransport(
 
     override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse =
         executeTimed(request, "school", gateFor(request)) { client }
+
+    override suspend fun stream(
+        request: SchoolHttpRequest,
+        onHeaders: suspend (SchoolHttpResponse) -> Unit,
+        onChunk: suspend (ByteArray) -> Unit,
+    ) {
+        require(request.method == SchoolHttpMethod.GET)
+        gateFor(request).run(request) {
+            client.prepareGet(request.url) {
+                timeout { requestTimeoutMillis = LARGE_TRANSFER_REQUEST_TIMEOUT_MILLIS }
+                headers { request.headers.forEach { (name, value) -> append(name, value) } }
+            }.execute { response ->
+                val metadata = SchoolHttpResponse(
+                    statusCode = response.status.value,
+                    finalUrl = response.call.request.url.toString(),
+                    headers = response.headers.entries().associate { it.key to it.value },
+                    body = byteArrayOf(),
+                )
+                onHeaders(metadata)
+                val channel = response.bodyAsChannel()
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val count = channel.readAvailable(buffer, 0, buffer.size)
+                    if (count == -1) break
+                    if (count > 0) onChunk(buffer.copyOf(count))
+                }
+                metadata
+            }
+        }
+    }
 
     override suspend fun executeWithoutRedirects(request: SchoolHttpRequest): SchoolHttpResponse =
         if (Url(request.url).host == "wlsy.bjtu.edu.cn") {

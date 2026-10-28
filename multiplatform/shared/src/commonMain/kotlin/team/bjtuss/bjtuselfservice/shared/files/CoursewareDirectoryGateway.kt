@@ -143,6 +143,9 @@ sealed interface CoursewareDirectoryOpenResult {
 /** A newly created export root. [abort] must be idempotent and remove only that new root. */
 interface CoursewareDirectoryWriteSession {
     suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult
+    val supportsStreamingFiles: Boolean get() = false
+    suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult =
+        StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
     suspend fun commit(): HomeworkFileSaveResult
     suspend fun abort()
 }

@@ -25,8 +25,226 @@ import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryOpenResult
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryWriteSession
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
+import team.bjtuss.bjtuselfservice.shared.files.StreamingDestination
+import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
+import team.bjtuss.bjtuselfservice.shared.files.StreamingFileSink
 
 class CoursewareScreenModelTest {
+    @Test
+    fun cancellingWhileCreatingDestinationCleansItAndKeepsDirectory() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var fileAborted = false
+        var directoryCommitted = false
+        val gateway = object : CoursewareDirectoryGateway {
+            override val isDirectoryExportAvailable = true
+            override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult =
+                CoursewareDirectoryOpenResult.Opened(object : CoursewareDirectoryWriteSession {
+                    override val supportsStreamingFiles = true
+                    override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult = error("unexpected")
+                    override suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult {
+                        started.complete(Unit)
+                        release.await()
+                        return StreamingDestinationResult.Opened(object : StreamingDestination {
+                            override val displayName = file.content.fileName
+                            override suspend fun write(bytes: ByteArray) = error("must not write")
+                            override suspend fun commit(): HomeworkFileSaveResult = error("must not commit file")
+                            override suspend fun abort() { fileAborted = true }
+                        })
+                    }
+                    override suspend fun commit(): HomeworkFileSaveResult { directoryCommitted = true; return HomeworkFileSaveResult.Saved }
+                    override suspend fun abort() = error("must not discard directory")
+                })
+        }
+        val model = CoursewareScreenModel(FakeRepository(snapshot(), snapshot()))
+        model.initialize()
+        val job = launch { model.exportDirectory(null, "程序设计", gateway) }
+        started.await()
+        job.cancel()
+        release.complete(Unit)
+        job.join()
+        assertTrue(fileAborted)
+        assertTrue(directoryCommitted)
+    }
+
+    @Test
+    fun cancellingDirectoryCanKeepCompletedFilesOrDiscardAll() = runBlocking {
+        for (keep in listOf(true, false)) {
+            val secondStarted = CompletableDeferred<Unit>()
+            val completed = mutableListOf<String>()
+            val abortedFiles = mutableListOf<String>()
+            var directoryCommitted = false
+            var directoryAborted = false
+            var keepResult: HomeworkFileSaveResult? = null
+            val repository = object : CoursewareRepository by FakeRepository(snapshot(), snapshot()) {
+                override suspend fun streamResource(node: CoursewareNode, sink: StreamingFileSink, onProgress: (Long, Long) -> Unit) {
+                    sink.write(byteArrayOf(1))
+                    if (node.id == 3) { secondStarted.complete(Unit); awaitCancellation() }
+                }
+            }
+            val gateway = object : CoursewareDirectoryGateway {
+                override val isDirectoryExportAvailable = true
+                override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult =
+                    CoursewareDirectoryOpenResult.Opened(object : CoursewareDirectoryWriteSession {
+                        override val supportsStreamingFiles = true
+                        override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult = error("unexpected")
+                        override suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult =
+                            StreamingDestinationResult.Opened(object : StreamingDestination {
+                                override val displayName = file.content.fileName
+                                override suspend fun write(bytes: ByteArray) = Unit
+                                override suspend fun commit(): HomeworkFileSaveResult { completed += displayName; return HomeworkFileSaveResult.Saved }
+                                override suspend fun abort() { abortedFiles += displayName }
+                            })
+                        override suspend fun commit(): HomeworkFileSaveResult { directoryCommitted = true; return HomeworkFileSaveResult.Saved }
+                        override suspend fun abort() { directoryAborted = true; completed.clear() }
+                    })
+            }
+            val model = CoursewareScreenModel(repository)
+            model.initialize()
+            val job = launch { model.exportDirectory(null, "程序设计", gateway, { keep }, { keepResult = it }) }
+            secondStarted.await()
+            assertEquals(listOf("第一讲.pdf"), completed)
+            job.cancel()
+            job.join()
+            assertEquals(listOf("说明.pdf"), abortedFiles)
+            assertEquals(keep, directoryCommitted)
+            assertEquals(!keep, directoryAborted)
+            assertEquals(if (keep) listOf("第一讲.pdf") else emptyList(), completed)
+            assertEquals(if (keep) HomeworkFileSaveResult.Saved else null, keepResult)
+        }
+    }
+
+    @Test
+    fun streamingSaveSelectsDestinationBeforeDownloadingAndReportsIntermediateProgress() = runBlocking {
+        val events = mutableListOf<String>()
+        val firstChunk = CompletableDeferred<Unit>()
+        val resume = CompletableDeferred<Unit>()
+        val base = snapshot()
+        val course = base.courses.single()
+        val sized = base.copy(courses = listOf(course.copy(children = course.children.map { node ->
+            if (node.isFolder) node.copy(children = node.children.map { it.copy(size = "96.29") }) else node
+        })))
+        val repository = object : CoursewareRepository by FakeRepository(sized, sized) {
+            override suspend fun streamResource(node: CoursewareNode, sink: StreamingFileSink, onProgress: (Long, Long) -> Unit) {
+                events += "download"
+                sink.write(byteArrayOf(1, 2))
+                onProgress(2, 4)
+                firstChunk.complete(Unit)
+                resume.await()
+                sink.write(byteArrayOf(3, 4))
+                onProgress(4, 4)
+            }
+        }
+        val gateway = object : HomeworkFileGateway {
+            override val isAvailable = true
+            override suspend fun pickFiles(): HomeworkFilePickResult = HomeworkFilePickResult.Cancelled
+            override suspend fun saveFile(file: HomeworkFileContent): HomeworkFileSaveResult = error("unexpected whole-file save")
+            override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
+                events += "select"
+                return StreamingDestinationResult.Opened(object : StreamingDestination {
+                    override val displayName = fileName
+                    override suspend fun write(bytes: ByteArray) { events += "write:${bytes.size}" }
+                    override suspend fun commit(): HomeworkFileSaveResult { events += "commit"; return HomeworkFileSaveResult.Saved }
+                    override suspend fun abort() { events += "abort" }
+                })
+            }
+        }
+        val model = CoursewareScreenModel(repository)
+        model.initialize()
+        val job = async { model.saveResourceStreaming(resource().stableKey, gateway) }
+        firstChunk.await()
+        assertEquals(2L to 4L, model.state.value.streamProgress)
+        assertEquals("96.29", model.state.value.streamListedSize)
+        assertEquals(resource().stableKey, model.state.value.streamNodeKey)
+        assertEquals(listOf("select", "download", "write:2"), events)
+        resume.complete(Unit)
+        assertEquals(HomeworkFileSaveResult.Saved, assertIs<CoursewareOperationResult.Success<HomeworkFileSaveResult>>(job.await()).value)
+        assertEquals(listOf("select", "download", "write:2", "write:2", "commit"), events)
+        assertEquals(null, model.state.value.streamProgress)
+        assertEquals(null, model.state.value.streamListedSize)
+        assertEquals(null, model.state.value.streamNodeKey)
+    }
+
+    @Test
+    fun cancelledStreamingSaveAbortsDestination() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        var aborted = false
+        val repository = object : CoursewareRepository by FakeRepository(snapshot(), snapshot()) {
+            override suspend fun streamResource(node: CoursewareNode, sink: StreamingFileSink, onProgress: (Long, Long) -> Unit) {
+                sink.write(byteArrayOf(1))
+                started.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        val gateway = object : HomeworkFileGateway {
+            override val isAvailable = true
+            override suspend fun pickFiles(): HomeworkFilePickResult = HomeworkFilePickResult.Cancelled
+            override suspend fun saveFile(file: HomeworkFileContent): HomeworkFileSaveResult = error("unexpected")
+            override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult =
+                StreamingDestinationResult.Opened(object : StreamingDestination {
+                    override val displayName = fileName
+                    override suspend fun write(bytes: ByteArray) = Unit
+                    override suspend fun commit(): HomeworkFileSaveResult = error("must not commit")
+                    override suspend fun abort() { aborted = true }
+                })
+        }
+        val model = CoursewareScreenModel(repository)
+        model.initialize()
+        val job = launch { model.saveResourceStreaming(resource().stableKey, gateway) }
+        started.await()
+        job.cancel()
+        job.join()
+        assertTrue(aborted)
+        assertFalse(model.state.value.isDownloading)
+    }
+
+    @Test
+    fun streamingDirectoryExportShowsCurrentFileProgressAndCleansUpOnCancellation() = runBlocking {
+        val firstChunk = CompletableDeferred<Unit>()
+        var destinationAborted = false
+        var directoryAborted = false
+        val repository = object : CoursewareRepository by FakeRepository(snapshot(), snapshot()) {
+            override suspend fun streamResource(node: CoursewareNode, sink: StreamingFileSink, onProgress: (Long, Long) -> Unit) {
+                sink.write(byteArrayOf(1, 2))
+                onProgress(2, 4)
+                firstChunk.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        val gateway = object : CoursewareDirectoryGateway {
+            override val isDirectoryExportAvailable = true
+            override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult =
+                CoursewareDirectoryOpenResult.Opened(object : CoursewareDirectoryWriteSession {
+                    override val supportsStreamingFiles = true
+                    override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult = error("unexpected whole-file write")
+                    override suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult =
+                        StreamingDestinationResult.Opened(object : StreamingDestination {
+                            override val displayName = file.content.fileName
+                            override suspend fun write(bytes: ByteArray) = Unit
+                            override suspend fun commit(): HomeworkFileSaveResult = error("must not commit")
+                            override suspend fun abort() { destinationAborted = true }
+                        })
+                    override suspend fun commit(): HomeworkFileSaveResult = error("must not commit")
+                    override suspend fun abort() { directoryAborted = true }
+                })
+        }
+        val model = CoursewareScreenModel(repository)
+        model.initialize()
+        val job = launch { model.exportDirectory(null, "程序设计", gateway, keepCompletedOnCancel = { false }) }
+        firstChunk.await()
+        assertEquals(0, model.state.value.directoryDownloadCompleted)
+        assertEquals(2, model.state.value.directoryDownloadTotal)
+        assertEquals("第一讲.pdf", model.state.value.directoryCurrentName)
+        assertEquals(2L to 4L, model.state.value.streamProgress)
+        job.cancel()
+        job.join()
+        assertTrue(destinationAborted)
+        assertTrue(directoryAborted)
+        assertEquals(null, model.state.value.streamProgress)
+        assertEquals(null, model.state.value.directoryCurrentName)
+    }
     @Test
     fun cachedCourseAndNodeCanBeSelectedDuringRootPrefetch() = runBlocking {
         val started = CompletableDeferred<Unit>()
@@ -499,7 +717,7 @@ class CoursewareScreenModelTest {
         val model = CoursewareScreenModel(FakeRepository(snapshot(), snapshot()))
         model.initialize()
 
-        val export = async { model.exportDirectory(null, "程序设计", gateway) }
+        val export = async { model.exportDirectory(null, "程序设计", gateway, keepCompletedOnCancel = { false }) }
         writeStarted.await()
         export.cancel()
         export.join()

@@ -362,9 +362,13 @@ class AndroidHomeworkFileGateway(
         var createdRoot: Uri? = null
         return try {
             context.ensureActive()
+            val parentDocument = DocumentsContract.buildDocumentUriUsingTree(
+                destination,
+                DocumentsContract.getTreeDocumentId(destination),
+            )
             val root = DocumentsContract.createDocument(
                 resolver,
-                destination,
+                parentDocument,
                 DocumentsContract.Document.MIME_TYPE_DIR,
                 safeExportPathSegment(directoryName),
             ) ?: throw FileNotFoundException()
@@ -389,6 +393,36 @@ class AndroidHomeworkFileGateway(
         private val lifecycleMutex = Mutex()
         private val folders = mutableMapOf<List<String>, Uri>(emptyList<String>() to root)
         private var closed = false
+
+        override val supportsStreamingFiles: Boolean = true
+
+        override suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult = lifecycleMutex.withLock {
+            if (closed) return@withLock StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            withContext(Dispatchers.IO) {
+                val resolver = activity.contentResolver
+                try {
+                    var path = emptyList<String>()
+                    var parent = root
+                    file.relativeFolders.forEach { segment ->
+                        val safe = safeExportPathSegment(segment)
+                        path = path + safe
+                        parent = folders.getOrPut(path) {
+                            DocumentsContract.createDocument(resolver, parent, DocumentsContract.Document.MIME_TYPE_DIR, safe)
+                                ?: throw FileNotFoundException()
+                        }
+                    }
+                    val name = safeExportFileName(file.content.fileName)
+                    val uri = DocumentsContract.createDocument(resolver, parent, file.content.contentType.ifBlank { "application/octet-stream" }, name)
+                        ?: throw FileNotFoundException()
+                    val output = resolver.openOutputStream(uri, "w") ?: throw FileNotFoundException()
+                    StreamingDestinationResult.Opened(ContentStreamingDestination(resolver, uri, output, name))
+                } catch (_: SecurityException) {
+                    StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+                } catch (_: Exception) {
+                    StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+                }
+            }
+        }
 
         override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult =
             lifecycleMutex.withLock {

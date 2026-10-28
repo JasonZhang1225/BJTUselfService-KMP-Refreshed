@@ -104,6 +104,15 @@ interface CoursewareRepository {
         CoursewareOperationResult.Success(snapshot)
 
     suspend fun downloadResource(node: CoursewareNode): CoursewareOperationResult<HomeworkFileContent>
+    suspend fun streamResource(node: CoursewareNode, sink: StreamingFileSink, onProgress: (Long, Long) -> Unit) {
+        when (val result = downloadResource(node)) {
+            is CoursewareOperationResult.Success -> {
+                sink.write(result.value.bytes)
+                onProgress(result.value.bytes.size.toLong(), result.value.bytes.size.toLong())
+            }
+            is CoursewareOperationResult.Failure -> throw CoursewareRemoteException(CoursewareRemoteFailure.NETWORK)
+        }
+    }
     suspend fun downloadTeachingCalendar(course: CoursewareCourse): CoursewareOperationResult<HomeworkFileContent>
     suspend fun planStoredDownload(node: CoursewareNode): CoursewareOperationResult<CoursewareStoredDownload> =
         CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
@@ -375,6 +384,9 @@ class DefaultCoursewareRepository(
         CoursewareOperationResult.Failure(CoursewareSyncFailure.NETWORK)
     }
 
+    override suspend fun streamResource(node: CoursewareNode, sink: StreamingFileSink, onProgress: (Long, Long) -> Unit) =
+        remote.streamResource(node, sink, onProgress)
+
     override suspend fun downloadTeachingCalendar(
         course: CoursewareCourse,
     ): CoursewareOperationResult<HomeworkFileContent> = remoteOperation {
@@ -549,7 +561,7 @@ private fun CoursewareSnapshot.unloadedFolders(): List<UnloadedCoursewareFolder>
     }
 }
 
-private fun CoursewareRemoteFailure.toSyncFailure(): CoursewareSyncFailure = when (this) {
+internal fun CoursewareRemoteFailure.toSyncFailure(): CoursewareSyncFailure = when (this) {
     CoursewareRemoteFailure.NETWORK -> CoursewareSyncFailure.NETWORK
     CoursewareRemoteFailure.SESSION_EXPIRED -> CoursewareSyncFailure.SESSION_EXPIRED
     CoursewareRemoteFailure.MALFORMED_RESPONSE -> CoursewareSyncFailure.MALFORMED_RESPONSE
