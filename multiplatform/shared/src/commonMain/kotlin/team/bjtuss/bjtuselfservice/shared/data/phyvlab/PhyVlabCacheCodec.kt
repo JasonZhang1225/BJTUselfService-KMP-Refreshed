@@ -70,6 +70,7 @@ private data class AssignmentDetailPayload(
     val courseId: Int,
     val activityId: Int,
     val description: String = "",
+    val descriptionHtml: String = "",
     val submissionStatus: String = "",
     val submissionDateText: String? = null,
     val submissionDateTimestamp: Long? = null,
@@ -123,6 +124,7 @@ internal fun encodePhyVlabCache(snapshot: PhyVlabCacheSnapshot): String = json.e
                 courseId = cached.courseId,
                 activityId = cached.activityId,
                 description = cached.detail.description,
+                descriptionHtml = cached.detail.descriptionHtml,
                 submissionStatus = cached.detail.submissionStatus,
                 submissionDateText = cached.detail.submissionDateText,
                 submissionDateTimestamp = cached.detail.submissionDateTimestamp,
@@ -202,6 +204,7 @@ internal fun decodePhyVlabCache(value: String): PhyVlabCacheSnapshot? = runCatch
             activityId = cached.activityId,
             detail = PhyVlabAssignmentDetail(
                 description = cached.description,
+                descriptionHtml = cached.descriptionHtml,
                 submissionStatus = cached.submissionStatus,
                 submissionDateText = cached.submissionDateText.takeIf { hasTrustedSubmission },
                 submissionDateTimestamp = cached.submissionDateTimestamp.takeIf { hasTrustedSubmission },

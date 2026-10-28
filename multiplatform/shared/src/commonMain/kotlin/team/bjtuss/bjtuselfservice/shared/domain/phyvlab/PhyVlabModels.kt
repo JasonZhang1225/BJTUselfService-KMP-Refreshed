@@ -32,6 +32,7 @@ data class PhyVlabSubmissionFile(
 /** 物理在线单项作业详情；不包含 sesskey、draft item 等短期会话参数。 */
 data class PhyVlabAssignmentDetail(
     val description: String = "",
+    val descriptionHtml: String = "",
     val submissionStatus: String = "",
     val submissionDateText: String? = null,
     val submissionDateTimestamp: Long? = null,
