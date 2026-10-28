@@ -65,6 +65,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNode
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.VisibleCoursewareNode
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
@@ -176,7 +177,11 @@ fun CoursewareWorkspace(
                                 }
                             }
                             HomeworkFileSaveResult.Cancelled -> "已取消导出，没有写入目录。"
-                            is HomeworkFileSaveResult.Failed -> "目录导出失败；没有报告为完整成功。"
+                            is HomeworkFileSaveResult.Failed -> when (exported.value.reason) {
+                                HomeworkFileGatewayFailure.PERMISSION_DENIED -> "目录导出失败：没有目标文件夹的写入权限，请重新选择并授权。"
+                                HomeworkFileGatewayFailure.UNAVAILABLE -> "目录导出失败：文件选择器正忙或不可用，请稍后重试。"
+                                HomeworkFileGatewayFailure.IO -> "目录导出失败：无法创建目录或写入文件，请检查所选位置和可用空间。"
+                            }
                         }
                     }
                 }
@@ -272,7 +277,7 @@ fun CoursewareWorkspace(
                 if (total > 0) LinearProgressIndicator(progress = { (written.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                 else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Text(
-                    formatCoursewareDownloadProgress(written, total, state.directoryCurrentSize),
+                    formatCoursewareDownloadProgress(written, total, state.directoryCurrentSize ?: state.streamListedSize),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -528,6 +533,8 @@ private fun CoursewareExpandedWorkspace(
             course = state.selectedCourse,
             node = state.selectedNode,
             isDownloading = state.isDownloading,
+            streamProgress = state.streamProgress.takeIf { state.streamNodeKey == state.selectedNodeKey },
+            streamListedSize = state.streamListedSize.takeIf { state.streamNodeKey == state.selectedNodeKey },
             fileGatewayAvailable = fileGatewayAvailable,
             directoryGatewayAvailable = directoryGatewayAvailable,
             onDownload = onDownload,
@@ -681,7 +688,8 @@ private fun CoursewareCompactWorkspace(
                 course = state.selectedCourse,
                 node = node,
                 isDownloading = state.isDownloading,
-                streamProgress = state.streamProgress,
+                streamProgress = state.streamProgress.takeIf { state.streamNodeKey == node.stableKey },
+                streamListedSize = state.streamListedSize.takeIf { state.streamNodeKey == node.stableKey },
                 fileGatewayAvailable = fileGatewayAvailable,
                 directoryGatewayAvailable = directoryGatewayAvailable,
                 onDownload = onDownload,
@@ -825,6 +833,8 @@ private fun CoursewareDetailPanel(
     course: CoursewareCourse?,
     node: CoursewareNode?,
     isDownloading: Boolean,
+    streamProgress: Pair<Long, Long>?,
+    streamListedSize: String?,
     fileGatewayAvailable: Boolean,
     directoryGatewayAvailable: Boolean,
     onDownload: (CoursewareNode) -> Unit,
@@ -845,6 +855,8 @@ private fun CoursewareDetailPanel(
                 course = course,
                 node = node,
                 isDownloading = isDownloading,
+                streamProgress = streamProgress,
+                streamListedSize = streamListedSize,
                 fileGatewayAvailable = fileGatewayAvailable,
                 directoryGatewayAvailable = directoryGatewayAvailable,
                 onDownload = onDownload,
@@ -861,6 +873,8 @@ private fun CoursewareDetailContent(
     course: CoursewareCourse?,
     node: CoursewareNode,
     isDownloading: Boolean,
+    streamProgress: Pair<Long, Long>?,
+    streamListedSize: String?,
     fileGatewayAvailable: Boolean,
     directoryGatewayAvailable: Boolean,
     onDownload: (CoursewareNode) -> Unit,
@@ -879,6 +893,8 @@ private fun CoursewareDetailContent(
             course = course,
             node = node,
             isDownloading = isDownloading,
+            streamProgress = streamProgress,
+            streamListedSize = streamListedSize,
             fileGatewayAvailable = fileGatewayAvailable,
             directoryGatewayAvailable = directoryGatewayAvailable,
             onDownload = onDownload,
@@ -898,6 +914,7 @@ private fun CoursewareDetailSheetBody(
     onExportDirectory: (String?, String) -> Unit,
     modifier: Modifier = Modifier,
     streamProgress: Pair<Long, Long>? = null,
+    streamListedSize: String? = null,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
@@ -962,7 +979,7 @@ private fun CoursewareDetailSheetBody(
             streamProgress?.let { (written, total) ->
                 if (total > 0) LinearProgressIndicator(progress = { (written.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                 else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text(if (total > 0) "${formatByteSize(written)} / ${formatByteSize(total)}" else "已下载 ${formatByteSize(written)}")
+                Text(formatCoursewareDownloadProgress(written, total, streamListedSize))
             }
             if (isDownloading && streamProgress == null) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())

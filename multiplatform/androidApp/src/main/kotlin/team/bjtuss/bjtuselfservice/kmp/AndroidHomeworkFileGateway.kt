@@ -362,9 +362,13 @@ class AndroidHomeworkFileGateway(
         var createdRoot: Uri? = null
         return try {
             context.ensureActive()
+            val parentDocument = DocumentsContract.buildDocumentUriUsingTree(
+                destination,
+                DocumentsContract.getTreeDocumentId(destination),
+            )
             val root = DocumentsContract.createDocument(
                 resolver,
-                destination,
+                parentDocument,
                 DocumentsContract.Document.MIME_TYPE_DIR,
                 safeExportPathSegment(directoryName),
             ) ?: throw FileNotFoundException()

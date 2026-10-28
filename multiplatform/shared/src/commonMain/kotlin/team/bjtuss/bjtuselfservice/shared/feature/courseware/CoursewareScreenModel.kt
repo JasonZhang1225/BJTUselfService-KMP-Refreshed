@@ -64,6 +64,8 @@ data class CoursewareUiState(
     val directoryExportSkipped: List<String> = emptyList(),
     /** 未开放下载文件边下边存时的进度（已写入字节, 总字节）。 */
     val streamProgress: Pair<Long, Long>? = null,
+    val streamNodeKey: String? = null,
+    val streamListedSize: String? = null,
     val source: CoursewareContentSource? = null,
     val failure: CoursewareSyncFailure? = null,
     val fileFailure: CoursewareSyncFailure? = null,
@@ -309,7 +311,10 @@ class CoursewareScreenModel(
             ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
         val node = findCoursewareNode(course.children, stableKey)?.takeIf { !it.isFolder }
             ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
-        mutableState.value = mutableState.value.copy(isDownloading = true, selectedNodeKey = node.stableKey, fileFailure = null)
+        mutableState.value = mutableState.value.copy(
+            isDownloading = true, selectedNodeKey = node.stableKey, fileFailure = null,
+            streamNodeKey = node.stableKey, streamListedSize = node.size.takeIf { it.isNotBlank() },
+        )
         try {
             val saved = gateway.saveStreamingFile(node.suggestedFileName(), "application/octet-stream") { sink ->
                 streamResourceWithRecovery(node, sink) { written, total ->
@@ -324,7 +329,7 @@ class CoursewareScreenModel(
             mutableState.value = mutableState.value.copy(fileFailure = reason)
             CoursewareOperationResult.Failure(reason)
         } finally {
-            mutableState.value = mutableState.value.copy(isDownloading = false, streamProgress = null)
+            mutableState.value = mutableState.value.copy(isDownloading = false, streamProgress = null, streamNodeKey = null, streamListedSize = null)
         }
     }
 
@@ -337,7 +342,7 @@ class CoursewareScreenModel(
             ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
         val node = findCoursewareNode(course.children, stableKey)?.takeIf { !it.isFolder }
             ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
-        mutableState.value = mutableState.value.copy(isDownloading = true, selectedNodeKey = node.stableKey, fileFailure = null)
+        mutableState.value = mutableState.value.copy(isDownloading = true, selectedNodeKey = node.stableKey, fileFailure = null, streamNodeKey = node.stableKey, streamListedSize = null)
         try {
             val plan = when (val planned = recoverOperation { repository.planStoredDownload(node) }) {
                 is CoursewareOperationResult.Failure -> {
@@ -351,6 +356,7 @@ class CoursewareScreenModel(
                 }
                 is CoursewareOperationResult.Success -> planned.value
             }
+            mutableState.value = mutableState.value.copy(streamListedSize = if (plan.isConvertedCopy) null else node.size.takeIf { it.isNotBlank() })
             val saved = try {
                 gateway.saveStreamingFile(plan.fileName, plan.contentType) { sink ->
                     repository.streamStoredDownload(plan, sink) { written, total ->
@@ -365,7 +371,7 @@ class CoursewareScreenModel(
             }
             CoursewareOperationResult.Success(saved)
         } finally {
-            mutableState.value = mutableState.value.copy(isDownloading = false, streamProgress = null)
+            mutableState.value = mutableState.value.copy(isDownloading = false, streamProgress = null, streamNodeKey = null, streamListedSize = null)
         }
     }
 

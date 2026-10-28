@@ -1,6 +1,6 @@
 # BJTUselfService 实时工作记忆
 
-> 2026-10-28：当前分支 `fix/courseware-streaming-save`，基于 `feat/courseware-fallback-playback` 的 `8e063741`；课件流式保存、批量进度和 Windows 现代保存面板待合入视频回放分支。其他平台的视频下载暂搁置。 最新 Windows 测试包 `交大自由行 KMP-2.0.0-Alpha-local-20261028-152439-059.msi` 已放下载文件夹，未安装。
+> 2026-10-28：当前分支 `fix/courseware-streaming-save`，基于 `feat/courseware-fallback-playback` 的 `8e063741`；提交 `aef782c0` 已推送，PR #74 指向 `feat/courseware-fallback-playback`；旧提交的手动 KMP 打包 run `40650703855` 成功，安全检查 run `40650707435` 的 Apple 任务取消；同提交 PR 自动安全检查 run `40650671363` 成功。课件流式保存、批量进度和 Windows 现代保存面板待合入视频回放分支；Android 目录 URI 与单文件大小修复已获用户认可，待合入回放分支。其他平台的视频下载暂搁置。 最新 Windows 测试包 `交大自由行 KMP-2.0.0-Alpha-local-20261028-152439-059.msi` 已放下载文件夹，未安装。
 
 > 2026-10-28：用户明确标记 **Windows 课程回放开发与本轮验收完成**；代码已提交推送 `133cf398` 到 `feat/courseware-fallback-playback`。四端审查标准随本轮文档提交；跨平台安全检查 run `40631769655` 四项全部通过。新 MSI `local-20261028-111451-103` 已在下载文件夹；代理未执行安装。沿用 2.0.0-Alpha / Build45，不改版本号，功能分支未合 main。
 >
@@ -132,6 +132,9 @@
 - 考试页紧凑端“考试详情”和“添加到日历”两个 sheet 由 `needsFullHeight` 改为 `fitContentHeight`：iOS 走按正文定高的自定义 detent，安卓/桌面底部 sheet 按内容高度展开；正文不再自带 verticalScroll，由 sheet 滚动。未在模拟器/真机验收。
 
 ## 进行中：课件大文件保存与 Windows 文件选择器（2026-10-28）
+
+- 平板反馈单文件页顶无总大小、右侧一直显示准备，以及 Android 整课/文件夹导出在旧版和本版均失败。源码确认单文件未传递列表标注大小，宽屏详情漏传进度；已修复并在无响应总长时注明“课件标注大小”，转换件不误用原文件大小。Android 原先把 OpenDocumentTree 返回的树 URI 直接作为 createDocument 的父文档 URI；现使用 getTreeDocumentId + buildDocumentUriUsingTree 构造目标文档 URI，失败提示区分授权与写入。修复原因是明确的 API 不匹配，但未连接 ADB，尚不能断言平板真实导出已成功。
+- 用户要求本地上传密钥签名 APK，暂不推送或远端打包。本地 `:shared:desktopTest --tests '*Courseware*' :windowsApp:compileKotlinWindows :desktopApp:compileKotlin :androidApp:assembleDebug -I ..\.artifacts\android-account-debug-signing.gradle --offline --no-configuration-cache --console=plain --continue` 成功，课件 84 项通过；随后不使用调试签名覆盖脚本，运行 `:androidApp:assembleDebug --offline --no-configuration-cache --console=plain` 成功。`apksigner verify` 验证签名与本机上传密钥证书一致，包名 `team.bjtuss.bjtuselfservice.kmp`，versionCode 45，arm64-v8a；APK dex 包含树 URI 转换、单文件大小状态及错误提示。测试包 `C:\Users\zjg\Downloads\交大自由行-KMP-2.0.0-Alpha-课件修复-local-20261028-155201-718-arm64.apk`，49,725,720 字节，SHA256 `59ED02117AB400320CC91060A5C9ABD5E8E18B8794EC5D503F95D768916BF577`，下载副本哈希一致。用户表示此版本可以；平板 SAF 的具体操作与结果未逐项记录，iOS/macOS 原生目标未验证。
 
 - 批量取消先确认，可选择保留已完成文件、舍弃本次目录、继续下载；未完成文件请求清理。非用户主动的协程取消默认保留已完成文件；保留时会话关闭失败不会转而删除目录，提示用户检查。测试覆盖首个文件完成后取消的两种选择，以及取消恰逢文件目标创建时清理句柄。初次边界测试失败，修复后重新运行通过；真实应用弹窗和实际文件系统交互、iOS 编译/云盘仍未验收。
 - 最新 Windows 测试包 `C:\Users\zjg\Downloads\交大自由行 KMP-2.0.0-Alpha-local-20261028-152439-059.msi`，88,829,952 字节，SHA256 `7F195EE79C84A24AF2076562D00C8A517126ECBE9F3243B61307C4280CD4A434`。课件专项与 Windows 测试、Android debug、桌面编译和 MSI 打包成功；解包核对共享 UI/模型、Windows 面板、回放 helper 与构建标识，下载副本哈希一致。未安装。证据 `.artifacts/courseware-cancel-package/`。

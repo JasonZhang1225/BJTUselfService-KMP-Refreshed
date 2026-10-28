@@ -121,7 +121,12 @@ class CoursewareScreenModelTest {
         val events = mutableListOf<String>()
         val firstChunk = CompletableDeferred<Unit>()
         val resume = CompletableDeferred<Unit>()
-        val repository = object : CoursewareRepository by FakeRepository(snapshot(), snapshot()) {
+        val base = snapshot()
+        val course = base.courses.single()
+        val sized = base.copy(courses = listOf(course.copy(children = course.children.map { node ->
+            if (node.isFolder) node.copy(children = node.children.map { it.copy(size = "96.29") }) else node
+        })))
+        val repository = object : CoursewareRepository by FakeRepository(sized, sized) {
             override suspend fun streamResource(node: CoursewareNode, sink: StreamingFileSink, onProgress: (Long, Long) -> Unit) {
                 events += "download"
                 sink.write(byteArrayOf(1, 2))
@@ -151,11 +156,15 @@ class CoursewareScreenModelTest {
         val job = async { model.saveResourceStreaming(resource().stableKey, gateway) }
         firstChunk.await()
         assertEquals(2L to 4L, model.state.value.streamProgress)
+        assertEquals("96.29", model.state.value.streamListedSize)
+        assertEquals(resource().stableKey, model.state.value.streamNodeKey)
         assertEquals(listOf("select", "download", "write:2"), events)
         resume.complete(Unit)
         assertEquals(HomeworkFileSaveResult.Saved, assertIs<CoursewareOperationResult.Success<HomeworkFileSaveResult>>(job.await()).value)
         assertEquals(listOf("select", "download", "write:2", "write:2", "commit"), events)
         assertEquals(null, model.state.value.streamProgress)
+        assertEquals(null, model.state.value.streamListedSize)
+        assertEquals(null, model.state.value.streamNodeKey)
     }
 
     @Test
