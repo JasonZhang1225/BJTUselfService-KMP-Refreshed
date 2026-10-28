@@ -1,5 +1,12 @@
 # BJTUselfService 实时工作记忆
 
+> 2026-10-28：当前分支 `fix/homework-rich-text`，基于视频回放分支 `feat/courseware-fallback-playback` 的 `8e063741`。物理在线作业要求保留换行和常见文字样式并兼容旧缓存；课程平台详情共用格式展示。共享格式、物理在线解析和缓存测试通过，Windows/桌面编译与 Android debug 构建通过；Apple 编译交 PR CI，真实页面及界面状态尚未验收。旧物理在线缓存需刷新详情才能获得格式。
+
+## 进行中：作业要求格式
+
+- 物理在线保存去除属性和主动内容的格式片段，同时保留纯文本供旧调用方使用；课程平台展示支持换行、粗体、斜体、下划线和删除线。图片与复杂网页布局仍需打开网页。
+- 本地执行 `:shared:desktopTest --tests *SchoolRichTextTest --tests *PhyVlabHtmlParserTest --tests *PhyVlabCacheCodecTest` 通过；`:windowsApp:compileKotlinWindows :desktopApp:compileKotlin :androidApp:assembleDebug` 通过（离线、Android debug 签名）。iOS/macOS 原生与设备视觉、真实服务器数据未验证。
+
 > 2026-10-28：用户明确标记 **Windows 课程回放开发与本轮验收完成**；代码已提交推送 `133cf398` 到 `feat/courseware-fallback-playback`。四端审查标准随本轮文档提交；跨平台安全检查 run `40631769655` 四项全部通过。新 MSI `local-20261028-111451-103` 已在下载文件夹；代理未执行安装。沿用 2.0.0-Alpha / Build45，不改版本号，功能分支未合 main。
 >
 > 2026-10-27：分支 `feat/courseware-fallback-playback`，回放与设备显示已提交 `19585a4a`，已合并远端 PR #72（`8847b785`），功能分支尚未合入 main。源码版本为 `2.0.0-Alpha` / Build 45，发布说明草稿 `docs/releases/v2.0.0-KMP.md`；iOS 系统版本与桌面安装器使用数字 `2.0.0`，iOS 最低 18.0。
