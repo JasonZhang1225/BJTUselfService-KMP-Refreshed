@@ -199,12 +199,14 @@ class AppDataGraph(
             runCatching { cacheStore.clearAccount(accountScope) }.isSuccess
         },
         prepareUninstall = {
+            playbackTaskManager.cancelAllAndJoin()
             val cleaner = team.bjtuss.bjtuselfservice.shared.feature.settings.platformLocalDataCleaner()
             val wiped = cleaner?.clearLocalData(cacheStore, removeAgent = true) == true
             if (wiped) onPurgeLogout(accountScope)
             wiped
         },
         wipeAllLocalData = {
+            playbackTaskManager.cancelAllAndJoin()
             val cleaner = team.bjtuss.bjtuselfservice.shared.feature.settings.platformLocalDataCleaner()
             if (cleaner != null) {
                 val wiped = cleaner.clearLocalData(cacheStore)
@@ -246,6 +248,28 @@ class AppDataGraph(
     )
     val coursewareModel = CoursewareScreenModel(
         repository = coursewareRepository,
+        reauthenticate = sessionRecovery::attempt,
+    )
+    /** 页面模型的作用域；Android 下载执行器另外由应用按账号持有，不随 [close] 销毁。 */
+    private val playbackScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
+    private val playbackRecovery = (homeworkFileGateway as? team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryProvider)?.playbackRecovery
+    val playbackTaskManager = playbackRecovery?.retainedManager(accountScope) ?: team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackTaskManager(
+        scope = playbackScope,
+        downloader = team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader(
+            transport = transport,
+            segmentSource = team.bjtuss.bjtuselfservice.shared.data.courseware.platformBackgroundSegmentSource(transport)
+                ?: team.bjtuss.bjtuselfservice.shared.data.courseware.DirectHlsSegmentSource(transport),
+        ),
+        compositor = { team.bjtuss.bjtuselfservice.shared.media.PlaybackPlatformHooks.effectiveCompositor },
+        backgroundHost = { team.bjtuss.bjtuselfservice.shared.media.PlaybackPlatformHooks.backgroundHost },
+        taskStore = playbackRecovery?.storeFor(accountScope),
+        restoreDestination = playbackRecovery?.let { recovery -> { token, name -> recovery.restoreDestination(token, name) } },
+    )
+    /** 页面请求随会话释放；下载任务由独立执行器管理，明确退出账号时才清理。 */
+    val playbackModel = team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackScreenModel(
+        repository = coursewareRepository,
+        taskManager = playbackTaskManager,
+        scope = playbackScope,
         reauthenticate = sessionRecovery::attempt,
     )
     val phyVlabRepository = DefaultPhyVlabRepository(SchoolPhyVlabRemoteDataSource(transport))
@@ -329,5 +353,6 @@ class AppDataGraph(
 
     fun close() {
         refreshCoordinator.close()
+        playbackModel.close()
     }
 }

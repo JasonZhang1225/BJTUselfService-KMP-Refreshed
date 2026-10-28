@@ -51,6 +51,7 @@
 - 改版本号要同步修改：`multiplatform/androidApp/build.gradle.kts`（versionName/versionCode）、`desktopApp/build.gradle.kts`（数值版本）、`windowsApp/build.gradle.kts`、`iosApp/iosApp/Info.plist`、`iosApp/CourseScheduleWidget/Info.plist`（版本与 Build 必须与宿主一致），以及 `shared/.../update/AppUpdateChecker.kt` 的 `CURRENT_VERSION` 和 `AppUpdateCheckerTest`。
 - iOS 最低系统为 18.0（实时活动的 Apple Watch 视图与分钟计时依赖 iOS 18）：宿主 `Config.xcconfig` 与小组件 `Widget.xcconfig` 必须一致，由 `kmp-security-check.yml` 与 `SecurityReleaseConfigTest` 断言；调整时三处同步，并在发布说明写明。
 - 技术栈：Kotlin Multiplatform + Compose Multiplatform/Material 3；Ktor；Ksoup 解析 HTML；`kotlinx.serialization`；SQLDelight 缓存；凭据走 Android Keystore / Apple Keychain / macOS `MacOsSecretBag` / Windows DPAPI；各端都不再内置验证码识别模型（统一用 `UnavailableCaptchaRecognizer`），需要验证码时显示图片、由用户手动输入。MIS 统一认证默认免验证码，旧的数字算式验证码已不再出现，新的字母验证码原有模型识别不了；Android ONNX（`BJTUCaptcha.onnx`）与 iOS/macOS Core ML（`BJTUCaptcha.mlpackage`）模型已于 1.8.6（PR #45）移除，同样可从存档标签 `archive/legacy-android-and-captcha-model` 取回。
+- Android 签名：本机（Windows）的上传密钥在 `C:\Users\zjg\.android\bjtu-kmp-upload.keystore`；`androidApp/build.gradle.kts` 默认也找 `~/.android/bjtu-kmp-upload.keystore`，可用环境变量 `BJTU_ANDROID_KEYSTORE` 覆盖。密钥口令不写进仓库：放环境变量 `BJTU_ANDROID_STORE_PASSWORD` / `BJTU_ANDROID_KEY_ALIAS` / `BJTU_ANDROID_KEY_PASSWORD`，或 `~/.gradle/gradle.properties` 的 `bjtuAndroidStorePassword` / `bjtuAndroidKeyAlias` / `bjtuAndroidKeyPassword`（CI 用同名 GitHub Secrets）。没有口令就编不了 Android 包；只在模拟器上验证时可以临时用 `~/.android/debug.keystore`（口令 `android`、别名 `androiddebugkey`），但那包不能覆盖安装正式版。
 - 本机验证产物（截图、导出、诊断日志）放忽略目录 `.artifacts/`，不进 Git。
 
 ## 工作方式

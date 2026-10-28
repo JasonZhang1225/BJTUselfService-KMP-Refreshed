@@ -36,6 +36,9 @@ import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePreviewResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.StreamingDestination
+import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
+import team.bjtuss.bjtuselfservice.shared.files.StreamingSinkIoException
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryFile
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryOpenResult
@@ -46,7 +49,9 @@ import team.bjtuss.bjtuselfservice.shared.files.safeExportPathSegment
 
 class AndroidHomeworkFileGateway(
     private val activity: ComponentActivity,
-) : HomeworkFileGateway, CoursewareDirectoryGateway, DefaultLifecycleObserver {
+) : HomeworkFileGateway, CoursewareDirectoryGateway, DefaultLifecycleObserver,
+    team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryProvider {
+    override val playbackRecovery = team.bjtuss.bjtuselfservice.kmp.playback.AndroidPlaybackRecovery(activity.applicationContext)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var pickContinuation: CancellableContinuation<HomeworkFilePickResult>? = null
     private var saveContinuation: CancellableContinuation<HomeworkFileSaveResult>? = null
@@ -54,6 +59,17 @@ class AndroidHomeworkFileGateway(
     private var directoryContinuation: CancellableContinuation<CoursewareDirectoryOpenResult>? = null
     private var pendingDirectoryName: String? = null
     private var directoryOpenJob: Job? = null
+    private var streamUriContinuation: CancellableContinuation<Uri?>? = null
+
+    private val streamSaveLauncher = activity.registerForActivityResult(
+        // 用通用类型而不是具体媒体类型：系统“创建文档”会按 MIME 补扩展名，
+        // 之前写死 video/mp2t 会把回放下载的 MP4 存成“xxx.mp4.ts”。文件名里已经带正确扩展名。
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri ->
+        val continuation = streamUriContinuation ?: return@registerForActivityResult
+        streamUriContinuation = null
+        if (continuation.isActive) continuation.resume(uri)
+    }
 
     private val pickLauncher = activity.registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
@@ -224,6 +240,44 @@ class AndroidHomeworkFileGateway(
         }
     }
 
+    override val isStreamingSaveAvailable: Boolean = true
+
+    /**
+     * 回放等大文件：先用系统“创建文档”选好位置，之后（可在后台服务里）分块写入该文档。
+     * 写入在 applicationContext 的 ContentResolver 上进行，发起页面关掉也不影响；
+     * abort 时删除这个未完成的文档。
+     */
+    override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
+        if (hasActiveRequest()) {
+            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        }
+        val uri = suspendCancellableCoroutine<Uri?> { continuation ->
+            streamUriContinuation = continuation
+            continuation.invokeOnCancellation {
+                if (streamUriContinuation === continuation) streamUriContinuation = null
+            }
+            streamSaveLauncher.launch(safeExportFileName(fileName))
+        } ?: return StreamingDestinationResult.Cancelled
+        val resolver = activity.applicationContext.contentResolver
+        return try {
+            // CreateDocument 的授权要持久化，进程退出后才能重新打开同一保存目标。
+            runCatching { resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+            val output = withContext(Dispatchers.IO) { resolver.openOutputStream(uri, "wt") }
+            if (output == null) {
+                withContext(Dispatchers.IO) { runCatching { DocumentsContract.deleteDocument(resolver, uri) } }
+                StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+            } else {
+                StreamingDestinationResult.Opened(
+                    ContentStreamingDestination(resolver, uri, output, displayName(uri) ?: safeExportFileName(fileName)),
+                )
+            }
+        } catch (_: SecurityException) {
+            StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+        } catch (_: FileNotFoundException) {
+            StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+        }
+    }
+
     override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult {
         if (hasActiveRequest()) {
             return CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
@@ -255,6 +309,8 @@ class AndroidHomeworkFileGateway(
                 CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE),
             )
         }
+        if (streamUriContinuation?.isActive == true) streamUriContinuation?.resume(null)
+        streamUriContinuation = null
         pickContinuation = null
         saveContinuation = null
         pendingSaveFile = null
@@ -395,7 +451,8 @@ class AndroidHomeworkFileGateway(
     }
 
     private fun hasActiveRequest(): Boolean =
-        pickContinuation != null || saveContinuation != null || directoryContinuation != null
+        pickContinuation != null || saveContinuation != null || directoryContinuation != null ||
+            streamUriContinuation != null
 
     private fun displayName(uri: Uri): String? = activity.contentResolver.query(
         uri,
@@ -407,5 +464,66 @@ class AndroidHomeworkFileGateway(
         if (!cursor.moveToFirst()) return@use null
         val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
         if (index < 0) null else cursor.getString(index)
+    }
+}
+
+internal class ContentStreamingDestination(
+    private val resolver: android.content.ContentResolver,
+    private val uri: Uri,
+    private var output: java.io.OutputStream?,
+    override val displayName: String,
+) : StreamingDestination {
+    override val recoveryToken: String get() = uri.toString()
+    private var finished = false
+    private var committed = false
+    override suspend fun closeForRecovery() = withContext(NonCancellable + Dispatchers.IO) {
+        runCatching { output?.close() }
+        output = null
+    }
+    override suspend fun write(bytes: ByteArray) {
+        try {
+            withContext(Dispatchers.IO) {
+                if (finished) throw StreamingSinkIoException()
+                val stream = output ?: resolver.openOutputStream(uri, "wt")?.also { output = it } ?: throw StreamingSinkIoException()
+                stream.write(bytes)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            throw StreamingSinkIoException(error)
+        }
+    }
+
+    override suspend fun commit(): HomeworkFileSaveResult = withContext(Dispatchers.IO) {
+        try {
+            output?.flush()
+            output?.close()
+            output = null
+            finished = true
+            committed = true
+            runCatching { resolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+            HomeworkFileSaveResult.Saved
+        } catch (_: Exception) {
+            HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+        }
+    }
+
+    override suspend fun abort() {
+        runCatching { abortForCleanup() }.onFailure {
+            android.util.Log.w("AndroidFileGateway", "deleteDocument failed: ${it.javaClass.simpleName}")
+        }
+    }
+
+    override suspend fun abortForCleanup() {
+        withContext(NonCancellable + Dispatchers.IO) {
+            if (committed) return@withContext
+            runCatching { output?.close() }
+            output = null
+            finished = true
+            if (!DocumentsContract.deleteDocument(resolver, uri)) {
+                throw java.io.IOException("无法删除未完成的保存目标")
+            }
+            runCatching { resolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+        }
     }
 }

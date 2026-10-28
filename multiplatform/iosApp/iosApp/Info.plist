@@ -2,12 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>team.bjtuss.bjtuselfservice.kmp.ios.liveactivity</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).playback.task</string>
 	</array>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>zh_CN</string>
 	<key>CFBundleDisplayName</key>
@@ -23,19 +24,13 @@
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.8.6-KMP</string>
+	<string>2.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>44</string>
+	<string>45</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>用于创建“本学期课表”“选课课表”和单场考试日历，并在再次加入时更新同一日程。</string>
-	<key>NSCalendarsUsageDescription</key>
-	<string>用于把你主动选择的课程表或单场考试加入系统日历。</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>用于把校园卡、校园网缴费二维码保存到相册，方便在微信扫一扫中从相册识别。</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSExceptionDomains</key>
@@ -57,7 +52,15 @@
 			</dict>
 		</dict>
 	</dict>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>用于创建“本学期课表”“选课课表”和单场考试日历，并在再次加入时更新同一日程。</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>用于把你主动选择的课程表或单场考试加入系统日历。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>用于把校园卡、校园网缴费二维码保存到相册，方便在微信扫一扫中从相册识别。</string>
 	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

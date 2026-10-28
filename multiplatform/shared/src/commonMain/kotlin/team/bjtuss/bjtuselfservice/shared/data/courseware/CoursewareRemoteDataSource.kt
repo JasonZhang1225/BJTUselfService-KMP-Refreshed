@@ -17,7 +17,11 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareCourse
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNode
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNodeKind
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareSnapshot
+import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackDetail
+import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackLesson
+import team.bjtuss.bjtuselfservice.shared.data.homework.isSchoolPlaybackStreamUrl
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.StreamingFileSink
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
@@ -30,12 +34,30 @@ private const val COURSE_PATH = "/ve/back/coursePlatform/course.shtml"
 private const val RESOURCE_PATH = "/ve/back/coursePlatform/courseResource.shtml"
 private const val DOWNLOAD_TICKET_PATH = "/ve/back/resourceSpace.shtml"
 private const val COURSE_PLATFORM_PATH = "/ve/back/coursePlatform/coursePlatform.shtml"
+private const val RESOURCE_INFO_PATH = "/ve/back/coursePlatform/courseResource.shtml"
+private const val PLAYBACK_PATH = "/ve/back/rp/common/teachCalendar.shtml"
+/** 课程平台左侧“视频回放”模块编号；打开它的页面才会内联当前用户的 uId。 */
+private const val PLAYBACK_MODULE_PAGE = "10480"
+/** 目录导出等仍需整块读入内存的场景，备用路径上的文件超过此大小就跳过，改为单独下载。 */
+private const val STORED_IN_MEMORY_LIMIT_BYTES = 150L * 1024 * 1024
+private const val STORED_RANGE_CHUNK_BYTES = 4L * 1024 * 1024
+
+data class CoursewareStoredDownload(
+    val url: String,
+    val fileName: String,
+    val contentType: String,
+    val totalBytes: Long,
+    /** true 表示原文件取不到，拿的是平台在线预览用的转换件（PDF 或转码视频）。 */
+    val isConvertedCopy: Boolean,
+)
 
 enum class CoursewareRemoteFailure {
     NETWORK,
     SESSION_EXPIRED,
     MALFORMED_RESPONSE,
     SECURE_CHANNEL_UNAVAILABLE,
+    /** 文件太大，不能整块读进内存（只出现在备用下载的内存路径上）。 */
+    TOO_LARGE,
 }
 
 class CoursewareRemoteException(
@@ -48,6 +70,18 @@ interface CoursewareRemoteDataSource {
         throw CoursewareRemoteException(CoursewareRemoteFailure.MALFORMED_RESPONSE)
     suspend fun downloadResource(node: CoursewareNode): HomeworkFileContent
     suspend fun downloadTeachingCalendar(course: CoursewareCourse): HomeworkFileContent
+    /** 未开放下载文件的备用路径：先确定实际可读的存储地址与文件名，再由 [streamStoredDownload] 分段写盘。 */
+    suspend fun planStoredDownload(node: CoursewareNode): CoursewareStoredDownload =
+        throw CoursewareRemoteException(CoursewareRemoteFailure.MALFORMED_RESPONSE)
+    suspend fun streamStoredDownload(
+        plan: CoursewareStoredDownload,
+        sink: StreamingFileSink,
+        onProgress: (written: Long, total: Long) -> Unit,
+    ): Unit = throw CoursewareRemoteException(CoursewareRemoteFailure.MALFORMED_RESPONSE)
+    suspend fun fetchPlaybackLessons(course: CoursewareCourse): List<PlaybackLesson> =
+        throw CoursewareRemoteException(CoursewareRemoteFailure.MALFORMED_RESPONSE)
+    suspend fun fetchPlaybackDetail(course: CoursewareCourse, lesson: PlaybackLesson): PlaybackDetail =
+        throw CoursewareRemoteException(CoursewareRemoteFailure.MALFORMED_RESPONSE)
 }
 
 class SchoolCoursewareRemoteDataSource(
@@ -60,6 +94,7 @@ class SchoolCoursewareRemoteDataSource(
     private var initialized = false
     private var sessionId: String? = null
     private var courses: List<SmartCourse> = emptyList()
+    private var platformUserId: String? = null
 
     override suspend fun fetchSnapshot(): CoursewareSnapshot {
         ensureInitialized()
@@ -122,6 +157,148 @@ class SchoolCoursewareRemoteDataSource(
     override suspend fun downloadResource(node: CoursewareNode): HomeworkFileContent {
         require(node.kind == CoursewareNodeKind.RESOURCE && node.rpId.isNotBlank())
         ensureInitialized()
+        // 老师未开放下载时网页不给按钮，下载票据换来的 download.shtml 也只会 500；
+        // 直接改走存储路径。开放下载的文件仍优先走网页同款票据，失败（非 2xx）再兜底。
+        if (!node.downloadAllowed) return downloadStoredResource(node)
+        return try {
+            downloadTicketResource(node)
+        } catch (error: CoursewareRemoteException) {
+            if (error.reason != CoursewareRemoteFailure.NETWORK) throw error
+            runCatching { downloadStoredResource(node) }
+                .getOrElse { fallback -> if (fallback is CancellationException) throw fallback else throw error }
+        }
+    }
+
+    /**
+     * 备用下载（整块读入内存，供目录导出等需要字节的场景）：按 [planStoredDownload] 选出的地址读取。
+     * 超过 [STORED_IN_MEMORY_LIMIT_BYTES] 的文件不在这里读，避免手机内存不足闪退。
+     */
+    private suspend fun downloadStoredResource(node: CoursewareNode): HomeworkFileContent {
+        val plan = planStoredDownload(node)
+        if (plan.totalBytes > STORED_IN_MEMORY_LIMIT_BYTES) throw CoursewareRemoteException(CoursewareRemoteFailure.TOO_LARGE)
+        val response = execute(
+            SchoolHttpRequest(
+                method = SchoolHttpMethod.GET,
+                url = plan.url,
+                headers = buildHeaders(includeSession = false),
+                largeTransfer = true,
+            ),
+        )
+        if (response.statusCode !in 200..299 || response.body.isEmpty()) network()
+        if (!endpoint.acceptsResourceUrl(response.finalUrl)) secureChannelUnavailable()
+        return HomeworkFileContent(fileName = plan.fileName, contentType = plan.contentType, bytes = response.body)
+    }
+
+    /**
+     * `queryRpInfoById` 取服务器存储路径，逐个候选用 1 字节 Range 请求确认可读并拿到总长度：
+     * 先原文件（`RP_PATH_1`），再在线预览用的转换件（`RP_PATH_2`，文档是 PDF、视频是转码 MP4）。
+     * 转换件的扩展名与原文件不同时按实际扩展名命名，免得保存出打不开的文件。
+     */
+    override suspend fun planStoredDownload(node: CoursewareNode): CoursewareStoredDownload {
+        require(node.kind == CoursewareNodeKind.RESOURCE && node.rpId.isNotBlank())
+        ensureInitialized()
+        val info = smartGet(
+            path = RESOURCE_INFO_PATH,
+            query = linkedMapOf("method" to "queryRpInfoById", "rpId" to node.rpId),
+        )
+        val paths = when (val parsed = parseCoursewareStoredPaths(info.bodyText())) {
+            is CoursewareJsonParseResult.Failure -> {
+                if (info.looksLikeHtmlPage()) {
+                    invalidateSession()
+                    sessionExpired()
+                }
+                malformed()
+            }
+            is CoursewareJsonParseResult.Success -> parsed.value
+        }
+        var lastFailure = CoursewareRemoteFailure.MALFORMED_RESPONSE
+        for ((path, converted) in listOf(paths.originalPath to false, paths.previewPath to true)) {
+            if (path.isBlank()) continue
+            val url = endpoint.storedResourceUrl(path)
+            if (url == null) {
+                lastFailure = CoursewareRemoteFailure.SECURE_CHANNEL_UNAVAILABLE
+                continue
+            }
+            val head = execute(
+                SchoolHttpRequest(
+                    method = SchoolHttpMethod.GET,
+                    url = url,
+                    headers = buildHeaders(includeSession = false) + ("Range" to "bytes=0-0"),
+                ),
+            )
+            val total = head.totalLengthFromRange()
+            if (head.statusCode !in 200..299 || total == null || total <= 0L ||
+                !endpoint.acceptsResourceUrl(head.finalUrl) ||
+                // 静态目录找不到文件时可能回一张 HTML 错误页，不能当成课件保存。
+                (head.looksLikeHtmlPage() && !node.extension.trim().equals("html", ignoreCase = true))
+            ) {
+                lastFailure = CoursewareRemoteFailure.NETWORK
+                continue
+            }
+            val storedExtension = path.substringAfterLast('/').substringAfterLast('.', "").lowercase()
+            val originalExtension = node.extension.trim().trimStart('.').lowercase()
+            val renamed = converted && storedExtension.isNotBlank() && storedExtension != originalExtension
+            return CoursewareStoredDownload(
+                url = url,
+                fileName = if (renamed) node.fileNameWithExtension(storedExtension) else node.suggestedFileName(),
+                contentType = head.contentTypeOrDefault(),
+                totalBytes = total,
+                isConvertedCopy = converted,
+            )
+        }
+        throw CoursewareRemoteException(lastFailure)
+    }
+
+    override suspend fun streamStoredDownload(
+        plan: CoursewareStoredDownload,
+        sink: StreamingFileSink,
+        onProgress: (written: Long, total: Long) -> Unit,
+    ) {
+        if (!endpoint.acceptsResourceUrl(plan.url)) secureChannelUnavailable()
+        var offset = 0L
+        onProgress(0L, plan.totalBytes)
+        // 逐段取、按序写：课件直写用户选好的文件，服务器的并发 Range 行为没有实测过，
+        // 这里保持串行（课程回放的 HLS 分片才是并发抓的）。
+        while (offset < plan.totalBytes) {
+            val end = minOf(offset + STORED_RANGE_CHUNK_BYTES, plan.totalBytes) - 1
+            val chunk = fetchRangeWithRetry(plan.url, offset, end)
+            sink.write(chunk)
+            offset += chunk.size
+            onProgress(offset, plan.totalBytes)
+        }
+    }
+
+    private suspend fun fetchRangeWithRetry(url: String, start: Long, end: Long): ByteArray {
+        var attempt = 0
+        while (true) {
+            attempt++
+            val body = try {
+                val response = execute(
+                    SchoolHttpRequest(
+                        method = SchoolHttpMethod.GET,
+                        url = url,
+                        headers = buildHeaders(includeSession = false) + ("Range" to "bytes=$start-$end"),
+                        largeTransfer = true,
+                    ),
+                )
+                // 只接受与请求区间一致的 206；服务器忽略 Range 回整文件时不能拼进去。
+                if (response.statusCode == 206 && response.contentRangeStart() == start &&
+                    response.body.size.toLong() == end - start + 1 && endpoint.acceptsResourceUrl(response.finalUrl)
+                ) {
+                    response.body
+                } else {
+                    null
+                }
+            } catch (error: CoursewareRemoteException) {
+                null
+            }
+            if (body != null) return body
+            if (attempt >= 3) network()
+            delay(500L * attempt)
+        }
+    }
+
+    private suspend fun downloadTicketResource(node: CoursewareNode): HomeworkFileContent {
         val ticketResponse = smartRequest(
             method = SchoolHttpMethod.POST,
             path = DOWNLOAD_TICKET_PATH,
@@ -206,6 +383,59 @@ class SchoolCoursewareRemoteDataSource(
             contentType = "application/pdf",
             bytes = response.body,
         )
+    }
+
+    override suspend fun fetchPlaybackLessons(course: CoursewareCourse): List<PlaybackLesson> {
+        ensureInitialized()
+        if (courses.none { it.id == course.id }) malformed()
+        val response = smartGet(
+            path = PLAYBACK_PATH,
+            query = linkedMapOf("method" to "toDisplyTeachCourses", "courseId" to course.id.toString()),
+        )
+        return when (val parsed = parsePlaybackLessons(response.bodyText(), course.id)) {
+            is CoursewareJsonParseResult.Failure -> malformed()
+            is CoursewareJsonParseResult.Success -> parsed.value
+        }
+    }
+
+    override suspend fun fetchPlaybackDetail(course: CoursewareCourse, lesson: PlaybackLesson): PlaybackDetail {
+        ensureInitialized()
+        if (courses.none { it.id == course.id } || lesson.courseId != course.id) malformed()
+        val userId = platformUserId ?: loadPlatformUserId(course).also { platformUserId = it }
+        val response = smartGet(
+            path = PLAYBACK_PATH,
+            query = linkedMapOf(
+                "method" to "toDisplyCourseSchedDetail",
+                "courseSchedId" to lesson.id.toString(),
+                "userLevel" to "1",
+                "userId" to userId,
+            ),
+        )
+        return when (val parsed = parsePlaybackDetail(response.bodyText(), lesson, ::isSchoolPlaybackStreamUrl)) {
+            is CoursewareJsonParseResult.Failure -> {
+                // uId 与会话不匹配时学校只回 {"STATUS":"4","message":"出现异常"}；下次重新读取。
+                platformUserId = null
+                malformed()
+            }
+            is CoursewareJsonParseResult.Success -> parsed.value
+        }
+    }
+
+    private suspend fun loadPlatformUserId(course: CoursewareCourse): String {
+        val page = smartGet(
+            path = COURSE_PLATFORM_PATH,
+            query = linkedMapOf(
+                "method" to "toCoursePlatform",
+                "courseToPage" to PLAYBACK_MODULE_PAGE,
+                "courseId" to course.courseNumber,
+                "dataSource" to "1",
+                "cId" to course.id.toString(),
+                "xkhId" to course.groupId,
+                "xqCode" to course.semesterCode,
+                "teacherId" to (course.teacherId?.toString() ?: ""),
+            ),
+        )
+        return parseCoursePlatformUserId(page.bodyText()) ?: malformed()
     }
 
     private suspend fun ensureInitialized() {
@@ -325,6 +555,7 @@ class SchoolCoursewareRemoteDataSource(
     private fun invalidateSession() {
         initialized = false
         sessionId = null
+        platformUserId = null
         courses = emptyList()
     }
 
@@ -372,6 +603,26 @@ private fun CoursewareNode.suggestedFileName(): String {
         "$clean.$normalizedExtension"
     }
 }
+
+private fun CoursewareNode.fileNameWithExtension(newExtension: String): String {
+    val clean = name.substringAfterLast('/').substringAfterLast('\\').ifBlank { "resource" }
+    val extension = extension.trim().trimStart('.')
+    val base = if (extension.isNotBlank() && clean.endsWith(".$extension", ignoreCase = true)) {
+        clean.dropLast(extension.length + 1)
+    } else {
+        clean
+    }
+    return if (base.endsWith(".$newExtension", ignoreCase = true)) base else "$base.$newExtension"
+}
+
+/** `Content-Range: bytes 0-0/322420000` 里的总长度；服务器不认 Range 回 200 时退回 Content-Length。 */
+private fun SchoolHttpResponse.totalLengthFromRange(): Long? {
+    header("Content-Range")?.substringAfterLast('/')?.trim()?.toLongOrNull()?.let { return it }
+    return if (statusCode == 200) header("Content-Length")?.trim()?.toLongOrNull() ?: body.size.toLong().takeIf { it > 0 } else null
+}
+
+private fun SchoolHttpResponse.contentRangeStart(): Long? =
+    header("Content-Range")?.removePrefix("bytes")?.trim()?.substringBefore('-')?.trim()?.toLongOrNull()
 
 private fun SchoolHttpResponse.contentTypeOrDefault(): String = headers.entries
     .firstOrNull { (name, _) -> name.equals("Content-Type", ignoreCase = true) }

@@ -36,6 +36,9 @@ class MainActivity : ComponentActivity() {
         CourseLiveUpdates.attachPermissionRequester {
             notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
         }
+        // 课程回放下载/合成时的保活：前台服务负责通知栏进度，任务本身仍在会话作用域里跑。
+        team.bjtuss.bjtuselfservice.shared.media.PlaybackPlatformHooks.backgroundHost =
+            team.bjtuss.bjtuselfservice.kmp.playback.AndroidPlaybackBackgroundHost(applicationContext)
         enableImmersiveEdgeToEdge()
         // 调试日志只在 debug 构建开启；release 保持关闭。
         AppLog.enabled = BuildConfig.DEBUG

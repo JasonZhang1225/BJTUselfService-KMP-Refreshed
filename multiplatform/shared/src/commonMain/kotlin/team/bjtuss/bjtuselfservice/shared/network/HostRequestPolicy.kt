@@ -28,15 +28,18 @@ data class HostRequestPolicy(
 internal const val AA_HOST = "aa.bjtu.edu.cn"
 internal const val HTTP_SERVICE_UNAVAILABLE = 503
 
-fun defaultHostRequestPolicy(host: String): HostRequestPolicy = when (host) {
-    AA_HOST -> HostRequestPolicy(
+fun defaultHostRequestPolicy(host: String): HostRequestPolicy = when {
+    host == AA_HOST -> HostRequestPolicy(
         maxConcurrent = 1,
         minStartIntervalMillis = 400,
         throttleRetryDelaysMillis = listOf(1_000, 2_000, 4_000),
     )
-    "cas.bjtu.edu.cn", "sso.bjtu.edu.cn" -> HostRequestPolicy(maxConcurrent = 1)
+    host == "cas.bjtu.edu.cn" || host == "sso.bjtu.edu.cn" -> HostRequestPolicy(maxConcurrent = 1)
     // 智慧教学（作业/课件）：原 Android 由 OkHttp 默认每主机 5 并发。
-    "123.121.147.7", "bksycenter.bjtu.edu.cn" -> HostRequestPolicy(maxConcurrent = 5)
+    host == "123.121.147.7" || host == "bksycenter.bjtu.edu.cn" -> HostRequestPolicy(maxConcurrent = 5)
+    // 录播服务器（lmtN.bjtu.edu.cn:8880）：课程回放要并发抓分片，给 4 条连接，
+    // 与共享层的分片并发数一致；录播服务器本来就是给浏览器多路播放用的。
+    host.startsWith("lmt") && host.endsWith(".bjtu.edu.cn") -> HostRequestPolicy(maxConcurrent = 4)
     else -> HostRequestPolicy(maxConcurrent = 2)
 }
 

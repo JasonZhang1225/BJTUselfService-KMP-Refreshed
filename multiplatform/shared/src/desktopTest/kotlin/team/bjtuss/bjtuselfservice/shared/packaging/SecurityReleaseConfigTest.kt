@@ -178,7 +178,9 @@ class SecurityReleaseConfigTest {
     fun debugSecuritySmokeActivityRequiresSignaturePermission() {
         val manifest = root.resolve("multiplatform/androidApp/src/debug/AndroidManifest.xml").readText()
         assertTrue("android:protectionLevel=\"signature\"" in manifest)
-        assertTrue("android:permission=\"team.bjtuss.bjtuselfservice.kmp.permission.SECURITY_SMOKE\"" in manifest)
+        val permission = "${'$'}{applicationId}.permission.SECURITY_SMOKE"
+        assertTrue("android:name=\"$permission\"" in manifest)
+        assertTrue("android:permission=\"$permission\"" in manifest)
     }
 
     @Test
@@ -201,6 +203,22 @@ class SecurityReleaseConfigTest {
         listOf("iosApp/Info.plist", "CourseScheduleWidget/Info.plist").forEach { plist ->
             val text = root.resolve("multiplatform/iosApp/$plist").readText()
             assertTrue(Regex("<key>CFBundleVersion</key>\\s*<string>$build</string>").containsMatchIn(text), plist)
+        }
+    }
+
+    @Test
+    fun releaseVersionMatchesEveryPlatform() {
+        val version = team.bjtuss.bjtuselfservice.shared.update.AppUpdateChecker.CURRENT_VERSION
+        val numericVersion = version.substringBefore('-')
+        val android = root.resolve("multiplatform/androidApp/build.gradle.kts").readText()
+        assertTrue("versionName = \"$version\"" in android)
+        val desktop = root.resolve("multiplatform/desktopApp/build.gradle.kts").readText()
+        assertTrue("desktopPackageVersion = \"$numericVersion\"" in desktop)
+        val windows = root.resolve("multiplatform/windowsApp/build.gradle.kts").readText()
+        assertTrue("packageVersion = \"$numericVersion\"" in windows)
+        listOf("iosApp/Info.plist", "CourseScheduleWidget/Info.plist").forEach { plist ->
+            val text = root.resolve("multiplatform/iosApp/$plist").readText()
+            assertTrue(Regex("<key>CFBundleShortVersionString</key>\\s*<string>${Regex.escape(numericVersion)}</string>").containsMatchIn(text), plist)
         }
     }
 }

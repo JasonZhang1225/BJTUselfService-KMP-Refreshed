@@ -1,16 +1,24 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <permission
-        android:name="team.bjtuss.bjtuselfservice.kmp.permission.SECURITY_SMOKE"
+        android:name="${applicationId}.permission.SECURITY_SMOKE"
         android:protectionLevel="signature" />
     <application>
+        <activity android:name=".playback.PlaybackVisualTestActivity" android:exported="true" android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|uiMode" />
         <activity
             android:name=".SecuritySmokeActivity"
             android:exported="true"
-            android:permission="team.bjtuss.bjtuselfservice.kmp.permission.SECURITY_SMOKE" />
+            android:permission="${applicationId}.permission.SECURITY_SMOKE" />
         <!-- 仅 debug：用虚构课程验证实时动态；只显示一条本应用的通知，不读写账号数据。 -->
         <activity
             android:name=".LiveUpdateSmokeActivity"
             android:exported="true"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <!-- 仅 debug 构建：回放管线自测入口（remux / compose / notify），release 包不含。 -->
+        <activity
+            android:name=".playback.PlaybackSelfTestActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
     </application>
 </manifest>

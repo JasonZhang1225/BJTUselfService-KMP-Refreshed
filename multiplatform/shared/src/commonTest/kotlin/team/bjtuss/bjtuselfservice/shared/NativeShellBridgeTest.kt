@@ -48,6 +48,9 @@ class NativeShellBridgeTest {
         assertEquals("物理实验账号设置", nativeRouteTitle("PHYSICS_LAB_SETTINGS"))
         assertEquals("校历下载", nativeRouteTitle("CALENDAR"))
         assertEquals("邮件详情", nativeRouteTitle(MAILBOX_DETAIL_ROUTE_ID))
+        assertEquals("回放播放与下载", nativeRouteTitle("PLAYBACK_DETAIL"))
+        assertFalse(isNativeTabRoute("PLAYBACK_DETAIL"))
+        assertTrue(shouldOpenNativeSectionRoute("PLAYBACK_DETAIL", useNativeSecondaryRoutes = true))
         // 写信页的返回要先取消草稿，标题栏仍归页面自己，宿主不得抢先显示。
         assertEquals("", nativeRouteTitle(MAILBOX_COMPOSE_ROUTE_ID))
         assertEquals("", nativeRouteTitle("UNKNOWN_ROUTE"))

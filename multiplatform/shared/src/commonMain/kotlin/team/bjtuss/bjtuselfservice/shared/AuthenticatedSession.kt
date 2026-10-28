@@ -74,6 +74,8 @@ class AuthenticatedSession(
     val refreshCoordinator: team.bjtuss.bjtuselfservice.shared.sync.AppRefreshCoordinator? = null,
     /** 手机/平板的 ChatGPT 插件（每次刷新后上传快照）；电脑端由宿主另行提供常驻控制器，这里为 null。 */
     val remoteAgent: team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteAgentController? = null,
+    /** 课件页“课程回放”分段；预览/探针会话可为 null，界面隐藏该分段。 */
+    val playbackModel: team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackScreenModel? = null,
 ) {
     private val appResumeGenerationState = MutableStateFlow(0L)
     private val appForegroundGenerationState = MutableStateFlow(0L)

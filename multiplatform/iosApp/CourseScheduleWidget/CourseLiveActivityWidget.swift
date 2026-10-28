@@ -51,24 +51,26 @@ private func courseDynamicIsland(_ context: ActivityViewContext<CourseLiveActivi
                     .foregroundStyle(accent)
                     .lineLimit(1)
             }
-            .padding(.leading, 4)
-            .frame(maxHeight: .infinity, alignment: .center)
+            .padding(.leading, 10)
+            .padding(.top, 6)
         }
         DynamicIslandExpandedRegion(.trailing) {
             LiveCountdown(state: state, now: now, style: .expanded)
-                .padding(.trailing, 4)
-                .frame(maxHeight: .infinity, alignment: .center)
-                // “1 小时 29 分钟”放不下时允许区域往下延伸，而不是截断。
-                .dynamicIsland(verticalPlacement: .belowIfTooWide)
+                // 限制长中文分钟计时的理想宽度，避免区域移到摄像头下方、
+                // 抬高整张卡片并把底部“接下来”推出系统高度上限。
+                .frame(maxWidth: 112, alignment: .trailing)
+                .padding(.trailing, 10)
+                .padding(.top, 6)
         }
         DynamicIslandExpandedRegion(.bottom) {
-            VStack(alignment: .leading, spacing: 8) {
+            // 展开态有系统高度上限和大圆角，不能沿用锁屏卡片的字号、间距。
+            VStack(alignment: .leading, spacing: 4) {
                 Text(state.name)
                     .font(.title3.weight(.bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                LiveDetailLine(state: state)
-                LiveTimelineBar(state: state, accent: accent)
+                LiveDetailLine(state: state, font: .caption)
+                LiveTimelineBar(state: state, accent: accent, font: .caption2)
                 if let next = nextLine(state) {
                     Text(next)
                         .font(.caption2)
@@ -76,8 +78,9 @@ private func courseDynamicIsland(_ context: ActivityViewContext<CourseLiveActivi
                         .lineLimit(1)
                 }
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 12)
             .padding(.top, 2)
+            .padding(.bottom, 10)
         }
     } compactLeading: {
         // 收起态保持系统默认的短胶囊：左侧是类别色图标外加环形进度，课名留给长按展开和锁屏。
@@ -249,42 +252,57 @@ private struct LiveCountdown: View {
                 .lineLimit(1)
                 // 手表上“考试·距开始”偏长：宁可略缩也不截成“…”。
                 .minimumScaleFactor(style == .watch ? 0.8 : 1)
-            switch phase {
-            case .finished:
-                Text("--:--")
-                    .font(timerFont)
-                    .foregroundStyle(.secondary)
-            case .upcoming:
-                Text(timerInterval: now...state.start, countsDown: true)
+            ZStack(alignment: style == .compact ? .center : .trailing) {
+                // 展开态、锁屏两行高度要与阶段无关：开课前倒计时字号大于上课时的分钟计时，
+                // 若按内容定高，右上区域在“正在上课”时变矮，整张卡片下方的课名、进度条随之上移。
+                if style == .expanded || style == .lockScreen {
+                    Text(verbatim: "0:00")
+                        .font(timerFont)
+                        .hidden()
+                        .accessibilityHidden(true)
+                }
+                value(phase, accent: accent)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func value(_ phase: CourseLiveActivityPhase, accent: Color) -> some View {
+        switch phase {
+        case .finished:
+            Text("--:--")
+                .font(timerFont)
+                .foregroundStyle(.secondary)
+        case .upcoming:
+            Text(timerInterval: now...state.start, countsDown: true)
+                .font(timerFont)
+                .foregroundStyle(accent)
+                .multilineTextAlignment(style == .compact ? .center : .trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                // 计时文字默认按最长格式占位，固定宽度避免撑宽、折行；手表空间够，不限宽。
+                .frame(
+                    width: style == .watch ? nil : timerWidth(hours: state.start.timeIntervalSince(now) >= 3600, seconds: true),
+                    alignment: style == .compact ? .center : .trailing
+                )
+        case .ongoing:
+            if style == .compact {
+                // 收起态显示下课时刻：系统分钟计时只有全称单位（“1 小时 29 分钟”），会把灵动岛两侧对称撑宽；
+                // 静态时刻最短，剩余多少由进度环表达。
+                Text(clock(state.end))
                     .font(timerFont)
                     .foregroundStyle(accent)
-                    .multilineTextAlignment(style == .compact ? .center : .trailing)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    // 计时文字默认按最长格式占位，固定宽度避免撑宽、折行；手表空间够，不限宽。
-                    .frame(
-                        width: style == .watch ? nil : timerWidth(hours: state.start.timeIntervalSince(now) >= 3600, seconds: true),
-                        alignment: style == .compact ? .center : .trailing
-                    )
-            case .ongoing:
-                if style == .compact {
-                    // 收起态显示下课时刻：系统分钟计时只有全称单位（“1 小时 29 分钟”），会把灵动岛两侧对称撑宽；
-                    // 静态时刻最短，剩余多少由进度环表达。
-                    Text(clock(state.end))
-                        .font(timerFont)
-                        .foregroundStyle(accent)
-                        .lineLimit(1)
-                        .fixedSize()
-                } else {
-                    // 展开、锁屏、手表：系统分钟计时，中文写作“1 小时 29 分钟”，每分钟自己走。
-                    LiveMinuteCountdown(now: now, end: state.end)
-                        .font(.system(size: minuteTimerSize, weight: .semibold, design: .rounded).monospacedDigit())
-                        // 手表上用类别色：卡片是深色底，不能依赖 iPhone 的浅/深色外观。
-                        .foregroundStyle(style == .watch ? AnyShapeStyle(accent) : AnyShapeStyle(.primary))
-                        .multilineTextAlignment(.trailing)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
+                    .fixedSize()
+            } else {
+                // 展开、锁屏、手表：系统分钟计时，中文写作“1 小时 29 分钟”，每分钟自己走。
+                LiveMinuteCountdown(now: now, end: state.end)
+                    .font(.system(size: minuteTimerSize, weight: .semibold, design: .rounded).monospacedDigit())
+                    // 手表上用类别色：卡片是深色底，不能依赖 iPhone 的浅/深色外观。
+                    .foregroundStyle(style == .watch ? AnyShapeStyle(accent) : AnyShapeStyle(.primary))
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
         }
     }
@@ -302,7 +320,7 @@ private struct LiveCountdown: View {
         switch style {
         case .compact: return 15
         case .watch: return 17
-        case .expanded: return 18
+        case .expanded: return 14
         case .lockScreen: return 24
         }
     }
@@ -310,7 +328,7 @@ private struct LiveCountdown: View {
     private var timerSize: CGFloat {
         switch style {
         case .compact: return 13
-        case .expanded: return 22
+        case .expanded: return 18
         case .lockScreen: return 30
         case .watch: return 17
         }
@@ -401,3 +419,38 @@ private func nextLine(_ state: CourseLiveActivityAttributes.ContentState) -> Str
     guard let name = state.nextName, let start = state.nextStart else { return nil }
     return "接下来 · \(clock(start)) \(name)"
 }
+
+#if DEBUG
+// Xcode Canvas：在不同 iPhone 尺寸和辅助功能字号下检查边缘及“接下来”一行。
+private enum CourseLiveActivityPreview {
+    static func state(ongoing: Bool) -> CourseLiveActivityAttributes.ContentState {
+        let start = Date().addingTimeInterval(ongoing ? -60 : 18 * 60)
+        return .init(
+            occurrenceId: "preview",
+            name: ongoing ? "大学物理 (A)II" : "国际议题演讲与陈述",
+            place: "第八教学楼 8109",
+            teacher: "示例教师",
+            kind: "required",
+            color: 0xD55287,
+            start: start,
+            end: start.addingTimeInterval(110 * 60),
+            nextName: "计算机系统导论",
+            nextStart: start.addingTimeInterval(4 * 3600)
+        )
+    }
+}
+
+#Preview("灵动岛 · 即将 / 正在上课", as: .dynamicIsland(.expanded), using: CourseLiveActivityAttributes()) {
+    CourseLiveActivityWidget()
+} contentStates: {
+    CourseLiveActivityPreview.state(ongoing: false)
+    CourseLiveActivityPreview.state(ongoing: true)
+}
+
+#Preview("锁屏 · 对照", as: .content, using: CourseLiveActivityAttributes()) {
+    CourseLiveActivityWidget()
+} contentStates: {
+    CourseLiveActivityPreview.state(ongoing: false)
+    CourseLiveActivityPreview.state(ongoing: true)
+}
+#endif

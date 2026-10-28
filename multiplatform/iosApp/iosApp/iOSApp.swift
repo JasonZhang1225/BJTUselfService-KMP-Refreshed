@@ -16,6 +16,8 @@ struct iOSApp: App {
         // 日程实时活动（灵动岛）：后台刷新任务必须在启动完成前注册。
         CourseLiveActivityCoordinator.registerBackgroundRefresh()
         Task { @MainActor in CourseLiveActivityCoordinator.shared.start() }
+        // 回放下载实时活动（灵动岛）：共享层发状态通知，这里开/更新活动。
+        Task { @MainActor in PlaybackDownloadCoordinator.shared.start() }
     }
 
     var body: some Scene {

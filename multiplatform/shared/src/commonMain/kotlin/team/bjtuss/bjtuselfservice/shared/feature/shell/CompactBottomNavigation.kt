@@ -408,6 +408,17 @@ internal fun CompactTabIcon(section: AppSection) {
                         center + Offset((10 * kotlin.math.cos(angle)).toFloat().dp.toPx(), (10 * kotlin.math.sin(angle)).toFloat().dp.toPx()), strokeWidth)
                 }
             }
+            AppSection.PLAYBACK -> {
+                // 屏幕外框 + 播放三角
+                drawRoundRect(color, Offset(3.dp.toPx(), 5.dp.toPx()), Size(18.dp.toPx(), 14.dp.toPx()), CornerRadius(3.dp.toPx()), style = Stroke(strokeWidth))
+                val triangle = androidx.compose.ui.graphics.Path().apply {
+                    moveTo(10.dp.toPx(), 9.dp.toPx())
+                    lineTo(15.5.dp.toPx(), 12.dp.toPx())
+                    lineTo(10.dp.toPx(), 15.dp.toPx())
+                    close()
+                }
+                drawPath(triangle, color)
+            }
             AppSection.COURSEWARE, AppSection.REPORT_CARD_DOWNLOAD -> {
                 drawRoundRect(color, Offset(5.dp.toPx(), 3.dp.toPx()), Size(14.dp.toPx(), 18.dp.toPx()), CornerRadius(2.dp.toPx()), style = Stroke(strokeWidth))
                 for (y in listOf(8f,12f,16f)) drawLine(color, Offset(8.dp.toPx(), y.dp.toPx()), Offset(16.dp.toPx(), y.dp.toPx()), strokeWidth)

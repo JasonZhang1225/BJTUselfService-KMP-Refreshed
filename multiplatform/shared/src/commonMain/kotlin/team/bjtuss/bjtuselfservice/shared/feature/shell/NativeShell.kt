@@ -85,6 +85,7 @@ fun nativeRouteTitle(routeId: String): String {
         ExamDetailRoute -> "考试详情"
         PhyVlabDetailRoute -> "物理作业详情"
         CitelDetailRoute -> "作业详情"
+        PlaybackDetailRoute -> "回放播放与下载"
         CitelSettingsRoute -> "CITEL 账号设置"
         MailboxDetailRoute -> "邮件详情"
         is AppSection -> route.title

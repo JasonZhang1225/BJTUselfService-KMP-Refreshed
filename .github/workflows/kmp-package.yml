@@ -38,6 +38,8 @@ env:
   TZ: Asia/Shanghai
   JAVA_TOOL_OPTIONS: -Duser.timezone=Asia/Shanghai
   GRADLE_OPTS: -Dorg.gradle.daemon=false
+  # The workflow run number increases on new runs; the attempt changes on reruns.
+  BJTU_PACKAGE_BUILD_ID: ${{ github.run_number }}.${{ github.run_attempt }}
 
 jobs:
   android:
@@ -108,7 +110,7 @@ jobs:
           fi
           test -n "$VERSION"
           test -f "$APK"
-          NAME="BJTUSelfService-KMP-${VERSION}-arm64-v8a.apk"
+          NAME="BJTUSelfService-KMP-${VERSION}-build${BJTU_PACKAGE_BUILD_ID}-arm64-v8a.apk"
           cp "$APK" "$NAME"
           # Keep the signed APK contents intact; refresh only the output file mtime.
           touch "$NAME"
@@ -189,7 +191,7 @@ jobs:
           $version = $version -replace '-KMP$', ''
           $msi = Get-ChildItem "windowsApp\build\compose\binaries\main\msi\*.msi" | Select-Object -First 1
           if (-not $msi) { throw "MSI not found" }
-          $name = "BJTUselfServiceKMP-$version.msi"
+          $name = "BJTUselfServiceKMP-$version-build$($env:BJTU_PACKAGE_BUILD_ID).msi"
           Copy-Item $msi.FullName $name
           # Store the real instant; the runner displays it in China Standard Time.
           (Get-Item $name).LastWriteTimeUtc = [DateTime]::UtcNow
@@ -296,7 +298,7 @@ jobs:
           DMG="$(find desktopApp/build/compose/binaries/main/dmg -name '*.dmg' | head -n 1)"
           test -n "$VERSION"
           test -f "$DMG"
-          NAME="BJTUselfServiceKMP-${VERSION}.dmg"
+          NAME="BJTUselfServiceKMP-${VERSION}-build${BJTU_PACKAGE_BUILD_ID}.dmg"
           cp "$DMG" "$NAME"
           touch "$NAME"
           echo "Packaged at $(date '+%Y-%m-%d %H:%M:%S %z') (Asia/Shanghai)"
@@ -400,9 +402,9 @@ jobs:
           APP="$(find "iosApp/DerivedData/Build/Products/$IOS_CONFIGURATION-iphoneos" -maxdepth 1 -name '*.app' | head -n 1)"
           test -n "$VERSION"
           test -d "$APP"
-          NAME="BJTUSelfService-KMP-${VERSION}-iOS-unsigned.ipa"
+          NAME="BJTUSelfService-KMP-${VERSION}-build${BJTU_PACKAGE_BUILD_ID}-iOS-unsigned.ipa"
           if [ "$IOS_CONFIGURATION" = Debug ]; then
-            NAME="BJTUSelfService-KMP-${VERSION}-iOS-Debug-sideload.ipa"
+            NAME="BJTUSelfService-KMP-${VERSION}-build${BJTU_PACKAGE_BUILD_ID}-iOS-Debug-sideload.ipa"
           fi
           rm -rf ipa-stage
           mkdir -p ipa-stage/Payload

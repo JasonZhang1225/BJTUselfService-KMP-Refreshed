@@ -5,6 +5,8 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
 import team.bjtuss.bjtuselfservice.shared.PlatformInfo
@@ -54,6 +56,7 @@ internal fun rememberAuthenticatedSession(
     // 让刷新发现会话过期时可以在 App 内自动恢复 CAS/教务链路，
     // 不把用户推到无法回传 Cookie 的系统浏览器。
     val latestCredentials = rememberUpdatedState(Credentials(username.trim(), password))
+    val logoutScope = rememberCoroutineScope()
     // 业务依赖由普通 Kotlin 组合根装配（无窗口宿主复用同一份）；Compose 只负责按账号持有与释放。
     val graph = remember(profile.studentId, cacheStore, transport, loginProtocol, platform.family,
         securityCoordinator, captchaRecognizer, homeworkFileGateway) {
@@ -111,6 +114,7 @@ internal fun rememberAuthenticatedSession(
             examScheduleModel = graph.examScheduleModel,
             homeworkModel = graph.homeworkModel,
             coursewareModel = graph.coursewareModel,
+            playbackModel = graph.playbackModel,
             otherFunctionModel = graph.otherFunctionModel,
             classroomModel = graph.classroomModel,
             classroomOccupancyModel = graph.classroomOccupancyModel,
@@ -129,7 +133,7 @@ internal fun rememberAuthenticatedSession(
             homeworkFileGateway = homeworkFileGateway,
             coursewareDirectoryGateway = coursewareDirectoryGateway,
             systemCalendarGateway = systemCalendarGateway,
-            onLogout = { onLogout(profile.studentId) },
+            onLogout = { logoutScope.launch { graph.playbackTaskManager.cancelAllAndJoin(); onLogout(profile.studentId) }; Unit },
             reauthenticateSession = graph.sessionRecovery::attempt,
             probeSession = {
                 loginProtocol.checkSession() is SessionProbeResult.Active

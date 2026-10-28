@@ -1,5 +1,13 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
+import java.time.ZonedDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -12,6 +20,38 @@ plugins {
 
 group = "team.bjtuss.bjtuselfservice"
 version = "0.1.0"
+
+// A packaging run supplies the same identifier to every target; otherwise use
+// the local build time so successive local builds can be distinguished.
+abstract class GeneratePackageBuildInfo : DefaultTask() {
+    @get:Input
+    abstract val packageBuildId: Property<String>
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val requestedId = packageBuildId.get()
+        require(requestedId == "local" || requestedId.matches(Regex("[0-9]+\\.[0-9]+"))) { "Invalid package build ID" }
+        val id = if (requestedId == "local") {
+            "local-" + ZonedDateTime.now(ZoneId.of("Asia/Shanghai")).format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS"))
+        } else {
+            requestedId
+        }
+        val output = outputDir.get().file("team/bjtuss/bjtuselfservice/shared/update/PackageBuildInfo.kt").asFile
+        output.parentFile.mkdirs()
+        val content = "package team.bjtuss.bjtuselfservice.shared.update\n\ninternal const val PACKAGE_BUILD_ID = \"$id\"\n"
+        if (!output.isFile || output.readText() != content) output.writeText(content)
+    }
+}
+
+val generatePackageBuildInfo = tasks.register<GeneratePackageBuildInfo>("generatePackageBuildInfo") {
+    packageBuildId.set(providers.environmentVariable("BJTU_PACKAGE_BUILD_ID").orElse("local"))
+    outputDir.set(layout.buildDirectory.dir("generated/packageBuildInfo/commonMain"))
+    // The clock is read at execution time, including when configuration cache is reused.
+    outputs.upToDateWhen { false }
+}
 
 kotlin {
     android {
@@ -36,6 +76,8 @@ kotlin {
 
     iosArm64()
     iosSimulatorArm64()
+    // 手动添加 JVM 共用源集前先保留默认 Apple 层级。
+    applyDefaultHierarchyTemplate()
 
     targets.withType<KotlinNativeTarget>().configureEach {
         compilations.getByName("main") {
@@ -54,6 +96,12 @@ kotlin {
     }
 
     sourceSets {
+        commonMain { kotlin.srcDir(generatePackageBuildInfo) }
+        // JVM 与 Android 共用 MP4 盒处理代码；Apple 仍使用原生 AVFoundation。
+        val mediaJvmMain = maybeCreate("mediaJvmMain")
+        mediaJvmMain.dependsOn(getByName("commonMain"))
+        getByName("androidMain").dependsOn(mediaJvmMain)
+        getByName("desktopMain").dependsOn(mediaJvmMain)
         commonMain.dependencies {
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
@@ -64,6 +112,7 @@ kotlin {
             implementation(libs.kotlinx.datetime)
             implementation(libs.ksoup)
             implementation(libs.ktor.client.core)
+            implementation(libs.kotlinx.io.core)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.sqldelight.runtime)
             implementation(libs.kotlinx.coroutines.core)

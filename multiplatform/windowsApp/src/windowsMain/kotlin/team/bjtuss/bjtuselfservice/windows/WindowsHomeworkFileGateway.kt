@@ -5,7 +5,11 @@ import java.awt.Frame
 import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
 import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.BasicFileAttributes
 import javax.swing.SwingUtilities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -24,6 +28,9 @@ import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.StreamingDestination
+import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
+import team.bjtuss.bjtuselfservice.shared.files.StreamingSinkIoException
 import team.bjtuss.bjtuselfservice.shared.files.safeExportFileName
 import team.bjtuss.bjtuselfservice.shared.files.safeExportPathSegment
 
@@ -34,7 +41,10 @@ import team.bjtuss.bjtuselfservice.shared.files.safeExportPathSegment
  */
 class WindowsHomeworkFileGateway(
     private val owner: () -> Frame? = { null },
-) : HomeworkFileGateway, CoursewareDirectoryGateway {
+    recoveryRoot: File = File(System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), "BJTUselfServiceKMP/playback-tasks"),
+) : HomeworkFileGateway, CoursewareDirectoryGateway,
+    team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryProvider {
+    override val playbackRecovery = WindowsPlaybackRecovery(recoveryRoot)
     private val requestMutex = Mutex()
 
     override val isAvailable: Boolean = true
@@ -106,6 +116,35 @@ class WindowsHomeworkFileGateway(
             }
         } finally {
             requestMutex.unlock()
+        }
+    }
+
+    override val isStreamingSaveAvailable: Boolean = true
+
+    override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
+        if (!requestMutex.tryLock()) {
+            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        }
+        // 面板只需串行到用户选好位置；之后的长时间写入不占锁，其他保存照常可用。
+        val selected = try {
+            showDialog(FileDialog.SAVE, safeExportFileName(fileName), allowMultiple = false).singleOrNull()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Throwable) {
+            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+        } finally {
+            requestMutex.unlock()
+        } ?: return StreamingDestinationResult.Cancelled
+        return try {
+            withContext(Dispatchers.IO) {
+                val parent = selected.absoluteFile.parentFile ?: throw IllegalStateException("Missing destination directory")
+                // 仅分配不可预测的名称。任务记录先保存该名称，第一次写入才创建文件。
+                StreamingDestinationResult.Opened(prepareFileStreamingDestination(selected, parent))
+            }
+        } catch (_: SecurityException) {
+            StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+        } catch (_: Exception) {
+            StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
         }
     }
 
@@ -292,4 +331,86 @@ class WindowsHomeworkFileGateway(
         SwingUtilities.invokeAndWait { show() }
         selected
     }
+}
+
+internal class FileStreamingDestination(
+    private val target: File,
+    internal val temporary: java.nio.file.Path,
+    private var temporaryOwned: Boolean = true,
+) : StreamingDestination {
+    private var output: java.io.OutputStream? = null
+    private var committed = false
+    override val displayName: String = target.name
+    override val outputPath: String = target.absolutePath
+    override val recoveryToken: String get() = windowsDestinationToken(target, temporary.toFile())
+
+    override suspend fun closeForRecovery() = withContext(NonCancellable + Dispatchers.IO) {
+        runCatching { output?.close() }
+        output = null
+    }
+
+    override suspend fun isRecoveryCommitAmbiguous(): Boolean = withContext(Dispatchers.IO) {
+        fun exists(path: java.nio.file.Path): Boolean = try {
+            Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            true
+        } catch (_: NoSuchFileException) { false }
+        !exists(temporary) && exists(target.toPath())
+    }
+
+    override suspend fun write(bytes: ByteArray) {
+        try {
+            withContext(Dispatchers.IO) {
+                val stream = output ?: (if (temporaryOwned) {
+                    Files.newOutputStream(temporary, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                        StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)
+                } else {
+                    Files.newOutputStream(temporary, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE,
+                        LinkOption.NOFOLLOW_LINKS).also { temporaryOwned = true }
+                }).also { output = it }
+                stream.write(bytes)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            throw StreamingSinkIoException(error)
+        }
+    }
+
+    override suspend fun commit(): HomeworkFileSaveResult = withContext(Dispatchers.IO) {
+        try {
+            output?.close()
+            output = null
+            try {
+                Files.move(temporary, target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(temporary, target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+            committed = true
+            temporaryOwned = false
+            HomeworkFileSaveResult.Saved
+        } catch (_: SecurityException) {
+            HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+        } catch (_: Exception) {
+            HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+        }
+    }
+
+    override suspend fun abort() {
+        runCatching { abortForCleanup() }
+    }
+
+    override suspend fun abortForCleanup() {
+        withContext(NonCancellable + Dispatchers.IO) {
+            try { output?.close() } finally { output = null }
+            if (!committed && temporaryOwned) {
+                check(!Files.isSymbolicLink(temporary)) { "保存临时文件已被替换" }
+                Files.deleteIfExists(temporary)
+            }
+        }
+    }
+}
+
+internal fun prepareFileStreamingDestination(target: File, parent: File = target.absoluteFile.parentFile): FileStreamingDestination {
+    val temporary = parent.toPath().resolve(".bjtu-save-${java.util.UUID.randomUUID()}.tmp")
+    return FileStreamingDestination(target, temporary, temporaryOwned = false)
 }
