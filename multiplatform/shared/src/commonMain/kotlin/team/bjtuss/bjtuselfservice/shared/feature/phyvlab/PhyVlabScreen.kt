@@ -657,7 +657,7 @@ private fun PhyVlabAssignmentDetailContent(
                     containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                     contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                 ) {
-                    Text(page.description, style = MaterialTheme.typography.bodyMedium)
+                    Text(team.bjtuss.bjtuselfservice.shared.util.schoolRichTextToAnnotated(page.descriptionHtml.ifBlank { page.description }), style = MaterialTheme.typography.bodyMedium)
                 }
             }
             if (page.submittedFiles.isNotEmpty()) {

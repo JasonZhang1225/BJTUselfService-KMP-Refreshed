@@ -139,6 +139,7 @@ class SchoolPhyVlabRemoteDataSource(
         secondary: PhyVlabAssignmentDetail,
     ): PhyVlabAssignmentDetail = secondary.copy(
         description = secondary.description.ifBlank { original.description },
+        descriptionHtml = if (secondary.description.isNotBlank()) secondary.descriptionHtml else original.descriptionHtml,
         submissionStatus = secondary.submissionStatus.ifBlank { original.submissionStatus },
         submissionDateText = secondary.submissionDateText ?: original.submissionDateText,
         submissionDateTimestamp = secondary.submissionDateTimestamp ?: original.submissionDateTimestamp,

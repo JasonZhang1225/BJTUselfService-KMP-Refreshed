@@ -7,6 +7,17 @@ import kotlin.test.assertTrue
 
 class SchoolRichTextTest {
     @Test
+    fun rendersFormattingAndRemovesActiveContent() {
+        val html = "<p>要求<br><strong>重点</strong> 与 <em>斜体</em></p><script>bad()</script>"
+        val safe = schoolRichTextSafeFragment(html)
+        val result = schoolRichTextToAnnotated(safe)
+        assertEquals("要求\n重点 与 斜体", result.text)
+        assertTrue(result.spanStyles.any { it.item.fontWeight == androidx.compose.ui.text.font.FontWeight.Bold && result.text.substring(it.start, it.end) == "重点" })
+        assertTrue(result.spanStyles.any { it.item.fontStyle == androidx.compose.ui.text.font.FontStyle.Italic })
+        assertFalse(safe.contains("bad()"))
+    }
+
+    @Test
     fun preservesHtmlBreaks() {
         val text = schoolRichTextToPlainMultiline("第一行<br>第二行<br/>第三行")
         assertEquals(listOf("第一行", "第二行", "第三行"), text.lines())

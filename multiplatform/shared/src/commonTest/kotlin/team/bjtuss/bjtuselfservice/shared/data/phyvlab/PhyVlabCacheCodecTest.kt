@@ -62,6 +62,7 @@ class PhyVlabCacheCodecTest {
                     activityId = 3689,
                     detail = PhyVlabAssignmentDetail(
                         description = "完成实验报告",
+                        descriptionHtml = "<p>完成<strong>实验报告</strong></p>",
                         submissionStatus = "已提交",
                         submissionDateText = "2026年06月14日 18:36",
                         submissionDateTimestamp = 1781433360L,
