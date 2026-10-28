@@ -706,6 +706,10 @@ internal fun VersionAndProjectCard(
                 VersionInfoRow("系统版本", systemVersion)
                 VersionInfoRow("App 版本", AppUpdateChecker.CURRENT_VERSION)
                 VersionInfoRow("构建号", AppUpdateChecker.CURRENT_BUILD.toString())
+                VersionInfoRow(
+                    "打包标识",
+                    team.bjtuss.bjtuselfservice.shared.update.PACKAGE_BUILD_ID,
+                )
             }
             Text("更新源", style = MaterialTheme.typography.titleSmall)
             UpdateSourceSelector(

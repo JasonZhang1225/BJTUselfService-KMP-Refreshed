@@ -8,6 +8,14 @@
 >
 > **安卓计划：`docs/plans/playback-android-performance.md`**。设备可用时补 P0 硬件采样及每项实机验收；现有修改不得视为实机通过。Windows 工作见下文。
 
+## 进行中：KMP Package 打包标识
+
+- 已本地提交，尚未合入 main：四端文件名与设置页显示 Actions 工作流运行序号和重试次数（如 `129.2`）；本地构建显示 `local-yyyyMMdd-HHmmss-SSS`，时间固定北京时间。每次执行生成任务都会更新本地标识，可能触发共享代码重编译。不改变产品版本、系统构建号或更新比较；仅重跑失败任务可能让四端标识不同。
+- 北京时间验证：将 Gradle JVM 默认时区设为 `America/Los_Angeles`，两次生成时间均与北京时间相符且不同；CI 标识 `130.2` 不变。最终四端和界面尚需验证。
+- 本地时间改动后 `:shared:desktopTest :windowsApp:compileKotlinWindows :androidApp:assembleDebug --continue`：Windows 编译、Android debug APK 成功；共享测试 1214 项、上述 5 项既有 Windows 环境失败，整条命令因测试失败。桌面 jar 中实际常量已核对为北京时间 `local-20261028-093234-789`；未安装应用。
+- 使用 JDK 21，`-I ..\.artifacts\android-account-debug-signing.gradle :shared:desktopTest --tests '*AppUpdateCheckerTest*' :windowsApp:compileKotlinWindows :androidApp:assembleDebug` 成功，Gradle 配置缓存已保存；生成任务依次验证 `130.1`、`130.2` 和 `local`。完整 `:shared:desktopTest` 1214 项、5 项失败：既有 Windows 环境中的 DesktopAgentIntegrationTest 3 项和 MacUninstallCleanerTest 2 项。工作流 YAML 解析和 `git diff --check` 通过。
+- 本机上传密钥文件与用户 Gradle 签名配置均已存在；2026-10-28 使用临时 JAR 完成签名和验签。此前 Android debug 验证使用调试密钥，尚未构建正式签名 APK。Apple 目标和真实 Actions 四端打包需要后续验证。
+
 ## 进行中：安卓修复已验收并提交，待功能分支合主干
 
 - `b05426ec`：共享渐进下载接口、TS压缩帧/配置解析与AAC处理；两路各2个分片连接，总并发仍4，无新增媒体依赖。
