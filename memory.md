@@ -1,6 +1,6 @@
 # BJTUselfService 实时工作记忆
 
-> 2026-10-28：用户明确标记 **Windows 课程回放开发与本轮验收完成**，授权提交推送 `feat/courseware-fallback-playback`（本轮提交推送进行中，基于 `701409e7`）。新 MSI `local-20261028-111451-103` 已在下载文件夹；代理未执行安装。沿用 2.0.0-Alpha / Build45，不改版本号，功能分支未合 main。
+> 2026-10-28：用户明确标记 **Windows 课程回放开发与本轮验收完成**；代码已提交推送 `133cf398` 到 `feat/courseware-fallback-playback`。四端审查标准随本轮文档提交；跨平台安全检查 run `40631769655` 四项全部通过。新 MSI `local-20261028-111451-103` 已在下载文件夹；代理未执行安装。沿用 2.0.0-Alpha / Build45，不改版本号，功能分支未合 main。
 >
 > 2026-10-27：分支 `feat/courseware-fallback-playback`，回放与设备显示已提交 `19585a4a`，已合并远端 PR #72（`8847b785`），功能分支尚未合入 main。源码版本为 `2.0.0-Alpha` / Build 45，发布说明草稿 `docs/releases/v2.0.0-KMP.md`；iOS 系统版本与桌面安装器使用数字 `2.0.0`，iOS 最低 18.0。
 >
@@ -17,7 +17,14 @@
 - 最终联合命令（JDK21、`multiplatform/`）：`-I ..\.artifacts\windows-playback-final\validation.gradle -I ..\.artifacts\android-account-debug-signing.gradle :shared:desktopTest --tests '*Playback*' --tests '*Hls*' --tests '*Courseware*' --tests '*TsToMp4*' :shared:dumpFinalSharedClasspath :windowsApp:windowsTest :windowsApp:dumpFinalPlaybackClasspath :desktopApp:compileKotlin :androidApp:assembleDebug :windowsApp:packageMsi -x downloadWix --offline --no-configuration-cache --console=plain --continue`，BUILD SUCCESSFUL（3m12s）；共享专项138项无失败/跳过，Windows33项无失败、1项真实站点跳过（硬件用例显式启用并通过）。完整共享重跑1218项、仅既有Windows环境5项失败，新增用例全部通过。新测试文件为 `PlaybackSavedFileActionsTest.kt`、`WindowsPlaybackPreviewTest.kt`，并扩充 `WindowsPlaybackRecoveryTest.kt`。首轮新增测试的非void返回已修正，最终报告无此失败。
 - 压测初次前三轮成功，第四轮因同时重编共享 JAR 导致 NoClassDefFoundError，已废弃该组成绩。固定项目测试类/JAR副本后，`java -cp <windows-frozen-classpath> org.junit.runner.JUnitCore team.bjtuss.bjtuselfservice.windows.WindowsPlaybackHardwareAcceptanceTest` 独立运行五轮全过（每轮27–31秒）；共35个入队任务、25份成片全解码，覆盖排队、暂停恢复、取消、强杀helper后后续推进与临时文件清理。不是多小时耐久或Intel/CPU整节压力测试。
 - UI：三张实际Compose离屏图已检查浅色/深色/440宽1.6倍字号；Computer Use 实际点击新卡片，文件缺失会就地提示，父文件夹成功打开，视频交给系统打开方式选择器（未改默认播放器）。隔离窗口指定当前helper后，真实学校公开HLS的教师/课件两路预览均显示正常；未登录其他账号、未覆盖安装。初次共享测试UI类路径没有Windows资源，显示助手缺失，已用明确本地helper路径重启复验。证据 `.artifacts/windows-playback-final/{release-check.log,shared-full-final/,hardware-frozen-results.jsonl,ui-*.png,manifest.json}`。
-- 本轮交付：包含上述源码的新 MSI 已在下载文件夹（见下节），实际解包核对构建标识和原生helper哈希一致。用户已明确结项并授权提交推送；主干合入/发版另行决定，代理未安装新包。iOS共享目标与原生macOS运行尚待后续CI/设备，本机仅完成macOS JVM宿主编译；Intel真机、CPU整节、多小时耐久继续保留未验证边界，不作为本轮Windows完成阻塞。
+- 本轮交付：包含上述源码的新 MSI 已在下载文件夹（见下节），实际解包核对构建标识和原生helper哈希一致。用户已明确结项并授权提交推送；主干合入/发版另行决定，代理未安装新包。iOS共享测试、macOS共享测试/镜像已由本轮CI通过；Apple真机运行仍待设备验收，本机仅完成macOS JVM宿主编译；Intel真机、CPU整节、多小时耐久继续保留未验证边界，不作为本轮Windows完成阻塞。
+
+## 四端审查标准与下一阶段（2026-10-28）
+
+- 新文件 `docs/plans/playback-four-platform-acceptance.md` 统一 F01–F14 功能合同、媒体帧/PTS/DTS/AAC/完整解码要求、阶段计时与证据模板，以已完成 Windows 为参照；区分实现、测试、平台完成、四端完成与发布就绪。
+- Android 按 PROMPT2 先完成小米平板8 Pro 的 P0 真实测量，枚举确认序列号、全部操作显式 `adb -s`，只安装 `.playbacktest` 隔离包；快整理、矩阵、候选回退已经实现，不重复开发。报告后按 PROMPT3 对最大两个瓶颈做 P1 定向优化，一项一测一提交。iOS/macOS 先整节，iOS AAC 重编码与两端持久恢复/文件重新访问差距明确列待办。本次不操作设备或实施上述优化。
+- 两份旧计划 `playback-android-performance.md`、`playback-composite-android-windows.md` 顶部已更正状态，保留原分析作历史，避免把旧“未实施/四端完成/Windows无声”等描述当作当前结论。
+- Windows 代码 `133cf398` 已推送。安全检查 [40631769655](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/40631769655) 精确 head 为 `133cf398`，四项全部成功，含 macOS 全部共享测试、iOS 共享测试、Apple 原生检查/镜像、Android debug/优化版和 Windows 镜像。随后只改文档，应用源码树 `5f7c58c7a8c0a8da20aad31366663612c1b304ad` 不变；没有创建PR、合主干、改版本或发布。链接检查与 `git diff --check` 通过；原始最终状态在 `.artifacts/playback-four-platform-review/ci-final.json`。
 
 ## Windows 视频回放与下载完成度复核（2026-10-28，初次结论及后续更新）
 
@@ -47,7 +54,7 @@
 
 ## 进行中：本机 2.0.0-Alpha MSI 已复制到下载文件夹
 
-- 最新包：`C:\Users\zjg\Downloads\交大自由行 KMP-2.0.0-Alpha-local-20261028-111451-103.msi`，88,743,936 字节，SHA256 `D9CC8A4413448329BE29F0A725017113AA00898DA6EBCE15AD4801936BE9FBA1`。包含未提交的路径按钮和Windows预览修复；只读解包核对共享jar构建标识、当前helper SHA256 `DA00E625584B6CAA1FA033FDB691F7B7E6B8441C43349DE965589A7BE3CA3601` 一致，源包和下载副本哈希相同。未安装。证据 `.artifacts/windows-playback-final/{manifest.json,verify-and-copy.ps1,package.wxs}`。
+- 最新包：`C:\Users\zjg\Downloads\交大自由行 KMP-2.0.0-Alpha-local-20261028-111451-103.msi`，88,743,936 字节，SHA256 `D9CC8A4413448329BE29F0A725017113AA00898DA6EBCE15AD4801936BE9FBA1`。包含现已提交的路径按钮和Windows预览修复；只读解包核对共享jar构建标识、当前helper SHA256 `DA00E625584B6CAA1FA033FDB691F7B7E6B8441C43349DE965589A7BE3CA3601` 一致，源包和下载副本哈希相同。未安装。证据 `.artifacts/windows-playback-final/{manifest.json,verify-and-copy.ps1,package.wxs}`。
 - 2026-10-28 按用户要求基于当前提交 `701409e7` 重新打包。新文件 `C:\Users\zjg\Downloads\交大自由行 KMP-2.0.0-Alpha-local-20261028-094654-102.msi`，88,719,360 字节，SHA256 `875A28A567F0407E60F4EBB054036C0359D007920F1F3016B1E07A67BD14B53B`。旧的无时间戳下载包保留；未安装、未改 Program Files，未改产品版本、提交、推送或发布。
 - JDK 21 执行 `.\gradlew.bat :windowsApp:windowsTest :windowsApp:packageMsi -x downloadWix --offline --no-configuration-cache --console=plain`，BUILD SUCCESSFUL（1m49s）；Windows 测试 32 项、0 失败/错误、2 跳过（可选硬件和真实站点用例）。首次默认配置缓存命令因 Compose `downloadWix` 使用 Task.project 失败；最终跳过下载并复用本机已有 `~/.gradle/compose-jb/wix311.zip`，没有修改构建源码或安装依赖。
 - 使用缓存 WiX 的 dark 只读解包新 MSI，实际核对 MSI 内共享 jar 常量为 `local-20261028-094654-102`，回放 helper 与当前编译产物 SHA256 相同（`431A1EC55214D5E8868EC3A43E410F5E146D373381A17BC94BBBCD3CF6E9300F`），安装器版本为数字 `2.0.0`。源包与下载副本哈希相同。证据 `.artifacts/windows-package-20261028/{build-final.log,manifest.json,verify-and-copy.ps1}`；本次未重跑共享全量测试、硬件整节或在线回放界面，安装与真实账号验收仍待后续。
@@ -96,13 +103,13 @@
 
 - Windows 原生辅助程序使用 D3D11 共享纹理硬件解码、双路缩放和编码，并原样保留左路 AAC。AAC 原问题是类型硬编码及配置丢失；更正后短样本通过。无可用 GPU 时回退 CPU；增加进程退出时关闭 helper、下载记录和保存目标恢复，已提交到功能分支。
 - 最终 MSI 内相同 helper（SHA256 `cca44b0d…`）已分别完成整节双路合成（不含下载）：NVIDIA RTX 4060 笔记本 GPU 用 318.41 秒，VideoDecode 峰值 98.5%、VideoEncode 40.7%；AMD Radeon 780M 用 530.45 秒，Video Codec 峰值 100%。两份成片均 175564 帧、7022.56 秒、AAC 302430 包，逐包视频 PTS 间隔 40000us，音轨 SHA256 与原始一致，ffmpeg 全解码退出 0，中间帧教师/课件左右位置正确。样本、计数器和校验结果在 `.artifacts/windows-gpu-playback/gpu-{nvidia,amd}-final-full.*`。Intel 设备用户暂时没有，留待后续实测。
-- Windows 已改为两路 HLS 分片下载时同步建立压缩帧索引，原生 Media Foundation 源在输入增长时供 GPU 解码和拼接；暂停/中断保留下载分片，但 Windows 尚不能保留中途编码结果，继续时从头合成。完整成片持久化后可恢复保存。新增自动优先 NVIDIA、启动失败尝试其他硬件（含 Intel）再回退 CPU，任务卡片显示实际合成设备。当前 helper SHA256 `1ea7c434926e1a1bdbb97c23d0fb22bdda4da39931cb646349e3f14f7542fccf`；整节计时使用此前的 `35ff3b64…`，新 helper 已验证 NVIDIA/AMD/CPU 短片与界面，未重新跑整节。
+- Windows 已改为两路 HLS 分片下载时同步建立压缩帧索引，原生 Media Foundation 源在输入增长时供 GPU 解码和拼接；暂停/中断保留下载分片，但 Windows 尚不能保留中途编码结果，继续时从头合成。完整成片持久化后可恢复保存。新增自动优先 NVIDIA、启动失败尝试其他硬件（含 Intel）再回退 CPU，任务卡片显示实际合成设备。该阶段 helper SHA256 `1ea7c434926e1a1bdbb97c23d0fb22bdda4da39931cb646349e3f14f7542fccf`；整节计时使用此前的 `35ff3b64…`，新 helper 已验证 NVIDIA/AMD/CPU 短片与界面，未重新跑整节。
 - 为渐进 H.264 输入从 SPS/PPS 生成标准 `stsd` 视频描述，恢复系统硬件解码吞吐；160 秒真实录像的 NVIDIA 普通输入/渐进输入分别约 8.8/8.5 秒（修复前渐进输入约 25.2 秒），AMD 约 13.8/13.7 秒。两份渐进成片均 4001 帧、6891 AAC 包，40ms 视频时间间隔、音轨 SHA256 与输入一致，ffmpeg 完整解码通过；两块显卡均验证输入尚未结束就已有合成输出。Intel 未实测。
 - Windows 隔离 UI 真实录像已完整下载两路共 3,853,388,624 字节，刷新页面不丢任务；合成中暂停后保留两路各 703 个分片，关闭重开后恢复记录。新 helper 从本地断点重新合成并保存约 5 分半，输出 2,220,228,617 字节，175564 视频帧、302430 AAC 包、时长 7022.56 秒，视频每帧 40ms，音轨 SHA256 `61fcd3f23860e39eda9f7f39669d9de62ceb8f24430028bf69e83d91d1f99c09`，整段 ffmpeg 解码通过，首/中/尾左右画面正确。恢复过程 NVIDIA 解码约 98%、编码约 40%。
 - 同一版本在独立空目录从零下载、合成、保存，2026-10-27 20:26:37→20:32:14（5 秒采样），总约 5 分 37 秒；两路 3,853,388,624 字节下载约 1 分 37 秒，下载完成时合成约 29%，全程无暂停。成片帧数、时长、音轨哈希、40ms 视频时间间隔及完整 ffmpeg 解码均与恢复验收一致；Computer Use 打开 VLC，实际播放并跳转到约 1:04，教师和课件正常并排。此轮网络均速约 39.7 MB/s，不等同于 8 MB/s 网络下的实测；测试中磁盘空余最多减少约 9.8 GB（含成片及临时文件，受同盘其他活动影响），完成后下载分片和渐进索引已清理。强制纯软件兼容路径用 10 秒样本检查了 251 帧、431 个 AAC 包、音轨哈希及完整解码，未测整节性能。
 - 此前串行版本的 Windows 隔离 UI 验收使用 `.artifacts/windows-gpu-playback/ui-harness/`：13% 暂停、关闭重开并继续，刷新不丢任务；完成下载后合成中关闭，helper 随主进程退出，两路 MP4 保留。继续后整节保存成功、重开仍显示完成；成片帧数、时长和音轨校验均正确。一次测试中误在窗口运行时重建共享 jar 导致类加载失败，随后关闭窗口、重建并完整复测；此窗口不代表正式安装版或真实账号流程。
 - Windows 测试覆盖恢复目标、账号隔离、helper 管道与取消、合成暂停/中断恢复和保存失败复用已合成文件；独立主进程强制退出探针证实 helper 结束。CPU 处理配硬件编码及强制纯软件编码 10 秒均通过：251 帧、431 AAC 包、音轨哈希与源一致、ffmpeg 全解码退出 0，画面抽查正常；软件样本不能外推整节速度。
-- 此前离线联合构建 `:androidApp:assembleDebug :androidApp:minifyReleaseWithR8`、47 项共享回放相关测试、4 项 Windows 恢复测试、`:windowsApp:createDistributable :windowsApp:packageMsi` 成功，镜像及 MSI 包内 helper 是 `35ff3b64…`，不含后来的显卡选择和设备显示。新改动运行共享任务/设备状态等 30 项测试、4 项 Windows 恢复测试、Android debug 构建通过；NVIDIA 自动选择、强制 AMD、软件模式短片和模拟 NVIDIA 启动失败后转 AMD 均校验音视频，Intel 优先级及回退经模拟测试，未在 Intel 真机验证。隔离界面验证 NVIDIA 具体型号、CPU 软件模式、页面刷新与暂停状态。另以无音轨 H.264 High profile 合成样本在 NVIDIA/AMD 各检查 100 帧和完整解码。Apple 目标在 Windows 不可构建；安卓新改动未连接 ADB 或做实机验收。使用本机既有 Gradle 缓存与 WiX，未安装依赖。真实账号/正式安装流程未测。
+- 此前离线联合构建 `:androidApp:assembleDebug :androidApp:minifyReleaseWithR8`、47 项共享回放相关测试、4 项 Windows 恢复测试、`:windowsApp:createDistributable :windowsApp:packageMsi` 成功，镜像及 MSI 包内 helper 是 `35ff3b64…`，不含后来的显卡选择和设备显示。新改动运行共享任务/设备状态等 30 项测试、4 项 Windows 恢复测试、Android debug 构建通过；NVIDIA 自动选择、强制 AMD、软件模式短片和模拟 NVIDIA 启动失败后转 AMD 均校验音视频，Intel 优先级及回退经模拟测试，未在 Intel 真机验证。隔离界面验证 NVIDIA 具体型号、CPU 软件模式、页面刷新与暂停状态。另以无音轨 H.264 High profile 合成样本在 NVIDIA/AMD 各检查 100 帧和完整解码。Apple 目标在 Windows 不可构建；安卓新改动未连接 ADB 或做实机验收。使用本机既有 Gradle 缓存与 WiX，未安装依赖。当时未测真实账号/正式安装流程；后续用户已确认在线播和真实下载，见顶部结项记录。
 - 完整 `:shared:desktopTest` 在干净进程环境下运行 1193 项、1188 项通过；仍有既有的 `DesktopAgentIntegrationTest` 3 项和 `MacUninstallCleanerTest` 2 项在 Windows 因符号链接权限、macOS 脚本/路径假设失败，回放相关用例无失败。日志 `.artifacts/windows-gpu-playback/desktop-full-test-clean-env.log`。初次运行误将禁用的可选环境变量设置为空字符串，触发 4 个诊断用例；已清理该次生成的空文件，后用真正移除变量的环境重跑。
 - 先前 MSI 在 `multiplatform/windowsApp/build/compose/binaries/main/msi/`，只生成未安装；它不含最新设备显示和版本号，不能代表当前源码。MSI 使用项目现有升级码，安装可能替换既有安装版，不能当作隔离测试包。此前 `.artifacts/windows-gpu-playback/package-msi.log` 记录的是旧版本。
 - 9–10分钟仅是 Android 后续性能目标，当前安卓实测未达到；不能通过降帧/丢帧冒充提速，不影响 Windows 本轮完成状态。
@@ -112,9 +119,9 @@
 - `a9bd0b52` 修复任务到达锁的调度次序可能与入队次序不同的问题；隔离测试覆盖三个任务的并发提交、先前任务完成/失败/暂停/取消和取消排队项，不改变 GPU 管线。
 - `c5b70c28`：Windows 保存临时文件在记录落盘后才创建；取消、移除或完成先记录清理意图，失败保留记录并提示重试；无法恢复的记录、未关联工作目录和损坏记录不再被猜测清理。写盘失败保留分片；保存完成与记录更新之间的异常退出若结果不明确，提示先检查视频，避免覆盖。JVM 清理不跟随符号链接或 Windows junction；共享状态使用原子更新，安卓已提交目标在取消时不再删除。
 - 文件归属：账号工作目录保存 `segments-*` 的 TS/`.part`/播放列表指纹、`windows-input-*` 的压缩样本/索引/配置、`composite.partial.mp4`、完成标记和 `composite.mp4`；用户目标目录只按记录定位 `.bjtu-save-*.tmp` 与最终输出；账号目录的 `tasks.json` / `tasks.json.new` 是任务记录及其原子写入文件。无法归属的旧临时文件不扫描用户目录、不自动删除。
-- Windows 独立 JVM 在保存阶段被强制结束后，新管理器恢复已合成文件并完成保存；测试核对已存在视频、缓存与临时文件。隔离界面已观察一运行两排队、失败后下一项推进，以及浅色/深色和大字号提示。未使用正式安装、真实账号或原有下载。
+- Windows 独立 JVM 在保存阶段被强制结束后，新管理器恢复已合成文件并完成保存；测试核对已存在视频、缓存与临时文件。隔离界面已观察一运行两排队、失败后下一项推进，以及浅色/深色和大字号提示。该阶段隔离测试未使用正式安装、真实账号或原有下载；后续真实流程用户验收见顶部。
 - 可选实机测试 `WindowsPlaybackHardwareAcceptanceTest` 用仓库合成 TS 和实际 Windows helper，在 NVIDIA RTX 4060 硬件路径验证三个排队任务、暂停恢复、取消与强制结束 helper 后的下一项推进；5 个输出均为 H.264/AAC、1920×540 且 ffmpeg 全段解码成功，已存在视频与无关临时文件保留，任务工作根目录和 `tasks.json.new` 无残留。以 `BJTU_PLAYBACK_HARDWARE_ACCEPT=1` 运行 `:windowsApp:windowsTest --tests '*WindowsPlaybackHardwareAcceptanceTest*'`，需本机已有 ffmpeg/ffprobe；证据 `.artifacts/playback-queue-lifecycle/hardware-queue-verified.xml`。
-- 当前共享回放/课件等测试 144 项全过；Windows 默认全量测试 32 项、0 失败、2 跳过（含上述可选硬件测试，另已显式运行通过）；Android 使用已有 debug keystore 的 `:androidApp:assembleDebug` 通过，未安装。最终代码的完整 `:shared:desktopTest` 1214 项中 5 项是既有 Windows 环境失败（DesktopAgentIntegrationTest 3、MacUninstallCleanerTest 2）。代码提交 `c5b70c28` 的跨平台安全检查 [40545883628](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/40545883628) 四项通过，包含 macOS 全部共享测试、iOS 共享测试、Windows 镜像和 Android debug/优化版；安卓实际设备未验收，旧的无归属 `.bjtu-save-*.tmp` 无法安全自动定位。
+- 该阶段共享回放/课件等测试 144 项全过；Windows 默认全量测试 32 项、0 失败、2 跳过（含上述可选硬件测试，另已显式运行通过）；Android 使用已有 debug keystore 的 `:androidApp:assembleDebug` 通过，未安装。最终代码的完整 `:shared:desktopTest` 1214 项中 5 项是既有 Windows 环境失败（DesktopAgentIntegrationTest 3、MacUninstallCleanerTest 2）。代码提交 `c5b70c28` 的跨平台安全检查 [40545883628](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/40545883628) 四项通过，包含 macOS 全部共享测试、iOS 共享测试、Windows 镜像和 Android debug/优化版；安卓实际设备未验收，旧的无归属 `.bjtu-save-*.tmp` 无法安全自动定位。
 
 
 ## 已合入功能分支、待主干：CITEL 折扣时间配色与考试 sheet 测高（PR #70）
