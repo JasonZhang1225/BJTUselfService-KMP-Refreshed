@@ -92,6 +92,8 @@ interface StreamingDestination {
     val recoveryToken: String? get() = null
     /** 给用户看的名字（文件名；不含完整路径）。 */
     val displayName: String
+    /** 可展示的本地保存位置；平台不提供文件系统路径时为 null，不解析恢复句柄。 */
+    val outputPath: String? get() = null
     suspend fun write(bytes: ByteArray)
     suspend fun commit(): HomeworkFileSaveResult
     /** 保留所选文件和权限，关闭未完成写入；重试时由平台重新从文件开头写。 */

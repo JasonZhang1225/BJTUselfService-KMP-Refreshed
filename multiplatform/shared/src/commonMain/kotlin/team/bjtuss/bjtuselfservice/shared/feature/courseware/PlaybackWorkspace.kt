@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -882,6 +883,7 @@ private fun PlaybackTaskCard(task: PlaybackTask, manager: PlaybackTaskManager) {
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
+                PlaybackSavedOutputs(task)
             }
             Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
                 if (task.isActive) {
@@ -896,6 +898,44 @@ private fun PlaybackTaskCard(task: PlaybackTask, manager: PlaybackTaskManager) {
             }
         }
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun PlaybackSavedOutputs(task: PlaybackTask, actions: PlaybackSavedFileActions? = remember { playbackSavedFileActions() }) {
+    if (actions == null) return
+    val scope = rememberCoroutineScope()
+    var error by remember(task.id) { mutableStateOf<String?>(null) }
+    var opening by remember(task.id) { mutableStateOf(false) }
+    val paths = task.outputs.indices.mapNotNull { task.outputPaths.getOrNull(it)?.takeIf(String::isNotBlank) }
+    if (paths.isEmpty()) {
+        if (task.phase == PlaybackTaskPhase.DONE) {
+            Text("保存路径：旧任务未记录完整路径", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+    paths.forEach { path ->
+        SelectionContainer {
+            Text("保存路径：$path", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (task.phase == PlaybackTaskPhase.DONE) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                fun open(folder: Boolean) {
+                    if (opening) return
+                    opening = true
+                    error = null
+                    scope.launch {
+                        try { error = actions.open(path, folder) } finally { opening = false }
+                    }
+                }
+                OutlinedButton(onClick = { open(false) }, enabled = !opening) { Text("打开视频") }
+                TextButton(onClick = { open(true) }, enabled = !opening) { Text("打开文件夹") }
+            }
+        }
+    }
+    error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
 }
 
 /**

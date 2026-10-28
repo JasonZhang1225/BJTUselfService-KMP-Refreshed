@@ -341,6 +341,7 @@ internal class FileStreamingDestination(
     private var output: java.io.OutputStream? = null
     private var committed = false
     override val displayName: String = target.name
+    override val outputPath: String = target.absolutePath
     override val recoveryToken: String get() = windowsDestinationToken(target, temporary.toFile())
 
     override suspend fun closeForRecovery() = withContext(NonCancellable + Dispatchers.IO) {

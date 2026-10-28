@@ -94,6 +94,7 @@ internal fun locateHelper(): File? {
  *
  * 文件名带内容摘要：版本变化时不会覆盖正在运行的旧文件，也不用反复释放。
  */
+@Synchronized
 internal fun extractHelper(): File? {
     val bytes = WindowsPlaybackCompositor::class.java.getResourceAsStream(HELPER_RESOURCE)
         ?.use { it.readBytes() }

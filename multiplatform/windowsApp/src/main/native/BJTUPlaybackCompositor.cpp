@@ -1136,9 +1136,70 @@ int composeCpu(const Options& options) {
     return 0;
 }
 
+// 预览只解码 App 从白名单 HLS 下载并无损整理的一小段本地 MP4。
+// 输出顶向下 32 位 BMP，避免引入第三方图像/视频依赖。
+int thumbnailMain(const wchar_t* input, const wchar_t* output, int maxWidth) {
+    if (maxWidth < 16 || maxWidth > 1920) return 64;
+    const HRESULT initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(initialized)) return 1;
+    if (FAILED(MFStartup(MF_VERSION, MFSTARTUP_LITE))) { CoUninitialize(); return 1; }
+    int result = 1;
+    try {
+        VideoDecoder decoder;
+        VideoFrame frame;
+        if (decoder.open(input) && decoder.read(frame)) {
+            const int width = std::min(maxWidth, frame.width);
+            const int height = std::max(1, static_cast<int>(static_cast<long long>(frame.height) * width / frame.width));
+            if (height <= 1920) {
+                std::vector<uint8_t> pixels(static_cast<size_t>(width) * height * 4);
+                auto clamp = [](int value) { return static_cast<uint8_t>(std::max(0, std::min(255, value))); };
+                for (int y = 0; y < height; ++y) {
+                    const int sy = y * frame.height / height;
+                    for (int x = 0; x < width; ++x) {
+                        const int sx = x * frame.width / width;
+                        const int yy = static_cast<int>(frame.luma()[static_cast<size_t>(sy) * frame.width + sx]) - 16;
+                        const size_t uv = static_cast<size_t>(sy / 2) * frame.width + (sx / 2) * 2;
+                        const int u = static_cast<int>(frame.chroma()[uv]) - 128;
+                        const int v = static_cast<int>(frame.chroma()[uv + 1]) - 128;
+                        const size_t dest = (static_cast<size_t>(y) * width + x) * 4;
+                        pixels[dest] = clamp((298 * yy + 516 * u + 128) >> 8);
+                        pixels[dest + 1] = clamp((298 * yy - 100 * u - 208 * v + 128) >> 8);
+                        pixels[dest + 2] = clamp((298 * yy + 409 * v + 128) >> 8);
+                        pixels[dest + 3] = 255;
+                    }
+                }
+                BITMAPFILEHEADER fileHeader{};
+                fileHeader.bfType = 0x4d42;
+                fileHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+                fileHeader.bfSize = fileHeader.bfOffBits + static_cast<DWORD>(pixels.size());
+                BITMAPINFOHEADER imageHeader{};
+                imageHeader.biSize = sizeof(imageHeader);
+                imageHeader.biWidth = width;
+                imageHeader.biHeight = -height;
+                imageHeader.biPlanes = 1;
+                imageHeader.biBitCount = 32;
+                imageHeader.biCompression = BI_RGB;
+                std::ofstream image(output, std::ios::binary);
+                image.write(reinterpret_cast<const char*>(&fileHeader), sizeof(fileHeader));
+                image.write(reinterpret_cast<const char*>(&imageHeader), sizeof(imageHeader));
+                image.write(reinterpret_cast<const char*>(pixels.data()), pixels.size());
+                image.close();
+                result = image ? 0 : 1;
+            }
+        }
+    } catch (...) { result = 1; }
+    MFShutdown();
+    CoUninitialize();
+    if (result != 0) DeleteFileW(output);
+    return result;
+}
+
 }  // namespace
 
 int wmain(int argc, wchar_t** argv) {
+    if (argc == 5 && std::wstring(argv[1]) == L"thumbnail") {
+        return thumbnailMain(argv[2], argv[3], _wtoi(argv[4]));
+    }
     Options options;
     if (!parseOptions(argc, argv, options)) return 64;
     if (options.parentPid) {

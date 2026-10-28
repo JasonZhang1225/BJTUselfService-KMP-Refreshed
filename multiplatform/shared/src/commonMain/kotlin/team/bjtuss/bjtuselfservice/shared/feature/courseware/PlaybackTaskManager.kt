@@ -84,6 +84,8 @@ data class PlaybackTask(
     /** 0..1；未知时为 null（显示不确定进度条）。 */
     val progress: Float? = null,
     val outputs: List<String> = emptyList(),
+    /** 与 outputs 一一对应；旧记录和没有本地文件系统路径的平台可以为空。 */
+    val outputPaths: List<String?> = emptyList(),
     val message: String? = null,
     /** 需要用户注意但不是错误的提示（如 iOS 旧系统需回到前台继续合成）。 */
     val notice: String? = null,
@@ -272,6 +274,7 @@ class PlaybackTaskManager(
             composite = doComposite,
             progressive = doProgressive,
             outputs = destinations.map { it.displayName },
+            outputPaths = destinations.map { it.outputPath },
         )
         mutableTasks.update { listOf(task) + it }
         val request = Request(ordered, doComposite, destinations, quality, doProgressive)
@@ -688,6 +691,7 @@ class PlaybackTaskManager(
                     notice = null,
                     compositionDevice = null,
                     outputs = destinations.map { d -> d.displayName },
+                    outputPaths = destinations.mapIndexed { index, d -> d.outputPath ?: it.outputPaths.getOrNull(index) },
                     message = if (it.composite) "已保存合成视频（左：${it.streamLabels[0]}，右：${it.streamLabels[1]}）。" else "已保存。",
                 )
             }
@@ -888,6 +892,7 @@ class PlaybackTaskManager(
                     if (request.committed[index]) {
                         destinations += object : StreamingDestination {
                             override val displayName = task.outputs[index]
+                            override val outputPath = task.outputPaths.getOrNull(index)
                             override val recoveryToken = token
                             override suspend fun write(bytes: ByteArray) = error("already saved")
                             override suspend fun commit() = HomeworkFileSaveResult.Saved

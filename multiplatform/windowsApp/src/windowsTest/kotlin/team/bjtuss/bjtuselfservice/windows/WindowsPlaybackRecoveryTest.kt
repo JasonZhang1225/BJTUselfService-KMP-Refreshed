@@ -29,6 +29,55 @@ import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
 
 class WindowsPlaybackRecoveryTest {
+    @Test fun completedPathRemainsAfterCacheCleanupAndManagerRestart() = runBlocking {
+        withDirectory { directory ->
+            val target = File(directory, "课程 & 视频.mp4")
+            val recovery = WindowsPlaybackRecovery(File(directory, "state"))
+            val store = recovery.storeFor("path-test")
+            val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+            val gateway = object : team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway {
+                override val isAvailable = true
+                override val isStreamingSaveAvailable = true
+                override suspend fun pickFiles() = team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult.Cancelled
+                override suspend fun saveFile(file: team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent) = HomeworkFileSaveResult.Cancelled
+                override suspend fun openStreamingDestination(fileName: String, contentType: String) =
+                    StreamingDestinationResult.Opened(prepareFileStreamingDestination(target))
+            }
+            val streams = listOf("TEACHER", "SCREEN").map { kind ->
+                team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStream(
+                    team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStreamKind.valueOf(kind),
+                    "https://lmt6.bjtu.edu.cn:8880/vod/a/${kind.lowercase()}/playlist.m3u8")
+            }
+            val detail = team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackDetail(
+                team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackLesson(1, 1, "", "课节", "", "", true),
+                true, streams, streams.map { it.kind }, "")
+            try {
+                val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(PlaybackCrashFixture.transport, 0),
+                    { PlaybackCrashFixture.compositor }, { null }, store, recovery::restoreDestination)
+                assertIs<team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackEnqueueResult.Started>(
+                    manager.enqueue(detail, streams, "课程", true, gateway))
+                withTimeout(10_000) {
+                    while (store.load().singleOrNull()?.let { it.task.phase == PlaybackTaskPhase.DONE && it.request == null } != true) delay(20)
+                }
+                assertEquals(listOf(target.absolutePath), store.load().single().task.outputPaths)
+            } finally {
+                scope.coroutineContext[kotlinx.coroutines.Job]!!.cancel()
+                scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            }
+            val restartedScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+            try {
+                val restarted = manager(restartedScope, store, recovery)
+                withTimeout(5_000) { while (restarted.tasks.value.isEmpty()) delay(10) }
+                assertEquals(PlaybackTaskPhase.DONE, restarted.tasks.value.single().phase)
+                assertEquals(listOf(target.absolutePath), restarted.tasks.value.single().outputPaths)
+                assertEquals("合成结果", target.readText())
+            } finally {
+                restartedScope.coroutineContext[kotlinx.coroutines.Job]!!.cancel()
+                restartedScope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            }
+        }
+    }
+
     private val noNetwork = object : SchoolHttpTransport {
         override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse = error("恢复阶段不能访问网络")
         override fun clearSession() = Unit
