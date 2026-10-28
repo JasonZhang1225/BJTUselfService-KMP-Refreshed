@@ -4,6 +4,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.time.TimeSource
 import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkJsonParseResult
 import team.bjtuss.bjtuselfservice.shared.data.homework.SmartCourse
 import team.bjtuss.bjtuselfservice.shared.data.homework.SmartPlatformEndpoint
@@ -69,6 +70,11 @@ interface CoursewareRemoteDataSource {
     suspend fun fetchChildren(course: CoursewareCourse, parentId: Int): List<CoursewareNode> =
         throw CoursewareRemoteException(CoursewareRemoteFailure.MALFORMED_RESPONSE)
     suspend fun downloadResource(node: CoursewareNode): HomeworkFileContent
+    suspend fun streamResource(node: CoursewareNode, sink: StreamingFileSink, onProgress: (Long, Long) -> Unit) {
+        val file = downloadResource(node)
+        sink.write(file.bytes)
+        onProgress(file.bytes.size.toLong(), file.bytes.size.toLong())
+    }
     suspend fun downloadTeachingCalendar(course: CoursewareCourse): HomeworkFileContent
     /** 未开放下载文件的备用路径：先确定实际可读的存储地址与文件名，再由 [streamStoredDownload] 分段写盘。 */
     suspend fun planStoredDownload(node: CoursewareNode): CoursewareStoredDownload =
@@ -219,15 +225,9 @@ class SchoolCoursewareRemoteDataSource(
                 lastFailure = CoursewareRemoteFailure.SECURE_CHANNEL_UNAVAILABLE
                 continue
             }
-            val head = execute(
-                SchoolHttpRequest(
-                    method = SchoolHttpMethod.GET,
-                    url = url,
-                    headers = buildHeaders(includeSession = false) + ("Range" to "bytes=0-0"),
-                ),
-            )
+            val head = readBoundedRange(url, 0, 0)
             val total = head.totalLengthFromRange()
-            if (head.statusCode !in 200..299 || total == null || total <= 0L ||
+            if (head.statusCode != 206 || head.body.size != 1 || total == null || total <= 0L ||
                 !endpoint.acceptsResourceUrl(head.finalUrl) ||
                 // 静态目录找不到文件时可能回一张 HTML 错误页，不能当成课件保存。
                 (head.looksLikeHtmlPage() && !node.extension.trim().equals("html", ignoreCase = true))
@@ -273,14 +273,7 @@ class SchoolCoursewareRemoteDataSource(
         while (true) {
             attempt++
             val body = try {
-                val response = execute(
-                    SchoolHttpRequest(
-                        method = SchoolHttpMethod.GET,
-                        url = url,
-                        headers = buildHeaders(includeSession = false) + ("Range" to "bytes=$start-$end"),
-                        largeTransfer = true,
-                    ),
-                )
+                val response = readBoundedRange(url, start, end)
                 // 只接受与请求区间一致的 206；服务器忽略 Range 回整文件时不能拼进去。
                 if (response.statusCode == 206 && response.contentRangeStart() == start &&
                     response.body.size.toLong() == end - start + 1 && endpoint.acceptsResourceUrl(response.finalUrl)
@@ -298,7 +291,38 @@ class SchoolCoursewareRemoteDataSource(
         }
     }
 
-    private suspend fun downloadTicketResource(node: CoursewareNode): HomeworkFileContent {
+    /** 不接受 Range 的服务器可能返回整份大文件；先检查响应头，再最多读取请求的区间。 */
+    private suspend fun readBoundedRange(url: String, start: Long, end: Long): SchoolHttpResponse {
+        val size = (end - start + 1).toInt()
+        val buffer = ByteArray(size)
+        var count = 0
+        var headers: SchoolHttpResponse? = null
+        try {
+            if (requestDelayMillis > 0) delay(requestDelayMillis)
+            transport.stream(SchoolHttpRequest(SchoolHttpMethod.GET, url,
+                headers = buildHeaders(includeSession = false) + ("Range" to "bytes=$start-$end"),
+                largeTransfer = true), { response ->
+                headers = response
+                if (response.statusCode != 206 || response.contentRangeStart() != start ||
+                    !endpoint.acceptsResourceUrl(response.finalUrl)) throw StopRangeResponse()
+            }, { bytes ->
+                if (bytes.size > size - count) throw StopRangeResponse()
+                bytes.copyInto(buffer, count)
+                count += bytes.size
+            })
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: StopRangeResponse) {
+            return (headers ?: throw CoursewareRemoteException(CoursewareRemoteFailure.NETWORK)).copy(body = byteArrayOf())
+        } catch (_: Exception) {
+            network()
+        }
+        return (headers ?: throw CoursewareRemoteException(CoursewareRemoteFailure.NETWORK)).copy(body = buffer.copyOf(count))
+    }
+
+    private class StopRangeResponse : Exception()
+
+    private suspend fun ticketUrl(node: CoursewareNode): String {
         val ticketResponse = smartRequest(
             method = SchoolHttpMethod.POST,
             path = DOWNLOAD_TICKET_PATH,
@@ -320,10 +344,76 @@ class SchoolCoursewareRemoteDataSource(
             is CoursewareJsonParseResult.Success -> parsed.value
         }
         if (!endpoint.acceptsResourceUrl(ticket.url)) secureChannelUnavailable()
+        return ticket.url
+    }
+
+    override suspend fun streamResource(node: CoursewareNode, sink: StreamingFileSink, onProgress: (Long, Long) -> Unit) {
+        require(node.kind == CoursewareNodeKind.RESOURCE && node.rpId.isNotBlank())
+        ensureInitialized()
+        if (!node.downloadAllowed) {
+            streamStoredDownload(planStoredDownload(node), sink, onProgress)
+            return
+        }
+        var total = 0L
+        var written = 0L
+        var lastProgress = TimeSource.Monotonic.markNow()
+        try {
+            val url = ticketUrl(node)
+            transport.stream(SchoolHttpRequest(method = SchoolHttpMethod.GET, url = url,
+                headers = buildHeaders(includeSession = false), largeTransfer = true), { response ->
+                if (response.statusCode !in 200..299) network()
+                if (!endpoint.acceptsResourceUrl(response.finalUrl)) secureChannelUnavailable()
+                if (response.contentTypeOrDefault().contains("text/html", ignoreCase = true) &&
+                    !node.extension.trim().equals("html", ignoreCase = true)) malformed()
+                total = response.header("Content-Length")?.toLongOrNull() ?: 0L
+                onProgress(0, total)
+            }, { chunk ->
+                sink.write(chunk)
+                written += chunk.size
+                if (lastProgress.elapsedNow().inWholeMilliseconds >= 150 || (total > 0 && written >= total)) {
+                    onProgress(written, total)
+                    lastProgress = TimeSource.Monotonic.markNow()
+                }
+            })
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: CoursewareRemoteException) {
+            if (error.reason == CoursewareRemoteFailure.NETWORK && written == 0L) {
+                val fallback = try {
+                    planStoredDownload(node)
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    throw error
+                }
+                // 用户已确认原文件名；不能把转换后的 PDF/视频放进原文件扩展名。
+                if (fallback.isConvertedCopy) throw error
+                streamStoredDownload(fallback, sink, onProgress)
+                return
+            }
+            throw error
+        } catch (error: team.bjtuss.bjtuselfservice.shared.files.StreamingSinkIoException) {
+            throw error
+        } catch (_: Exception) {
+            if (written == 0L) {
+                val fallback = try { planStoredDownload(node) } catch (cancel: CancellationException) { throw cancel } catch (_: Exception) { network() }
+                if (!fallback.isConvertedCopy) {
+                    streamStoredDownload(fallback, sink, onProgress)
+                    return
+                }
+            }
+            network()
+        }
+        if (written == 0L || (total > 0 && written != total)) network()
+        onProgress(written, total)
+    }
+
+    private suspend fun downloadTicketResource(node: CoursewareNode): HomeworkFileContent {
+        val url = ticketUrl(node)
         val response = execute(
             SchoolHttpRequest(
                 method = SchoolHttpMethod.GET,
-                url = ticket.url,
+                url = url,
                 headers = buildHeaders(includeSession = false),
                 largeTransfer = true,
             ),
@@ -594,7 +684,7 @@ private fun ByteArray.isPdfBytes(): Boolean = size >= 5 &&
     this[3] == 'F'.code.toByte() &&
     this[4] == '-'.code.toByte()
 
-private fun CoursewareNode.suggestedFileName(): String {
+internal fun CoursewareNode.suggestedFileName(): String {
     val clean = name.substringAfterLast('/').substringAfterLast('\\').ifBlank { "resource" }
     val normalizedExtension = extension.trim().trimStart('.')
     return if (normalizedExtension.isBlank() || clean.substringAfterLast('.', "").isNotBlank()) {

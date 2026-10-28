@@ -1,5 +1,7 @@
 # BJTUselfService 实时工作记忆
 
+> 2026-10-28：当前分支 `fix/courseware-streaming-save`，基于 `feat/courseware-fallback-playback` 的 `8e063741`；课件流式保存、批量进度和 Windows 现代保存面板待合入视频回放分支。其他平台的视频下载暂搁置。 最新 Windows 测试包 `交大自由行 KMP-2.0.0-Alpha-local-20261028-152439-059.msi` 已放下载文件夹，未安装。
+
 > 2026-10-28：用户明确标记 **Windows 课程回放开发与本轮验收完成**；代码已提交推送 `133cf398` 到 `feat/courseware-fallback-playback`。四端审查标准随本轮文档提交；跨平台安全检查 run `40631769655` 四项全部通过。新 MSI `local-20261028-111451-103` 已在下载文件夹；代理未执行安装。沿用 2.0.0-Alpha / Build45，不改版本号，功能分支未合 main。
 >
 > 2026-10-27：分支 `feat/courseware-fallback-playback`，回放与设备显示已提交 `19585a4a`，已合并远端 PR #72（`8847b785`），功能分支尚未合入 main。源码版本为 `2.0.0-Alpha` / Build 45，发布说明草稿 `docs/releases/v2.0.0-KMP.md`；iOS 系统版本与桌面安装器使用数字 `2.0.0`，iOS 最低 18.0。
@@ -128,6 +130,19 @@
 
 - `isFavorableChange` 把“折扣时间”延后与截止时间延后同等视为向好（绿色），补 `HomeChangeFieldTest` 两条断言。
 - 考试页紧凑端“考试详情”和“添加到日历”两个 sheet 由 `needsFullHeight` 改为 `fitContentHeight`：iOS 走按正文定高的自定义 detent，安卓/桌面底部 sheet 按内容高度展开；正文不再自带 verticalScroll，由 sheet 滚动。未在模拟器/真机验收。
+
+## 进行中：课件大文件保存与 Windows 文件选择器（2026-10-28）
+
+- 批量取消先确认，可选择保留已完成文件、舍弃本次目录、继续下载；未完成文件请求清理。非用户主动的协程取消默认保留已完成文件；保留时会话关闭失败不会转而删除目录，提示用户检查。测试覆盖首个文件完成后取消的两种选择，以及取消恰逢文件目标创建时清理句柄。初次边界测试失败，修复后重新运行通过；真实应用弹窗和实际文件系统交互、iOS 编译/云盘仍未验收。
+- 最新 Windows 测试包 `C:\Users\zjg\Downloads\交大自由行 KMP-2.0.0-Alpha-local-20261028-152439-059.msi`，88,829,952 字节，SHA256 `7F195EE79C84A24AF2076562D00C8A517126ECBE9F3243B61307C4280CD4A434`。课件专项与 Windows 测试、Android debug、桌面编译和 MSI 打包成功；解包核对共享 UI/模型、Windows 面板、回放 helper 与构建标识，下载副本哈希一致。未安装。证据 `.artifacts/courseware-cancel-package/`。
+
+- 用户反馈批量导出缺少当前文件序号和大小：现显示“第 1/6 个：文件名”，优先用响应实际总长度；未知时显示课程列表的标注大小并注明来源，标注也缺失则显示总大小未知，未知长度不伪造百分比。转换件不沿用原件标注大小。格式与取消清理测试、Windows 测试及 Android/桌面构建通过；iOS 构建、真实应用界面与大文件仍未验证。
+- 新测试包 `C:\Users\zjg\Downloads\交大自由行 KMP-2.0.0-Alpha-local-20261028-151429-562.msi`，88,813,568 字节，SHA256 `2E753712CA772ECA880733729766D51CC71FA453DEC327B53EF4C83FDC5DA1A5`。命令 `:shared:desktopTest --tests '*Courseware*' :windowsApp:windowsTest :windowsApp:packageMsi :desktopApp:compileKotlin :androidApp:assembleDebug -I ..\.artifacts\android-account-debug-signing.gradle -x downloadWix --offline --no-configuration-cache --console=plain --continue` 成功；Windows 33 项、0 失败、2 跳过，MSI 解包核对共享界面与模型 class、Windows 面板及回放 helper 和构建标识，下载副本哈希一致。未安装。证据 `.artifacts/courseware-size-package/`。
+
+- 普通课件先选择保存位置，再按下载票据流式写入；单文件详情显示进度，未知长度显示已下载字节。批量目录接入四端分块写入，按完成文件和当前文件进度显示，取消时请求清理本次目标；备用下载对忽略 Range 的响应在读取正文前拒绝，票据失败且尚未写入时仅回退原件。
+- Windows 单文件保存（含视频）及目录选择改用系统 IFileDialog，绑定应用窗口。独立窗口探针观察到现代面板、模态归属、取消返回和文件夹选择返回；未在真实账号的应用页面完成端到端下载验收。
+- 2026-10-28 按用户要求本地打包：`C:\Users\zjg\Downloads\交大自由行 KMP-2.0.0-Alpha-local-20261028-150301-335.msi`，88,813,568 字节，SHA256 `31BC34B65CA6B07D43DF0259575C01057547BC6E5304F7F43B31937F38817E90`。`JDK 21 .\gradlew.bat :windowsApp:windowsTest :windowsApp:packageMsi -x downloadWix --offline --no-configuration-cache --console=plain` 成功；Windows 测试 33 项、0 失败、2 跳过。MSI 解包核对课件模型和文件面板 class 与本次编译一致、回放 helper 哈希一致、构建标识匹配；源包与下载副本哈希一致。未安装，安装器与现有应用共享升级标识。证据 `.artifacts/courseware-package/`。
+- 已运行离线课件专项和本地 HTTP 流式测试，82 项通过；Windows/桌面 JVM 编译和 Android debug 构建通过。最后补充的等待态也已随同命令重新通过。iOS/macOS 原生目标与真机、iCloud 文件提供方、真实 500 MB 课件和完整界面状态尚未验证；本机 Windows 不能编译 iOS。该项待合入视频回放分支；本轮测试包未安装或发布。
 
 ## 进行中：课程回放分支收尾
 
