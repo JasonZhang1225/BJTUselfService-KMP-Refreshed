@@ -4,6 +4,8 @@
 >
 > 2026-10-27：分支 `feat/courseware-fallback-playback`，回放与设备显示已提交 `19585a4a`，已合并远端 PR #72（`8847b785`），功能分支尚未合入 main。源码版本为 `2.0.0-Alpha` / Build 45，发布说明草稿 `docs/releases/v2.0.0-KMP.md`；iOS 系统版本与桌面安装器使用数字 `2.0.0`，iOS 最低 18.0。
 >
+> 2026-10-29：成绩课程性质筛选布局修复已本地验证，独立分支 `fix/grade-filter-layout` 准备 PR，未合入 main。两态统一字重，空间足够一行、不足自然换行；新增 2 项回归覆盖 384 种组合，平台验证边界见本项记录。
+>
 > 用户持续目标：Windows 硬件加速与下载合成并行已完成本机隔离验收；安卓计划及现有修改保留，设备暂不在身边，ADB 与实机验收留待后续。安卓旧版整节验收实测不暂停总耗时约16分15秒，9–10分钟性能目标未达到。
 >
 > **统一标准与后续工作：`docs/plans/playback-four-platform-acceptance.md`**。Windows 已结项；Android 按 PROMPT2 先做 P0 真机测量，再按 PROMPT3 做 P1 定向优化；iOS/macOS 先补当前包真实整节与能力差距验收。旧 Android 计划已加已实现事项更正，禁止重复实现。
@@ -172,6 +174,21 @@
 - 设置页“版本与项目”重构（claude/kind-darwin-u2fxah）的 PR/合入状态未在本次核验，保留为待确认，不混入回放 PR。旧离屏测试证据 `.artifacts/settings-version-card/`。
 - 私人 Site 的线上版本与手机/电脑真实长码配对、同时上传、ChatGPT 手机授权、Windows 混合 DPI 托盘与退出回调仍需验证；不能用旧构建或虚构数据界面当成端到端成功。
 - 既有真机待验收：小组件侧载共享容器与各尺寸、上课前后实时活动切换、通知权限说明、版本弹窗只出现一次、CITEL/编程题真实上传、系统保存/预览/二维码入口、Windows 原生缓存/DPAPI 往返。旧 Build42/43 包的检查不是当前 Build45 真机证据。
+
+## 进行中：成绩课程性质筛选布局稳定（2026-10-29，已本地验证；未合入）
+
+- 用户要求：同一窗口宽度/字号下，勾选或取消课程性质不能造成按钮错位、换行行数变化；空间足够时尽量一行显示，空间不足时自然换行，不强制四项一行。
+- 原因证据：普通性质筛选原用“选中 SemiBold / 未选 Normal”。先抽出实际生产芯片组件并保留旧行为，新增布局测试失败：220dp、1.0 字号、浅色下，限选按钮由 73px 变 72px，证明选择状态改变了固有尺寸；临界行宽下可改变换行。基线日志/XML 在 `.artifacts/grade-course-type-layout/before-fix-test.*`。
+- 改动：`GradeScreen.kt` 的普通性质筛选调用 `GradeCourseTypeFilterChip`，两态文字统一 Normal，用原有选中色与描边表达状态；外层 FlowRow、间距、顺序、数量、标签、字号和筛选回调保留。自选课程计算分支未修改；未加固定宽高、强制单行、缩字或横向滚动。
+- 回归：`GradeCourseTypeFilterLayoutTest.kt` 两项用例全部通过，无跳过；检查 220/280/320/360/420/640dp、1.0/1.6 字号、浅/深色、16 种选择组合共 384 种布局，每个按钮边界均稳定。另从实际测量尺寸求恰好容纳四项的宽度，验证一行展示，再减小 20dp 验证自然换行；模拟点击也正常切换且边界不变。已人工查看选中/取消时的一行截图，以及窄屏 1.6 倍字号的换行截图。
+- 实际命令（multiplatform/，Gradle JAVA_HOME 指向 JDK 21）：`:shared:desktopTest :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :androidApp:assembleDebug --offline --no-daemon --no-configuration-cache --console=plain --continue -Pkotlin.compiler.execution.strategy=in-process -x :shared:generatePackageBuildInfo`。全量 1245 项、1239 通过、5 失败、1 跳过；仅既有 DesktopAgentIntegrationTest 3 项、MacUninstallCleanerTest 2 项因 Windows 环境失败，联合命令退出 1，耗时 2m18s。Android assembleDebug、macOS JVM 宿主 compileKotlin、Windows compileKotlinWindows 均成功；没有安装 App。
+- 证据：`.artifacts/grade-course-type-layout/{before-fix-test.xml,after-fix-test.xml,test-summary.json,validation.log,ui/}`。复用前轮已取证的进程级临时 TEMP/TMP 与 `jdk.net.unixdomain.tmpdir`，没有修改系统设置；复用已有生成构建标识，不改版本号。Android 使用已有 debug.keystore 验证签名。
+- 范围与回退：本任务只修改 `GradeScreen.kt`、新增一个 desktopTest 与本工作记录；备份在 `.artifacts/grade-course-type-layout/before/`。源码目录仍无 `.git`，未初始化仓库、提交或推送。前一项作业功能按用户决定结项，保持其源码及既有记录。
+- 未验证：Windows 无法执行 Apple 原生编译/模拟器，本轮未操作 Computer Use 或安装 App；不把离屏 Compose 测量当作 Android 真机或 Apple 运行验证。
+
+- 本次 PR 准备：仅迁入本项源码、测试及记录；分支 `fix/grade-filter-layout` 从最新 main `ff0968b7a575` 创建。原无 Git 的源码副本保留，隔离检出目录已建立 Git 分支；本项没有提交或合并到 main。
+
+- 独立分支复验（2026-10-29）：本分支不含另一项功能；`gradlew.bat :shared:desktopTest --tests '*GradeCourseTypeFilterLayoutTest*' :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :androidApp:assembleDebug --offline --no-daemon --no-configuration-cache --console=plain --continue -Pkotlin.compiler.execution.strategy=in-process -x :shared:generatePackageBuildInfo` 返回 BUILD SUCCESSFUL，专项 2 项全过，无失败/跳过；Android debug 与两个桌面宿主编译成功。证据 `.artifacts/pr-split/grade-validation.log`，临时环境仅限验证进程，未安装应用。Apple 原生验证交由 PR CI，当前仍未合入 main。
 
 ## 当前痛点
 

@@ -471,6 +471,36 @@ private fun RankBarsIcon(
     }
 }
 
+/** 两态字重一致，避免文字宽度变化触发外层 FlowRow 换行；选中态由颜色与描边表达。 */
+@Composable
+internal fun GradeCourseTypeFilterChip(
+    type: CourseType,
+    label: String,
+    total: Int,
+    included: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = courseTypeColors(type)
+    FilterChip(
+        selected = included,
+        onClick = onClick,
+        modifier = modifier,
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = colors.container,
+            selectedLabelColor = colors.onContainer,
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.accessibleAlpha(0.35f),
+            labelColor = MaterialTheme.colorScheme.onSurfaceVariant.accessibleAlpha(0.48f),
+        ),
+        border = BorderStroke(
+            width = if (included) 1.5.dp else 1.dp,
+            color = if (included) colors.onContainer.copy(alpha = 0.42f)
+                else MaterialTheme.colorScheme.outlineVariant.accessibleAlpha(0.55f),
+        ),
+        label = { Text("$label $total", fontWeight = FontWeight.Normal) },
+    )
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ColumnScope.GradeFilterSheet(
@@ -640,8 +670,8 @@ private fun ColumnScope.GradeFilterSheet(
                     ).forEach { (type, label) ->
                         val total = state.courseTypeCounts[type] ?: 0
                         if (total <= 0) return@forEach
-                        val colors = courseTypeColors(type)
                         if (state.selectionMode) {
+                            val colors = courseTypeColors(type)
                             // 自选：严格跟 selectedGradeIds。0 门时全部 NONE（0/n、未选色），
                             // 与筛选模式「默认全选」满色脱钩，避免「自选 0 门但性质仍全亮」。
                             val selState = state.selectionStateForType(type)
@@ -682,32 +712,8 @@ private fun ColumnScope.GradeFilterSheet(
                             )
                         } else {
                             val included = type !in state.excludedCourseTypes
-                            FilterChip(
-                                selected = included,
-                                onClick = { model.toggleCourseTypeIncluded(type) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = colors.container,
-                                    selectedLabelColor = colors.onContainer,
-                                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                        .accessibleAlpha(0.35f),
-                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                        .accessibleAlpha(0.48f),
-                                ),
-                                border = BorderStroke(
-                                    width = if (included) 1.5.dp else 1.dp,
-                                    color = if (included) {
-                                        colors.onContainer.copy(alpha = 0.42f)
-                                    } else {
-                                        MaterialTheme.colorScheme.outlineVariant.accessibleAlpha(0.55f)
-                                    },
-                                ),
-                                label = {
-                                    Text(
-                                        "$label $total",
-                                        fontWeight = if (included) FontWeight.SemiBold else FontWeight.Normal,
-                                    )
-                                },
-                            )
+                            GradeCourseTypeFilterChip(type, label, total, included,
+                                onClick = { model.toggleCourseTypeIncluded(type) })
                         }
                     }
                 }
