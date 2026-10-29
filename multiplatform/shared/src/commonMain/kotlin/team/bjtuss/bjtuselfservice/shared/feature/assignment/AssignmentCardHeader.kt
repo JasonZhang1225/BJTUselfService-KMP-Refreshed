@@ -16,7 +16,8 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 internal fun AssignmentCardHeader(course: String, title: String, submitted: Boolean, source: AssignmentSource? = null,
-    statusLabel: String = if (submitted) "已提交" else "未提交") {
+    statusLabel: String = if (submitted) "已提交" else "未提交",
+    completionKey: AssignmentCompletionKey? = null) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(course, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -31,8 +32,11 @@ internal fun AssignmentCardHeader(course: String, title: String, submitted: Bool
                 style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
         }
     }
-    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
-        maxLines = 2, overflow = TextOverflow.Ellipsis)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+            maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (!submitted) completionKey?.let { AssignmentCompletionCheckbox(it, title) }
+    }
 }
 
 @Composable

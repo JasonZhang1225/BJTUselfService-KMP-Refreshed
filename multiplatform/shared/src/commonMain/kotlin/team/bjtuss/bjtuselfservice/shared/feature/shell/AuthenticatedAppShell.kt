@@ -1456,6 +1456,7 @@ fun AuthenticatedAppShell(
                 ) {
                     CompositionLocalProvider(
                         LocalBottomBarClearance provides if (usesBottomUnderlap) bottomContentClearance else 0.dp,
+                        team.bjtuss.bjtuselfservice.shared.feature.assignment.LocalAssignmentCompletionStore provides session.assignmentCompletionStore,
                         LocalTopBarClearance provides topBarClearance,
                         LocalReportTopScroll provides reportTopScroll,
                         LocalNativeScrollControllerReporter provides reportNativeScrollController.takeIf { nativeScrollingEnabled },

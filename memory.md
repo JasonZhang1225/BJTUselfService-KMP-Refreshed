@@ -1,5 +1,7 @@
 # BJTUselfService 实时工作记忆
 
+> 2026-10-29：作业手动完成标记已本地验证，独立分支 `feat/assignment-completion` 准备 PR，未合入 main。三来源共用、仅未提交作业显示复选框、按账号本地保存；专项 25 项通过，既有 Windows 环境全量测试失败及 Apple 原生未验证边界见本项记录。
+>
 > 2026-10-28：用户明确标记 **Windows 课程回放开发与本轮验收完成**；代码已提交推送 `133cf398` 到 `feat/courseware-fallback-playback`。四端审查标准随本轮文档提交；跨平台安全检查 run `40631769655` 四项全部通过。新 MSI `local-20261028-111451-103` 已在下载文件夹；代理未执行安装。沿用 2.0.0-Alpha / Build45，不改版本号，功能分支未合 main。
 >
 > 2026-10-27：分支 `feat/courseware-fallback-playback`，回放与设备显示已提交 `19585a4a`，已合并远端 PR #72（`8847b785`），功能分支尚未合入 main。源码版本为 `2.0.0-Alpha` / Build 45，发布说明草稿 `docs/releases/v2.0.0-KMP.md`；iOS 系统版本与桌面安装器使用数字 `2.0.0`，iOS 最低 18.0。
@@ -7,6 +9,31 @@
 > 用户持续目标：Windows 硬件加速与下载合成并行已完成本机隔离验收；安卓计划及现有修改保留，设备暂不在身边，ADB 与实机验收留待后续。安卓旧版整节验收实测不暂停总耗时约16分15秒，9–10分钟性能目标未达到。
 >
 > **统一标准与后续工作：`docs/plans/playback-four-platform-acceptance.md`**。Windows 已结项；Android 按 PROMPT2 先做 P0 真机测量，再按 PROMPT3 做 P1 定向优化；iOS/macOS 先补当前包真实整节与能力差距验收。旧 Android 计划已加已实现事项更正，禁止重复实现。
+
+## 进行中：作业手动完成标记（2026-10-29，已实现并记录本地验证；未合入）
+
+- 用户确认：课程平台、物理在线、CITEL 均支持；卡片右侧复选框沿用成绩页风格，可撤销；标记按账号保存在本机。聚合与独立列表共用状态。普通刷新、重新登录和重启保留；现有账号离线数据/全部本地数据清除操作会清除对应记录。真正已提交的作业仍按原有“隐藏已提交”规则处理，课程筛选仍然生效。最新显示要求：仅学校现有判定为未提交的作业显示复选框；手动已完成、但学校仍未提交的作业保留复选框以便撤销，不删除原有本地标记。
+- 已确认的手动完成作业规则：
+
+| 当前筛选条件 | 手动标记“已完成”的作业 |
+|---|---|
+| 隐藏已过期＋隐藏已提交 | 隐藏 |
+| 隐藏已过期，关闭隐藏已提交 | 按原有日期规则显示 |
+| 显示全部日期，无论是否隐藏已提交 | 显示，保留勾选状态 |
+
+- 存储与账号隔离：`feature/assignment/AssignmentCompletionStore.kt` 用现有 CacheStore metadata 存储版本化的作业身份集合，无表结构改动。按当前 MIS 登录账号 `profile.studentId` 命名空间读写，身份另包含来源、课程 ID、作业/活动 ID，CITEL 区分编程/书面类型；不同账号的同一作业 ID 不共享标记。StateFlow 只读；串行保存，落盘成功后发布；读失败阻止覆盖，写失败保留原标记；`clearWith` 与写入互斥，账号离线缓存清除后立即重载状态，避免旧标记写回。
+- 会话与界面：`AppDataGraph.kt` 按账号拥有唯一 store，`AuthenticatedSessionFactory.kt` 将其交给会话，原生页面沿用同一实例。`AuthenticatedAppShell.kt` 向各目的地提供该实例；`AssignmentCompletionUi.kt` 用 `key(store)` 重建订阅，修复切账号首帧短暂沿用旧勾选的问题。聚合、课程平台、物理在线和 CITEL 独立列表应用上表规则；搜索仍搜全部作业，结果可撤销标记。三个来源复用 `AssignmentCardHeader.kt` 的 48dp 复选框，只调整显示条件；点击框不打开详情，点击卡片正文仍打开详情。列表自身计数与完成状态一致，首页提醒、学校提交状态/提交接口没有改动。
+- 专项测试（最终源码）：`AssignmentCompletionStoreTest` 9 项、`AssignmentCompletionPersistenceTest` 7 项、`AssignmentCompletionFilterTest` 5 项、`AssignmentCompletionUiTest` 4 项，共 25 项全过，无跳过。覆盖来源/账号隔离、真实 SQLite 重开、清除一个账号不影响另一个、并发/失败/取消、筛选组合、真实卡片点击和切账号首帧。最新 UI 回归逐一验证课程平台提交记录、物理在线、CITEL 报告与编程 AC 卡片均无复选框，点击原框位置只打开详情，不改动已保存标记；未提交作业的勾选与撤销仍通过。
+- 实际验证（最终源码，JDK 21，multiplatform/）：`:shared:desktopTest :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :androidApp:assembleDebug --offline --no-daemon --no-configuration-cache --console=plain --continue -Pkotlin.compiler.execution.strategy=in-process -x :shared:generatePackageBuildInfo`：1243 项，1237 通过、5 失败、1 跳过，联合命令退出 1（3m45s）。失败仍为 DesktopAgentIntegrationTest 3 项、MacUninstallCleanerTest 2 项（Windows 符号链接权限/运行 Unix 脚本等）；本轮新增用例全部通过。日志、XML、汇总在 `.artifacts/assignment-checkbox-visibility/{validation.log,test-summary.json}`，复现脚本 `validate.ps1`；仅复用已有构建标识生成文件，未改产品版本。前轮证据仍在 `.artifacts/assignment-completion-final/`。
+- 构建环境：首次 Gradle/JVM worker 报 `Unable to establish loopback connection` / AF_UNIX `Invalid argument: connect`。仅当前验证进程设置 TEMP/TMP 与 `jdk.net.unixdomain.tmpdir` 至 `.artifacts/assignment-completion-step1/socket-temp` 后继续运行；未改系统设置或工程构建配置。复现脚本 `.artifacts/assignment-completion-step1/validate.ps1`，新用例 XML、完整日志与汇总 JSON 同目录。
+- 各端宿主检查：前轮正常解析工程已有依赖后，桌面离线依赖阻塞已解除；本轮最新源码的 `:desktopApp:compileKotlin`、`:windowsApp:compileKotlinWindows`、`:androidApp:assembleDebug` 均通过。联合命令仅因上述 5 项共享测试失败而退出 1。Android 使用现有 debug.keystore 验证签名，没有安装；没有更改依赖声明。本机 Windows 无法构建/运行 iOS cinterop 与模拟器；Apple 原生构建、真实设备验证及本次 CI 未执行。
+- 手动界面证据：本地示例窗口验证过勾选后同时隐藏已过期/已提交时由 3 项变 2 项，显示全部日期后恢复 3 项且勾选保留；进程重启后示例账号 A 标记恢复，切到示例账号 B 的首帧不继承 A 勾选。后续交叉标记检查两次被用户按 Esc 中断，未完成部分不标通过。离屏截图已检查浅/深色、空列表、读失败与 1.6 倍字号，见 `.artifacts/assignment-completion-final/ui/`。
+- 原文件备份与差异：`.artifacts/assignment-completion-step1/`、`.artifacts/assignment-completion-final/`；最新显示调整备份在 `.artifacts/assignment-checkbox-visibility/before/`。本目录无 Git 元数据，没有初始化仓库、创建分支、提交、推送或发版。AGENTS.md、历史日志和无关模块保持原样。
+- 最新改动范围：仅 `AssignmentCardHeader.kt` 的 `!submitted` 显示条件、`AssignmentCompletionUiTest.kt` 的相关回归与本工作记录；账号隔离、筛选和本地保存机制保持原有实现。新增已提交卡片截图已人工查看（课程平台与 CITEL AC），无复选框且标题恢复完整可用宽度；截图在 `.artifacts/assignment-checkbox-visibility/ui/`。本轮未再操作 Computer Use；前述未完成的交叉账号手动检查仍列未验证，不据此宣称真机验收通过。
+
+- 本次 PR 准备：仅迁入本项源码、测试及记录；分支 `feat/assignment-completion` 从最新 main `ff0968b7a575` 创建。原无 Git 的源码副本保留，隔离检出目录已建立 Git 分支；本项没有提交或合并到 main。
+
+- 独立分支复验（2026-10-29）：本分支不含另一项功能；`gradlew.bat :shared:desktopTest --tests '*AssignmentCompletion*' :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :androidApp:assembleDebug --offline --no-daemon --no-configuration-cache --console=plain --continue -Pkotlin.compiler.execution.strategy=in-process -x :shared:generatePackageBuildInfo` 返回 BUILD SUCCESSFUL，专项 25 项全过，无失败/跳过；Android debug 与两个桌面宿主编译成功。证据 `.artifacts/pr-split/assignment-validation.log`，临时环境仅限验证进程，未安装应用。Apple 原生验证交由 PR CI，当前仍未合入 main。
 
 ## 已完成：Windows 保存结果入口、预览与最终验收（2026-10-28，功能分支待主干）
 
