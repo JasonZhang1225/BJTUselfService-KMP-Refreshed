@@ -3,6 +3,9 @@ package team.bjtuss.bjtuselfservice.shared.feature.assignment
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.drop
@@ -119,6 +122,22 @@ class AssignmentCompletionStoreTest {
         keys.map { async(Dispatchers.Default) { assertTrue(store.setCompleted(it, true)) } }.awaitAll()
         assertEquals(keys, store.state.value.completedKeys)
         assertEquals(keys, AssignmentCompletionStore(persistence).state.value.completedKeys)
+    }
+
+    @Test fun saveSurvivesCheckboxScopeCancellationAndKeepsPendingState() = runBlocking {
+        val persistence = MemoryPersistence()
+        val store = AssignmentCompletionStore(persistence, CoroutineScope(coroutineContext))
+        val checkboxJob = Job()
+        var save: Job? = null
+        CoroutineScope(coroutineContext + checkboxJob).launch(start = CoroutineStart.UNDISPATCHED) {
+            save = store.requestSetCompleted(key, true)
+        }
+        assertTrue(key in store.state.value.savingKeys)
+        assertNull(store.requestSetCompleted(key, true))
+        checkboxJob.cancel()
+        save!!.join()
+        assertEquals(setOf(key), persistence.saved)
+        assertTrue(store.state.value.savingKeys.isEmpty())
     }
 
     private class MemoryPersistence(initial: Set<AssignmentCompletionKey> = emptySet()) : AssignmentCompletionPersistence {

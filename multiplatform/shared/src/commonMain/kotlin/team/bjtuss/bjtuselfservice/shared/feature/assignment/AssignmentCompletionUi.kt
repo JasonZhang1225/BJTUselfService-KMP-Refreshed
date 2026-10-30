@@ -32,18 +32,12 @@ internal fun assignmentCompletionState(): AssignmentCompletionState {
 internal fun AssignmentCompletionCheckbox(key: AssignmentCompletionKey, title: String) {
     val store = LocalAssignmentCompletionStore.current ?: return
     val state = assignmentCompletionState()
-    val scope = rememberCoroutineScope()
-    var saving by remember(key, store) { mutableStateOf(false) }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Checkbox(
             checked = key in state.completedKeys,
-            enabled = state.loaded && !saving,
+            enabled = state.loaded && key !in state.savingKeys,
             onCheckedChange = { checked ->
-                saving = true
-                scope.launch {
-                    try { withContext(Dispatchers.Default) { store.setCompleted(key, checked) } }
-                    finally { saving = false }
-                }
+                store.requestSetCompleted(key, checked)
             },
             modifier = Modifier.size(48.dp).semantics { contentDescription = "标记${title}为已完成" },
         )
