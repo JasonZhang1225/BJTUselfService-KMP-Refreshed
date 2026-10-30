@@ -61,16 +61,18 @@ fun CitelWorkspace(model: CitelModel, holdNetwork: Boolean, onOpen: (String) -> 
     }
     LaunchedEffect(Unit) { while (true) { now = Clock.System.now().epochSeconds; delay(30_000) } }
     val scroll = rememberLazyListState()
-    val tasks = filteredCitelTasks(state.tasks.filter { selectedCourses.isEmpty() || it.courseId in selectedCourses }, pendingOnly, hideExpired, null, sortOrder, now)
+    val completion = assignmentCompletionState()
+    val tasks = filteredCitelTasks(state.tasks.filter { selectedCourses.isEmpty() || it.courseId in selectedCourses }, pendingOnly, hideExpired, null, sortOrder, now, completion.completedKeys)
     val topClearance = LocalTopBarClearance.current
     val bottomClearance = LocalBottomBarClearance.current
-    val dueSoon = tasks.count { !it.completed && it.dueTime?.let { due -> due in now..(now + 48 * 3600) } == true }
+    val dueSoon = tasks.count { !it.completed && it.completionKey() !in completion.completedKeys && it.dueTime?.let { due -> due in now..(now + 48 * 3600) } == true }
     val subtitle = (if (dueSoon > 0) "未来 48 小时内有 $dueSoon 项未提交" else "未来 48 小时内暂无临近截止项") +
         if (filters.active) " · 已筛选" else ""
     LaunchedEffect(filters) { scroll.scrollToItem(0) }
     TopScrollLazyColumn(state = scroll, modifier = modifier.fillMaxSize().desktopTouchScroll(scroll),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp + topClearance,
             bottom = 24.dp + bottomClearance), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (completion.failure != null) item("completion-error") { AssignmentCompletionFeedback() }
         state.message?.takeIf { state.failed }?.let { message ->
             item { AppErrorBanner(message, onRetry = { scope.launch { model.refresh() } }) }
         }
@@ -102,8 +104,8 @@ fun CitelWorkspace(model: CitelModel, holdNetwork: Boolean, onOpen: (String) -> 
 }
 
 internal fun filteredCitelTasks(tasks: List<CitelTask>, pendingOnly: Boolean, hideExpired: Boolean,
-    courseId: Int?, sortOrder: Int, now: Long): List<CitelTask> {
-    val filtered = tasks.filter { (!pendingOnly || !it.completed) &&
+    courseId: Int?, sortOrder: Int, now: Long, completedKeys: Set<AssignmentCompletionKey> = emptySet()): List<CitelTask> {
+    val filtered = tasks.filter { passesAssignmentCompletionFilter(it.completed, it.completionKey() in completedKeys, hideExpired, pendingOnly) &&
         (!hideExpired || it.dueTime?.let { due -> due > now } != false) && (courseId == null || it.courseId == courseId) }
     return when (sortOrder) {
         1 -> filtered.sortedBy { it.dueTime ?: Long.MAX_VALUE }
@@ -117,7 +119,8 @@ internal fun CitelTaskCard(task: CitelTask, onOpen: () -> Unit, source: Assignme
     ElevatedCard(onClick = onOpen, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            AssignmentCardHeader(task.courseName, task.title, task.completed, source, statusLabel = task.cardStatusText)
+            AssignmentCardHeader(task.courseName, task.title, task.completed, source, statusLabel = task.cardStatusText,
+                completionKey = task.completionKey())
             CitelTaskLine("类型", if (task.programming) "编程作业" else "实验报告")
             if (task.programming) CitelTaskLine("评测", task.submissionStatusText())
             CitelTaskLine("开始", assignmentStartText(task.openTime))

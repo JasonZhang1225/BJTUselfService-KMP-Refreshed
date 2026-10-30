@@ -76,6 +76,8 @@ class AuthenticatedSession(
     val remoteAgent: team.bjtuss.bjtuselfservice.shared.agent.remote.RemoteAgentController? = null,
     /** 课件页“课程回放”分段；预览/探针会话可为 null，界面隐藏该分段。 */
     val playbackModel: team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackScreenModel? = null,
+    /** 当前账号的本地手动完成标记；原生页面共享此实例，预览会话可不提供。 */
+    val assignmentCompletionStore: team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCompletionStore? = null,
 ) {
     private val appResumeGenerationState = MutableStateFlow(0L)
     private val appForegroundGenerationState = MutableStateFlow(0L)

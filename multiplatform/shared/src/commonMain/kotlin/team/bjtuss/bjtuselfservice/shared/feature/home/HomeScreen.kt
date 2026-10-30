@@ -168,6 +168,8 @@ fun HomeWorkspace(
     todayRequest: Int = 0,
     onTodaySelectedChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
+    /** 未经作业页筛选的来源数据，仅用于把截止提醒关联到本地完成标记。 */
+    reminderAssignments: List<team.bjtuss.bjtuselfservice.shared.feature.assignment.AggregatedAssignment> = emptyList(),
 ) {
     val state by model.state.collectAsState()
     val pageListState = rememberLazyListState()
@@ -221,9 +223,12 @@ fun HomeWorkspace(
     val agendaNow = remember(now.date, now.hour, now.minute) {
         LocalDateTime(now.date, LocalTime(now.hour, now.minute))
     }
-    val dueSoonItems = remember(homework, exams, phyVlabEvents, agendaNow, timeZone) {
-        val agenda = buildHomeAgenda(homework, exams, agendaNow.date, agendaNow, timeZone, phyVlabEvents)
-        dueSoonSummaryItems(agenda.dueSoonHomework, agenda.dueSoonEvents, timeZone)
+    val reminderAgenda = remember(homework, exams, phyVlabEvents, agendaNow, timeZone) {
+        buildHomeAgenda(homework, exams, agendaNow.date, agendaNow, timeZone, phyVlabEvents)
+    }
+    val reminders = rememberHomeAssignmentReminders(reminderAgenda, reminderAssignments)
+    val dueSoonItems = remember(reminders, timeZone) {
+        dueSoonSummaryItems(reminders.dueSoonHomework, reminders.dueSoonEvents, timeZone)
     }
     val hasMeaningfulChanges = remember(changes) { meaningfulHomeChanges(changes).isNotEmpty() }
     val status = state.status

@@ -15,6 +15,9 @@ import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadNot
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadSheet
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.mergePickedFiles
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.pickFeedback
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.assignmentCompletionState
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCompletionFeedback
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.completionKey
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceLoadingState
 
 import androidx.compose.foundation.Canvas
@@ -138,10 +141,11 @@ fun HomeworkWorkspace(
     // 搜索是独立的一层：结果来自全部作业，不经过课程/过期/已提交筛选，筛选 banner 与提示让位。
     val searchActive = search?.active == true
     val query = search?.query.orEmpty()
+    val completion = assignmentCompletionState()
     val displayedHomework = if (searchActive) {
         searchHomework(state.homework, query, state.sortOrder)
     } else {
-        state.visibleHomework
+        state.visibleHomework(completion.completedKeys)
     }
 
     // 只灌缓存；网络自动同步由 shell 在登录成功后触发。
@@ -159,6 +163,7 @@ fun HomeworkWorkspace(
         },
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        AssignmentCompletionFeedback()
         // 宽屏有独立列表/详情两栏，提示留在工作区顶部；紧凑端则放进
         // 同一个 LazyColumn，随作业列表一起滚动，避免红色 banner 固定遮挡正文。
         if ((expanded || state.homework.isEmpty()) && legacyWarningVisible) {
@@ -550,12 +555,16 @@ private fun HomeworkSummary(
     state: HomeworkUiState,
     onOpenFilter: (() -> Unit)? = null,
 ) {
+    val completion = assignmentCompletionState()
+    val visible = state.visibleHomework(completion.completedKeys)
+    val dueSoon = team.bjtuss.bjtuselfservice.shared.domain.homework.dueSoonHomeworkCount(
+        visible.filterNot { it.completionKey() in completion.completedKeys }, state.now, state.timeZone)
     // 仅课程/过期/已提交过滤算「筛选」；改排序不算。
     val filtered = state.selectedCourses.isNotEmpty() || state.hideExpired || state.hideSubmitted
     val subtitle = buildString {
         append(
-            if (state.dueSoonCount > 0) {
-                "未来 48 小时内有 ${state.dueSoonCount} 项未提交"
+            if (dueSoon > 0) {
+                "未来 48 小时内有 $dueSoon 项未提交"
             } else {
                 "未来 48 小时内暂无临近截止项"
             },
@@ -564,7 +573,7 @@ private fun HomeworkSummary(
             append(" · 已筛选")
         }
     }
-    HomeworkSummaryBanner(state.visibleHomework.size, subtitle, onOpenFilter)
+    HomeworkSummaryBanner(visible.size, subtitle, onOpenFilter)
 }
 
 internal fun subtitleWithBoldFilterMarker(text: String): AnnotatedString {
@@ -967,7 +976,8 @@ internal fun HomeworkCard(
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCardHeader(
-                item.courseName, item.title, team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkSubmitted(item), source)
+                item.courseName, item.title, team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkSubmitted(item), source,
+                completionKey = item.completionKey())
             HomeworkCardLine("类型", item.typeLabel())
             HomeworkCardLine("开始", assignmentStartText(item.openDate))
             HomeworkCardLine("截止", assignmentDeadlineText(item.endTime))
