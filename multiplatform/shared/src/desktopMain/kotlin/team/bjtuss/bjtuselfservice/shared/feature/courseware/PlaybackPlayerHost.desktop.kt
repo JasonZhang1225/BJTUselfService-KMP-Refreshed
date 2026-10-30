@@ -43,6 +43,7 @@ import team.bjtuss.bjtuselfservice.shared.network.KtorSchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.network.createSchoolHttpTransport
 
 actual val playbackPlaysInApp: Boolean = false
+actual val playbackRecordingDownloadAvailable: Boolean = true
 
 /** 桌面端不内嵌浏览器内核（见 SchoolWebView.desktop），只在调用方误用时占位。 */
 @Composable

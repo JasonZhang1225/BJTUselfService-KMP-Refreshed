@@ -37,6 +37,7 @@ import team.bjtuss.bjtuselfservice.shared.data.homework.isSchoolPlaybackStreamUr
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStream
 
 actual val playbackPlaysInApp: Boolean = true
+actual val playbackRecordingDownloadAvailable: Boolean = false
 actual fun openPlaybackInSystemBrowser(html: String): Boolean = false
 
 /** Android WebView 的 video 元素不可靠地支持 HLS，直接使用系统 MediaPlayer。 */

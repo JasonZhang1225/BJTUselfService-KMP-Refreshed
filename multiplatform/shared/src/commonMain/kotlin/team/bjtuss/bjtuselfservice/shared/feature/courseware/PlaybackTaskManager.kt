@@ -242,6 +242,9 @@ class PlaybackTaskManager(
             return PlaybackEnqueueResult.Failed("下载记录不可用，已保留原记录和缓存；请先恢复记录后再开始新任务。")
         }
         if (streams.isEmpty()) return PlaybackEnqueueResult.Failed("先选择画面")
+        if (!playbackRecordingDownloadAvailable) {
+            return PlaybackEnqueueResult.Failed("移动端仅支持在线播放，录像下载请使用 Windows 或 Mac。")
+        }
         if (!gateway.isStreamingSaveAvailable) return PlaybackEnqueueResult.Failed("当前平台还不能保存大文件。")
         val ordered = streams.sortedBy { it.kind.ordinal }
         val doComposite = composite && ordered.size == 2 && compositor().isAvailable

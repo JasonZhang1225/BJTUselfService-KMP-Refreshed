@@ -18,6 +18,7 @@ import platform.WebKit.WKWebsiteDataStore
 import platform.darwin.NSObject
 
 actual val playbackPlaysInApp: Boolean = true
+actual val playbackRecordingDownloadAvailable: Boolean = false
 
 /** 播放页是本地 HTML：只放行首次加载，页面内任何跳转都拦掉。 */
 private class PlaybackNavigationDelegate : NSObject(), WKNavigationDelegateProtocol {
