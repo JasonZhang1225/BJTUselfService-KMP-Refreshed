@@ -353,6 +353,7 @@ class AppDataGraph(
     }
 
     fun close() {
+        assignmentCompletionStore.close()
         refreshCoordinator.close()
         playbackModel.close()
     }
