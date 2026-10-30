@@ -41,6 +41,8 @@ data class HomeAgenda(
     val dueSoonHomework: List<Homework>,
     /** 48 小时内截止且未完成的物理在线 / CITEL 事项，与 [dueSoonHomework] 一起组成首页临近截止提醒。 */
     val dueSoonEvents: List<PhyVlabEvent> = emptyList(),
+    /** 未来 48 小时内开始折扣且未完成的 CITEL 作业，与截止提醒分开保留。 */
+    val dueSoonDiscountEvents: List<PhyVlabEvent> = emptyList(),
 ) {
     init {
         require(days.size == 7)
@@ -83,7 +85,15 @@ fun buildHomeAgenda(
     val dueSoonEvents = phyVlabEvents
         .filter { isPhyVlabDeadlineDueSoon(it, nowEpochSeconds) }
         .sortedWith(compareBy<PhyVlabEvent> { it.dayTimestamp }.thenBy { it.title })
-    return HomeAgenda(days, dueSoon, dueSoonEvents)
+    val dueSoonDiscountEvents = phyVlabEvents
+        .filter { isCitelDiscountDueSoon(it, nowEpochSeconds) }
+        .sortedWith(compareBy<PhyVlabEvent> { it.dayTimestamp }.thenBy { it.title })
+    return HomeAgenda(days, dueSoon, dueSoonEvents, dueSoonDiscountEvents)
+}
+
+private fun isCitelDiscountDueSoon(event: PhyVlabEvent, nowEpochSeconds: Long): Boolean {
+    if (event.kind != PhyVlabEventKind.DISCOUNT || !event.id.startsWith("citel-discount-") || event.submitted) return false
+    return event.dayTimestamp - nowEpochSeconds in 0L..48L * 3600
 }
 
 /** 与 [isHomeworkDueSoon] 同一窗口：未完成的截止事件，距今 0–48 小时（按整小时计）。 */
