@@ -91,6 +91,10 @@ fun buildHomeAgenda(
     return HomeAgenda(days, dueSoon, dueSoonEvents, dueSoonDiscountEvents)
 }
 
+/**
+ * CITEL 折扣提醒窗口：未来 0–48 小时的秒级闭区间。
+ * 与 [isPhyVlabDeadlineDueSoon] 的整小时截断不同——折扣卡要在开始折扣的精确时刻离开列表。
+ */
 private fun isCitelDiscountDueSoon(event: PhyVlabEvent, nowEpochSeconds: Long): Boolean {
     if (event.kind != PhyVlabEventKind.DISCOUNT || !event.id.startsWith("citel-discount-") || event.submitted) return false
     return event.dayTimestamp - nowEpochSeconds in 0L..48L * 3600

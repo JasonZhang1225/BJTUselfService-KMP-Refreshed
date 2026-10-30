@@ -1,8 +1,8 @@
 # BJTUselfService 实时工作记忆
 
-> 2026-10-30：Cursor 代理修复 PR #78：已 rebase 到最新 main（含已合入的 #76/#77），折扣提醒走 `rememberHomeAssignmentReminders`，`filterHomeAssignmentReminders` / `reminderCompletionKey` 覆盖 `citel-discount-*`，并补手动完成隐藏/撤销测试。推送功能分支，未合并、未改版本号。
+> 2026-10-30：Cursor 代理修复 PR #78：已 rebase 到最新 main（含已合入的 #76/#77/#79），折扣提醒走 `rememberHomeAssignmentReminders`，`filterHomeAssignmentReminders` / `reminderCompletionKey` 覆盖 `citel-discount-*`，并补手动完成隐藏/撤销测试。推送功能分支，未合并、未改版本号。
 >
-> 2026-10-30：PR #76（作业手动完成 + 首页截止提醒过滤）与 PR #77（成绩筛选布局）已合入 main。
+> 2026-10-30：PR #76（作业手动完成 + 首页截止提醒过滤）、#77（成绩筛选布局）、#79（完成标记保存生命周期）已合入 main。
 >
 > 2026-10-28：用户明确标记 **Windows 课程回放开发与本轮验收完成**；代码已提交推送 `133cf398` 到 `feat/courseware-fallback-playback`。四端审查标准随本轮文档提交；跨平台安全检查 run `40631769655` 四项全部通过。新 MSI `local-20261028-111451-103` 已在下载文件夹；代理未执行安装。沿用 2.0.0-Alpha / Build45，不改版本号，功能分支未合 main。
 >
@@ -14,11 +14,11 @@
 
 ## 进行中：CITEL 首页 48 小时折扣提醒（PR #78，2026-10-30）
 
-- 分支 `feat/citel-discount-reminders`，已 rebase 到 main `75f4e8f5`；目标仍为 main，未合并。
+- 分支 `feat/citel-discount-reminders`，已 rebase 到 main `28cf03fa`（含 #79）；目标仍为 main，未合并。
 - 行为：未来 48 小时内未完成的 CITEL 折扣事件单独成卡（折扣在上、截止在下；空类不占位）；各自计数、前三项与剩余数量，沿用“查看作业”。
 - 与 #76 衔接：`HomeScreen` 保留 `reminders = rememberHomeAssignmentReminders(...)`；折扣列表取过滤后的 `reminders.dueSoonDiscountEvents`；`filterHomeAssignmentReminders` 裁剪折扣列表；`reminderCompletionKey` 将 `citel-discount-*` 与 `citel-due-*` 同等关联。手动完成后两类提醒一起消失，撤销后按原窗口恢复。
 - 范围：`HomeAgenda.kt`、`HomeAssignmentReminders.kt`、`HomeScreen.kt`、折扣/完成过滤测试与本记录；不改版本、依赖或平台宿主。折扣窗口为秒级闭区间（有意区别于截止的整小时截断，见代码注释）。
-- 验证：见本轮 `:shared:desktopTest` 相关用例结果（写入完成后更新）。Apple 原生/真机仍待 CI 与设备验收。
+- 验证：`./gradlew :shared:desktopTest --tests '*HomeAssignmentReminders*' --tests '*HomeDiscount*' --tests '*HomeAgendaTest*'` BUILD SUCCESSFUL；相关 36 项全过（含新增折扣隐藏/撤销 2 项），0 失败/跳过。Apple 原生/真机与本轮 PR CI 仍待跑。
 
 ## 已合入 main：首页 48 小时提醒排除手动完成作业（PR #76）
 

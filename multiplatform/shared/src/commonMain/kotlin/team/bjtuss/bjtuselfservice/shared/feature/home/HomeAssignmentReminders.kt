@@ -10,7 +10,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentSource
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.assignmentCompletionState
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.completionKey
 
-/** 只移除临近截止提醒；原始周日程、提交状态、时间窗口与顺序均不改变。 */
+/** 只移除临近截止与折扣提醒；原始周日程、提交状态、时间窗口与顺序均不改变。 */
 internal fun filterHomeAssignmentReminders(
     agenda: HomeAgenda,
     assignments: List<AggregatedAssignment>,
@@ -19,8 +19,22 @@ internal fun filterHomeAssignmentReminders(
     if (completedKeys.isEmpty()) return agenda
     val homework = agenda.dueSoonHomework.filter { it.completionKey() !in completedKeys }
     val events = agenda.dueSoonEvents.filter { it.reminderCompletionKey(assignments) !in completedKeys }
-    return if (homework.size == agenda.dueSoonHomework.size && events.size == agenda.dueSoonEvents.size) agenda
-        else agenda.copy(dueSoonHomework = homework, dueSoonEvents = events)
+    val discounts = agenda.dueSoonDiscountEvents.filter {
+        it.reminderCompletionKey(assignments) !in completedKeys
+    }
+    return if (
+        homework.size == agenda.dueSoonHomework.size &&
+        events.size == agenda.dueSoonEvents.size &&
+        discounts.size == agenda.dueSoonDiscountEvents.size
+    ) {
+        agenda
+    } else {
+        agenda.copy(
+            dueSoonHomework = homework,
+            dueSoonEvents = events,
+            dueSoonDiscountEvents = discounts,
+        )
+    }
 }
 
 /** 复用按 store 重建的订阅，切账号的第一帧也不会使用上一账号的标记。 */
@@ -48,8 +62,10 @@ private fun PhyVlabEvent.reminderCompletionKey(assignments: List<AggregatedAssig
     val url = eventUrl?.takeIf { it.isNotBlank() }
     val matches = assignments.mapNotNull { assignment ->
         if (id.startsWith("citel-")) {
+            // 截止与折扣事件共用同一作业完成键，手动完成后两类提醒一起消失。
             assignment.citel?.takeIf { task ->
-                id == "citel-due-${task.id}" && (url == null || task.url == url)
+                (id == "citel-due-${task.id}" || id == "citel-discount-${task.id}") &&
+                    (url == null || task.url == url)
             }?.completionKey()
         } else {
             // 学校日历事件没有活动身份时，只用明确链接关联；不以标题猜测。
