@@ -1,5 +1,9 @@
 package team.bjtuss.bjtuselfservice.shared.feature.assignment
 
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
+import team.bjtuss.bjtuselfservice.shared.domain.time.deadlineDisplay
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.serialization.Serializable
@@ -43,15 +47,20 @@ data class AggregateCourseFilter(val allCourses: Boolean = true, val courses: Se
 data class AggregateAssignmentFilters(
     val platformCourses: Map<AssignmentSource, AggregateCourseFilter> = emptyMap(),
     val hideExpired: Boolean = false, val hideSubmitted: Boolean = false, val sortOrder: Int = 1,
+    val beforeDate: String? = null,
 ) {
     fun forSource(source: AssignmentSource): AggregateCourseFilter = platformCourses[source] ?: AggregateCourseFilter()
     fun withSource(source: AssignmentSource, filter: AggregateCourseFilter) = copy(platformCourses = platformCourses + (source to filter))
-    val active: Boolean get() = hideExpired || hideSubmitted || platformCourses.values.any { !it.allCourses }
+    val active: Boolean get() = beforeDate != null || hideExpired || hideSubmitted || platformCourses.values.any { !it.allCourses }
 }
 
 fun filterAggregateAssignments(items: List<AggregatedAssignment>, filters: AggregateAssignmentFilters, now: Long): List<AggregatedAssignment> {
+    val before = filters.beforeDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
     val visible = items.filter { filters.forSource(it.source).matches(it.courseId) && (!filters.hideSubmitted || !it.submitted) &&
-        (!filters.hideExpired || it.dueTime?.let { time -> time > now } != false) }
+        (!filters.hideExpired || it.dueTime?.let { time -> time > now } != false) &&
+        (before == null || it.dueTime?.let { time ->
+            deadlineDisplay(Instant.fromEpochSeconds(time).toLocalDateTime(TimeZone.of("Asia/Shanghai"))).date < before
+        } == true) }
     return sortAggregateAssignments(visible, filters.sortOrder)
 }
 

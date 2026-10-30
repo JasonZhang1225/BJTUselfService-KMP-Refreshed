@@ -1,3 +1,10 @@
+# 进行中：午夜截止与作业日期筛选（fork，2026-10-31）
+
+- 分支 fix/deadline-date-filter；统一 CITEL 午夜折扣显示与首页归日，新增严格早于指定显示日期的作业筛选，旧筛选缓存兼容。
+- 本地 Gradle 9.3.1：共享编译、Windows/macOS JVM 宿主编译通过；日期/HomeAgenda/聚合作业/CITEL 专项107项全部通过。全量1222项中5项失败、1项跳过，失败为既有 Windows 环境 DesktopAgentIntegrationTest 3项和 MacUninstallCleanerTest 2项。
+- 实际 Compose 组件浅/深色与1.5倍字号渲染通过；独立虚构数据窗口验证有效日期、非法日期提示和清除筛选。未使用真实账号数据。
+- Android本机缺SDK/签名环境，Apple目标需macOS；跨平台验证待本PR的CI。未合并或发布。
+
 # BJTUselfService 实时工作记忆
 
 > 2026-10-28：用户明确标记 **Windows 课程回放开发与本轮验收完成**；代码已提交推送 `133cf398` 到 `feat/courseware-fallback-playback`。四端审查标准随本轮文档提交；跨平台安全检查 run `40631769655` 四项全部通过。新 MSI `local-20261028-111451-103` 已在下载文件夹；代理未执行安装。沿用 2.0.0-Alpha / Build45，不改版本号，功能分支未合 main。
