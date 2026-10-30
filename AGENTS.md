@@ -232,3 +232,22 @@
 - 未经明确授权，不 commit、tag、push、force-push、创建 PR、合并或发 Release。
 - 发版时单独核对版本号（见“仓库事实”中的清单）、提交范围、测试、构建矩阵和发布说明，等待用户批准。
 - 每次交付说明：完成的行为、修改文件、验证命令、未验证边界和下一步。
+
+## Cursor Cloud specific instructions
+
+Linux Cloud Agent 使用镜像自带的 JDK 21（`/usr/lib/jvm/java-21-openjdk-amd64`）。环境安装把 Android SDK 放在 `/opt/android-sdk`，并写入已 gitignore 的 `multiplatform/local.properties`（`sdk.dir`）。`adb`、`emulator`、`sdkmanager` 链接在 `/usr/local/bin`。
+
+Android 调试包需要签名。安装脚本在 `~/.android/bjtu-kmp-upload.keystore` 生成一次性编译密钥，口令只写在 `~/.gradle/gradle.properties`。这不是发布用上传密钥，打出来的包不能覆盖安装正式版。
+
+在 `multiplatform/` 下验证：
+
+- `./gradlew :shared:desktopTest`：共享 JVM 测试。
+- `./gradlew :androidApp:assembleDebug`：默认只打 `arm64-v8a` debug APK。
+- 模拟器是 x86_64。要装进模拟器时先设置 `BJTU_ANDROID_ABIS=x86_64` 再执行 `assembleDebug`。
+- `multiplatform/remote-site-template`：`npm test`。镜像已有 Node 22，该目录没有 npm 依赖，不需要 `npm install`。
+
+模拟器系统镜像是 `system-images;android-36;google_apis;x86_64`。这台宿主上嵌套 KVM 创建 vCPU 会触发内核错误，模拟器必须加 `-accel off`（软件 CPU）。首次开机很慢，不要放进每次启动都会跑的 `start`。
+
+此 Linux 镜像不能构建 iOS（需要 Xcode）、macOS 桌面包（`desktopApp` 依赖 Apple Silicon Skiko）或 Windows MSI。不要在 Linux 上执行 `:desktopApp:run`。iOS 原生目标会被自动禁用；用户级 `~/.gradle/gradle.properties` 可设 `kotlin.native.ignoreDisabledTargets=true`，不要为此改仓库里的 `gradle.properties`。
+
+未获用户针对该次登录的明确要求时，不要在 Cloud Agent 里向学校统一认证提交账号密码。
