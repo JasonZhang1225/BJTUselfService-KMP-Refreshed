@@ -230,6 +230,9 @@ fun HomeWorkspace(
     val dueSoonItems = remember(reminders, timeZone) {
         dueSoonSummaryItems(reminders.dueSoonHomework, reminders.dueSoonEvents, timeZone)
     }
+    val discountSoonItems = remember(reminders, timeZone) {
+        dueSoonSummaryItems(emptyList(), reminders.dueSoonDiscountEvents, timeZone)
+    }
     val hasMeaningfulChanges = remember(changes) { meaningfulHomeChanges(changes).isNotEmpty() }
     val status = state.status
     Box(
@@ -259,8 +262,13 @@ fun HomeWorkspace(
             item(key = "home-now") {
                 HomeNowSection(timeZone = timeZone)
             }
-            // 正在进行与 48 小时内截止之后先看数据变动，再看日程窗格。
-            // 两栏为空时不建列表项，避免空项在日程上方多出一份间距。
+            // 正在进行、48 小时内折扣与截止之后先看数据变动，再看日程窗格。
+            // 提醒和变动为空时不建列表项，避免空项在日程上方多出一份间距。
+            if (discountSoonItems.isNotEmpty()) {
+                item(key = "home-discount-soon") {
+                    HomeDueSoonSection(discountSoonItems, expanded, onOpenHomework, reminderLabel = "开始折扣")
+                }
+            }
             if (dueSoonItems.isNotEmpty()) {
                 item(key = "home-due-soon") {
                     HomeDueSoonSection(dueSoonItems, expanded, onOpenHomework)
@@ -455,12 +463,13 @@ private fun StatusCard(
     }
 }
 
-/** 48 小时内截止的作业与事项。 */
+/** 48 小时内开始折扣或截止的作业与事项，两类分别显示。 */
 @Composable
 private fun HomeDueSoonSection(
     dueSoonItems: List<DueSoonSummaryItem>,
     expanded: Boolean,
     onOpenHomework: () -> Unit,
+    reminderLabel: String = "截止",
 ) {
     HomeCard(modifier = Modifier.fillMaxWidth()) {
         if (expanded) {
@@ -469,7 +478,7 @@ private fun HomeDueSoonSection(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                DueSoonHomeworkSummary(dueSoonItems, Modifier.weight(1f))
+                DueSoonHomeworkSummary(dueSoonItems, Modifier.weight(1f), reminderLabel)
                 OutlinedButton(onClick = onOpenHomework) { Text("查看作业") }
             }
         } else {
@@ -477,7 +486,7 @@ private fun HomeDueSoonSection(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                DueSoonHomeworkSummary(dueSoonItems)
+                DueSoonHomeworkSummary(dueSoonItems, reminderLabel = reminderLabel)
                 OutlinedButton(onClick = onOpenHomework, modifier = Modifier.fillMaxWidth()) {
                     Text("查看作业")
                 }
@@ -1239,10 +1248,11 @@ private fun dueSoonSummaryItems(
 private fun DueSoonHomeworkSummary(
     items: List<DueSoonSummaryItem>,
     modifier: Modifier = Modifier,
+    reminderLabel: String = "截止",
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-            "48 小时内有 ${items.size} 项待完成作业截止",
+            "48 小时内有 ${items.size} 项待完成作业$reminderLabel",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.error,
             fontWeight = FontWeight.SemiBold,

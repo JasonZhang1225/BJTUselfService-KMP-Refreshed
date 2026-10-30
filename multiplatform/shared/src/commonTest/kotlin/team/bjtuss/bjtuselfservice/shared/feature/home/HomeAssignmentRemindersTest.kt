@@ -150,4 +150,47 @@ class HomeAssignmentRemindersTest {
         assertEquals(0, filterHomeAssignmentReminders(original, assignments, setOf(wa.completionKey())).count())
         assertEquals(original, filterHomeAssignmentReminders(original, assignments, emptySet()))
     }
+
+    @Test fun citelDiscountRemindersHideWithManualCompletionAndRestoreOnUndo() {
+        val original = f.agenda()
+        assertEquals(listOf("citel-discount-${f.citel.id}"), original.dueSoonDiscountEvents.map { it.id })
+        assertTrue(original.dueSoonEvents.any { it.id == "citel-due-${f.citel.id}" })
+
+        val marked = filterHomeAssignmentReminders(original, f.assignments, setOf(f.citel.completionKey()))
+        assertTrue(marked.dueSoonDiscountEvents.isEmpty(), "手动完成后折扣提醒应消失")
+        assertTrue(marked.dueSoonEvents.none { it.id.startsWith("citel-") }, "截止提醒一并消失")
+        assertEquals(listOf(f.homework), marked.dueSoonHomework)
+        assertEquals(listOf(f.physicalDeadline), marked.dueSoonEvents)
+        assertSame(original.days, marked.days)
+
+        val restored = filterHomeAssignmentReminders(original, f.assignments, emptySet())
+        assertEquals(original.dueSoonDiscountEvents, restored.dueSoonDiscountEvents)
+        assertEquals(original, restored)
+
+        val onlyOtherSources = filterHomeAssignmentReminders(
+            original,
+            f.assignments,
+            setOf(f.homework.completionKey(), f.physical.completionKey()),
+        )
+        assertEquals(original.dueSoonDiscountEvents, onlyOtherSources.dueSoonDiscountEvents,
+            "其他来源标记不得影响 CITEL 折扣提醒")
+        assertEquals(listOf("citel-due-${f.citel.id}"), onlyOtherSources.dueSoonEvents.map { it.id })
+    }
+
+    @Test fun discountOnlyWindowStillHidesAndRestoresWithoutADueSoonDeadline() {
+        val discountOnly = f.citel.copy(
+            discountTime = f.seconds + 3600,
+            dueTime = f.seconds + 7 * 86400,
+        )
+        val assignments = aggregateAssignments(emptyList(), emptyList(), listOf(discountOnly))
+        val original = f.agenda(homework = emptyList(), events = citelAgendaEvents(listOf(discountOnly)))
+        assertEquals(listOf("citel-discount-${discountOnly.id}"), original.dueSoonDiscountEvents.map { it.id })
+        assertTrue(original.dueSoonEvents.isEmpty(), "截止在 48 小时外时折扣列表应独立存在")
+
+        val marked = filterHomeAssignmentReminders(original, assignments, setOf(discountOnly.completionKey()))
+        assertTrue(marked.dueSoonDiscountEvents.isEmpty())
+        assertTrue(marked.dueSoonEvents.isEmpty())
+        assertSame(original.days, marked.days)
+        assertEquals(original, filterHomeAssignmentReminders(original, assignments, emptySet()))
+    }
 }
