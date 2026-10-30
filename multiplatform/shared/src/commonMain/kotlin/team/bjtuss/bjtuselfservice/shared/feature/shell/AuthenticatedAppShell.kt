@@ -1563,6 +1563,7 @@ fun AuthenticatedAppShell(
                         homework = homeworkState.homework,
                         exams = examState.exams,
                         phyVlabEvents = homeAgendaEvents,
+                        reminderAssignments = aggregatedAssignments,
                         currentWeek = courseState.currentWeek,
                         academicWeeks = courseState.homeAcademicWeeks,
                         // 周数只在被校历确认后显示：确认前统一「日程加载中」，

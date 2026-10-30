@@ -1,5 +1,9 @@
 # BJTUselfService 实时工作记忆
 
+> 2026-10-30：用户现已授权更新 PR #76，撤销此前仅本地阶段的提交限制。本轮将已验证的首页提醒联动提交到 `feat/assignment-completion`，不操作 main 或成绩分支。最新远端 head 仍为 `993e1346`，所有者仅发表 P2 审查、没有新增源码提交；现有审查意见保留未解决。五个源码/测试文件哈希与专项 49 项、全量 1255 项及三端宿主构建验证时一致，本次只更新交付记录，不重复运行未变的测试。
+>
+> 2026-10-30：首页 48 小时截止提醒与手动完成标记联动已本地实现并验证：专项 49 项全过，新增 12 项通过，Android debug 与两个桌面宿主编译通过；全量仅既有 Windows 环境 5 项失败。按账号隔离，其他显示规则保持原样。用户禁止本轮提交、推送、更新 PR；本地仍在作业功能分支 `993e1346` 上，未改变远端。
+>
 > 2026-10-29：作业手动完成标记已本地验证，独立分支 `feat/assignment-completion` 准备 PR，未合入 main。三来源共用、仅未提交作业显示复选框、按账号本地保存；专项 25 项通过，既有 Windows 环境全量测试失败及 Apple 原生未验证边界见本项记录。
 >
 > 2026-10-28：用户明确标记 **Windows 课程回放开发与本轮验收完成**；代码已提交推送 `133cf398` 到 `feat/courseware-fallback-playback`。四端审查标准随本轮文档提交；跨平台安全检查 run `40631769655` 四项全部通过。新 MSI `local-20261028-111451-103` 已在下载文件夹；代理未执行安装。沿用 2.0.0-Alpha / Build45，不改版本号，功能分支未合 main。
@@ -9,6 +13,19 @@
 > 用户持续目标：Windows 硬件加速与下载合成并行已完成本机隔离验收；安卓计划及现有修改保留，设备暂不在身边，ADB 与实机验收留待后续。安卓旧版整节验收实测不暂停总耗时约16分15秒，9–10分钟性能目标未达到。
 >
 > **统一标准与后续工作：`docs/plans/playback-four-platform-acceptance.md`**。Windows 已结项；Android 按 PROMPT2 先做 P0 真机测量，再按 PROMPT3 做 P1 定向优化；iOS/macOS 先补当前包真实整节与能力差距验收。旧 Android 计划已加已实现事项更正，禁止重复实现。
+
+## 进行中：首页 48 小时提醒排除手动完成作业（2026-10-30，更新 PR #76；未合入）
+
+- 当前交付授权：用户要求更新 PR #76，并要求所有者更新内容优先；只向功能分支追加提交，不强推、不关闭审查、不合并 main。以下“仅本地／禁止提交／未提交”的描述为前一验证阶段的历史边界，本轮以本条为准。
+
+- 用户已确认全部四步一次实施，不需逐步确认；明确禁止本轮提交、推送或更新 PR。三来源手动完成后移出首页临近截止条目及数量，取消后仅按原有时间/提交规则恢复；账号隔离，作业页筛选和首页周日程等其余显示规则保持原样。
+- 开发基线：作业分支 `feat/assignment-completion` / `993e1346a26f9241c167c0cb18524a57b3101870`，本地工作树原干净，与远端 PR #76 head 一致；远端 main `ff0968b7a5752c0080925e21159c850a0c00e5d3`。PR 仍开放、未合并；此前 CI 已通过的事实不代表本轮新增代码通过 CI。
+- 当前实现：新增首页专用过滤/订阅函数，复用当前账号的 AssignmentCompletionStore；先按原 HomeAgenda 规则生成提醒，再排除本地完成键。周日程列表沿用原实例；Shell 只额外传入未经作业页筛选的完整聚合作业，用来源/课程/任务/题型及明确链接关联事件，未知或歧义事件保留原提醒，不按标题猜测。
+- 最终验证：专项 `gradlew.bat :shared:desktopTest --tests '*HomeAssignmentReminders*' --tests '*HomeAgendaTest*' --tests '*AssignmentCompletion*' --offline --no-daemon --no-configuration-cache --console=plain --continue -Pkotlin.compiler.execution.strategy=in-process -x :shared:generatePackageBuildInfo` 返回 BUILD SUCCESSFUL（3m8s），49 项全过无跳过，其中本轮新增规则 9 项、SQLite/Compose 3 项。全量 `gradlew.bat :shared:desktopTest :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :androidApp:assembleDebug --offline --no-daemon --no-configuration-cache --console=plain --continue -Pkotlin.compiler.execution.strategy=in-process -x :shared:generatePackageBuildInfo` 共 1255 项、1249 通过、5 失败、1 跳过，联合命令退出 1（3m 55s）；仅 DesktopAgentIntegrationTest 3 项、MacUninstallCleanerTest 2 项为既有 Windows 环境失败。Android assembleDebug、macOS JVM 宿主 compileKotlin、Windows compileKotlinWindows 均成功。
+- 账号与规则证据：真实 SQLite 中 A/B 同一作业独立标记，B 首帧不继承 A；B 的标记不影响 A，A 撤销后 B 与各自重建 store 的数据保持正确。实际三来源卡片点击验证提醒 3→2→3；原 HomeAgenda 日程 days 实例不变；原时间窗口、学校提交/AC、同 ID 的课程与题型、未知/歧义事件、作业页全部筛选组合均有回归。
+- 视觉：实际 HomeWorkspace 离屏渲染浅/深色、正常/全部完成/取消恢复、加载、错误、440dp 窄屏、1000dp 宽屏与 1.6 倍字号共 14 张图；已人工查看代表场景。浅/深色各自取消全部标记后的截图与初始截图字节完全一致；全部完成时顶部提醒消失而周日程事项保留。不是手机/Apple 真机验收，本轮未操作 Computer Use 或安装 App。
+- 范围与边界：本次只有 3 个生产文件（含新增首页提醒函数）、2 个新增测试文件与 memory.md；原源码目录和作业工作树对应源文件一致，未暂存/提交/推送/更新 PR，main 与成绩分支工作树仍干净。Apple 原生编译、模拟器、真机及本轮 CI 均未运行；原 PR #76 的保存协程生命周期 P2 审查没有纳入本次范围，本次联动使用保存成功后发布的完成状态。旧 CI 通过不代表本轮新增代码已过 CI。
+
 
 ## 进行中：作业手动完成标记（2026-10-29，已实现并记录本地验证；未合入）
 
