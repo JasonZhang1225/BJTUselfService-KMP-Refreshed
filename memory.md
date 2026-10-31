@@ -2,6 +2,8 @@
 
 > 当前工作：`feat/macos-playback-compose`（自 `feat/courseware-fallback-playback` 建出并合入最新 main，开 PR 到 main）。P1 源码在 `23a773ae`；Mac 合成提速 `4b2133eb`（见“进行中”）。**产品范围**：录像下载/合成仅 Windows + macOS；Android/iOS 只保留在线播放。
 >
+> 2026-10-31：Cloud Agent Linux 环境说明已写入 AGENTS.md（JDK 21、`/opt/android-sdk`、一次性编译密钥、`BJTU_ANDROID_ABIS=x86_64`、模拟器 `-accel off`）。iOS、macOS 桌面包和 Windows MSI 仍不能在该 Linux 镜像上构建。本条随 PR #80 合入；不改应用源码或版本号。
+>
 > 2026-10-30：Cursor 代理修复 PR #78：已 rebase 到最新 main（含已合入的 #76/#77/#79），折扣提醒走 `rememberHomeAssignmentReminders`，`filterHomeAssignmentReminders` / `reminderCompletionKey` 覆盖 `citel-discount-*`，并补手动完成隐藏/撤销测试。推送功能分支，未合并、未改版本号。
 >
 > 2026-10-30：PR #76（作业手动完成 + 首页截止提醒过滤）、#77（成绩筛选布局）、#79（完成标记保存生命周期）已合入 main。
