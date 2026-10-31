@@ -1187,3 +1187,17 @@
 - 未验证：DMG 安装验收、Dock/菜单破坏性点验、F07 五轮复压、Intel Mac、多小时耐久、Safari 产品皮肤内全屏。F08/F13 同 Windows：中断不保留编码进度。
 - 包标识：GUI `local-20261031-100311-600` / helper `9add61c5…`；ETA 修复包 `local-20261031-130631-248` / `642556cd…`；headless 权威 `local-20261031-092406-660` / `52e0ca17…`。证据根目录 `.artifacts/macos-playback-p1/`；确认单已结项。
 
+## 2026-10-31 Cloud Agent Linux 构建说明（PR #80，`4d6f207a`）
+
+- 改动：`AGENTS.md` 增补 Linux Cloud Agent 的 JDK 21、SDK、一次性编译密钥、ABI、模拟器 `-accel off` 与不可构建端说明；`memory.md` 顶部摘要。
+- 原因/决策：文档冲突已 rebase 解决（保留 Cloud Agent 摘要，其余以当时 main 为准）。
+- 验证：文档 PR，`kmp-security-check` 路径过滤未跑；Cursor Bugbot/Security/Approval 绿。
+- 未验证：无应用行为变化。
+
+## 2026-10-31 macOS 录像合成提速与移动端仅在线播放（PR #81，`f41136d0`）
+
+- 改动：`compose-indexed` NV12/异步解码，整节约 5.7 min；渐进合成与 ETA；Android/iOS 关闭录像下载；含 #74/#75。
+- 原因/决策：用户授权合入；Bugbot 三条 Medium 记跟进不阻塞；admin bypass 合并。
+- 验证：PR CI `41176398106` 四项 + windows-cli 全绿；合入后触发 KMP package `41178525742`。
+- 未验证：其他芯片/DMG；Bugbot 所述失败注入与移动端残留任务 UI。
+
