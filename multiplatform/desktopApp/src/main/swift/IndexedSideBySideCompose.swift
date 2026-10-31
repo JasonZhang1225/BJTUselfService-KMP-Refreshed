@@ -236,58 +236,112 @@ enum IndexedSideBySideCompose {
         return status == noErr ? sample : nil
     }
 
+    private struct DecodedPicture {
+        let pts: Int64
+        let buffer: CVPixelBuffer?
+    }
+
+    /// 单路解码输出 → 编码线程的有界队列；满则阻塞解码端，限制在途像素缓冲数量。
+    private final class PictureQueue {
+        private let condition = NSCondition()
+        private var items: [DecodedPicture] = []
+        private var finished = false
+        private var cancelled = false
+        private let capacity: Int
+
+        init(capacity: Int) { self.capacity = capacity }
+
+        var isCancelled: Bool {
+            condition.lock()
+            defer { condition.unlock() }
+            return cancelled
+        }
+
+        func push(_ picture: DecodedPicture) {
+            condition.lock()
+            defer { condition.unlock() }
+            while items.count >= capacity, !cancelled { condition.wait() }
+            if cancelled { return }
+            items.append(picture)
+            condition.broadcast()
+        }
+
+        /// 等到队首可用；队列结束且已取空时返回 nil。
+        func peek() -> DecodedPicture? {
+            condition.lock()
+            defer { condition.unlock() }
+            while items.isEmpty, !finished, !cancelled { condition.wait() }
+            return items.first
+        }
+
+        func pop() -> DecodedPicture? {
+            condition.lock()
+            defer { condition.unlock() }
+            while items.isEmpty, !finished, !cancelled { condition.wait() }
+            if items.isEmpty { return nil }
+            let picture = items.removeFirst()
+            condition.broadcast()
+            return picture
+        }
+
+        func finish() {
+            condition.lock()
+            finished = true
+            condition.broadcast()
+            condition.unlock()
+        }
+
+        func cancel() {
+            condition.lock()
+            cancelled = true
+            condition.broadcast()
+            condition.unlock()
+        }
+    }
+
+    /// 一路硬件解码：异步提交、限制在途帧数，输出按回调顺序进入 PictureQueue。
     private final class Decoder {
         private var session: VTDecompressionSession?
         private let format: CMFormatDescription
-        private let lock = NSLock()
-        private var lastBuffer: CVPixelBuffer?
+        private let output: PictureQueue
+        private let inFlight: DispatchSemaphore
         private var decodeFailures = 0
 
-        init?(format: CMFormatDescription) {
+        /// 解码器直接输出等比缩放后的 NV12（硬件缩放），省掉逐帧像素传送与 CPU 清屏。
+        init?(format: CMFormatDescription, outputWidth: Int, outputHeight: Int, output: PictureQueue, maxInFlight: Int) {
             self.format = format
+            self.output = output
+            self.inFlight = DispatchSemaphore(value: maxInFlight)
             var callback = VTDecompressionOutputCallbackRecord(
-                decompressionOutputCallback: { refcon, _, status, _, imageBuffer, _, _ in
+                decompressionOutputCallback: { refcon, _, status, _, imageBuffer, pts, _ in
                     guard let refcon else { return }
                     let decoder = Unmanaged<Decoder>.fromOpaque(refcon).takeUnretainedValue()
-                    guard status == noErr, let imageBuffer else { return }
-                    decoder.lock.lock()
-                    decoder.lastBuffer = imageBuffer
-                    decoder.lock.unlock()
+                    // 解码失败的帧仍按原时间戳占位，编码端对该半幅填黑，不改变总帧数。
+                    let value = pts.isValid ? CMTimeConvertScale(pts, timescale: 10_000_000, method: .roundHalfAwayFromZero).value : Int64.min
+                    decoder.output.push(DecodedPicture(pts: value, buffer: status == noErr ? imageBuffer : nil))
+                    decoder.inFlight.signal()
                 },
                 decompressionOutputRefCon: nil
             )
-            let unmanaged = Unmanaged.passUnretained(self)
-            callback.decompressionOutputRefCon = unmanaged.toOpaque()
+            callback.decompressionOutputRefCon = Unmanaged.passUnretained(self).toOpaque()
             var session: VTDecompressionSession?
-            // NV12：硬件解码器原生输出，再交给 VTPixelTransfer 缩放到半幅。
-            let candidates: [[CFString: Any]] = [
-                [
-                    kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
-                    kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
-                ],
-                [
-                    kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-                    kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
-                ],
-                [
-                    kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
-                    kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
-                ],
+            // 与编码输入同为 video-range NV12，拼接只需按平面拷贝。
+            let attrs: [CFString: Any] = [
+                kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                kCVPixelBufferWidthKey: outputWidth,
+                kCVPixelBufferHeightKey: outputHeight,
+                kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
             ]
-            var status: OSStatus = -1
-            for attrs in candidates {
-                status = VTDecompressionSessionCreate(
-                    allocator: kCFAllocatorDefault,
-                    formatDescription: format,
-                    decoderSpecification: [
-                        kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder: kCFBooleanTrue as Any,
-                    ] as CFDictionary,
-                    imageBufferAttributes: attrs as CFDictionary,
-                    outputCallback: &callback,
-                    decompressionSessionOut: &session
-                )
-                if status == noErr { break }
-            }
+            let status = VTDecompressionSessionCreate(
+                allocator: kCFAllocatorDefault,
+                formatDescription: format,
+                decoderSpecification: [
+                    kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder: kCFBooleanTrue as Any,
+                ] as CFDictionary,
+                imageBufferAttributes: attrs as CFDictionary,
+                outputCallback: &callback,
+                decompressionSessionOut: &session
+            )
             guard status == noErr else { return nil }
             self.session = session
         }
@@ -296,13 +350,14 @@ enum IndexedSideBySideCompose {
             if let session { VTDecompressionSessionInvalidate(session) }
         }
 
-        func decode(_ sample: CMSampleBuffer) -> CVPixelBuffer? {
-            lock.lock()
-            lastBuffer = nil
-            lock.unlock()
-            guard let session else { return nil }
+        func submit(_ sample: CMSampleBuffer, pts: Int64) {
+            inFlight.wait()
+            guard let session else {
+                output.push(DecodedPicture(pts: pts, buffer: nil))
+                inFlight.signal()
+                return
+            }
             var flagsOut = VTDecodeInfoFlags()
-            // 异步提交 + 等待：修黑场时关掉异步导致流水线饿死；现重新启用。
             let status = VTDecompressionSessionDecodeFrame(
                 session,
                 sampleBuffer: sample,
@@ -315,97 +370,75 @@ enum IndexedSideBySideCompose {
                 if decodeFailures <= 5 {
                     FileHandle.standardError.write(Data("vt-decode status=\(status)\n".utf8))
                 }
-                return nil
+                // 提交失败不会触发回调：自行占位并归还名额。
+                output.push(DecodedPicture(pts: pts, buffer: nil))
+                inFlight.signal()
             }
-            VTDecompressionSessionWaitForAsynchronousFrames(session)
-            lock.lock()
-            let out = lastBuffer
-            lock.unlock()
-            return out
+        }
+
+        func finish() {
+            if let session { VTDecompressionSessionWaitForAsynchronousFrames(session) }
+            output.finish()
         }
     }
 
-    /// VT 像素传送：源帧 letterbox 缩到半幅 BGRA，再拷进成片左右区。
-    private final class HalfBlitter {
-        private var transfer: VTPixelTransferSession?
-        private var halfPool: CVPixelBufferPool?
-        private let halfWidth: Int
+    /// 源画面等比放进半幅后的尺寸（偶数，NV12 色度对齐）。
+    private static func fittedSize(source: VideoConfig, halfWidth: Int, height: Int) -> (Int, Int) {
+        let scale = min(Double(halfWidth) / Double(source.width), Double(height) / Double(source.height))
+        let w = max(2, Int((Double(source.width) * scale).rounded()) & ~1)
+        let h = max(2, Int((Double(source.height) * scale).rounded()) & ~1)
+        return (min(w, halfWidth & ~1), min(h, height & ~1))
+    }
+
+    /// NV12 并排拼接：解码器已缩好尺寸，这里只按平面逐行拷贝；letterbox 或缺帧时才填黑。
+    private final class Nv12Composer {
+        private let width: Int
         private let height: Int
+        private let halfWidth: Int
 
-        init?(halfWidth: Int, height: Int) {
-            self.halfWidth = halfWidth
+        init(width: Int, height: Int) {
+            self.width = width
             self.height = height
-            var session: VTPixelTransferSession?
-            guard VTPixelTransferSessionCreate(
-                allocator: kCFAllocatorDefault,
-                pixelTransferSessionOut: &session
-            ) == noErr, let session else {
-                return nil
-            }
-            self.transfer = session
-            VTSessionSetProperty(session, key: kVTPixelTransferPropertyKey_ScalingMode, value: kVTScalingMode_Letterbox)
-            VTSessionSetProperty(
-                session,
-                key: kVTPixelTransferPropertyKey_DestinationColorPrimaries,
-                value: kCVImageBufferColorPrimaries_ITU_R_709_2
-            )
-            CVPixelBufferPoolCreate(
-                kCFAllocatorDefault, nil,
-                [
-                    kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                    kCVPixelBufferWidthKey as String: halfWidth,
-                    kCVPixelBufferHeightKey as String: height,
-                    kCVPixelBufferIOSurfacePropertiesKey as String: [:] as CFDictionary,
-                ] as CFDictionary,
-                &halfPool
-            )
+            self.halfWidth = (width / 2) & ~1
         }
 
-        deinit {
-            if let transfer { VTPixelTransferSessionInvalidate(transfer) }
+        /// video-range 黑色：Y=16，CbCr=128。
+        static func fillBlack(_ buffer: CVPixelBuffer) {
+            CVPixelBufferLockBaseAddress(buffer, [])
+            defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+            if let y = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) {
+                memset(y, 16, CVPixelBufferGetBytesPerRowOfPlane(buffer, 0) * CVPixelBufferGetHeightOfPlane(buffer, 0))
+            }
+            if let uv = CVPixelBufferGetBaseAddressOfPlane(buffer, 1) {
+                memset(uv, 128, CVPixelBufferGetBytesPerRowOfPlane(buffer, 1) * CVPixelBufferGetHeightOfPlane(buffer, 1))
+            }
         }
 
-        func blit(source: CVPixelBuffer, into destination: CVPixelBuffer, xOffset: Int) -> Bool {
-            guard let transfer else { return false }
-            var half: CVPixelBuffer?
-            if let halfPool {
-                CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, halfPool, &half)
-            }
-            if half == nil {
-                CVPixelBufferCreate(
-                    kCFAllocatorDefault, halfWidth, height,
-                    kCVPixelFormatType_32BGRA, nil, &half
-                )
-            }
-            guard let half else { return false }
-            // 先清空半幅，letterbox 黑边才正确。
-            CVPixelBufferLockBaseAddress(half, [])
-            if let base = CVPixelBufferGetBaseAddress(half) {
-                memset(base, 0, CVPixelBufferGetDataSize(half))
-            }
-            CVPixelBufferUnlockBaseAddress(half, [])
-            guard VTPixelTransferSessionTransferImage(transfer, from: source, to: half) == noErr else { return false }
-
-            CVPixelBufferLockBaseAddress(half, .readOnly)
+        func place(_ source: CVPixelBuffer, into destination: CVPixelBuffer, side: Int) {
+            let srcW = CVPixelBufferGetWidth(source) & ~1
+            let srcH = CVPixelBufferGetHeight(source) & ~1
+            let copyW = min(srcW, halfWidth)
+            let copyH = min(srcH, height & ~1)
+            let x = side * halfWidth + ((halfWidth - copyW) / 2 & ~1)
+            let y = ((height - copyH) / 2) & ~1
+            CVPixelBufferLockBaseAddress(source, .readOnly)
             CVPixelBufferLockBaseAddress(destination, [])
             defer {
                 CVPixelBufferUnlockBaseAddress(destination, [])
-                CVPixelBufferUnlockBaseAddress(half, .readOnly)
+                CVPixelBufferUnlockBaseAddress(source, .readOnly)
             }
-            guard let srcBase = CVPixelBufferGetBaseAddress(half),
-                  let dstBase = CVPixelBufferGetBaseAddress(destination) else { return false }
-            let srcStride = CVPixelBufferGetBytesPerRow(half)
-            let dstStride = CVPixelBufferGetBytesPerRow(destination)
-            let rowBytes = halfWidth * 4
-            let xBytes = xOffset * 4
-            for y in 0..<height {
-                memcpy(
-                    dstBase.advanced(by: y * dstStride + xBytes),
-                    srcBase.advanced(by: y * srcStride),
-                    rowBytes
-                )
+            for plane in 0..<2 {
+                guard let src = CVPixelBufferGetBaseAddressOfPlane(source, plane),
+                      let dst = CVPixelBufferGetBaseAddressOfPlane(destination, plane) else { continue }
+                let srcStride = CVPixelBufferGetBytesPerRowOfPlane(source, plane)
+                let dstStride = CVPixelBufferGetBytesPerRowOfPlane(destination, plane)
+                // 两个平面每行字节数都等于像素宽（色度 CbCr 交错、行数减半）。
+                let rows = plane == 0 ? copyH : copyH / 2
+                let top = plane == 0 ? y : y / 2
+                for row in 0..<rows {
+                    memcpy(dst.advanced(by: (top + row) * dstStride + x), src.advanced(by: row * srcStride), copyW)
+                }
             }
-            return true
         }
     }
 
@@ -441,11 +474,21 @@ enum IndexedSideBySideCompose {
             if rightCursor == nil { rightCursor = SampleCursor(directory: rightDir, indexName: "video.idx") }
             if leftCursor == nil || rightCursor == nil { usleep(20_000) }
         }
+        let halfWidth = (width / 2) & ~1
+        let leftFit = fittedSize(source: leftConfig, halfWidth: halfWidth, height: height)
+        let rightFit = fittedSize(source: rightConfig, halfWidth: halfWidth, height: height)
+        // 每路最多 4 帧在解码器内、6 帧在队列中，兼顾吞吐与内存。
+        let leftPictures = PictureQueue(capacity: 6)
+        let rightPictures = PictureQueue(capacity: 6)
         guard let leftCursor, let rightCursor,
-              let leftDecoder = Decoder(format: leftFormat),
-              let rightDecoder = Decoder(format: rightFormat) else {
+              let leftDecoder = Decoder(format: leftFormat, outputWidth: leftFit.0, outputHeight: leftFit.1,
+                                        output: leftPictures, maxInFlight: 4),
+              let rightDecoder = Decoder(format: rightFormat, outputWidth: rightFit.0, outputHeight: rightFit.1,
+                                         output: rightPictures, maxInFlight: 4) else {
             return fail("无法打开索引或解码器", 2)
         }
+        // 两路都铺满半幅时无需逐帧填黑（课件路首帧到达前除外）。
+        let fullCover = leftFit == (halfWidth, height) && rightFit == (halfWidth, height)
 
         let videoOnly = output.deletingPathExtension().appendingPathExtension("video-only.mp4")
         try? FileManager.default.removeItem(at: videoOnly)
@@ -460,6 +503,11 @@ enum IndexedSideBySideCompose {
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: width,
             AVVideoHeightKey: height,
+            AVVideoColorPropertiesKey: [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
+            ],
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: bitRate,
                 AVVideoMaxKeyFrameIntervalKey: 250,
@@ -467,51 +515,35 @@ enum IndexedSideBySideCompose {
             ],
         ])
         videoIn.expectsMediaDataInRealTime = false
+        let pixelAttributes: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+            kCVPixelBufferWidthKey as String: width,
+            kCVPixelBufferHeightKey as String: height,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:] as CFDictionary,
+        ]
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
             assetWriterInput: videoIn,
-            sourcePixelBufferAttributes: [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                kCVPixelBufferWidthKey as String: width,
-                kCVPixelBufferHeightKey as String: height,
-            ]
+            sourcePixelBufferAttributes: pixelAttributes
         )
         guard writer.canAdd(videoIn) else { return fail("无法添加视频轨", 2) }
         writer.add(videoIn)
         guard writer.startWriting() else { return fail("无法开始写出", 2) }
         writer.startSession(atSourceTime: .zero)
 
-        guard let blitter = HalfBlitter(halfWidth: width / 2, height: height) else {
-            return fail("无法创建 VT 像素传送", 2)
-        }
-        FileHandle.standardError.write(Data("compose VTPixelTransfer\n".utf8))
+        let composer = Nv12Composer(width: width, height: height)
+        FileHandle.standardError.write(Data("compose NV12 decoder-scaled pipelined\n".utf8))
         var pixelPool: CVPixelBufferPool?
-        CVPixelBufferPoolCreate(
-            kCFAllocatorDefault, nil,
-            [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                kCVPixelBufferWidthKey as String: width,
-                kCVPixelBufferHeightKey as String: height,
-                kCVPixelBufferIOSurfacePropertiesKey as String: [:] as CFDictionary,
-            ] as CFDictionary,
-            &pixelPool
-        )
+        CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, pixelAttributes as CFDictionary, &pixelPool)
         let totalPts = max(durationSeconds, 0.001) * 10_000_000
         var lastReported = -1
         var frameIndex: Int64 = 0
         var lastPresent = CMTime.invalid
-        var leftEnded = false
-        var rightEnded = false
-        var leftHold: (Record, Data)?
-        var rightHold: (Record, Data)?
-        // 以教师路（左）为时钟；课件路保留最近一帧像素缓冲。
-        var currentRightBuffer: CVPixelBuffer?
-        let decodeQueue = DispatchQueue(label: "bjtu.indexed.decode", attributes: .concurrent)
-        // 分段计时（纳秒）：定位卡在解码 / 等编码器 / blit / append。
+        // 分段计时（纳秒）：消费端等解码 / 等编码器 / 拼接 / append。
         var nsDecode: UInt64 = 0
         var nsWaitReady: UInt64 = 0
         var nsBlit: UInt64 = 0
         var nsAppend: UInt64 = 0
-        var nsPullIdle: UInt64 = 0
+        let nsPullIdle: UInt64 = 0
         func stamp() -> UInt64 { DispatchTime.now().uptimeNanoseconds }
         func reportTiming(tag: String) {
             let total = max(1, nsDecode &+ nsWaitReady &+ nsBlit &+ nsAppend &+ nsPullIdle)
@@ -523,83 +555,51 @@ enum IndexedSideBySideCompose {
             FileHandle.standardError.write(Data(line.utf8))
         }
 
-        func pullLeft() {
-            if leftHold != nil || leftEnded { return }
-            switch leftCursor.next() {
-            case .sample(let r, let d): leftHold = (r, d)
-            case .end: leftEnded = true
-            case .error: leftEnded = true
+        // 两路各一条喂料线程，异步提交给各自的硬件解码器；编码线程按教师路时间戳配对课件路。
+        func startPump(cursor: SampleCursor, format: CMFormatDescription, decoder: Decoder, pictures: PictureQueue) {
+            let thread = Thread {
+                pump: while !pictures.isCancelled {
+                    switch cursor.next() {
+                    case .sample(let record, let payload):
+                        if let sample = makeSampleBuffer(
+                            payload: payload,
+                            pts100ns: record.pts,
+                            duration: CMTime(value: 1, timescale: 25),
+                            format: format
+                        ) {
+                            decoder.submit(sample, pts: record.pts)
+                        } else {
+                            pictures.push(DecodedPicture(pts: record.pts, buffer: nil))
+                        }
+                    case .end, .error:
+                        break pump
+                    }
+                }
+                decoder.finish()
             }
+            thread.qualityOfService = .userInitiated
+            thread.start()
         }
-        func pullRight() {
-            if rightHold != nil || rightEnded { return }
-            switch rightCursor.next() {
-            case .sample(let r, let d): rightHold = (r, d)
-            case .end: rightEnded = true
-            case .error: rightEnded = true
-            }
+        startPump(cursor: leftCursor, format: leftFormat, decoder: leftDecoder, pictures: leftPictures)
+        startPump(cursor: rightCursor, format: rightFormat, decoder: rightDecoder, pictures: rightPictures)
+        defer {
+            leftPictures.cancel()
+            rightPictures.cancel()
         }
-
-        func decodeVideo(_ hold: (Record, Data), format: CMFormatDescription, decoder: Decoder) -> CVPixelBuffer? {
-            guard let sb = makeSampleBuffer(
-                payload: hold.1,
-                pts100ns: hold.0.pts,
-                duration: CMTime(value: 1, timescale: 25),
-                format: format
-            ) else { return nil }
-            return decoder.decode(sb)
-        }
+        // 以教师路（左）为时钟；课件路保留最近一帧像素缓冲。
+        var currentRightBuffer: CVPixelBuffer?
 
         while true {
-            let tPull0 = stamp()
-            pullLeft()
-            if leftHold == nil {
-                if leftEnded { break }
-                usleep(5_000)
-                nsPullIdle &+= stamp() &- tPull0
-                continue
-            }
-            nsPullIdle &+= stamp() &- tPull0
-            let pts = leftHold!.0.pts
-            let leftSample = leftHold!
-            leftHold = nil
-
-            // 课件路先吃完 ≤ 教师 PTS 的样本（通常 0–1 帧），再与教师路并行解码。
-            var rightSample: (Record, Data)?
-            while true {
-                pullRight()
-                guard let hold = rightHold else { break }
-                if hold.0.pts > pts { break }
-                rightSample = hold
-                rightHold = nil
-            }
-
-            var leftBuffer: CVPixelBuffer?
-            var rightBuffer: CVPixelBuffer?
-            let resultLock = NSLock()
-            let group = DispatchGroup()
             let tDec0 = stamp()
-            group.enter()
-            decodeQueue.async {
-                let buf = decodeVideo(leftSample, format: leftFormat, decoder: leftDecoder)
-                resultLock.lock()
-                leftBuffer = buf
-                resultLock.unlock()
-                group.leave()
+            guard let leftPicture = leftPictures.pop() else { break }
+            // 课件路吃完 ≤ 教师 PTS 的画面（通常 0–1 帧）；解码失败的帧沿用上一帧。
+            while let head = rightPictures.peek(), head.pts <= leftPicture.pts {
+                _ = rightPictures.pop()
+                if let buffer = head.buffer { currentRightBuffer = buffer }
             }
-            if let rightSample {
-                group.enter()
-                decodeQueue.async {
-                    let buf = decodeVideo(rightSample, format: rightFormat, decoder: rightDecoder)
-                    resultLock.lock()
-                    rightBuffer = buf
-                    resultLock.unlock()
-                    group.leave()
-                }
-            }
-            group.wait()
             nsDecode &+= stamp() &- tDec0
-            if let rightBuffer { currentRightBuffer = rightBuffer }
+            let frame = (left: leftPicture.buffer, right: currentRightBuffer)
+            let pts = leftPicture.pts
 
             let tWait0 = stamp()
             while !videoIn.isReadyForMoreMediaData { usleep(1_000) }
@@ -609,25 +609,15 @@ enum IndexedSideBySideCompose {
             if let pixelPool {
                 CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pixelPool, &pixel)
             }
-            if pixel == nil {
-                CVPixelBufferCreate(
-                    kCFAllocatorDefault, width, height,
-                    kCVPixelFormatType_32BGRA, nil, &pixel
-                )
-            }
             guard let pixel else { return fail("无法分配像素缓冲", 3) }
-            CVPixelBufferLockBaseAddress(pixel, [])
-            if let base = CVPixelBufferGetBaseAddress(pixel) {
-                memset(base, 0, CVPixelBufferGetDataSize(pixel))
+            if !fullCover || frame.left == nil || frame.right == nil {
+                Nv12Composer.fillBlack(pixel)
             }
-            CVPixelBufferUnlockBaseAddress(pixel, [])
-
-            if let leftBuffer {
-                _ = blitter.blit(source: leftBuffer, into: pixel, xOffset: 0)
-            }
-            if let right = currentRightBuffer {
-                _ = blitter.blit(source: right, into: pixel, xOffset: width / 2)
-            }
+            if let left = frame.left { composer.place(left, into: pixel, side: 0) }
+            if let right = frame.right { composer.place(right, into: pixel, side: 1) }
+            CVBufferSetAttachment(pixel, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate)
+            CVBufferSetAttachment(pixel, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2, .shouldPropagate)
+            CVBufferSetAttachment(pixel, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, .shouldPropagate)
             nsBlit &+= stamp() &- tBlit0
 
             let present = CMTime(value: max(0, pts), timescale: 10_000_000)

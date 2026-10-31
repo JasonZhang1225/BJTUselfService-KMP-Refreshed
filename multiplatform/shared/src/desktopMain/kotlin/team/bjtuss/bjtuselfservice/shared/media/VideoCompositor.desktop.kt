@@ -32,15 +32,15 @@ internal object MacHelperVideoCompositor : ProgressiveVideoCompositor {
     override val encodingOverlapsDownload: Boolean get() = true
 
     /**
-     * 本机 GUI 渐进整节约 5.5–5.7× 片长；headless 可达 ~8.7×。
-     * 取 5.4× 作编码墙钟下限，避免 PIPELINING 早期按偏快速率报到 13–15 分钟。
+     * NV12 解码器缩放 + 异步双路解码后，本机（M2）GUI 实网整节合成约 20.7× 片长（7022 s 片长 339 s 合成），
+     * 瓶颈是硬件解码。取 20× 作编码墙钟下限，开跑即报约 6 分钟，与实跑 5.7 分钟对齐。
      */
     override fun provisionalEncodeSeconds(
         contentDurationSeconds: Double,
         quality: PlaybackCompositeQuality,
     ): Long? {
         if (contentDurationSeconds <= 0) return null
-        return kotlin.math.ceil(contentDurationSeconds / 5.4).toLong().coerceAtLeast(1)
+        return kotlin.math.ceil(contentDurationSeconds / 20.0).toLong().coerceAtLeast(1)
     }
 
     override suspend fun openProgressive(

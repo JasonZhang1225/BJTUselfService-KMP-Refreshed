@@ -1,6 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.courseware
 
 import kotlin.test.*
+import team.bjtuss.bjtuselfservice.shared.media.MacHelperVideoCompositor
+import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackCompositeQuality
 
 class RemainingTimeEstimatorTest {
     @Test fun warmsUpSmoothsBurstsAndHidesStalledEstimate() {
@@ -52,18 +54,18 @@ class RemainingTimeEstimatorTest {
     }
 
     @Test fun macProvisionalFloorMatchesGuiLessonScale() {
-        // 7022s 片长 / 5.4 ≈ 1301；早期 stage≈0 时剩余下限约 22 分钟量级，不应落到 13–15。
-        val full = kotlin.math.ceil(7022.0 / 5.4).toLong()
-        assertTrue(full in 1290L..1310L)
+        // 7022s 片长 / 20 ≈ 352；实网 GUI 整节 344 s。早期 stage≈0 时剩余应在 6 分钟量级，不能再报旧的 ~21 分钟。
+        val full = MacHelperVideoCompositor.provisionalEncodeSeconds(7022.0, PlaybackCompositeQuality.MEDIUM)!!
+        assertTrue(full in 345L..360L, "floor=$full")
         val early = progressiveWallClockSeconds(
-            downloadSeconds = 100,
-            compositionSeconds = 805, // 早期按 headless 偏快外推
+            downloadSeconds = 180,
+            compositionSeconds = 300, // 早期合成速率外推略偏快
             provisionalEncodeSeconds = full,
             encodingOverlapsDownload = true,
             stageProgress = 0.01,
         )
         assertNotNull(early)
-        assertTrue(early!! >= 1200L, "early ETA remaining=$early should stay near ~20min floor, not ~13min")
+        assertTrue(early!! in 330L..400L, "early ETA remaining=$early should track the ~5.7 min real run")
     }
 
     @Test fun pipeliningLabelMarksPostDownloadEncodeWhileStageIdle() {

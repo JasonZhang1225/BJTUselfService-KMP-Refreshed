@@ -1,12 +1,20 @@
 # BJTUselfService 实时工作记忆
 
-> 当前工作：`feat/courseware-fallback-playback`（**未提交** P1 源码在工作区）。**产品范围**：录像下载/合成仅 Windows + macOS；Android/iOS 只保留在线播放。
+> 当前工作：`feat/courseware-fallback-playback`。P1 源码已在 `23a773ae` 提交；**工作区有未提交的 Mac 合成提速改动**（见“进行中”）。**产品范围**：录像下载/合成仅 Windows + macOS；Android/iOS 只保留在线播放。
 >
-> **macOS P1 已结项（2026-10-31，你确认收工）**：GUI 整节 20.50 min；开跑 ETA≈22 min 对齐；headless indexed 13.4 min；证据 `.artifacts/macos-playback-p1/`。未 commit / 未合主干 / 未发版；不碰安装版。
+> **macOS P1 已结项（2026-10-31，你确认收工）**：当时 GUI 整节 20.50 min；证据 `.artifacts/macos-playback-p1/`。未合主干 / 未发版；不碰安装版。
 >
 > 版本沿用 2.0.0-Alpha / Build45。
 >
-> **接下来**：你要求时再 commit / PR；其余按需迭代。
+> **接下来**：你确认提速改动后再 commit / PR；其余按需迭代。
+
+## 进行中：macOS 录像合成提速（2026-10-31，未提交）
+
+- 先采样：瓶颈是逐帧 BGRA 像素传送 + CPU 清屏拷贝（57%）和每帧同步等解码（42%），编码器 0%。改为解码器直接输出缩放后的 NV12、两路异步解码（每路 4 帧在途）、NV12 平面拷贝拼接。
+- 实网 GUI 整节 20.5 min → **5.7 min**（344 s）；headless 13.4 → 5.7 min；现已到 M2 硬件解码上限。成片帧数、全解码、音轨逐字节、布局均对齐；翻页选帧比旧版更准（旧版晚 2 帧）。
+- ETA 下限 `片长/5.4` → `片长/20`（GUI 实网复验：开跑报 352 s，实跑 336.5 s）；生命周期测试改为 `compose-indexed` 空索引（原测试时序抖动）。回归 89 项 0 失败。
+- 改动文件：`IndexedSideBySideCompose.swift`、`VideoCompositor.desktop.kt`、`RemainingTimeEstimatorTest.kt`、`MacVideoFrameHelperLifecycleTest.kt`。证据 `.artifacts/macos-playback-perf/REPORT.md`、`.artifacts/macos-playback-p1/ui-harness-live-v2/`。
+- 未验证：其他芯片、高/低档整节、DMG 安装。
 
 ## 已完成：Windows 保存结果入口、预览与最终验收（2026-10-28，功能分支待主干）
 
@@ -197,7 +205,7 @@
 
 ## 接下来
 
-1. **等你确认** Mac P1 结项（是否接受边下边合等效例外）；确认后再考虑 commit。
+1. **等你确认** Mac 合成提速改动（见“进行中”）后再 commit；Mac 尚缺：恢复/失败路径的 Mac 专属回归测试、正式 App 关窗/Dock/菜单退出点验、F03 Safari 逐控、DMG 安装验收。
 2. 不自动合主干/发版。
 3. **Android / iOS**：仅在线播放验收（F01–F03）。
 4. Windows 已结项；保留其他真机待验证与当前痛点。
