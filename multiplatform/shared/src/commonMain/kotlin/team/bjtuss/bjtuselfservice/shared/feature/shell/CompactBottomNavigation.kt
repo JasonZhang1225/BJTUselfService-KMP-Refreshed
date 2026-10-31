@@ -419,7 +419,7 @@ internal fun CompactTabIcon(section: AppSection) {
                 }
                 drawPath(triangle, color)
             }
-            AppSection.COURSEWARE, AppSection.REPORT_CARD_DOWNLOAD -> {
+            AppSection.COURSEWARE, AppSection.REPORT_CARD_DOWNLOAD, AppSection.CHANGELOG -> {
                 drawRoundRect(color, Offset(5.dp.toPx(), 3.dp.toPx()), Size(14.dp.toPx(), 18.dp.toPx()), CornerRadius(2.dp.toPx()), style = Stroke(strokeWidth))
                 for (y in listOf(8f,12f,16f)) drawLine(color, Offset(8.dp.toPx(), y.dp.toPx()), Offset(16.dp.toPx(), y.dp.toPx()), strokeWidth)
                 if (section == AppSection.COURSEWARE) drawLine(color, Offset(3.dp.toPx(), 6.dp.toPx()), Offset(3.dp.toPx(), 20.dp.toPx()), strokeWidth)

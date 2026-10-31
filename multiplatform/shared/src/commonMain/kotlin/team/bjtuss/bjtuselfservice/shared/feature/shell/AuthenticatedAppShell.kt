@@ -785,7 +785,7 @@ fun AuthenticatedAppShell(
                 AppSection.ASSIGNMENTS -> coroutineScope { assignmentSync.forEach { status -> launch { refreshAssignmentSource(status.source) } } }
                 AppSection.CALENDAR -> Unit
                 AppSection.REPORT_CARD_DOWNLOAD -> Unit
-                AppSection.SETTINGS -> Unit
+                AppSection.SETTINGS, AppSection.CHANGELOG -> Unit
                 AppSection.MORE -> Unit
             }
         }
@@ -2075,6 +2075,17 @@ fun AuthenticatedAppShell(
                     modifier = Modifier.fillMaxSize(),
                     headerContent = { renderAssignmentMarkdownActions(AssignmentSource.COURSE_PLATFORM) },
                 )
+            }
+            AppSection.CHANGELOG -> DestinationPage(
+                title = AppSection.CHANGELOG.title,
+                expanded = expanded,
+                refreshable = false,
+                isRefreshing = false,
+                showBack = isPushedHostDestination || route !in compactBottomNavSections,
+                modifier = modifier,
+                scrollUnderTopBar = true,
+            ) {
+                team.bjtuss.bjtuselfservice.shared.feature.changelog.ChangelogWorkspace(Modifier.fillMaxSize())
             }
             AppSection.SETTINGS -> DestinationPage(
                 title = AppSection.SETTINGS.title,

@@ -5,10 +5,14 @@ on:
     branches: [main, audit]
     paths:
       - "multiplatform/**"
+      - "docs/releases/**"
+      - "scripts/sync-bundled-changelog.py"
       - ".github/workflows/kmp-security-check.yml"
   pull_request:
     paths:
       - "multiplatform/**"
+      - "docs/releases/**"
+      - "scripts/sync-bundled-changelog.py"
       - ".github/workflows/kmp-security-check.yml"
   workflow_dispatch:
 
@@ -16,6 +20,14 @@ permissions:
   contents: read
 
 jobs:
+  changelog:
+    name: Offline changelog consistency
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check release sections and offline content
+        run: python3 scripts/sync-bundled-changelog.py --check
+
   remote-site-template:
     name: Remote site template tests
     runs-on: ubuntu-24.04
