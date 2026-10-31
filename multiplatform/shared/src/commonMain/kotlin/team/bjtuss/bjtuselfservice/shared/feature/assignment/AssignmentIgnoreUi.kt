@@ -106,7 +106,7 @@ internal fun AssignmentCard(
     val ignored = isAssignmentIgnored(submitted, key, state.completedKeys)
     val canToggle = key != null && state.loaded && key !in state.savingKeys
     val toggle: () -> Unit = {
-        if (canToggle) store!!.requestSetCompleted(key!!, !ignored, undoTitle = title.takeIf { !ignored })
+        if (canToggle) store!!.requestSetCompleted(key, !ignored, undoTitle = title.takeIf { !ignored })
     }
     val actionLabel = if (ignored) "取消忽略" else "忽略这项作业"
     val haptics = LocalHapticFeedback.current
@@ -116,7 +116,7 @@ internal fun AssignmentCard(
 
     val card: @Composable () -> Unit = {
         ElevatedCard(
-            modifier = modifier.fillMaxWidth().alpha(dim),
+            modifier = modifier.fillMaxWidth(),
             shape = AssignmentCardShape,
             colors = CardDefaults.elevatedCardColors(containerColor = containerColor),
         ) {
@@ -138,7 +138,9 @@ internal fun AssignmentCard(
                             if (ignored) stateDescription = "已忽略"
                             if (key != null) customActions = listOf(CustomAccessibilityAction(actionLabel) { toggle(); canToggle })
                         }
-                        .padding(15.dp),
+                        .padding(15.dp)
+                        // 只调淡内容，卡片底色保持不透明，左滑的背景不会从卡片后面透出来。
+                        .alpha(dim),
                     verticalArrangement = Arrangement.spacedBy(5.dp),
                     content = content,
                 )
@@ -159,7 +161,7 @@ internal fun AssignmentCard(
     }
 
     val swipeable = key != null && LocalAssignmentSwipeToIgnore.current && remember { currentPlatform().isMobile }
-    if (swipeable) SwipeToIgnore(store!!, key!!, ignored, canToggle, toggle, card) else card()
+    if (swipeable) SwipeToIgnore(store!!, key, ignored, canToggle, toggle, card) else card()
 }
 
 /** 记录按下位置供菜单定位；鼠标右键在 Initial 阶段消费，卡片的点击不会再打开详情。 */
@@ -188,24 +190,30 @@ private fun SwipeToIgnore(
     toggle: () -> Unit,
     card: @Composable () -> Unit,
 ) {
-    val swipe = rememberSwipeToDismissBoxState(positionalThreshold = { distance -> distance * 0.4f })
+    // 不用 rememberSwipeToDismissBoxState：它可保存，LazyColumn 会按 key 恢复“已滑出”状态，
+    // 同一作业回到列表时会再触发一次忽略。这里的状态随卡片离开组合一起丢弃。
+    val swipe = remember { SwipeToDismissBoxState(SwipeToDismissBoxValue.Settled, positionalThreshold = { distance -> distance * 0.4f }) }
     val haptics = LocalHapticFeedback.current
-    val ignoredBefore by rememberUpdatedState(ignored)
-    LaunchedEffect(swipe.currentValue) {
-        if (swipe.currentValue == SwipeToDismissBoxValue.Settled) return@LaunchedEffect
-        val before = ignoredBefore
-        if (canToggle) {
-            haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
-            toggle()
-            // 保存成功时卡片会移到另一段并离开组合；保存失败或未能开始时卡片滑回原位。
-            while (key in store.state.value.savingKeys) delay(16)
-        }
-        if ((key in store.state.value.completedKeys) == before) swipe.reset()
-    }
+    val scope = rememberCoroutineScope()
     SwipeToDismissBox(
         state = swipe,
         enableDismissFromStartToEnd = false,
+        // 只在用户真的滑过阈值时调用，重组或恢复状态都不会触发。
+        onDismiss = {
+            val before = ignored
+            if (canToggle) {
+                haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                toggle()
+            }
+            scope.launch {
+                // 保存成功时卡片会移到另一段并离开组合；保存失败或未能开始时卡片滑回原位。
+                while (key in store.state.value.savingKeys) delay(16)
+                if ((key in store.state.value.completedKeys) == before) swipe.reset()
+            }
+        },
         backgroundContent = {
+            // 只在拖动时画背景；静止时卡片后面什么都没有。
+            if (swipe.dismissDirection == SwipeToDismissBoxValue.Settled) return@SwipeToDismissBox
             val armed = swipe.targetValue == SwipeToDismissBoxValue.EndToStart
             val labelAlpha by animateFloatAsState(if (armed) 1f else 0.72f)
             Row(
@@ -276,7 +284,7 @@ private fun IgnoredAssignmentsHeader(count: Int, expanded: Boolean, onToggle: ()
     }
 }
 
-/** 忽略后浮在底栏上方 4 秒的撤销提示；进入与离开沿同一条竖直路径，无回弹。 */
+/** 忽略后浮在底栏上方 6 秒的撤销提示；进入与离开沿同一条竖直路径，无回弹。 */
 @Composable
 internal fun AssignmentIgnoreUndoBar(store: AssignmentCompletionStore?, modifier: Modifier = Modifier) {
     if (store == null) return
@@ -285,7 +293,7 @@ internal fun AssignmentIgnoreUndoBar(store: AssignmentCompletionStore?, modifier
     if (undo != null) shown = undo
     LaunchedEffect(undo) {
         val current = undo ?: return@LaunchedEffect
-        delay(4_000)
+        delay(6_000)
         store.dismissUndo(current)
     }
     val motion = spring<IntOffset>(dampingRatio = 1f, stiffness = Spring.StiffnessMediumLow)
