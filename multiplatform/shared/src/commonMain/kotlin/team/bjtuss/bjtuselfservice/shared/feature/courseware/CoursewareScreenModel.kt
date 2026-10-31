@@ -3,6 +3,8 @@ package team.bjtuss.bjtuselfservice.shared.feature.courseware
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,6 +14,7 @@ import kotlinx.coroutines.withContext
 import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareOperationResult
 import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareRefreshResult
 import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareRemoteException
+import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareRemoteFailure
 import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareRepository
 import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareSyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareCourse
@@ -28,9 +31,14 @@ import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryFile
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryOpenResult
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryWriteSession
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareExportNameAllocator
+import team.bjtuss.bjtuselfservice.shared.data.courseware.suggestedFileName
+import team.bjtuss.bjtuselfservice.shared.data.courseware.toSyncFailure
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
+import team.bjtuss.bjtuselfservice.shared.files.StreamingFileSink
+import team.bjtuss.bjtuselfservice.shared.files.StreamingSinkIoException
 
 enum class CoursewareContentSource {
     CACHE,
@@ -50,10 +58,14 @@ data class CoursewareUiState(
     val loadingFolderKeys: Set<String> = emptySet(),
     val directoryDownloadCompleted: Int = 0,
     val directoryDownloadTotal: Int = 0,
+    val directoryCurrentName: String? = null,
+    val directoryCurrentSize: String? = null,
     /** 最近一次目录导出中老师未开放下载、备用方式也没取到而跳过的文件名。 */
     val directoryExportSkipped: List<String> = emptyList(),
     /** 未开放下载文件边下边存时的进度（已写入字节, 总字节）。 */
     val streamProgress: Pair<Long, Long>? = null,
+    val streamNodeKey: String? = null,
+    val streamListedSize: String? = null,
     val source: CoursewareContentSource? = null,
     val failure: CoursewareSyncFailure? = null,
     val fileFailure: CoursewareSyncFailure? = null,
@@ -290,10 +302,38 @@ class CoursewareScreenModel(
         }
     }
 
-    /**
-     * 老师未开放下载的单个文件：先确认备用地址与文件名，再弹保存面板，按 4 MB 区间边下边写，
-     * 几百 MB 的课程视频也不会整块读进内存。
-     */
+    /** 普通课件先选择目标，再从下载票据逐块写入。 */
+    suspend fun saveResourceStreaming(
+        stableKey: String,
+        gateway: HomeworkFileGateway,
+    ): CoursewareOperationResult<HomeworkFileSaveResult> = operationMutex.withLock {
+        val course = mutableState.value.selectedCourse
+            ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
+        val node = findCoursewareNode(course.children, stableKey)?.takeIf { !it.isFolder }
+            ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
+        mutableState.value = mutableState.value.copy(
+            isDownloading = true, selectedNodeKey = node.stableKey, fileFailure = null,
+            streamNodeKey = node.stableKey, streamListedSize = node.size.takeIf { it.isNotBlank() },
+        )
+        try {
+            val saved = gateway.saveStreamingFile(node.suggestedFileName(), "application/octet-stream") { sink ->
+                streamResourceWithRecovery(node, sink) { written, total ->
+                    mutableState.value = mutableState.value.copy(streamProgress = written to total)
+                }
+            }
+            CoursewareOperationResult.Success(saved)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: CoursewareRemoteException) {
+            val reason = error.reason.toSyncFailure()
+            mutableState.value = mutableState.value.copy(fileFailure = reason)
+            CoursewareOperationResult.Failure(reason)
+        } finally {
+            mutableState.value = mutableState.value.copy(isDownloading = false, streamProgress = null, streamNodeKey = null, streamListedSize = null)
+        }
+    }
+
+    /** 备用地址可能是转换件，先确定实际文件名再选择目标。 */
     suspend fun saveRestrictedResource(
         stableKey: String,
         gateway: HomeworkFileGateway,
@@ -302,7 +342,7 @@ class CoursewareScreenModel(
             ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
         val node = findCoursewareNode(course.children, stableKey)?.takeIf { !it.isFolder }
             ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
-        mutableState.value = mutableState.value.copy(isDownloading = true, selectedNodeKey = node.stableKey, fileFailure = null)
+        mutableState.value = mutableState.value.copy(isDownloading = true, selectedNodeKey = node.stableKey, fileFailure = null, streamNodeKey = node.stableKey, streamListedSize = null)
         try {
             val plan = when (val planned = recoverOperation { repository.planStoredDownload(node) }) {
                 is CoursewareOperationResult.Failure -> {
@@ -316,6 +356,7 @@ class CoursewareScreenModel(
                 }
                 is CoursewareOperationResult.Success -> planned.value
             }
+            mutableState.value = mutableState.value.copy(streamListedSize = if (plan.isConvertedCopy) null else node.size.takeIf { it.isNotBlank() })
             val saved = try {
                 gateway.saveStreamingFile(plan.fileName, plan.contentType) { sink ->
                     repository.streamStoredDownload(plan, sink) { written, total ->
@@ -330,7 +371,7 @@ class CoursewareScreenModel(
             }
             CoursewareOperationResult.Success(saved)
         } finally {
-            mutableState.value = mutableState.value.copy(isDownloading = false, streamProgress = null)
+            mutableState.value = mutableState.value.copy(isDownloading = false, streamProgress = null, streamNodeKey = null, streamListedSize = null)
         }
     }
 
@@ -338,6 +379,8 @@ class CoursewareScreenModel(
         stableKey: String?,
         directoryName: String,
         gateway: CoursewareDirectoryGateway,
+        keepCompletedOnCancel: () -> Boolean = { true },
+        onCancelledWithKeptFiles: (HomeworkFileSaveResult) -> Unit = {},
     ): CoursewareOperationResult<HomeworkFileSaveResult> {
         val courseId = mutableState.value.selectedCourseId
             ?: return CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
@@ -374,13 +417,15 @@ class CoursewareScreenModel(
                     is CoursewareDirectoryOpenResult.Failed ->
                         CoursewareOperationResult.Success(HomeworkFileSaveResult.Failed(opened.reason))
                     is CoursewareDirectoryOpenResult.Opened ->
-                        exportResources(resources, opened.session)
+                        exportResources(resources, opened.session, keepCompletedOnCancel, onCancelledWithKeptFiles)
                 }
             } finally {
                 mutableState.value = mutableState.value.copy(
                     isDownloading = false,
                     directoryDownloadCompleted = 0,
                     directoryDownloadTotal = 0,
+                    directoryCurrentName = null,
+                    directoryCurrentSize = null,
                 )
             }
         }
@@ -390,12 +435,75 @@ class CoursewareScreenModel(
     private suspend fun exportResources(
         resources: List<CoursewareResourcePath>,
         session: CoursewareDirectoryWriteSession,
+        keepCompletedOnCancel: () -> Boolean,
+        onCancelledWithKeptFiles: (HomeworkFileSaveResult) -> Unit,
     ): CoursewareOperationResult<HomeworkFileSaveResult> {
         var committed = false
         val nameAllocator = CoursewareExportNameAllocator()
         return try {
             val skipped = mutableListOf<String>()
             for ((index, item) in resources.withIndex()) {
+                mutableState.value = mutableState.value.copy(
+                    directoryCurrentName = item.node.name,
+                    directoryCurrentSize = item.node.size.takeIf { it.isNotBlank() },
+                )
+                if (session.supportsStreamingFiles) {
+                    val plan = if (!item.node.downloadAllowed) {
+                        when (val planned = recoverOperation { repository.planStoredDownload(item.node) }) {
+                            is CoursewareOperationResult.Failure -> {
+                                if (planned.reason == CoursewareSyncFailure.NETWORK || planned.reason == CoursewareSyncFailure.MALFORMED_RESPONSE || planned.reason == CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED) {
+                                    skipped += item.node.name
+                                    mutableState.value = mutableState.value.copy(directoryDownloadCompleted = index + 1, directoryExportSkipped = skipped.toList(), directoryCurrentName = null, directoryCurrentSize = null)
+                                    continue
+                                }
+                                mutableState.value = mutableState.value.copy(fileFailure = planned.reason)
+                                return planned
+                            }
+                            is CoursewareOperationResult.Success -> planned.value
+                        }
+                    } else null
+                    if (plan?.isConvertedCopy == true) {
+                        mutableState.value = mutableState.value.copy(directoryCurrentName = plan.fileName, directoryCurrentSize = null)
+                    }
+                    val exportFile = nameAllocator.resolve(CoursewareDirectoryFile(item.folders, HomeworkFileContent(
+                        fileName = plan?.fileName ?: item.node.suggestedFileName(),
+                        contentType = plan?.contentType ?: "application/octet-stream",
+                        bytes = byteArrayOf(),
+                    )))
+                    // 恢复到已取消的调用方时 withContext 可能丢弃返回值；先保存句柄以便清理。
+                    var created: StreamingDestinationResult? = null
+                    try {
+                        withContext(NonCancellable) { created = session.openFile(exportFile) }
+                    } catch (error: CancellationException) {
+                        withContext(NonCancellable) {
+                            (created as? StreamingDestinationResult.Opened)?.destination?.let { runCatching { it.abort() } }
+                        }
+                        throw error
+                    }
+                    val destination = when (val opened = created ?: StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)) {
+                        is StreamingDestinationResult.Opened -> opened.destination
+                        is StreamingDestinationResult.Failed -> return CoursewareOperationResult.Success(HomeworkFileSaveResult.Failed(opened.reason))
+                        StreamingDestinationResult.Cancelled -> return CoursewareOperationResult.Success(HomeworkFileSaveResult.Cancelled)
+                    }
+                    var saved = false
+                    try {
+                        currentCoroutineContext().ensureActive()
+                        val sink = StreamingFileSink(destination::write)
+                        val progress: (Long, Long) -> Unit = { written, total ->
+                            mutableState.value = mutableState.value.copy(streamProgress = written to total)
+                        }
+                        if (plan == null) streamResourceWithRecovery(item.node, sink, progress)
+                        else repository.streamStoredDownload(plan, sink, progress)
+                        val result = destination.commit()
+                        saved = result == HomeworkFileSaveResult.Saved
+                        if (!saved) return CoursewareOperationResult.Success(result)
+                    } finally {
+                        if (!saved) withContext(NonCancellable) { runCatching { destination.abort() } }
+                        mutableState.value = mutableState.value.copy(streamProgress = null)
+                    }
+                    mutableState.value = mutableState.value.copy(directoryDownloadCompleted = index + 1, directoryCurrentName = null, directoryCurrentSize = null)
+                    continue
+                }
                 val downloaded = when (val result = downloadRestrictedAware(item.node)) {
                     is CoursewareOperationResult.Failure -> {
                         if (result.reason == CoursewareSyncFailure.DOWNLOAD_NOT_ALLOWED ||
@@ -405,6 +513,8 @@ class CoursewareScreenModel(
                             mutableState.value = mutableState.value.copy(
                                 directoryDownloadCompleted = index + 1,
                                 directoryExportSkipped = skipped.toList(),
+                                directoryCurrentName = null,
+                                directoryCurrentSize = null,
                             )
                             continue
                         }
@@ -416,7 +526,7 @@ class CoursewareScreenModel(
                 val exportFile = nameAllocator.resolve(CoursewareDirectoryFile(item.folders, downloaded))
                 when (val written = session.write(exportFile)) {
                     HomeworkFileSaveResult.Saved -> {
-                        mutableState.value = mutableState.value.copy(directoryDownloadCompleted = index + 1)
+                        mutableState.value = mutableState.value.copy(directoryDownloadCompleted = index + 1, directoryCurrentName = null, directoryCurrentSize = null)
                     }
                     else -> return CoursewareOperationResult.Success(written)
                 }
@@ -425,7 +535,23 @@ class CoursewareScreenModel(
             committed = result == HomeworkFileSaveResult.Saved
             CoursewareOperationResult.Success(result)
         } catch (error: CancellationException) {
+            if (keepCompletedOnCancel()) {
+                // 不管释放会话是否成功，都不能再调用 abort 删除已保存的文件。
+                committed = true
+                val result = withContext(NonCancellable) {
+                    try { session.commit() } catch (_: Exception) {
+                        HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+                    }
+                }
+                onCancelledWithKeptFiles(result)
+            }
             throw error
+        } catch (error: CoursewareRemoteException) {
+            val reason = error.reason.toSyncFailure()
+            mutableState.value = mutableState.value.copy(fileFailure = reason)
+            CoursewareOperationResult.Failure(reason)
+        } catch (_: StreamingSinkIoException) {
+            CoursewareOperationResult.Success(HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO))
         } catch (_: Exception) {
             CoursewareOperationResult.Success(
                 HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO),
@@ -434,6 +560,22 @@ class CoursewareScreenModel(
             if (!committed) {
                 withContext(NonCancellable) { runCatching { session.abort() } }
             }
+        }
+    }
+
+    private suspend fun streamResourceWithRecovery(node: CoursewareNode, sink: StreamingFileSink, onProgress: (Long, Long) -> Unit) {
+        var written = false
+        val tracked = StreamingFileSink { bytes ->
+            sink.write(bytes)
+            if (bytes.isNotEmpty()) written = true
+        }
+        try {
+            repository.streamResource(node, tracked, onProgress)
+        } catch (error: CoursewareRemoteException) {
+            if (error.reason != CoursewareRemoteFailure.SESSION_EXPIRED || written) throw error
+            val recovered = try { reauthenticate?.invoke() == true } catch (cancel: CancellationException) { throw cancel } catch (_: Exception) { false }
+            if (!recovered) throw error
+            repository.streamResource(node, tracked, onProgress)
         }
     }
 

@@ -168,6 +168,8 @@ fun HomeWorkspace(
     todayRequest: Int = 0,
     onTodaySelectedChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
+    /** 未经作业页筛选的来源数据，仅用于把截止提醒关联到本地完成标记。 */
+    reminderAssignments: List<team.bjtuss.bjtuselfservice.shared.feature.assignment.AggregatedAssignment> = emptyList(),
 ) {
     val state by model.state.collectAsState()
     val pageListState = rememberLazyListState()
@@ -221,9 +223,15 @@ fun HomeWorkspace(
     val agendaNow = remember(now.date, now.hour, now.minute) {
         LocalDateTime(now.date, LocalTime(now.hour, now.minute))
     }
-    val dueSoonItems = remember(homework, exams, phyVlabEvents, agendaNow, timeZone) {
-        val agenda = buildHomeAgenda(homework, exams, agendaNow.date, agendaNow, timeZone, phyVlabEvents)
-        dueSoonSummaryItems(agenda.dueSoonHomework, agenda.dueSoonEvents, timeZone)
+    val reminderAgenda = remember(homework, exams, phyVlabEvents, agendaNow, timeZone) {
+        buildHomeAgenda(homework, exams, agendaNow.date, agendaNow, timeZone, phyVlabEvents)
+    }
+    val reminders = rememberHomeAssignmentReminders(reminderAgenda, reminderAssignments)
+    val dueSoonItems = remember(reminders, timeZone) {
+        dueSoonSummaryItems(reminders.dueSoonHomework, reminders.dueSoonEvents, timeZone)
+    }
+    val discountSoonItems = remember(reminders, timeZone) {
+        dueSoonSummaryItems(emptyList(), reminders.dueSoonDiscountEvents, timeZone)
     }
     val hasMeaningfulChanges = remember(changes) { meaningfulHomeChanges(changes).isNotEmpty() }
     val status = state.status
@@ -254,8 +262,13 @@ fun HomeWorkspace(
             item(key = "home-now") {
                 HomeNowSection(timeZone = timeZone)
             }
-            // 正在进行与 48 小时内截止之后先看数据变动，再看日程窗格。
-            // 两栏为空时不建列表项，避免空项在日程上方多出一份间距。
+            // 正在进行、48 小时内折扣与截止之后先看数据变动，再看日程窗格。
+            // 提醒和变动为空时不建列表项，避免空项在日程上方多出一份间距。
+            if (discountSoonItems.isNotEmpty()) {
+                item(key = "home-discount-soon") {
+                    HomeDueSoonSection(discountSoonItems, expanded, onOpenHomework, reminderLabel = "开始折扣")
+                }
+            }
             if (dueSoonItems.isNotEmpty()) {
                 item(key = "home-due-soon") {
                     HomeDueSoonSection(dueSoonItems, expanded, onOpenHomework)
@@ -450,12 +463,13 @@ private fun StatusCard(
     }
 }
 
-/** 48 小时内截止的作业与事项。 */
+/** 48 小时内开始折扣或截止的作业与事项，两类分别显示。 */
 @Composable
 private fun HomeDueSoonSection(
     dueSoonItems: List<DueSoonSummaryItem>,
     expanded: Boolean,
     onOpenHomework: () -> Unit,
+    reminderLabel: String = "截止",
 ) {
     HomeCard(modifier = Modifier.fillMaxWidth()) {
         if (expanded) {
@@ -464,7 +478,7 @@ private fun HomeDueSoonSection(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                DueSoonHomeworkSummary(dueSoonItems, Modifier.weight(1f))
+                DueSoonHomeworkSummary(dueSoonItems, Modifier.weight(1f), reminderLabel)
                 OutlinedButton(onClick = onOpenHomework) { Text("查看作业") }
             }
         } else {
@@ -472,7 +486,7 @@ private fun HomeDueSoonSection(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                DueSoonHomeworkSummary(dueSoonItems)
+                DueSoonHomeworkSummary(dueSoonItems, reminderLabel = reminderLabel)
                 OutlinedButton(onClick = onOpenHomework, modifier = Modifier.fillMaxWidth()) {
                     Text("查看作业")
                 }
@@ -1234,10 +1248,11 @@ private fun dueSoonSummaryItems(
 private fun DueSoonHomeworkSummary(
     items: List<DueSoonSummaryItem>,
     modifier: Modifier = Modifier,
+    reminderLabel: String = "截止",
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-            "48 小时内有 ${items.size} 项待完成作业截止",
+            "48 小时内有 ${items.size} 项待完成作业$reminderLabel",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.error,
             fontWeight = FontWeight.SemiBold,
@@ -1946,3 +1961,4 @@ private fun HomeStatusFailure.message(hasCache: Boolean): String = when (this) {
     HomeStatusFailure.PARSE -> if (hasCache) "学校返回格式变化，正在显示上次状态。" else "无法读取学校返回的状态。"
     HomeStatusFailure.CACHE -> if (hasCache) "最新状态未能写入本地，仍显示上次状态。" else "无法保存最新状态。"
 }
+

@@ -45,7 +45,8 @@ internal fun AggregatedAssignmentWorkspace(
     var now by remember { mutableStateOf(Clock.System.now().epochSeconds) }
     val list = rememberLazyListState()
     var selectedKey by remember { mutableStateOf<String?>(null) }
-    val visible = filterAggregateAssignments(assignments, filters, now)
+    val completion = assignmentCompletionState()
+    val visible = filterAggregateAssignments(assignments, filters, now, completion.completedKeys)
     // 搜索是独立的一层：结果来自全部作业，不经过筛选；列表顶部的同步横幅和筛选 banner 一并让位。
     val searchActive = search?.active == true
     val query = search?.query.orEmpty()
@@ -53,7 +54,7 @@ internal fun AggregatedAssignmentWorkspace(
     LaunchedEffect(Unit) { onInitialize() }
     LaunchedEffect(Unit) { while (true) { now = Clock.System.now().epochSeconds; delay(30_000) } }
     LaunchedEffect(filters, searchActive, query) { list.scrollToItem(0) }
-    val dueSoon = visible.count { !it.submitted && it.dueTime?.let { time -> time in now..(now + 48 * 3600) } == true }
+    val dueSoon = visible.count { !it.submitted && it.completionKey() !in completion.completedKeys && it.dueTime?.let { time -> time in now..(now + 48 * 3600) } == true }
     val subtitle = (if (dueSoon > 0) "未来 48 小时内有 $dueSoon 项未提交" else "未来 48 小时内暂无临近截止项") +
         if (filters.active) " · 已筛选" else ""
     val top = LocalTopBarClearance.current
@@ -62,6 +63,7 @@ internal fun AggregatedAssignmentWorkspace(
         TopScrollLazyColumn(state = list, modifier = listModifier.desktopTouchScroll(list),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp + top, bottom = 24.dp + bottom),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (completion.failure != null) item("completion-error") { AssignmentCompletionFeedback() }
             if (searchActive) {
                 if (results.isEmpty()) item("search-empty") {
                     PageSearchEmptyState(query, hint = "搜索课程名、作业标题或来源", modifier = Modifier.animateItem())
@@ -262,3 +264,4 @@ internal fun AssignmentMarkdownActions(item: AggregatedAssignment, gateway: Home
         feedback?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
     }
 }
+

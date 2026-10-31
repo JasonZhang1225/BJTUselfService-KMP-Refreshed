@@ -54,11 +54,25 @@ data class AggregateAssignmentFilters(
     val active: Boolean get() = beforeDate != null || hideExpired || hideSubmitted || platformCourses.values.any { !it.allCourses }
 }
 
-fun filterAggregateAssignments(items: List<AggregatedAssignment>, filters: AggregateAssignmentFilters, now: Long): List<AggregatedAssignment> {
+/** “显示全部日期”只豁免手动完成项；学校已提交状态仍独立过滤。 */
+internal fun passesAssignmentCompletionFilter(submitted: Boolean, manuallyCompleted: Boolean,
+    hideExpired: Boolean, hideSubmitted: Boolean): Boolean =
+    !hideSubmitted || (!submitted && (!hideExpired || !manuallyCompleted))
+
+fun AggregatedAssignment.completionKey(): AssignmentCompletionKey? = when (source) {
+    AssignmentSource.COURSE_PLATFORM -> homework?.completionKey()
+    AssignmentSource.PHYVLAB -> physical?.completionKey()
+    AssignmentSource.CITEL -> citel?.completionKey()
+}
+
+fun filterAggregateAssignments(items: List<AggregatedAssignment>, filters: AggregateAssignmentFilters, now: Long,
+    completedKeys: Set<AssignmentCompletionKey> = emptySet()): List<AggregatedAssignment> {
     val before = filters.beforeDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-    val visible = items.filter { filters.forSource(it.source).matches(it.courseId) && (!filters.hideSubmitted || !it.submitted) &&
+    val visible = items.filter { filters.forSource(it.source).matches(it.courseId) &&
+        passesAssignmentCompletionFilter(it.submitted, it.completionKey() in completedKeys, filters.hideExpired, filters.hideSubmitted) &&
         (!filters.hideExpired || it.dueTime?.let { time -> time > now } != false) &&
         (before == null || it.dueTime?.let { time ->
+            // Midnight is displayed as the previous day's 24:00 and belongs to that day.
             deadlineDisplay(Instant.fromEpochSeconds(time).toLocalDateTime(TimeZone.of("Asia/Shanghai"))).date < before
         } == true) }
     return sortAggregateAssignments(visible, filters.sortOrder)
@@ -115,3 +129,4 @@ fun aggregateAssignmentSyncStatus(sources: List<AssignmentSourceSync>): String =
     sources.any { !it.ready } -> "等待同步"
     else -> "已同步"
 }
+

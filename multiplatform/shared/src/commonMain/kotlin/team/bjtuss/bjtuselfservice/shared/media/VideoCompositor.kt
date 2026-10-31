@@ -31,6 +31,20 @@ interface VideoCompositor {
 interface ProgressiveVideoCompositor : VideoCompositor {
     /** 是否能在中断后复用已编码部分；不能时仍可恢复已下载的原始分片。 */
     val retainsEncodedSegmentsOnInterrupt: Boolean get() = true
+
+    /**
+     * 编码墙钟是否与下载重叠（Windows / macOS `compose-indexed` 均为 true）。
+     * false 时 PIPELINING 总 ETA = 下载剩余 + [provisionalEncodeSeconds]。
+     * true 时总 ETA = max(下载, 合成, 按进度折算的预估编码剩余)。
+     */
+    val encodingOverlapsDownload: Boolean get() = true
+
+    /**
+     * 整段编码的保守墙钟（秒）。重叠路径按 (1−stage) 折成剩余后与实测合成 ETA 取较大值，
+     * 避免早期合成进度把总时长压得过乐观。默认 null：不设下限。
+     */
+    fun provisionalEncodeSeconds(contentDurationSeconds: Double, quality: PlaybackCompositeQuality): Long? = null
+
     suspend fun openProgressive(
         work: MediaWorkDirectory,
         durationSeconds: Double,

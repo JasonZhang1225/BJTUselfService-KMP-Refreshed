@@ -24,6 +24,44 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 /** 字段与结构取自 2026-10-25 课程平台真实响应，值均为虚构。 */
 class CoursewarePlaybackTest {
     @Test
+    fun ignoredRangeResponseIsRejectedBeforeItsBodyIsConsumed() = runBlocking {
+        val url = "http://123.121.147.7:88/ve/pdf/rp/2026/09/12/x.pptx"
+        val queue = QueueTransport(
+            *legacyInitializationResponses(),
+            legacyResponse("""{"resMap":{"RP_PATH_1":"2026/09/12/x.pptx"},"STATUS":"0"}"""),
+        )
+        var bodyConsumed = false
+        val transport = object : SchoolHttpTransport by queue {
+            override suspend fun stream(request: SchoolHttpRequest, onHeaders: suspend (SchoolHttpResponse) -> Unit, onChunk: suspend (ByteArray) -> Unit) {
+                onHeaders(SchoolHttpResponse(statusCode = 200, finalUrl = url, headers = mapOf("Content-Length" to listOf("500000000")), body = byteArrayOf()))
+                bodyConsumed = true
+                onChunk(byteArrayOf(1))
+            }
+        }
+        val remote = SchoolCoursewareRemoteDataSource(transport, endpoint = SmartPlatformEndpoint.LegacyHttp)
+        assertFailsWith<CoursewareRemoteException> { remote.planStoredDownload(restricted("课件", "pptx")) }
+        assertFalse(bodyConsumed)
+    }
+
+    @Test
+    fun failedTicketStreamsOriginalStorageFile() = runBlocking {
+        val ticket = "http://123.121.147.7:88/ve/download.shtml?id=rp-9"
+        val url = "http://123.121.147.7:88/ve/pdf/rp/2026/09/12/x.pdf"
+        val transport = QueueTransport(
+            *legacyInitializationResponses(),
+            legacyResponse("""{"flag":true,"rpUrl":"$ticket","download_type":"0"}"""),
+            SchoolHttpResponse(statusCode = 500, finalUrl = ticket, body = byteArrayOf()),
+            legacyResponse("""{"resMap":{"RP_PATH_1":"2026/09/12/x.pdf"},"STATUS":"0"}"""),
+            rangeResponse(url, 0, 4, "%".encodeToByteArray(), "application/pdf"),
+            rangeResponse(url, 0, 4, "%PDF".encodeToByteArray(), "application/pdf"),
+        )
+        val remote = SchoolCoursewareRemoteDataSource(transport, endpoint = SmartPlatformEndpoint.LegacyHttp)
+        val chunks = mutableListOf<Byte>()
+        remote.streamResource(restricted("讲义", "pdf").copy(downloadAllowed = true), StreamingFileSink { chunks.addAll(it.toList()) }) { _, _ -> }
+        assertEquals("%PDF", chunks.toByteArray().decodeToString())
+    }
+
+    @Test
     fun parsesStoredPathsFromResourceInfo() {
         val parsed = parseCoursewareStoredPaths(
             """{"resMap":{"uuid":"A1","rp_name":"unit 1","RP_PATH_1":"2026/09/12/2026091216.pptx","RP_PATH_2":"2026/09/12/swf/2026091216.pdf","stu_download":"1"},"STATUS":"0"}""",

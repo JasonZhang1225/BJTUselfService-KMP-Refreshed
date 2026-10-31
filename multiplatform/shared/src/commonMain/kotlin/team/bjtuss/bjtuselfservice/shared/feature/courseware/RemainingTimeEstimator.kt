@@ -42,3 +42,38 @@ internal fun formatRemainingSeconds(seconds: Long): String = when {
     seconds < 3600 -> "${(seconds + 59) / 60} 分钟"
     else -> ((seconds + 59) / 60).let { "${it / 60} 小时 ${it % 60} 分钟" }
 }
+
+/**
+ * 渐进任务墙钟剩余。
+ *
+ * - 重叠编码：max(下载, 合成, 预估编码剩余)。预估按片长×平台下限折算，再乘 (1−stage)，
+ *   避免 PIPELINING 早期合成速率被「头几秒偏快」抬到乐观总时长（本机曾报 13–15 分钟、实跑约 20 分钟）。
+ * - 非重叠：下载剩余 + 预估整段编码；合成 ETA 出现后改为下载 + 合成。
+ */
+internal fun progressiveWallClockSeconds(
+    downloadSeconds: Long?,
+    compositionSeconds: Long?,
+    provisionalEncodeSeconds: Long?,
+    encodingOverlapsDownload: Boolean,
+    stageProgress: Double = 0.0,
+): Long? {
+    val remainingFraction = (1.0 - stageProgress.coerceIn(0.0, 1.0))
+    val provisionalRemaining = provisionalEncodeSeconds
+        ?.takeIf { it > 0 }
+        ?.let { ceil(it * remainingFraction).toLong().coerceAtLeast(1) }
+    return when {
+        encodingOverlapsDownload -> {
+            val encodeSide = listOfNotNull(compositionSeconds, provisionalRemaining).maxOrNull()
+            listOfNotNull(downloadSeconds, encodeSide).maxOrNull()
+        }
+        downloadSeconds != null && compositionSeconds != null ->
+            downloadSeconds + compositionSeconds
+        downloadSeconds != null && provisionalEncodeSeconds != null ->
+            downloadSeconds + provisionalEncodeSeconds
+        downloadSeconds == null && provisionalEncodeSeconds != null ->
+            provisionalEncodeSeconds
+        downloadSeconds != null -> downloadSeconds
+        compositionSeconds != null -> compositionSeconds
+        else -> null
+    }
+}

@@ -29,7 +29,7 @@ class AndroidPlaybackRecovery(context: Context) : PlaybackRecoveryAccess {
                 PlaybackTaskManager(CoroutineScope(SupervisorJob() + Dispatchers.Main),
                     team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader(publicTransport),
                     { team.bjtuss.bjtuselfservice.shared.media.PlaybackPlatformHooks.effectiveCompositor },
-                    { host }, storeFor(accountScope), ::restoreDestination)
+                    { host }, storeFor(accountScope), restoreDestination = ::restoreDestination)
             }
         }
 

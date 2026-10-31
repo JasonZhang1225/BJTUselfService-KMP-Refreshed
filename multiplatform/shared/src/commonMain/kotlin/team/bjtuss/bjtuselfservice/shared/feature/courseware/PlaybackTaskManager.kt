@@ -128,7 +128,11 @@ data class PlaybackTask(
     val remainingLabel: String? get() = if (!isActive || phase == PlaybackTaskPhase.QUEUED) null else {
         val estimate = remainingSeconds?.let { (if (it < 60) "" else "约 ") + formatRemainingSeconds(it) } ?: "估算中"
         when (phase) {
-            PlaybackTaskPhase.PIPELINING -> "预计剩余$estimate（下载与合成并行）"
+            PlaybackTaskPhase.PIPELINING -> {
+                val encodePending = (stageProgress ?: 0f) < 0.01f
+                if (encodePending) "预计剩余$estimate（含下载后合成）"
+                else "预计剩余$estimate（下载与合成并行）"
+            }
             PlaybackTaskPhase.DOWNLOADING -> "下载剩余$estimate" + if (composite) " · 合成时间另计" else ""
             PlaybackTaskPhase.COMPOSITING -> "合成剩余$estimate · 随后保存文件"
             PlaybackTaskPhase.FINALIZING -> "整理剩余$estimate · 随后保存文件"
@@ -155,6 +159,8 @@ class PlaybackTaskManager(
     private val compositor: () -> VideoCompositor,
     private val backgroundHost: () -> PlaybackBackgroundHost?,
     private val taskStore: PlaybackTaskStore? = null,
+    /** 测试可覆盖；生产默认跟平台 `playbackRecordingDownloadAvailable`。须放在 restoreDestination 前，保留尾随 lambda。 */
+    private val recordingDownloadsEnabled: Boolean = playbackRecordingDownloadAvailable,
     private val restoreDestination: (suspend (String, String) -> StreamingDestinationResult)? = null,
 ) {
     private val mutableTasks = MutableStateFlow<List<PlaybackTask>>(emptyList())
@@ -242,6 +248,9 @@ class PlaybackTaskManager(
             return PlaybackEnqueueResult.Failed("下载记录不可用，已保留原记录和缓存；请先恢复记录后再开始新任务。")
         }
         if (streams.isEmpty()) return PlaybackEnqueueResult.Failed("先选择画面")
+        if (!recordingDownloadsEnabled) {
+            return PlaybackEnqueueResult.Failed("移动端仅支持在线播放，录像下载请使用 Windows 或 Mac。")
+        }
         if (!gateway.isStreamingSaveAvailable) return PlaybackEnqueueResult.Failed("当前平台还不能保存大文件。")
         val ordered = streams.sortedBy { it.kind.ordinal }
         val doComposite = composite && ordered.size == 2 && compositor().isAvailable
@@ -358,6 +367,7 @@ class PlaybackTaskManager(
 
     /** 暂停/网络失败后沿用保存位置与分片，不重新选择或重下已完成的画面。 */
     fun retry(id: String) {
+        if (!recordingDownloadsEnabled) return
         if (jobs.value[id] != null) return
         if (mutableTasks.value.firstOrNull { it.id == id }?.canResume != true) return
         stops.update { it - id }
@@ -751,7 +761,9 @@ class PlaybackTaskManager(
         val compositionSeconds = MutableStateFlow<Long?>(null)
         val finalizingSeconds = MutableStateFlow<Long?>(null)
         val transferred = MutableStateFlow(0L)
+        val contentDurationSeconds = MutableStateFlow(0.0)
         var initialFraction: Float? = null
+        val overlaps = streaming.encodingOverlapsDownload
         update(id) { it.copy(phase = PlaybackTaskPhase.PIPELINING, step = "准备两路下载与合成", remainingSeconds = null) }
         val ticker = launch {
             while (true) {
@@ -761,7 +773,10 @@ class PlaybackTaskManager(
                 val remaining = current.bytesTotal?.let { (it - current.bytesDownloaded).coerceAtLeast(0).toDouble() } ?: -1.0
                 val downloadSeconds = downloadEta.sample(speed.totalTransferred.toDouble(), remaining)
                 val compositeSeconds = compositionSeconds.value
-                val allSeconds = if (downloadSeconds != null && compositeSeconds != null) maxOf(downloadSeconds, compositeSeconds) else null
+                val provisional = streaming.provisionalEncodeSeconds(contentDurationSeconds.value, request.quality)
+                val stage = (current.stageProgress ?: 0f).toDouble()
+                val allSeconds = progressiveWallClockSeconds(
+                    downloadSeconds, compositeSeconds, provisional, overlaps, stage)
                 update(id) { it.copy(bytesPerSecond = sampled.takeIf { _ -> it.phase == PlaybackTaskPhase.PIPELINING },
                     remainingSeconds = when (it.phase) {
                         PlaybackTaskPhase.FINALIZING -> finalizingSeconds.value
@@ -807,6 +822,7 @@ class PlaybackTaskManager(
                     if (it.phase == PlaybackTaskPhase.PIPELINING || it.phase == PlaybackTaskPhase.COMPOSITING)
                         it.copy(compositionDevice = device) else it
                 } },
+                onDuration = { contentDurationSeconds.value = it },
             )
         } finally { ticker.cancel() }
     }
@@ -946,6 +962,21 @@ class PlaybackTaskManager(
             kotlinx.io.files.SystemFileSystem.list(workRoot).any { it.name !in known }
         if (hasUnrecordedWork) restored += PlaybackTask("history-warning", "", "未关联的下载缓存", emptyList(), false,
             phase = PlaybackTaskPhase.FAILED, message = "发现没有任务记录的缓存，已保留；无法自动恢复，请检查应用回放缓存。")
+        // 移动端关闭录像下载后：遗留可继续任务不得静默重跑，标失败并保留卡片供移除。
+        if (!recordingDownloadsEnabled) {
+            for (index in restored.indices) {
+                val task = restored[index]
+                if (!task.isActive && !task.canResume) continue
+                requests.update { it - task.id }
+                restored[index] = task.copy(
+                    phase = PlaybackTaskPhase.FAILED,
+                    canResume = false,
+                    bytesPerSecond = null,
+                    remainingSeconds = null,
+                    message = MOBILE_RECORDING_DOWNLOAD_DISABLED_MESSAGE,
+                )
+            }
+        }
         mutableTasks.value = restored
     }
 
@@ -1005,6 +1036,11 @@ class PlaybackTaskManager(
 
     @OptIn(ExperimentalTime::class)
     private fun newTaskId(): String = "t${Clock.System.now().toEpochMilliseconds()}-${nextId.getAndUpdate { it + 1 }}"
+
+    companion object {
+        internal const val MOBILE_RECORDING_DOWNLOAD_DISABLED_MESSAGE =
+            "本端已不再支持录像下载；请移除遗留任务，或改用 Windows / Mac。"
+    }
 }
 
 private fun isPersistablePlaybackUrl(url: String): Boolean =

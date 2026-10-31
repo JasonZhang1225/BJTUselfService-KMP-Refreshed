@@ -1167,3 +1167,37 @@
 - 验证：JDK 21，全部 Gradle 命令在 `multiplatform/` 执行。最后运行 `.\gradlew.bat -I ..\.artifacts\homework-markdown-actions\local-render.gradle -I ..\.artifacts\android-account-debug-signing.gradle :shared:desktopTest --tests "*HomeworkMarkdownActionsLocalCheck*" --tests "*AggregatedAssignmentsTest*" --tests "*AggregateAssignmentVisualTest*" :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows --console=plain`，BUILD SUCCESSFUL（1m04s），相关 9 项零失败/错误/跳过；Android Debug APK 与桌面宿主编译成功。临时离屏夹具仅在忽略目录加载，不交付源码；检查 320/390/1000 宽度、浅深色、1.6 倍字号、保存不可用显示，并用内存剪贴板/假网关验证内容、文件名/MIME/UTF-8、取消/失败/保存中防重复点击；已目视截图。Android 使用机器已有标准 debug key 与既有本地 init 脚本，仅进程内提供占位配置，未修改工程签名配置或安装 App。
 - 全量与证据：`.\gradlew.bat :shared:desktopTest --console=plain` 执行 1110 项，1105 通过、5 失败、0 错误/跳过；5 项与仓库既有 Windows 环境限制清单完全对应（3 个 DesktopAgentIntegrationTest、2 个 MacUninstallCleanerTest，涉及 Unix 脚本非 Win32、符号链接特权与 macOS 卸载流程），未修改、排除或重试这些用例。`git diff --check` 通过。完整命令、失败方法、XML、界面 PNG 和本地临时夹具在 `.artifacts/homework-markdown-actions/validation.md`、`full-test-results/`、`render-results/`，最终联合验证日志 `final-check.log`。
 - 未验证：未调用 Mac、未做 iOS/Xcode 编译或手机实际系统剪贴板/文档面板验证；本次 main 推送自动触发[常规安全检查 run 39881761156](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/39881761156)，记录时进行中、结果待定。未改版本、README、发布说明，未替换安装版 App、打 tag 或发版。
+
+## 2026-10-30 作业手动完成标记与首页截止提醒过滤（PR #76）
+
+- 改动：未提交作业可按账号本地标记完成/撤销；首页 48 小时截止提醒经 `rememberHomeAssignmentReminders` / `filterHomeAssignmentReminders` 排除已手动完成项。合并提交 `94f6d6d3`。
+- 原因/决策：完成态按账号隔离存 CacheStore metadata；首页只裁提醒列表，不改周日程与学校提交口径。
+- 验证：合入前分支专项与全量 desktopTest 见当时 PR 记录；合入后由后续 PR CI 继续覆盖。
+- 未验证：保存协程生命周期 P2 审查项未纳入该 PR 范围。
+
+## 2026-10-30 成绩课程性质筛选布局稳定（PR #77）
+
+- 改动：普通性质筛选两态统一字重，避免选中导致固有宽度/换行变化；合并提交 `75f4e8f5`。
+- 验证：布局回归 384 组合与宿主构建见合入前 PR 记录。
+## 2026-10-31 macOS P1 课程回放下载结项（功能分支未提交）
+
+- 改动：Mac 渐进 `compose-indexed`（异步 VT + VTPixelTransfer）；F10 `open`/`open -R`；PIPELINING 双进度；`--playback-ui-harness`；开跑 ETA 下限 `provisionalEncodeSeconds=片长/5.4`（重叠取 max(实测, 按 stage 折算下限)），避免早期乐观报 13–15 分钟。
+- 原因/决策：对齐 Windows 下载审查深度；你确认约 20 分钟可接受且 ETA 须与实跑对齐后收工。不合主干/不发版；源码仍在 `feat/courseware-fallback-playback` 工作区未 commit。
+- 验证：GUI 整节（大学物理 2026-10-28 MEDIUM）墙钟 **20.50 min**、成片 7022.43s、`ffmpeg -xerror` 0、抽帧 `ui-harness-user-trial/frames/`；headless indexed 合成 **13.4 min**；ETA 短跑开跑投影 ≈21.7–22 min（界面截图 `ui-harness-eta-floor-shot/shots/pipelining-eta-22min.webp`）；`:shared:desktopTest` 过滤 RemainingTime/PlaybackTask/SavedFile/MacProgressive/MacVideoFrameHelperLifecycle **54** 项 0 失败（`regression-eta-floor.log`）。
+- 未验证：DMG 安装验收、Dock/菜单破坏性点验、F07 五轮复压、Intel Mac、多小时耐久、Safari 产品皮肤内全屏。F08/F13 同 Windows：中断不保留编码进度。
+- 包标识：GUI `local-20261031-100311-600` / helper `9add61c5…`；ETA 修复包 `local-20261031-130631-248` / `642556cd…`；headless 权威 `local-20261031-092406-660` / `52e0ca17…`。证据根目录 `.artifacts/macos-playback-p1/`；确认单已结项。
+
+## 2026-10-31 Cloud Agent Linux 构建说明（PR #80，`4d6f207a`）
+
+- 改动：`AGENTS.md` 增补 Linux Cloud Agent 的 JDK 21、SDK、一次性编译密钥、ABI、模拟器 `-accel off` 与不可构建端说明；`memory.md` 顶部摘要。
+- 原因/决策：文档冲突已 rebase 解决（保留 Cloud Agent 摘要，其余以当时 main 为准）。
+- 验证：文档 PR，`kmp-security-check` 路径过滤未跑；Cursor Bugbot/Security/Approval 绿。
+- 未验证：无应用行为变化。
+
+## 2026-10-31 macOS 录像合成提速与移动端仅在线播放（PR #81，`f41136d0`）
+
+- 改动：`compose-indexed` NV12/异步解码，整节约 5.7 min；渐进合成与 ETA；Android/iOS 关闭录像下载；含 #74/#75。
+- 原因/决策：用户授权合入；Bugbot 三条 Medium 记跟进不阻塞；admin bypass 合并。
+- 验证：PR CI `41176398106` 四项 + windows-cli 全绿；合入后触发 KMP package `41178525742`。
+- 未验证：其他芯片/DMG；Bugbot 所述失败注入与移动端残留任务 UI。
+

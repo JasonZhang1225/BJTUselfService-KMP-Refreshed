@@ -120,8 +120,9 @@ fun PhyVlabWorkspace(
     // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
     val nowEpochSeconds = rememberPhyVlabNowEpochSeconds()
     val allActivities = model.allActivities()
-    val displayedActivities = filterPhyVlabActivities(allActivities, filters, nowEpochSeconds)
-    val dueSoon = displayedActivities.count { !it.completed && it.dueTimestamp?.let { due -> due in nowEpochSeconds..(nowEpochSeconds + 48 * 3600) } == true }
+    val completion = assignmentCompletionState()
+    val displayedActivities = filterPhyVlabActivities(allActivities, filters, nowEpochSeconds, completion.completedKeys)
+    val dueSoon = displayedActivities.count { !it.completed && it.completionKey() !in completion.completedKeys && it.dueTimestamp?.let { due -> due in nowEpochSeconds..(nowEpochSeconds + 48 * 3600) } == true }
     val subtitle = (if (dueSoon > 0) "未来 48 小时内有 $dueSoon 项未提交" else "未来 48 小时内暂无临近截止项") +
         if (filters.active) " · 已筛选" else ""
     LaunchedEffect(filters) { listState.scrollToItem(0) }
@@ -138,6 +139,7 @@ fun PhyVlabWorkspace(
     // 原生栏 underlap 时居中态保持老位置（外层无占位，这里按栏高补回）。
     val topClearance = LocalTopBarClearance.current
     Column(modifier = modifier.fillMaxSize()) {
+        AssignmentCompletionFeedback()
         if (holdNetwork) {
             Box(
                 Modifier.fillMaxSize().padding(top = topClearance),
@@ -363,9 +365,11 @@ private fun PhyVlabCourseRow(course: PhyVlabCourse, selected: Boolean, onSelect:
     }
 }
 
-internal fun filterPhyVlabActivities(activities: List<PhyVlabActivity>, filters: AssignmentFilters, now: Long): List<PhyVlabActivity> {
+internal fun filterPhyVlabActivities(activities: List<PhyVlabActivity>, filters: AssignmentFilters, now: Long,
+    completedKeys: Set<AssignmentCompletionKey> = emptySet()): List<PhyVlabActivity> {
     val visible = activities.filter { (filters.courses.isEmpty() || it.courseId in filters.courses) &&
-        (!filters.hideSubmitted || !it.completed) && (!filters.hideExpired || it.dueTimestamp?.let { due -> due > now } != false) }
+        passesAssignmentCompletionFilter(it.completed, it.completionKey() in completedKeys, filters.hideExpired, filters.hideSubmitted) &&
+        (!filters.hideExpired || it.dueTimestamp?.let { due -> due > now } != false) }
     return when (filters.sortOrder) {
         1 -> visible.sortedBy { it.dueTimestamp ?: Long.MAX_VALUE }
         2 -> visible.sortedByDescending { it.dueTimestamp ?: Long.MIN_VALUE }
@@ -378,7 +382,7 @@ internal fun PhyVlabActivityRow(activity: PhyVlabActivity, nowEpochSeconds: Long
     ElevatedCard(onClick = onOpen, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            AssignmentCardHeader(activity.courseName, activity.title, activity.completed, source)
+            AssignmentCardHeader(activity.courseName, activity.title, activity.completed, source, completionKey = activity.completionKey())
             Text("类型 · ${activity.activityType}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("开始 · ${assignmentStartText(activity.openText)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("截止 · ${assignmentDeadlineText(activity.dueText)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -657,7 +661,7 @@ private fun PhyVlabAssignmentDetailContent(
                     containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                     contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
                 ) {
-                    Text(page.description, style = MaterialTheme.typography.bodyMedium)
+                    Text(team.bjtuss.bjtuselfservice.shared.util.schoolRichTextToAnnotated(page.descriptionHtml.ifBlank { page.description }), style = MaterialTheme.typography.bodyMedium)
                 }
             }
             if (page.submittedFiles.isNotEmpty()) {

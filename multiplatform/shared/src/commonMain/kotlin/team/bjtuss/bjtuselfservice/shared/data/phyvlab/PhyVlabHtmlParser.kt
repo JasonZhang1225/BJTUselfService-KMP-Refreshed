@@ -247,16 +247,17 @@ internal fun parsePhyVlabAssignmentPage(
         }
         ?.second
 
-    val description = listOf(
+    val descriptionElement = listOf(
         "#intro",
         ".activity-description",
         ".mod_introbox",
         "[data-region='activity-description']",
         ".box.generalbox",
     ).asSequence()
-        .mapNotNull { selector -> document.selectFirst(selector)?.let { cleanPhyVlabText(it.text()) } }
-        .firstOrNull { it.isNotBlank() }
-        .orEmpty()
+        .mapNotNull { selector -> document.selectFirst(selector) }
+        .firstOrNull { it.text().isNotBlank() }
+    val descriptionHtml = descriptionElement?.html()?.let { team.bjtuss.bjtuselfservice.shared.util.schoolRichTextSafeFragment(it) }.orEmpty()
+    val description = team.bjtuss.bjtuselfservice.shared.util.schoolRichTextToPlainMultiline(descriptionHtml)
 
     val bodyText = cleanPhyVlabText(document.body().text())
     val submissionStatus = rowValue(
@@ -385,6 +386,7 @@ internal fun parsePhyVlabAssignmentPage(
 
     val detail = PhyVlabAssignmentDetail(
         description = normalizePhyVlabDatesInText(description),
+        descriptionHtml = descriptionHtml,
         submissionStatus = normalizePhyVlabDatesInText(submissionStatus),
         submissionDateText = submissionDate?.let(::normalizePhyVlabDateText),
         submissionDateTimestamp = submissionDate?.let(::parsePhyVlabDateTimestamp),

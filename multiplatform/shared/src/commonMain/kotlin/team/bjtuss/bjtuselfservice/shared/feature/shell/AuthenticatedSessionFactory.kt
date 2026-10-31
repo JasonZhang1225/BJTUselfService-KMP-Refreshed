@@ -128,6 +128,7 @@ internal fun rememberAuthenticatedSession(
             citelModel = graph.citelModel,
             libraryModel = libraryModel,
             aggregateFilterStore = team.bjtuss.bjtuselfservice.shared.feature.assignment.AggregateAssignmentFilterStore(cacheStore, profile.studentId),
+            assignmentCompletionStore = graph.assignmentCompletionStore,
             homeModel = graph.homeModel,
             homeChangeFeed = graph.homeChangeFeed,
             homeworkFileGateway = homeworkFileGateway,

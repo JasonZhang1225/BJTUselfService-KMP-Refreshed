@@ -74,8 +74,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 
 /**
- * “课程回放”独立入口：选课程 → 选课节 → 选画面（带预览）→ 播放或下载。
- * 课程列表复用课件页的智慧教学课程目录（同一个会话与缓存）。
+ * “课程回放”独立入口：选课程 → 选课节 → 选画面（带预览）→ 播放；
+ * Windows / macOS 另可下载与合成。课程列表复用课件页的智慧教学课程目录。
  */
 @Composable
 fun PlaybackScreen(
@@ -107,15 +107,18 @@ fun PlaybackScreen(
         },
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        PlaybackModeTabs(showTasks = showTasks, activeCount = tasks.count { it.isActive }, onShowTasks = { showTasks = it })
-        state.downloadMessage?.let { message ->
-            AppErrorBanner(message = message, onDismiss = model::dismissDownloadMessage)
+        // 移动端关闭新下载后，升级遗留任务仍可能在 TaskManager 里；必须保留任务页以便取消/移除。
+        if (playbackRecordingTasksUiVisible(playbackRecordingDownloadAvailable, tasks)) {
+            PlaybackModeTabs(showTasks = showTasks, activeCount = tasks.count { it.isActive }, onShowTasks = { showTasks = it })
+            state.downloadMessage?.let { message ->
+                AppErrorBanner(message = message, onDismiss = model::dismissDownloadMessage)
+            }
+            if (showTasks) {
+                PlaybackTasksPage(tasks, model.taskManager, Modifier.weight(1f).fillMaxWidth())
+                return@Column
+            }
+            PlaybackActiveTaskBanner(tasks) { showTasks = true }
         }
-        if (showTasks) {
-            PlaybackTasksPage(tasks, model.taskManager, Modifier.weight(1f).fillMaxWidth())
-            return@Column
-        }
-        PlaybackActiveTaskBanner(tasks) { showTasks = true }
         coursewareState.failure?.takeIf { courses.isEmpty() }?.let {
             AppErrorBanner(message = playbackFailureMessage(it, "课程列表"), onRetry = onRefresh)
         }
@@ -447,9 +450,14 @@ private fun PlaybackStreamChooser(
     val canComposite = model.taskManager.canComposite
     val willComposite = selected.size == 2 && canComposite && compositeEnabled
 
+    val downloadAvailable = playbackRecordingDownloadAvailable
     Text("选择画面", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
     Text(
-        "预览取自第 10 分钟左右。可多选：选两路时与网页一样并排同步播放，下载时每一路单独保存。",
+        if (downloadAvailable) {
+            "预览取自第 10 分钟左右。可多选：选两路时与网页一样并排同步播放，下载时每一路单独保存。"
+        } else {
+            "预览取自第 10 分钟左右。可多选：选两路时与网页一样并排同步播放。本端仅支持在线播放，录像下载请使用 Windows 或 Mac。"
+        },
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -506,44 +514,50 @@ private fun PlaybackStreamChooser(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        OutlinedButton(
-            onClick = {
-                enqueueing = true
-                scope.launch {
-                    val result = model.download(
-                        detail = detail,
-                        streams = selected,
-                        gateway = fileGateway,
-                        courseName = courseName,
-                        composite = compositeEnabled,
-                        quality = compositeQuality,
-                    )
-                    enqueuedFeedback = result is PlaybackEnqueueResult.Started
-                    enqueueing = false
-                }
-            },
-            enabled = selected.isNotEmpty() && !enqueueing && fileGateway.isStreamingSaveAvailable,
-            modifier = Modifier.weight(1f),
-        ) {
-            Text(
-                when {
-                    selected.isEmpty() -> "下载"
-                    willComposite -> "下载并合成"
-                    else -> "下载所选（${selected.size} 路）"
+        if (downloadAvailable) {
+            OutlinedButton(
+                onClick = {
+                    enqueueing = true
+                    scope.launch {
+                        val result = model.download(
+                            detail = detail,
+                            streams = selected,
+                            gateway = fileGateway,
+                            courseName = courseName,
+                            composite = compositeEnabled,
+                            quality = compositeQuality,
+                        )
+                        enqueuedFeedback = result is PlaybackEnqueueResult.Started
+                        enqueueing = false
+                    }
                 },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+                enabled = selected.isNotEmpty() && !enqueueing && fileGateway.isStreamingSaveAvailable,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    when {
+                        selected.isEmpty() -> "下载"
+                        willComposite -> "下载并合成"
+                        else -> "下载所选（${selected.size} 路）"
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
     if (selected.size > 2) {
         Text(
-            "一次最多并排播放两路，将播放前两路；下载会分别保存全部所选。",
+            if (downloadAvailable) {
+                "一次最多并排播放两路，将播放前两路；下载会分别保存全部所选。"
+            } else {
+                "一次最多并排播放两路，将播放前两路。"
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    if (selected.size == 2) {
+    if (downloadAvailable && selected.size == 2) {
         if (canComposite) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f)) {
@@ -570,7 +584,7 @@ private fun PlaybackStreamChooser(
     browserFeedback?.let {
         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    if (enqueuedFeedback) {
+    if (downloadAvailable && enqueuedFeedback) {
         Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("已加入下载任务，可在后台继续。", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
@@ -578,14 +592,16 @@ private fun PlaybackStreamChooser(
             }
         }
     }
-    Text(
-        "下载保存为 MP4（无损转换，不重新编码），各种播放器都能打开；两小时的课每路约 1–2 GB。" +
-            (detail.sizeMegabytes.takeIf(String::isNotBlank)?.let { "学校标注的录像体积约 ${formatCoursewareSize(it)}（所有画面合计）。" } ?: ""),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    if (!fileGateway.isStreamingSaveAvailable) {
-        Text("当前平台还不能保存大文件。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    if (downloadAvailable) {
+        Text(
+            "下载保存为 MP4（无损转换，不重新编码），各种播放器都能打开；两小时的课每路约 1–2 GB。" +
+                (detail.sizeMegabytes.takeIf(String::isNotBlank)?.let { "学校标注的录像体积约 ${formatCoursewareSize(it)}（所有画面合计）。" } ?: ""),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (!fileGateway.isStreamingSaveAvailable) {
+            Text("当前平台还不能保存大文件。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
     }
 }
 
@@ -981,3 +997,12 @@ private fun backgroundHint(): String {
         else -> "关闭窗口后 App 仍在运行，任务会继续；退出 App 会中止任务。"
     }
 }
+
+/**
+ * 录像下载入口关闭时仍要露出遗留任务（进度/取消/移除），避免后台仍跑却无 UI。
+ * 桌面端始终有下载能力时本函数恒为 true。
+ */
+internal fun playbackRecordingTasksUiVisible(
+    downloadAvailable: Boolean,
+    tasks: List<PlaybackTask>,
+): Boolean = downloadAvailable || tasks.isNotEmpty()

@@ -224,6 +224,26 @@ class DesktopHomeworkFileGateway(
         private val lifecycleMutex = Mutex()
         private var closed = false
 
+        override val supportsStreamingFiles: Boolean = true
+
+        override suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult = lifecycleMutex.withLock {
+            if (closed) return@withLock StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            withContext(Dispatchers.IO) {
+                try {
+                    val folder = file.relativeFolders.fold(root) { parent, segment -> File(parent, safeExportPathSegment(segment)) }
+                    if (!folder.exists() && !folder.mkdirs()) throw IllegalStateException("Unable to create export folder")
+                    val target = File(folder, safeExportFileName(file.content.fileName))
+                    if (target.exists()) throw IllegalStateException("Export file already exists")
+                    val temp = Files.createTempFile(folder.toPath(), ".bjtu-save-", ".tmp")
+                    StreamingDestinationResult.Opened(FileStreamingDestination(target, temp))
+                } catch (_: SecurityException) {
+                    StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+                } catch (_: Exception) {
+                    StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+                }
+            }
+        }
+
         override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult =
             lifecycleMutex.withLock {
                 if (closed) return@withLock HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
@@ -368,6 +388,8 @@ private class FileStreamingDestination(
 ) : StreamingDestination {
     private var output: java.io.OutputStream? = Files.newOutputStream(temporary)
     override val displayName: String = target.name
+    /** 与 Windows 一致：完成后卡片可「打开视频 / 打开文件夹」。 */
+    override val outputPath: String = target.absolutePath
 
     override suspend fun write(bytes: ByteArray) {
         val stream = output ?: throw StreamingSinkIoException()
