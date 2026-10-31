@@ -1,36 +1,26 @@
 # BJTUselfService 实时工作记忆
 
-> 当前工作：`feat/macos-playback-compose`（自 `feat/courseware-fallback-playback` 建出并合入最新 main，开 PR 到 main）。P1 源码在 `23a773ae`；Mac 合成提速 `4b2133eb`（见“进行中”）。**产品范围**：录像下载/合成仅 Windows + macOS；Android/iOS 只保留在线播放。
+> 2026-10-31：PR #80（Cloud Agent 文档）与 #81（macOS 录像合成提速 + 渐进合成 + 移动端仅在线播放）已合入 main（合入提交分别为 `4d6f207a`、`f41136d0`）。已触发 KMP package `workflow_dispatch`：https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/41178525742 。沿用 2.0.0-Alpha / Build45，未打 `v*`。
 >
-> 2026-10-31：Cloud Agent Linux 环境说明已写入 AGENTS.md（JDK 21、`/opt/android-sdk`、一次性编译密钥、`BJTU_ANDROID_ABIS=x86_64`、模拟器 `-accel off`）。iOS、macOS 桌面包和 Windows MSI 仍不能在该 Linux 镜像上构建。本条随 PR #80 合入；不改应用源码或版本号。
+> **产品范围**：录像下载/合成仅 Windows + macOS；Android/iOS 只保留在线播放。
 >
-> 2026-10-30：Cursor 代理修复 PR #78：已 rebase 到最新 main（含已合入的 #76/#77/#79），折扣提醒走 `rememberHomeAssignmentReminders`，`filterHomeAssignmentReminders` / `reminderCompletionKey` 覆盖 `citel-discount-*`，并补手动完成隐藏/撤销测试。推送功能分支，未合并、未改版本号。
+> 2026-10-31：Cloud Agent Linux 环境说明在 `AGENTS.md`（JDK 21、`/opt/android-sdk`、一次性编译密钥、`BJTU_ANDROID_ABIS=x86_64`、模拟器 `-accel off`）；该 Linux 镜像不能打 iOS/macOS 桌面/Windows MSI。
 >
-> 2026-10-30：PR #76（作业手动完成 + 首页截止提醒过滤）、#77（成绩筛选布局）、#79（完成标记保存生命周期）已合入 main。
+> 2026-10-30：PR #76/#77/#78/#79 已合入 main。
 >
-> 2026-10-28：用户明确标记 **Windows 课程回放开发与本轮验收完成**；代码已提交推送 `133cf398` 到 `feat/courseware-fallback-playback`。四端审查标准随本轮文档提交；跨平台安全检查 run `40631769655` 四项全部通过。新 MSI `local-20261028-111451-103` 已在下载文件夹；代理未执行安装。沿用 2.0.0-Alpha / Build45，不改版本号，功能分支未合 main。
+> 2026-10-28：Windows 课程回放开发与本轮验收完成；四端审查标准见 `docs/plans/playback-four-platform-acceptance.md`。
 >
-> **macOS P1 已结项（2026-10-31，你确认收工）**：当时 GUI 整节 20.50 min；证据 `.artifacts/macos-playback-p1/`。未合主干 / 未发版；不碰安装版。
->
-> 版本沿用 2.0.0-Alpha / Build45。
->
-> **接下来**：等 PR CI 与所有者审查合入；其余按需迭代。
+> **接下来**：等本次 KMP package 产物；Android P0 真机测量（PROMPT2）与 iOS/macOS 其余验收按需推进。Bugbot 三条 Medium（compose 错误当成功、finished 丢尾帧理论竞态、移动端隐藏遗留任务）记为非阻塞跟进。
 
-## 进行中：macOS 录像合成提速（2026-10-31，`4b2133eb`，PR 到 main 待合入）
+## 已合入 main：macOS 录像合成提速与渐进合成（PR #81，2026-10-31）
 
-- 先采样：瓶颈是逐帧 BGRA 像素传送 + CPU 清屏拷贝（57%）和每帧同步等解码（42%），编码器 0%。改为解码器直接输出缩放后的 NV12、两路异步解码（每路 4 帧在途）、NV12 平面拷贝拼接。
-- 实网 GUI 整节 20.5 min → **5.7 min**（344 s）；headless 13.4 → 5.7 min；现已到 M2 硬件解码上限。成片帧数、全解码、音轨逐字节、布局均对齐；翻页选帧比旧版更准（旧版晚 2 帧）。
-- ETA 下限 `片长/5.4` → `片长/20`（GUI 实网复验：开跑报 352 s，实跑 336.5 s）；生命周期测试改为 `compose-indexed` 空索引（原测试时序抖动）。回归 89 项 0 失败。
-- 改动文件：`IndexedSideBySideCompose.swift`、`VideoCompositor.desktop.kt`、`RemainingTimeEstimatorTest.kt`、`MacVideoFrameHelperLifecycleTest.kt`。证据 `.artifacts/macos-playback-perf/REPORT.md`、`.artifacts/macos-playback-p1/ui-harness-live-v2/`。
-- 未验证：其他芯片、高/低档整节、DMG 安装。
+- 合入提交 `f41136d0`（head `cdbe5ab2`）。NV12 解码缩放 + 双路异步解码；GUI 整节约 20.5→5.7 min；移动端关闭录像下载入口并拦截入队。
+- CI：`kmp-security-check` run `41176398106` 全绿。Bugbot NEUTRAL，三条 Medium 不阻塞。
+- 未验证：其他芯片、高/低档整节、DMG 安装；compose I/O 失败注入；升级后移动端残留任务 UI。
 
-## 进行中：CITEL 首页 48 小时折扣提醒（PR #78，2026-10-30）
+## 已合入 main：CITEL 首页 48 小时折扣提醒（PR #78）
 
-- 分支 `feat/citel-discount-reminders`，已 rebase 到 main `28cf03fa`（含 #79）；目标仍为 main，未合并。
-- 行为：未来 48 小时内未完成的 CITEL 折扣事件单独成卡（折扣在上、截止在下；空类不占位）；各自计数、前三项与剩余数量，沿用“查看作业”。
-- 与 #76 衔接：`HomeScreen` 保留 `reminders = rememberHomeAssignmentReminders(...)`；折扣列表取过滤后的 `reminders.dueSoonDiscountEvents`；`filterHomeAssignmentReminders` 裁剪折扣列表；`reminderCompletionKey` 将 `citel-discount-*` 与 `citel-due-*` 同等关联。手动完成后两类提醒一起消失，撤销后按原窗口恢复。
-- 范围：`HomeAgenda.kt`、`HomeAssignmentReminders.kt`、`HomeScreen.kt`、折扣/完成过滤测试与本记录；不改版本、依赖或平台宿主。折扣窗口为秒级闭区间（有意区别于截止的整小时截断，见代码注释）。
-- 验证：`./gradlew :shared:desktopTest --tests '*HomeAssignmentReminders*' --tests '*HomeDiscount*' --tests '*HomeAgendaTest*'` BUILD SUCCESSFUL；相关 36 项全过（含新增折扣隐藏/撤销 2 项），0 失败/跳过。Apple 原生/真机与本轮 PR CI 仍待跑。
+- 合入提交 `89a998a0`。未来 48 小时未完成折扣事件单独成卡；与 #76 完成过滤衔接。
 
 ## 已合入 main：首页 48 小时提醒排除手动完成作业（PR #76）
 
