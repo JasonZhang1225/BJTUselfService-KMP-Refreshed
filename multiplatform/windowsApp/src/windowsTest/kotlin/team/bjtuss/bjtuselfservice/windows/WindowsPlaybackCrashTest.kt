@@ -63,7 +63,7 @@ class WindowsPlaybackCrashTest {
             assertTrue(temporary.isFile)
             assertTrue(File(store.workRoot.toString(), "${record.task.id}/composite.mp4").isFile)
             val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(PlaybackCrashFixture.transport, 0),
-                { PlaybackCrashFixture.compositor }, { null }, store, recovery::restoreDestination)
+                { PlaybackCrashFixture.compositor }, { null }, store, restoreDestination = recovery::restoreDestination)
             withTimeout(5000) { while (manager.tasks.value.isEmpty()) delay(10) }
             assertTrue(manager.tasks.value.single().canResume)
             manager.retry(record.task.id)
@@ -144,7 +144,7 @@ object PlaybackCrashFixture {
             PlaybackStream(PlaybackStreamKind.SCREEN, "https://lmt6.bjtu.edu.cn:8880/vod/a/vga/playlist.m3u8"))
         val lesson = PlaybackLesson(1, 1, "", "测试课节", "", "", true)
         val detail = PlaybackDetail(lesson, true, streams, streams.map { it.kind }, "")
-        val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { compositor }, { null }, store, recovery::restoreDestination)
+        val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { compositor }, { null }, store, restoreDestination = recovery::restoreDestination)
         assertIs<PlaybackEnqueueResult.Started>(manager.enqueue(detail, streams, "测试", true, gateway))
         awaitCancellation()
     } }

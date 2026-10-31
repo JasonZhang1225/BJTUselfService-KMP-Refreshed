@@ -44,6 +44,11 @@ enum IndexedSideBySideCompose {
                 try? index.seek(toOffset: 0)
                 if indexSize >= (count + 1) * 24 { break }
                 if FileManager.default.fileExists(atPath: directory.appendingPathComponent("finished").path) {
+                    // Writer 先 flush 索引再写 finished；短文件探测与看到 marker 之间
+                    // 可能刚好刷出尾部完整 24B 记录，必须再读一轮后才能当结束。
+                    let drained = (try? index.seekToEnd()) ?? 0
+                    try? index.seek(toOffset: 0)
+                    if drained >= (count + 1) * 24 { break }
                     return .end
                 }
                 usleep(10_000)
@@ -556,6 +561,14 @@ enum IndexedSideBySideCompose {
         }
 
         // 两路各一条喂料线程，异步提交给各自的硬件解码器；编码线程按教师路时间戳配对课件路。
+        // .error 必须让整次合成失败，不能与 .end 一并当正常收尾（否则中途坏读会截断却标完成）。
+        final class PumpFailure {
+            private let lock = NSLock()
+            private var failed = false
+            func mark() { lock.lock(); failed = true; lock.unlock() }
+            var isFailed: Bool { lock.lock(); defer { lock.unlock() }; return failed }
+        }
+        let pumpFailure = PumpFailure()
         func startPump(cursor: SampleCursor, format: CMFormatDescription, decoder: Decoder, pictures: PictureQueue) {
             let thread = Thread {
                 pump: while !pictures.isCancelled {
@@ -571,7 +584,12 @@ enum IndexedSideBySideCompose {
                         } else {
                             pictures.push(DecodedPicture(pts: record.pts, buffer: nil))
                         }
-                    case .end, .error:
+                    case .end:
+                        break pump
+                    case .error:
+                        pumpFailure.mark()
+                        leftPictures.cancel()
+                        rightPictures.cancel()
                         break pump
                     }
                 }
@@ -592,6 +610,7 @@ enum IndexedSideBySideCompose {
         while true {
             let tDec0 = stamp()
             guard let leftPicture = leftPictures.pop() else { break }
+            if pumpFailure.isFailed { return fail("读取索引或样本失败", 3) }
             // 课件路吃完 ≤ 教师 PTS 的画面（通常 0–1 帧）；解码失败的帧沿用上一帧。
             while let head = rightPictures.peek(), head.pts <= leftPicture.pts {
                 _ = rightPictures.pop()
@@ -643,6 +662,7 @@ enum IndexedSideBySideCompose {
             }
         }
 
+        if pumpFailure.isFailed { return fail("读取索引或样本失败", 3) }
         reportTiming(tag: "end-video")
         videoIn.markAsFinished()
         let semaphore = DispatchSemaphore(value: 0)
@@ -731,19 +751,20 @@ enum IndexedSideBySideCompose {
 
         let audioDuration = CMTime(value: 1024, timescale: CMTimeScale(audioConfig.sampleRate))
         var audioEnded = false
+        var audioReadFailed = false
         var audioHold: (Record, Data)?
         var timelineBase: Int64?
         var videoDone = false
         var audioDone = false
 
         func pullAudio() {
-            if audioHold != nil || audioEnded { return }
+            if audioHold != nil || audioEnded || audioReadFailed { return }
             switch audioCursor.next() {
             case .sample(let r, let d):
                 if timelineBase == nil { timelineBase = min(0, r.pts) }
                 audioHold = (r, d)
             case .end: audioEnded = true
-            case .error: audioEnded = true
+            case .error: audioReadFailed = true
             }
         }
 
@@ -761,6 +782,7 @@ enum IndexedSideBySideCompose {
             }
             if !audioDone, audioIn.isReadyForMoreMediaData {
                 pullAudio()
+                if audioReadFailed { return fail("读取音轨索引或样本失败", 3) }
                 if let hold = audioHold {
                     let base = timelineBase ?? 0
                     guard let sample = makeSampleBuffer(

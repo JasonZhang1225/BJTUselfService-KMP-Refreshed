@@ -159,6 +159,8 @@ class PlaybackTaskManager(
     private val compositor: () -> VideoCompositor,
     private val backgroundHost: () -> PlaybackBackgroundHost?,
     private val taskStore: PlaybackTaskStore? = null,
+    /** 测试可覆盖；生产默认跟平台 `playbackRecordingDownloadAvailable`。须放在 restoreDestination 前，保留尾随 lambda。 */
+    private val recordingDownloadsEnabled: Boolean = playbackRecordingDownloadAvailable,
     private val restoreDestination: (suspend (String, String) -> StreamingDestinationResult)? = null,
 ) {
     private val mutableTasks = MutableStateFlow<List<PlaybackTask>>(emptyList())
@@ -246,7 +248,7 @@ class PlaybackTaskManager(
             return PlaybackEnqueueResult.Failed("下载记录不可用，已保留原记录和缓存；请先恢复记录后再开始新任务。")
         }
         if (streams.isEmpty()) return PlaybackEnqueueResult.Failed("先选择画面")
-        if (!playbackRecordingDownloadAvailable) {
+        if (!recordingDownloadsEnabled) {
             return PlaybackEnqueueResult.Failed("移动端仅支持在线播放，录像下载请使用 Windows 或 Mac。")
         }
         if (!gateway.isStreamingSaveAvailable) return PlaybackEnqueueResult.Failed("当前平台还不能保存大文件。")
@@ -365,6 +367,7 @@ class PlaybackTaskManager(
 
     /** 暂停/网络失败后沿用保存位置与分片，不重新选择或重下已完成的画面。 */
     fun retry(id: String) {
+        if (!recordingDownloadsEnabled) return
         if (jobs.value[id] != null) return
         if (mutableTasks.value.firstOrNull { it.id == id }?.canResume != true) return
         stops.update { it - id }
@@ -959,6 +962,21 @@ class PlaybackTaskManager(
             kotlinx.io.files.SystemFileSystem.list(workRoot).any { it.name !in known }
         if (hasUnrecordedWork) restored += PlaybackTask("history-warning", "", "未关联的下载缓存", emptyList(), false,
             phase = PlaybackTaskPhase.FAILED, message = "发现没有任务记录的缓存，已保留；无法自动恢复，请检查应用回放缓存。")
+        // 移动端关闭录像下载后：遗留可继续任务不得静默重跑，标失败并保留卡片供移除。
+        if (!recordingDownloadsEnabled) {
+            for (index in restored.indices) {
+                val task = restored[index]
+                if (!task.isActive && !task.canResume) continue
+                requests.update { it - task.id }
+                restored[index] = task.copy(
+                    phase = PlaybackTaskPhase.FAILED,
+                    canResume = false,
+                    bytesPerSecond = null,
+                    remainingSeconds = null,
+                    message = MOBILE_RECORDING_DOWNLOAD_DISABLED_MESSAGE,
+                )
+            }
+        }
         mutableTasks.value = restored
     }
 
@@ -1018,6 +1036,11 @@ class PlaybackTaskManager(
 
     @OptIn(ExperimentalTime::class)
     private fun newTaskId(): String = "t${Clock.System.now().toEpochMilliseconds()}-${nextId.getAndUpdate { it + 1 }}"
+
+    companion object {
+        internal const val MOBILE_RECORDING_DOWNLOAD_DISABLED_MESSAGE =
+            "本端已不再支持录像下载；请移除遗留任务，或改用 Windows / Mac。"
+    }
 }
 
 private fun isPersistablePlaybackUrl(url: String): Boolean =

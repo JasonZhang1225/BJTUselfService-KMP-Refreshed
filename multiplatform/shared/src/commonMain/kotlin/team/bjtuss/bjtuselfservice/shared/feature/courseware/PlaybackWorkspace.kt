@@ -107,7 +107,8 @@ fun PlaybackScreen(
         },
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (playbackRecordingDownloadAvailable) {
+        // 移动端关闭新下载后，升级遗留任务仍可能在 TaskManager 里；必须保留任务页以便取消/移除。
+        if (playbackRecordingTasksUiVisible(playbackRecordingDownloadAvailable, tasks)) {
             PlaybackModeTabs(showTasks = showTasks, activeCount = tasks.count { it.isActive }, onShowTasks = { showTasks = it })
             state.downloadMessage?.let { message ->
                 AppErrorBanner(message = message, onDismiss = model::dismissDownloadMessage)
@@ -996,3 +997,12 @@ private fun backgroundHint(): String {
         else -> "关闭窗口后 App 仍在运行，任务会继续；退出 App 会中止任务。"
     }
 }
+
+/**
+ * 录像下载入口关闭时仍要露出遗留任务（进度/取消/移除），避免后台仍跑却无 UI。
+ * 桌面端始终有下载能力时本函数恒为 true。
+ */
+internal fun playbackRecordingTasksUiVisible(
+    downloadAvailable: Boolean,
+    tasks: List<PlaybackTask>,
+): Boolean = downloadAvailable || tasks.isNotEmpty()

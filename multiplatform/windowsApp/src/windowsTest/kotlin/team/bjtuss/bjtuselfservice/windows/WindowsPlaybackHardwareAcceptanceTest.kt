@@ -91,7 +91,7 @@ class WindowsPlaybackHardwareAcceptanceTest {
         val detail = PlaybackDetail(PlaybackLesson(1, 1, "", "模拟课节", "", "", true), true,
             streams, streams.map { it.kind }, "")
         val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { compositor }, { null },
-            store, recovery::restoreDestination)
+            store, restoreDestination = recovery::restoreDestination)
         try {
             suspend fun enqueue(number: Int): String = assertIs<PlaybackEnqueueResult.Started>(
                 manager.enqueue(detail, streams, "模拟课程 $number", true, gateway)).taskId

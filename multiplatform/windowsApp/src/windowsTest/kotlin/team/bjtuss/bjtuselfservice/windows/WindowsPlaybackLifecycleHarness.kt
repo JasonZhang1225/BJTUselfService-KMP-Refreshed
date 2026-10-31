@@ -31,7 +31,7 @@ fun main(args: Array<String>) {
     val recovery = WindowsPlaybackRecovery(File(root, "state"))
     val compositor = LifecycleHarnessCompositor()
     val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(PlaybackCrashFixture.transport, 0),
-        { compositor }, { null }, recovery.storeFor("visual-fixture"), recovery::restoreDestination)
+        { compositor }, { null }, recovery.storeFor("visual-fixture"), restoreDestination = recovery::restoreDestination)
     var outputNumber = 0
     val gateway = object : HomeworkFileGateway {
         override val isAvailable = true

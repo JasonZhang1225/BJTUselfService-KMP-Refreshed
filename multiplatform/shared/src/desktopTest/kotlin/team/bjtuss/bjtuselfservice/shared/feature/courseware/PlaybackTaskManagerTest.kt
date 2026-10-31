@@ -1318,4 +1318,54 @@ class PlaybackTaskManagerTest {
         transport.segmentDelayMillis = 0
         scope.cancel()
     }
+
+    /** Bugbot #81：关闭录像下载后遗留可继续任务必须失败化，且不能 retry 重跑。 */
+    @Test
+    fun disabledRecordingDownloadsAbandonRestoredResumableTasks() = runBlocking {
+        val directory = java.nio.file.Files.createTempDirectory("playback-mobile-abandon-").toFile().canonicalFile
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val gateway = MemoryGateway()
+        val detail = detail()
+        val task = PlaybackTask(
+            "t123-0", "测试课程", "测试课节", listOf("教师", "课件"), true,
+            phase = PlaybackTaskPhase.COMPOSITING, stageProgress = .4f, bytesDownloaded = 100,
+            bytesTotal = 50, outputs = listOf("output.mp4"),
+        )
+        val request = StoredPlaybackRequest(
+            detail.streams.map { StoredPlaybackStream(it.kind.name, it.hlsUrl) },
+            true, PlaybackCompositeQuality.HIGH.name, listOf("saved-token"), listOf(false),
+            mapOf(0 to StoredPlaybackStreamResult(50, 4.0), 1 to StoredPlaybackStreamResult(50, 4.0)),
+        )
+        val store = object : PlaybackTaskStore {
+            override val workRoot = Path(File(directory, "work").absolutePath)
+            override suspend fun load() = listOf(StoredPlaybackTask(task, request))
+            override suspend fun save(tasks: List<StoredPlaybackTask>) = Unit
+        }
+        try {
+            val manager = PlaybackTaskManager(
+                scope,
+                HlsRecordingDownloader(transport, 0),
+                { RecordingCompositor() },
+                { null },
+                store,
+                recordingDownloadsEnabled = false,
+            ) { _, name -> gateway.openStreamingDestination(name, "video/mp4") }
+            withTimeout(5_000) { while (manager.tasks.value.isEmpty()) delay(10) }
+            val restored = manager.tasks.value.single()
+            assertEquals(PlaybackTaskPhase.FAILED, restored.phase)
+            assertFalse(restored.canResume)
+            assertEquals(PlaybackTaskManager.MOBILE_RECORDING_DOWNLOAD_DISABLED_MESSAGE, restored.message)
+            assertTrue(playbackRecordingTasksUiVisible(downloadAvailable = false, tasks = manager.tasks.value))
+            manager.retry(restored.id)
+            delay(200)
+            assertEquals(PlaybackTaskPhase.FAILED, manager.tasks.value.single().phase)
+            assertIs<PlaybackEnqueueResult.Failed>(
+                manager.enqueue(detail, detail.streams, "测试课程", true, gateway),
+            )
+            Unit
+        } finally {
+            scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+            directory.deleteRecursively()
+        }
+    }
 }
