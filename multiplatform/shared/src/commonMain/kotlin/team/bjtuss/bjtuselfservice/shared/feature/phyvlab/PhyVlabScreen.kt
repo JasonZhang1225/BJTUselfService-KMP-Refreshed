@@ -121,8 +121,10 @@ fun PhyVlabWorkspace(
     val nowEpochSeconds = rememberPhyVlabNowEpochSeconds()
     val allActivities = model.allActivities()
     val completion = assignmentCompletionState()
-    val displayedActivities = filterPhyVlabActivities(allActivities, filters, nowEpochSeconds, completion.completedKeys)
-    val dueSoon = displayedActivities.count { !it.completed && it.completionKey() !in completion.completedKeys && it.dueTimestamp?.let { due -> due in nowEpochSeconds..(nowEpochSeconds + 48 * 3600) } == true }
+    val (displayedActivities, ignoredActivities) = partitionIgnoredAssignments(
+        filterPhyVlabActivities(allActivities, filters, nowEpochSeconds), completion.completedKeys, { it.completed }, { it.completionKey() })
+    var ignoredExpanded by rememberIgnoredSectionExpanded()
+    val dueSoon = displayedActivities.count { !it.completed && it.dueTimestamp?.let { due -> due in nowEpochSeconds..(nowEpochSeconds + 48 * 3600) } == true }
     val subtitle = (if (dueSoon > 0) "未来 48 小时内有 $dueSoon 项未提交" else "未来 48 小时内暂无临近截止项") +
         if (filters.active) " · 已筛选" else ""
     LaunchedEffect(filters) { listState.scrollToItem(0) }
@@ -240,16 +242,23 @@ fun PhyVlabWorkspace(
                 if (displayedActivities.isEmpty()) item {
                     Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(if (allActivities.isEmpty()) "暂无作业" else "当前筛选下没有作业", style = MaterialTheme.typography.titleMedium)
-                        TextButton(onClick = { showFilters = true }) { Text("调整筛选") }
+                        Text(assignmentEmptyTitle(allActivities.isNotEmpty(), ignoredActivities.isNotEmpty(), filters.active),
+                            style = MaterialTheme.typography.titleMedium)
+                        if (filters.active) TextButton(onClick = { showFilters = true }) { Text("调整筛选") }
                     }
                 }
                 items(displayedActivities, key = { "activity-${it.id}" }) { activity ->
-                    PhyVlabActivityRow(
-                        activity = activity,
-                        nowEpochSeconds = nowEpochSeconds,
-                        onOpen = { onOpenActivityDetail(activity) },
-                    )
+                    Box(Modifier.animateItem()) {
+                        PhyVlabActivityRow(
+                            activity = activity,
+                            nowEpochSeconds = nowEpochSeconds,
+                            onOpen = { onOpenActivityDetail(activity) },
+                        )
+                    }
+                }
+                ignoredAssignmentsSection(ignoredActivities, ignoredExpanded, { ignoredExpanded = !ignoredExpanded },
+                    { "activity-${it.id}" }) { activity ->
+                    PhyVlabActivityRow(activity = activity, nowEpochSeconds = nowEpochSeconds, onOpen = { onOpenActivityDetail(activity) })
                 }
             }
         }
@@ -365,10 +374,9 @@ private fun PhyVlabCourseRow(course: PhyVlabCourse, selected: Boolean, onSelect:
     }
 }
 
-internal fun filterPhyVlabActivities(activities: List<PhyVlabActivity>, filters: AssignmentFilters, now: Long,
-    completedKeys: Set<AssignmentCompletionKey> = emptySet()): List<PhyVlabActivity> {
+internal fun filterPhyVlabActivities(activities: List<PhyVlabActivity>, filters: AssignmentFilters, now: Long): List<PhyVlabActivity> {
     val visible = activities.filter { (filters.courses.isEmpty() || it.courseId in filters.courses) &&
-        passesAssignmentCompletionFilter(it.completed, it.completionKey() in completedKeys, filters.hideExpired, filters.hideSubmitted) &&
+        (!filters.hideSubmitted || !it.completed) &&
         (!filters.hideExpired || it.dueTimestamp?.let { due -> due > now } != false) }
     return when (filters.sortOrder) {
         1 -> visible.sortedBy { it.dueTimestamp ?: Long.MAX_VALUE }
@@ -379,15 +387,12 @@ internal fun filterPhyVlabActivities(activities: List<PhyVlabActivity>, filters:
 
 @Composable
 internal fun PhyVlabActivityRow(activity: PhyVlabActivity, nowEpochSeconds: Long, onOpen: () -> Unit, source: AssignmentSource? = null) {
-    ElevatedCard(onClick = onOpen, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(17.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            AssignmentCardHeader(activity.courseName, activity.title, activity.completed, source, completionKey = activity.completionKey())
-            Text("类型 · ${activity.activityType}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("开始 · ${assignmentStartText(activity.openText)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("截止 · ${assignmentDeadlineText(activity.dueText)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("评分 · ${assignmentGradeText(null, activity.completed, graded = null)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+    AssignmentCard(activity.completionKey(), activity.title, activity.completed, onOpen) {
+        AssignmentCardHeader(activity.courseName, activity.title, activity.completed, source, completionKey = activity.completionKey())
+        Text("类型 · ${activity.activityType}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("开始 · ${assignmentStartText(activity.openText)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("截止 · ${assignmentDeadlineText(activity.dueText)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("评分 · ${assignmentGradeText(null, activity.completed, graded = null)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

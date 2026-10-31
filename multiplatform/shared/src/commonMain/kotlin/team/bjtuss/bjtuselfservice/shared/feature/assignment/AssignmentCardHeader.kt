@@ -23,7 +23,8 @@ internal fun AssignmentCardHeader(course: String, title: String, submitted: Bool
             color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         source?.let { AssignmentSourceBadge(it) }
         val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-        Surface(shape = RoundedCornerShape(999.dp),
+        if (isAssignmentIgnored(submitted, completionKey, assignmentCompletionState().completedKeys)) AssignmentIgnoredBadge()
+        else Surface(shape = RoundedCornerShape(999.dp),
             color = if (submitted) { if (dark) Color(0xFF174D2A) else Color(0xFFD9F2DF) }
                 else { if (dark) Color(0xFF5B4500) else Color(0xFFFFEFC2) },
             contentColor = if (submitted) { if (dark) Color(0xFF9BE7AA) else Color(0xFF1C6B35) }
@@ -32,11 +33,8 @@ internal fun AssignmentCardHeader(course: String, title: String, submitted: Bool
                 style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
         }
     }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
-            maxLines = 2, overflow = TextOverflow.Ellipsis)
-        if (!submitted) completionKey?.let { AssignmentCompletionCheckbox(it, title) }
-    }
+    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+        maxLines = 2, overflow = TextOverflow.Ellipsis)
 }
 
 @Composable
