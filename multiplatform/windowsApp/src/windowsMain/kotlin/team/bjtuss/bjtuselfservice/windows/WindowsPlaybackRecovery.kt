@@ -29,7 +29,7 @@ class WindowsPlaybackRecovery(private val root: File) : PlaybackRecoveryAccess {
                 team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader(
                     team.bjtuss.bjtuselfservice.shared.network.createSchoolHttpTransport()),
                 { team.bjtuss.bjtuselfservice.shared.media.PlaybackPlatformHooks.effectiveCompositor },
-                { null }, storeFor(accountScope), ::restoreDestination)
+                { null }, storeFor(accountScope), restoreDestination = ::restoreDestination)
         }
     }
     override fun storeFor(accountScope: String): PlaybackTaskStore = WindowsPlaybackTaskStore(File(root, digest(accountScope)))

@@ -53,7 +53,7 @@ class WindowsPlaybackRecoveryTest {
                 true, streams, streams.map { it.kind }, "")
             try {
                 val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(PlaybackCrashFixture.transport, 0),
-                    { PlaybackCrashFixture.compositor }, { null }, store, recovery::restoreDestination)
+                    { PlaybackCrashFixture.compositor }, { null }, store, restoreDestination = recovery::restoreDestination)
                 assertIs<team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackEnqueueResult.Started>(
                     manager.enqueue(detail, streams, "课程", true, gateway))
                 withTimeout(10_000) {
@@ -85,7 +85,7 @@ class WindowsPlaybackRecoveryTest {
 
     private fun manager(scope: kotlinx.coroutines.CoroutineScope, store: PlaybackTaskStore, recovery: WindowsPlaybackRecovery) =
         PlaybackTaskManager(scope, HlsRecordingDownloader(noNetwork, 0), { UnavailableVideoCompositor }, { null },
-            store, recovery::restoreDestination)
+            store, restoreDestination = recovery::restoreDestination)
 
     private fun interrupted(taskId: String, destination: FileStreamingDestination, phase: PlaybackTaskPhase,
         cleanupPending: Boolean = false): StoredPlaybackTask = StoredPlaybackTask(

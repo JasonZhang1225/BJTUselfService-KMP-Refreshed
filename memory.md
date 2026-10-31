@@ -12,7 +12,7 @@
 >
 > **接下来**：等本次 KMP package 产物；Android P0 真机测量（PROMPT2）与 iOS/macOS 其余验收按需推进。
 >
-> 2026-10-31：进行中 `cursor/fix-bugbot-playback-compose-e4cd` —— 修复 PR #81 Bugbot 三条 Medium（`.error` 当成功、`finished` 丢尾帧、移动端隐藏遗留任务）；不改版本号。
+> 2026-10-31：进行中 PR #83 `cursor/fix-bugbot-playback-compose-e4cd` —— Bugbot 三条 Medium 修复；CI Android/Windows 因 `recordingDownloadsEnabled` 插在 `restoreDestination` 前导致位置实参类型不匹配，正改为命名参数。不改版本号、不打 `v*`。
 
 ## 已合入 main：macOS 录像合成提速与渐进合成（PR #81，2026-10-31）
 
