@@ -1594,7 +1594,7 @@ private fun weekdayName(date: LocalDate): String = "星期${weekdayShortName(dat
 
 private fun formatPhyVlabAgendaDate(event: PhyVlabEvent): String {
     // 由作业截止生成的事件（物理在线活动、CITEL）：零点截止显示为前一天 24:00，与它所在的日程日一致。
-    if (event.kind == PhyVlabEventKind.DEADLINE && (event.id.startsWith("activity-") || event.id.startsWith("citel-due-"))) {
+    if (event.kind == PhyVlabEventKind.DEADLINE || event.kind == PhyVlabEventKind.DISCOUNT) {
         val shown = deadlineDisplay(Instant.fromEpochSeconds(event.dayTimestamp).toLocalDateTime(TimeZone.of("Asia/Shanghai")))
         return "${shown.date} ${shown.clock} · ${shown.date.dayOfWeek.chineseLabel()}"
     }

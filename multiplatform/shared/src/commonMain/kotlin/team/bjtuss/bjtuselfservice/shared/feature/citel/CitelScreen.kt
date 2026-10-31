@@ -128,7 +128,7 @@ internal fun CitelTaskCard(task: CitelTask, onOpen: () -> Unit, source: Assignme
         CitelTaskLine("类型", if (task.programming) "编程作业" else "实验报告")
         if (task.programming) CitelTaskLine("评测", task.submissionStatusText())
         CitelTaskLine("开始", assignmentStartText(task.openTime))
-        task.discountTime?.let { CitelTaskLine("折扣", assignmentStartText(it) + (task.discount?.let { factor -> " · ×$factor" } ?: "")) }
+        task.discountTime?.let { CitelTaskLine("折扣", team.bjtuss.bjtuselfservice.shared.domain.time.formatDeadlineEpoch(it) + (task.discount?.let { factor -> " · ×$factor" } ?: "")) }
         CitelTaskLine("截止", assignmentDeadlineText(task.dueTime))
         if (task.programming) {
             CitelTaskLine("评分", task.grade?.takeIf { it.isNotBlank() } ?: "暂无")
@@ -192,7 +192,7 @@ fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, on
         CitelDetailLine("课程", task.courseName)
         CitelDetailLine("类型", if (task.programming) "编程作业" else "实验报告")
         CitelDetailLine("开放时间", task.openTime?.let(::citelDateText) ?: "未提供")
-        task.discountTime?.let { CitelDetailLine("折扣开始", citelDateText(it) + (task.discount?.let { factor -> " · ×$factor" } ?: "")) }
+        task.discountTime?.let { CitelDetailLine("折扣开始", team.bjtuss.bjtuselfservice.shared.domain.time.formatDeadlineEpoch(it) + (task.discount?.let { factor -> " · ×$factor" } ?: "")) }
         CitelDetailLine("截止时间", task.dueTime?.let(::formatDeadlineEpoch) ?: "未提供")
         CitelDetailLine("提交状态", result?.displayStatus ?: state.submission?.status ?: task.submissionStatusText())
         if (task.programming) {

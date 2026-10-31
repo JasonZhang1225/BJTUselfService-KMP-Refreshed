@@ -1,3 +1,9 @@
+# 进行中：午夜截止与作业日期筛选（PR #85，2026-10-31）
+
+- 分支 fix/deadline-date-filter 同步 upstream main d3e84f78，保留最新忽略作业分组和首页提醒机制，解决筛选与CITEL卡片冲突。
+- 日期筛选按北京时间显示日期判断，包含指定日期前一天24:00（实际为指定日00:00），排除指定日00:00:01及以后；忽略分组仍遵守日期、课程、学校提交状态筛选。
+- 新增午夜前后一秒、跨年、三个作业来源及忽略分组组合测试；日期/UI专项与跨平台编译验证结果见PR描述及CI。未使用真实账号数据，未合并或发布。
+
 # BJTUselfService 实时工作记忆
 
 > 2026-10-31：PR #80（Cloud Agent 文档）与 #81（macOS 录像合成提速 + 渐进合成 + 移动端仅在线播放）已合入 main（合入提交分别为 `4d6f207a`、`f41136d0`）。已触发 KMP package `workflow_dispatch`：https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/41178525742 。沿用 2.0.0-Alpha / Build45，未打 `v*`。
