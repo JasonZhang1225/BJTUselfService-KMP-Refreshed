@@ -25,79 +25,86 @@ class AssignmentCompletionFilterTest {
     private val citel = completionFixtureCitel()
     private val now = LocalDateTime(2026, 10, 29, 12, 0)
 
-    @Test fun allFilterCombinationsAgreeAcrossAggregateAndThreeIndependentLists() {
+    private fun split(items: List<AggregatedAssignment>, marks: Set<AssignmentCompletionKey>) =
+        partitionIgnoredAssignments(items, marks, { it.submitted }, { it.completionKey() })
+
+    @Test fun ignoredItemsMoveToTheirOwnSegmentInEveryFilterCombination() {
         for (hideExpired in listOf(false, true)) for (hideSubmitted in listOf(false, true)) {
-            for (manual in listOf(false, true)) for (submitted in listOf(false, true)) {
+            for (ignored in listOf(false, true)) for (submitted in listOf(false, true)) {
                 val h = homework.copy(subStatus = if (submitted) "已提交" else "未提交")
                 val p = physical.copy(completed = submitted)
                 val c = citel.copy(submitted = submitted)
                 val items = aggregateAssignments(listOf(h), listOf(p), listOf(c), TimeZone.UTC)
-                val marks = if (manual) items.mapNotNull { it.completionKey() }.toSet() else emptySet()
-                val expectedVisible = when {
-                    !hideSubmitted -> true
-                    submitted -> false
-                    !hideExpired -> true
-                    manual -> false
-                    else -> true
-                }
-                val context = "expired=$hideExpired submittedFilter=$hideSubmitted manual=$manual server=$submitted"
-                assertEquals(if (expectedVisible) 3 else 0, filterAggregateAssignments(items,
-                    AggregateAssignmentFilters(hideExpired = hideExpired, hideSubmitted = hideSubmitted), 100, marks).size, context)
-                assertEquals(expectedVisible, HomeworkUiState(homework = listOf(h), now = now,
-                    hideExpired = hideExpired, hideSubmitted = hideSubmitted).visibleHomework(marks).isNotEmpty(), context)
-                assertEquals(expectedVisible, filterPhyVlabActivities(listOf(p), AssignmentFilters(
-                    hideExpired = hideExpired, hideSubmitted = hideSubmitted), 100, marks).isNotEmpty(), context)
-                assertEquals(expectedVisible, filteredCitelTasks(listOf(c), hideSubmitted, hideExpired,
-                    null, 0, 100, marks).isNotEmpty(), context)
+                val marks = if (ignored) items.mapNotNull { it.completionKey() }.toSet() else emptySet()
+                val context = "expired=$hideExpired submittedFilter=$hideSubmitted ignored=$ignored server=$submitted"
+                val filters = AggregateAssignmentFilters(hideExpired = hideExpired, hideSubmitted = hideSubmitted)
+                val shown = filterAggregateAssignments(items, filters, 100)
+                // 忽略标记不再参与筛选：筛选结果只由学校状态、日期和课程决定。
+                assertEquals(if (hideSubmitted && submitted) 0 else 3, shown.size, context)
+                val (pending, ignoredItems) = split(shown, marks)
+                val expectIgnored = ignored && !submitted
+                assertEquals(if (expectIgnored) emptyList() else shown, pending, context)
+                assertEquals(if (expectIgnored) shown else emptyList(), ignoredItems, context)
+
+                val homeworkList = HomeworkUiState(homework = listOf(h), now = now,
+                    hideExpired = hideExpired, hideSubmitted = hideSubmitted).visibleHomework
+                assertEquals(expectIgnored && homeworkList.isNotEmpty(),
+                    partitionIgnoredAssignments(homeworkList, marks, ::isHomeworkSubmitted) { it.completionKey() }.second.isNotEmpty(), context)
+                val phyList = filterPhyVlabActivities(listOf(p), AssignmentFilters(hideExpired = hideExpired, hideSubmitted = hideSubmitted), 100)
+                assertEquals(expectIgnored && phyList.isNotEmpty(),
+                    partitionIgnoredAssignments(phyList, marks, { it.completed }) { it.completionKey() }.second.isNotEmpty(), context)
+                val citelList = filteredCitelTasks(listOf(c), hideSubmitted, hideExpired, null, 0, 100)
+                assertEquals(expectIgnored && citelList.isNotEmpty(),
+                    partitionIgnoredAssignments(citelList, marks, { it.completed }) { it.completionKey() }.second.isNotEmpty(), context)
             }
         }
     }
 
-    @Test fun expiredAndMissingDatesStillFollowTheirExistingRules() {
-        val items = aggregateAssignments(listOf(homework.copy(endTime = "2026-10-01 00:00")),
-            listOf(physical.copy(dueTimestamp = 50)), listOf(citel.copy(dueTime = null)))
-        val marks = items.mapNotNull { it.completionKey() }.toSet()
-        assertEquals(3, filterAggregateAssignments(items, AggregateAssignmentFilters(hideSubmitted = true), 100, marks).size)
-        val filters = AggregateAssignmentFilters(hideExpired = true)
-        assertEquals(2, filterAggregateAssignments(items, filters, 100, marks).size)
-        // 使用真实学校时间戳时，课程平台旧日期被日期筛选排除；无日期仍可显示。
-        assertTrue(HomeworkUiState(homework = listOf(homework.copy(endTime = "2026-10-01 00:00")),
-            now = now, hideExpired = true).visibleHomework(marks).isEmpty())
-        assertEquals(listOf(items.last()), filterAggregateAssignments(items,
-            filters.copy(hideSubmitted = true), 2_000_000_000L, emptySet()))
+    @Test fun bothSegmentsKeepTheFilteredOrder() {
+        val items = aggregateAssignments(listOf(homework, homework.copy(upId = 21, endTime = "2026-10-31 23:59")),
+            listOf(physical.copy(dueTimestamp = 150)), listOf(citel.copy(dueTime = 250)), TimeZone.UTC)
+        val sorted = filterAggregateAssignments(items, AggregateAssignmentFilters(sortOrder = 1), 100)
+        val marks = setOf(sorted[0].completionKey()!!, sorted[2].completionKey()!!)
+        val (pending, ignored) = split(sorted, marks)
+        assertEquals(listOf(sorted[1], sorted[3]), pending)
+        assertEquals(listOf(sorted[0], sorted[2]), ignored)
     }
 
-    @Test fun courseFiltersAreNeverBypassedByShowAllDates() {
+    @Test fun courseAndDateFiltersStillApplyToIgnoredItems() {
         val items = aggregateAssignments(listOf(homework), listOf(physical), listOf(citel))
         val marks = items.mapNotNull { it.completionKey() }.toSet()
-        val filters = AssignmentSource.entries.fold(AggregateAssignmentFilters(hideSubmitted = true)) { f, source ->
+        val filters = AssignmentSource.entries.fold(AggregateAssignmentFilters()) { f, source ->
             f.withSource(source, AggregateCourseFilter(false, setOf(999)))
         }
-        assertTrue(filterAggregateAssignments(items, filters, 100, marks).isEmpty())
-        assertTrue(HomeworkUiState(homework = listOf(homework), selectedCourses = setOf("其他课程"), now = now)
-            .visibleHomework(marks).isEmpty())
-        assertTrue(filterPhyVlabActivities(listOf(physical), AssignmentFilters(courses = setOf(999)), 100, marks).isEmpty())
-        assertTrue(filteredCitelTasks(listOf(citel), true, false, 999, 0, 100, marks).isEmpty())
+        assertEquals(emptyList<AggregatedAssignment>() to emptyList(), split(filterAggregateAssignments(items, filters, 100), marks))
+        val expired = aggregateAssignments(listOf(homework.copy(endTime = "2026-10-01 00:00")),
+            listOf(physical.copy(dueTimestamp = 50)), listOf(citel.copy(dueTime = null)))
+        val (_, ignored) = split(filterAggregateAssignments(expired, AggregateAssignmentFilters(hideExpired = true), 2_000_000_000L),
+            expired.mapNotNull { it.completionKey() }.toSet())
+        // 过期筛选照常排除已忽略的过期项；无截止日期的仍显示在已忽略分组。
+        assertEquals(listOf(AssignmentSource.CITEL), ignored.map { it.source })
     }
 
-    @Test fun markingDoesNotChangeServerSubmissionOrSearchResultsOrOrdering() {
+    @Test fun ignoringNeverChangesServerStatusOrSearchResults() {
         val items = aggregateAssignments(listOf(homework), listOf(physical), listOf(citel))
-        val marks = items.mapNotNull { it.completionKey() }.toSet()
-        val hidden = filterAggregateAssignments(items, AggregateAssignmentFilters(hideExpired = true, hideSubmitted = true), 100, marks)
-        assertTrue(hidden.isEmpty())
         assertEquals(items, searchAggregateAssignments(items, "示例", 0))
         assertEquals(listOf(homework), searchHomework(listOf(homework), "课后", HomeworkSortOrder.ORIGINAL))
         assertTrue(items.none { it.submitted })
-        val restored = filterAggregateAssignments(items, AggregateAssignmentFilters(hideSubmitted = true), 100, marks)
-        assertEquals(filterAggregateAssignments(items, AggregateAssignmentFilters(hideSubmitted = true), 100), restored)
     }
 
-    @Test fun citelProgrammingStillRequiresAcEvenWhenManualMarkIsUndone() {
+    @Test fun citelProgrammingCanOnlyBeIgnoredUntilAccepted() {
         val wa = citel.copy(programming = true, submitted = true, status = "WA: Wrong Answer")
         val ac = wa.copy(id = 21, status = "AC: Accepted")
         val marks = setOf(wa.completionKey(), ac.completionKey())
-        assertEquals(listOf(wa), filteredCitelTasks(listOf(wa, ac), true, false, null, 0, 100, marks))
-        assertTrue(filteredCitelTasks(listOf(wa, ac), true, true, null, 0, 100, marks).isEmpty())
-        assertEquals(listOf(wa), filteredCitelTasks(listOf(wa, ac), true, true, null, 0, 100, emptySet()))
+        val (pending, ignored) = partitionIgnoredAssignments(listOf(wa, ac), marks, { it.completed }) { it.completionKey() }
+        assertEquals(listOf(ac), pending)
+        assertEquals(listOf(wa), ignored)
+    }
+
+    @Test fun emptyTitleSeparatesNothingAllIgnoredAndFiltered() {
+        assertEquals("暂无作业", assignmentEmptyTitle(hasAny = false, hasIgnored = false, filtered = true))
+        assertEquals("没有待处理的作业", assignmentEmptyTitle(hasAny = true, hasIgnored = true, filtered = false))
+        assertEquals("当前筛选下没有作业", assignmentEmptyTitle(hasAny = true, hasIgnored = true, filtered = true))
+        assertEquals("当前筛选下没有作业", assignmentEmptyTitle(hasAny = true, hasIgnored = false, filtered = false))
     }
 }

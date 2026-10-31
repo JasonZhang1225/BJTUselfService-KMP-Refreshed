@@ -1961,4 +1961,3 @@ private fun HomeStatusFailure.message(hasCache: Boolean): String = when (this) {
     HomeStatusFailure.PARSE -> if (hasCache) "学校返回格式变化，正在显示上次状态。" else "无法读取学校返回的状态。"
     HomeStatusFailure.CACHE -> if (hasCache) "最新状态未能写入本地，仍显示上次状态。" else "无法保存最新状态。"
 }
-

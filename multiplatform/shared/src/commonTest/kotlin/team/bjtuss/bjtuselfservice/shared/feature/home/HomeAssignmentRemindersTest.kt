@@ -132,8 +132,10 @@ class HomeAssignmentRemindersTest {
         val marked = filterHomeAssignmentReminders(original, f.assignments, f.keys)
         for (hideExpired in listOf(false, true)) for (hideSubmitted in listOf(false, true)) {
             val filters = AggregateAssignmentFilters(hideExpired = hideExpired, hideSubmitted = hideSubmitted)
-            val visible = filterAggregateAssignments(f.assignments, filters, f.seconds, f.keys)
-            assertEquals(if (hideExpired && hideSubmitted) 0 else 3, visible.size)
+            val (pending, ignored) = partitionIgnoredAssignments(filterAggregateAssignments(f.assignments, filters, f.seconds),
+                f.keys, { it.submitted }, { it.completionKey() })
+            assertEquals(0, pending.size)
+            assertEquals(3, ignored.size)
             assertEquals(0, marked.count(), "首页不依赖作业页的显示全部日期或隐藏选项")
         }
         assertEquals(3, original.count())

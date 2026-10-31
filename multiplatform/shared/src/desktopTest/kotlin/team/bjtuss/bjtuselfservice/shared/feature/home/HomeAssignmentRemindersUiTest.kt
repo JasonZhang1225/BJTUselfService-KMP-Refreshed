@@ -11,7 +11,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerButtons
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import kotlinx.coroutines.Dispatchers
@@ -82,7 +85,7 @@ class HomeAssignmentRemindersUiTest {
         } finally { scene.close(); cache.close() }
     }
 
-    @Test fun realCardCheckboxesUpdateReminderBindingAndUndoAcrossAllThreeSources() = SwingUtilities.invokeAndWait {
+    @Test fun realCardIgnoreMenuUpdatesReminderBindingAndUndoAcrossAllThreeSources() = SwingUtilities.invokeAndWait {
         for (item in f.assignments) {
             val store = AssignmentCompletionStore(MemoryPersistence())
             var displayed = original
@@ -104,12 +107,12 @@ class HomeAssignmentRemindersUiTest {
             try {
                 pump(scene)
                 assertEquals(3, displayed.reminderCount())
-                click(scene, 440f, 72f)
+                ignoreViaMenu(scene)
                 await(scene) { displayed.reminderCount() == 2 }
                 assertEquals(setOf(item.completionKey()), store.state.value.completedKeys)
                 assertEquals(0, opened)
                 assertSame(original.days, displayed.days)
-                click(scene, 440f, 72f)
+                ignoreViaMenu(scene)
                 await(scene) { displayed.reminderCount() == 3 }
                 assertTrue(store.state.value.completedKeys.isEmpty())
                 assertEquals(original, displayed)
@@ -160,6 +163,22 @@ class HomeAssignmentRemindersUiTest {
 
     private fun HomeAgenda.reminderCount() = dueSoonHomework.size + dueSoonEvents.size
     private fun pump(scene: ImageComposeScene) { repeat(5) { scene.render(System.nanoTime()).close(); Thread.sleep(10) } }
+    /** 右键卡片，再点菜单里的第一项（忽略这项作业 / 取消忽略）。 */
+    private fun ignoreViaMenu(scene: ImageComposeScene) {
+        // 先等上一个菜单的退出动画走完，否则右键只会被弹层当作“点外部关闭”；
+        // 再等新菜单的进入动画走完才点菜单项。按真实时间出帧，慢机器上同样成立。
+        settle(scene)
+        val at = Offset(120f, 72f)
+        scene.sendPointerEvent(PointerEventType.Press, at, type = PointerType.Mouse,
+            buttons = PointerButtons(isSecondaryPressed = true), button = PointerButton.Secondary)
+        scene.sendPointerEvent(PointerEventType.Release, at, type = PointerType.Mouse,
+            buttons = PointerButtons(), button = PointerButton.Secondary)
+        settle(scene)
+        click(scene, 170f, 104f)
+    }
+
+    private fun settle(scene: ImageComposeScene) { repeat(6) { Thread.sleep(100); pump(scene) } }
+
     private fun click(scene: ImageComposeScene, x: Float, y: Float) {
         scene.sendPointerEvent(PointerEventType.Press, Offset(x, y))
         scene.sendPointerEvent(PointerEventType.Release, Offset(x, y))

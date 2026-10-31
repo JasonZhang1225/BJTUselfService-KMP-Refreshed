@@ -22,7 +22,7 @@ class DeadlineDateFilterTest {
         assertEquals(5, filterAggregateAssignments(items, AggregateAssignmentFilters(), 0).size)
     }
 
-    @Test fun dateBoundaryCombinesWithUpstreamManualCompletionForEverySource() {
+    @Test fun dateBoundaryCombinesWithUpstreamIgnoredGroupsForEverySource() {
         val midnight = Instant.parse("2026-10-29T16:00:00Z").epochSeconds
         val items = aggregateAssignments(
             listOf(completionFixtureHomework().copy(endTime = "2026-10-30 00:00")),
@@ -30,8 +30,14 @@ class DeadlineDateFilterTest {
             listOf(completionFixtureCitel().copy(dueTime = midnight)), TimeZone.of("Asia/Shanghai"))
         val marks = items.mapNotNull { it.completionKey() }.toSet()
         val filters = AggregateAssignmentFilters(beforeDate = "2026-10-30", hideSubmitted = true)
-        assertEquals(3, filterAggregateAssignments(items, filters, midnight - 60, marks).size)
-        assertEquals(0, filterAggregateAssignments(items, filters.copy(hideExpired = true), midnight - 60, marks).size)
+        val visible = filterAggregateAssignments(items, filters, midnight - 60)
+        assertEquals(3, visible.size)
+        val (pending, ignored) = partitionIgnoredAssignments(visible, marks, { it.submitted }, { it.completionKey() })
+        assertEquals(0, pending.size)
+        assertEquals(3, ignored.size)
+        val later = items.map { it.copy(dueTime = midnight + 1) }
+        val excluded = filterAggregateAssignments(later, filters, midnight - 60)
+        assertEquals(0, partitionIgnoredAssignments(excluded, marks, { it.submitted }, { it.completionKey() }).second.size)
         assertEquals(3, filterAggregateAssignments(items, filters.copy(hideExpired = true), midnight - 60).size)
         assertEquals(0, filterAggregateAssignments(items.map { it.copy(submitted = true) }, filters, midnight - 60).size)
         assertEquals(0, filterAggregateAssignments(items, filters.withSource(AssignmentSource.COURSE_PLATFORM,

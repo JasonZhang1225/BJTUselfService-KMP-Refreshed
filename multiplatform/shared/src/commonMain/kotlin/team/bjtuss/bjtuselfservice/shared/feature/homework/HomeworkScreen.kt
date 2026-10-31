@@ -17,6 +17,12 @@ import team.bjtuss.bjtuselfservice.shared.feature.assignment.mergePickedFiles
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.pickFeedback
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.assignmentCompletionState
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCompletionFeedback
+import androidx.compose.runtime.CompositionLocalProvider
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.LocalAssignmentSwipeToIgnore
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.assignmentEmptyTitle
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.ignoredAssignmentsSection
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.partitionIgnoredAssignments
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.rememberIgnoredSectionExpanded
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.completionKey
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceLoadingState
 
@@ -142,10 +148,12 @@ fun HomeworkWorkspace(
     val searchActive = search?.active == true
     val query = search?.query.orEmpty()
     val completion = assignmentCompletionState()
+    val (pendingHomework, ignoredHomework) = partitionIgnoredAssignments(state.visibleHomework, completion.completedKeys,
+        ::isHomeworkSubmitted) { it.completionKey() }
     val displayedHomework = if (searchActive) {
         searchHomework(state.homework, query, state.sortOrder)
     } else {
-        state.visibleHomework(completion.completedKeys)
+        pendingHomework
     }
 
     // 只灌缓存；网络自动同步由 shell 在登录成功后触发。
@@ -198,10 +206,11 @@ fun HomeworkWorkspace(
                         // 与移动端一致：同步态在顶栏；Banner 内筛选入口；课程/过期/排序进 sheet。
                         HomeworkSummary(
                             state = state,
+                            visible = pendingHomework,
                             onOpenFilter = { showFilterSheet = true },
                         )
                     }
-                    if (displayedHomework.isEmpty()) {
+                    if (displayedHomework.isEmpty() && (searchActive || ignoredHomework.isEmpty())) {
                         if (searchActive) {
                             PageSearchEmptyState(query, hint = "搜索课程名或作业标题")
                         } else {
@@ -223,6 +232,7 @@ fun HomeworkWorkspace(
                         ) {
                             HomeworkList(
                                 homework = displayedHomework,
+                                ignored = if (searchActive) emptyList() else ignoredHomework,
                                 selectedKey = state.selectedHomeworkKey,
                                 sortOrder = state.sortOrder,
                                 onOpen = { key ->
@@ -261,6 +271,7 @@ fun HomeworkWorkspace(
                     HomeworkScrollableContent(
                         state = state,
                         displayed = displayedHomework,
+                        ignored = ignoredHomework,
                         searchActive = searchActive,
                         query = query,
                         legacyWarningVisible = legacyWarningVisible,
@@ -553,12 +564,11 @@ fun HomeworkDetailWorkspace(
 @Composable
 private fun HomeworkSummary(
     state: HomeworkUiState,
+    visible: List<Homework>,
     onOpenFilter: (() -> Unit)? = null,
 ) {
-    val completion = assignmentCompletionState()
-    val visible = state.visibleHomework(completion.completedKeys)
-    val dueSoon = team.bjtuss.bjtuselfservice.shared.domain.homework.dueSoonHomeworkCount(
-        visible.filterNot { it.completionKey() in completion.completedKeys }, state.now, state.timeZone)
+    // 已忽略的作业不进入数量和 48 小时提醒。
+    val dueSoon = team.bjtuss.bjtuselfservice.shared.domain.homework.dueSoonHomeworkCount(visible, state.now, state.timeZone)
     // 仅课程/过期/已提交过滤算「筛选」；改排序不算。
     val filtered = state.selectedCourses.isNotEmpty() || state.hideExpired || state.hideSubmitted
     val subtitle = buildString {
@@ -861,6 +871,7 @@ private fun CourseFilterRow(title: String, selected: Boolean, onClick: () -> Uni
 private fun HomeworkScrollableContent(
     state: HomeworkUiState,
     displayed: List<Homework>,
+    ignored: List<Homework>,
     searchActive: Boolean,
     query: String,
     legacyWarningVisible: Boolean = false,
@@ -872,6 +883,7 @@ private fun HomeworkScrollableContent(
     modifier: Modifier,
 ) {
     val listState = rememberLazyListState()
+    var ignoredExpanded by rememberIgnoredSectionExpanded()
     // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
     val topClearance = LocalTopBarClearance.current
     // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
@@ -918,7 +930,7 @@ private fun HomeworkScrollableContent(
                 }
             }
             item(key = "homework-summary") {
-                Box(Modifier.animateItem()) { HomeworkSummary(state = state, onOpenFilter = onOpenFilter) }
+                Box(Modifier.animateItem()) { HomeworkSummary(state = state, visible = displayed, onOpenFilter = onOpenFilter) }
             }
             if (displayed.isEmpty()) {
                 item(key = "homework-empty") {
@@ -930,8 +942,9 @@ private fun HomeworkScrollableContent(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Text("当前筛选下没有作业", style = MaterialTheme.typography.titleMedium)
-                        TextButton(onClick = onOpenFilter) { Text("调整筛选") }
+                        val filtered = state.selectedCourses.isNotEmpty() || state.hideExpired || state.hideSubmitted
+                        Text(assignmentEmptyTitle(true, ignored.isNotEmpty(), filtered), style = MaterialTheme.typography.titleMedium)
+                        if (filtered) TextButton(onClick = onOpenFilter) { Text("调整筛选") }
                     }
                 }
             }
@@ -939,13 +952,20 @@ private fun HomeworkScrollableContent(
         // 列表与搜索结果沿用同一 key：打开搜索、输入关键字时匹配的卡片留在原地，其余淡出。
         items(displayed, key = Homework::stableKey) { item ->
             Box(Modifier.animateItem()) {
-                HomeworkCard(
-                    item = item,
-                    // 紧凑端详情是独立二级页（原生 push），返回时没有可靠的 pop 回调可清选中；
-                    // 选中高亮只在宽屏双栏有意义，这里一律不渲染，避免返回后旧选中颜色残留。
-                    selected = false,
-                    onOpen = onOpen,
-                )
+                CompositionLocalProvider(LocalAssignmentSwipeToIgnore provides !searchActive) {
+                    HomeworkCard(
+                        item = item,
+                        // 紧凑端详情是独立二级页（原生 push），返回时没有可靠的 pop 回调可清选中；
+                        // 选中高亮只在宽屏双栏有意义，这里一律不渲染，避免返回后旧选中颜色残留。
+                        selected = false,
+                        onOpen = onOpen,
+                    )
+                }
+            }
+        }
+        if (!searchActive) {
+            ignoredAssignmentsSection(ignored, ignoredExpanded, { ignoredExpanded = !ignoredExpanded }, Homework::stableKey) { item ->
+                HomeworkCard(item = item, selected = false, onOpen = onOpen)
             }
         }
     }
@@ -959,43 +979,39 @@ internal fun HomeworkCard(
     source: team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentSource? = null,
 ) {
     val key = item.stableKey()
-    ElevatedCard(
-        onClick = { onOpen(key) },
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(17.dp),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = if (selected) {
-                MaterialTheme.colorScheme.secondaryContainer
-            } else {
-                MaterialTheme.colorScheme.surface
-            },
-        ),
+    val submitted = isHomeworkSubmitted(item)
+    team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCard(
+        completionKey = item.completionKey(),
+        title = item.title,
+        submitted = submitted,
+        onOpen = { onOpen(key) },
+        containerColor = if (selected) {
+            MaterialTheme.colorScheme.secondaryContainer
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(15.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
-        ) {
-            team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCardHeader(
-                item.courseName, item.title, team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkSubmitted(item), source,
-                completionKey = item.completionKey())
-            HomeworkCardLine("类型", item.typeLabel())
-            HomeworkCardLine("开始", assignmentStartText(item.openDate))
-            HomeworkCardLine("截止", assignmentDeadlineText(item.endTime))
-            HomeworkCardLine("提交人数", "${item.submitCount} / ${item.allCount}")
-            HomeworkCardLine("评分", assignmentGradeText(item.score, isHomeworkSubmitted(item), graded = item.scoreId != 0))
-        }
+        team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCardHeader(
+            item.courseName, item.title, submitted, source, completionKey = item.completionKey())
+        HomeworkCardLine("类型", item.typeLabel())
+        HomeworkCardLine("开始", assignmentStartText(item.openDate))
+        HomeworkCardLine("截止", assignmentDeadlineText(item.endTime))
+        HomeworkCardLine("提交人数", "${item.submitCount} / ${item.allCount}")
+        HomeworkCardLine("评分", assignmentGradeText(item.score, submitted, graded = item.scoreId != 0))
     }
 }
 
 @Composable
 private fun HomeworkList(
     homework: List<Homework>,
+    ignored: List<Homework>,
     selectedKey: String?,
     sortOrder: HomeworkSortOrder,
     onOpen: (String) -> Unit,
     modifier: Modifier,
 ) {
     val listState = rememberLazyListState()
+    var ignoredExpanded by rememberIgnoredSectionExpanded()
     LaunchedEffect(sortOrder) {
         listState.scrollToItem(0)
     }
@@ -1006,11 +1022,16 @@ private fun HomeworkList(
         contentPadding = PaddingValues(bottom = 18.dp + LocalBottomBarClearance.current),
     ) {
         items(homework, key = Homework::stableKey) { item ->
-            HomeworkCard(
-                item = item,
-                selected = item.stableKey() == selectedKey,
-                onOpen = onOpen,
-            )
+            Box(Modifier.animateItem()) {
+                HomeworkCard(
+                    item = item,
+                    selected = item.stableKey() == selectedKey,
+                    onOpen = onOpen,
+                )
+            }
+        }
+        ignoredAssignmentsSection(ignored, ignoredExpanded, { ignoredExpanded = !ignoredExpanded }, Homework::stableKey) { item ->
+            HomeworkCard(item = item, selected = item.stableKey() == selectedKey, onOpen = onOpen)
         }
     }
 }

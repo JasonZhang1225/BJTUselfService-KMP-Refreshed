@@ -200,4 +200,3 @@ fun agendaWeekMarks(day: HomeAgendaDay): AgendaWeekMarks {
         day.homeworkStarting.size + day.phyVlabEvents.count { it.kind == PhyVlabEventKind.START },
         day.homeworkDue.size + deadlines.size - submitted, submitted)
 }
-
