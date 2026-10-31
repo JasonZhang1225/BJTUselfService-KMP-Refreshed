@@ -1,13 +1,13 @@
 # BJTUselfService 实时工作记忆
 
-> 2026-10-31：当前工作树 `/workspace/changelog-app`，分支 `feat/changelog-app`，基于最新 main `d3e84f78`；更新日志应用与发布说明整理待 PR，不改版本号、不发版。
+> 2026-10-31：当前工作树 `/workspace/changelog-app`，分支 `feat/changelog-app`，基于最新 main `d3e84f78`；更新日志应用与发布说明整理已推送 PR #86（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/86），未合入，不改版本号、不发版。
 
 ## 进行中：更新日志应用与发布说明整理
 
 - 应用页「设置」后增加独立「更新日志」，离线选择版本，默认最新草稿；沿用共享页面与原生二级导航。
 - `docs/releases/` 全部 17 份说明统一新增、优化、修复；保留安装、兼容性等说明。2.0.0 补齐移动端仅在线播放、桌面渐进合成、作业忽略、折扣提醒、富文本与最新修复。调试/测试版本和正式草稿明确区分。
 - 内置 Kotlin 内容由 `python3 scripts/sync-bundled-changelog.py` 生成；`--check` 已通过，CI 增加同源检查；新增导航与内容测试。
-- 本地 `git diff --check` 通过。Linux 当前没有 Android SDK/Gradle 缓存；首次 Gradle 下载因 DNS 失败，使用运行环境代理重试中。四端编译、共享测试与真实 UI 操作尚未完成，交由 PR CI/后续设备验证，不据此宣称通过。
+- 本地 `git diff --check` 通过。Linux 当前没有 Android SDK，初始也没有 Gradle 缓存；首次 Gradle 下载因 DNS 失败，配置运行环境代理后下载成功，但依赖解析尚未完成，已停止本地构建。PR #86 CI run `41213449775` 的更新日志一致性检查、远程模板测试通过；Android、Windows、iOS/macOS 检查进行中。共享测试、四端编译与真实 UI 操作尚未取得完整结果，交由 PR CI/后续设备验证，不据此宣称通过。
 
 
 > 2026-10-31：PR #80（Cloud Agent 文档）与 #81（macOS 录像合成提速 + 渐进合成 + 移动端仅在线播放）已合入 main（合入提交分别为 `4d6f207a`、`f41136d0`）。已触发 KMP package `workflow_dispatch`：https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/41178525742 。沿用 2.0.0-Alpha / Build45，未打 `v*`。
