@@ -1,0 +1,27 @@
+name: Dispatch KMP package once
+
+on:
+  push:
+    paths:
+      - ".github/workflows/dispatch-kmp-package-once.yml"
+      - ".github/trigger-kmp-package"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    name: workflow_dispatch KMP package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create workflow_dispatch for KMP package on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/kmp-package.yml/dispatches" \
+            -f ref=main
+          echo "Dispatched KMP package on main"
