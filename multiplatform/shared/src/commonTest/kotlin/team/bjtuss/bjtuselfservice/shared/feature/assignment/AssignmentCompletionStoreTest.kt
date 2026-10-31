@@ -140,6 +140,41 @@ class AssignmentCompletionStoreTest {
         assertTrue(store.state.value.savingKeys.isEmpty())
     }
 
+    @Test fun ignoringFromTheListOffersUndoThatRestoresTheItem() = runBlocking {
+        val persistence = MemoryPersistence()
+        val store = AssignmentCompletionStore(persistence)
+        store.requestSetCompleted(key, true, undoTitle = "作业")!!.join()
+        val undo = assertNotNull(store.undo.value)
+        assertEquals(key to "作业", undo.key to undo.title)
+        store.undoIgnore(undo)!!.join()
+        assertTrue(persistence.saved.isEmpty())
+        assertNull(store.undo.value, "撤销后不再显示提示，也不为“取消忽略”再发提示")
+        assertNull(store.undoIgnore(undo), "同一条提示只能撤销一次")
+    }
+
+    @Test fun undoOnlyAppearsAfterASuccessfulIgnoreAndNewChangesReplaceIt() = runBlocking {
+        val other = key.copy(assignmentId = 21)
+        val persistence = MemoryPersistence()
+        val store = AssignmentCompletionStore(persistence)
+        store.requestSetCompleted(key, true)!!.join()
+        assertNull(store.undo.value, "详情页等不带标题的改动不发撤销提示")
+        persistence.saveFailure = IllegalStateException("disk")
+        store.requestSetCompleted(other, true, undoTitle = "另一项")!!.join()
+        assertNull(store.undo.value, "保存失败不能提示已忽略")
+        persistence.saveFailure = null
+        store.requestSetCompleted(other, true, undoTitle = "另一项")!!.join()
+        val first = assertNotNull(store.undo.value)
+        store.requestSetCompleted(key, false)!!.join()
+        assertNull(store.undo.value, "新的改动先收起旧提示")
+        store.dismissUndo(first)
+        store.requestSetCompleted(key, true, undoTitle = "作业")!!.join()
+        val second = assertNotNull(store.undo.value)
+        store.dismissUndo(first)
+        assertEquals(second, store.undo.value, "过期的计时不能收起新提示")
+        store.dismissUndo(second)
+        assertNull(store.undo.value)
+    }
+
     private class MemoryPersistence(initial: Set<AssignmentCompletionKey> = emptySet()) : AssignmentCompletionPersistence {
         var saved = initial
         var writes = 0

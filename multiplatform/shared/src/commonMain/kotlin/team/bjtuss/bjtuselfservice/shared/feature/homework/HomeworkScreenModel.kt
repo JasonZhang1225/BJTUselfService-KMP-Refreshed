@@ -28,9 +28,6 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.dueSoonHomeworkCount
 import team.bjtuss.bjtuselfservice.shared.domain.homework.filterHomework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.sortHomework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.stableKey
-import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCompletionKey
-import team.bjtuss.bjtuselfservice.shared.feature.assignment.completionKey
-import team.bjtuss.bjtuselfservice.shared.feature.assignment.passesAssignmentCompletionFilter
 
 enum class HomeworkContentSource {
     CACHE,
@@ -69,15 +66,7 @@ data class HomeworkUiState(
         get() = homework.map(Homework::courseName).filter(String::isNotBlank).distinct().sorted()
 
     val visibleHomework: List<Homework>
-        get() = visibleHomework(emptySet())
-
-    fun visibleHomework(completedKeys: Set<AssignmentCompletionKey>): List<Homework> =
-        sortHomework(
-            filterHomework(homework, selectedCourses, hideExpired, now, hideSubmitted).filter {
-                passesAssignmentCompletionFilter(false, it.completionKey() in completedKeys, hideExpired, hideSubmitted)
-            },
-            sortOrder,
-        )
+        get() = sortHomework(filterHomework(homework, selectedCourses, hideExpired, now, hideSubmitted), sortOrder)
 
     val dueSoonCount: Int
         get() = dueSoonHomeworkCount(visibleHomework, now, timeZone)

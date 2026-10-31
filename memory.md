@@ -12,7 +12,16 @@
 >
 > **接下来**：等本次 KMP package 产物；Android P0 真机测量（PROMPT2）与 iOS/macOS 其余验收按需推进。
 >
+> 2026-10-31：进行中 `feat/homework-dismiss-redesign`（基于 main `ad874581`）——把作业卡片上的“已完成”复选框改成“忽略”：卡片无常驻控件，长按/右键菜单、手机左滑、详情页按钮、读屏自定义操作进入；忽略后移到列表末尾“已忽略 N 项”分组，底栏上方 4 秒撤销提示；与“隐藏已提交”筛选解耦。存储键 `assignment.manualCompletion.v1` 不变，旧标记直接显示为已忽略。详见下节。
+>
 > 2026-10-31：进行中 PR #83 `cursor/fix-bugbot-playback-compose-e4cd` —— Bugbot 三条 Medium 修复；CI Android/Windows 因 `recordingDownloadsEnabled` 插在 `restoreDestination` 前导致位置实参类型不匹配，正改为命名参数。不改版本号、不打 `v*`。
+
+## 进行中：作业“忽略”交互重做（`feat/homework-dismiss-redesign`，2026-10-31）
+
+- 原因：PR #76 的复选框写“已完成”，与“未提交”徽章矛盾；每张未提交卡常驻 48dp 控件挤占标题；勾选后是否消失取决于“隐藏已提交”筛选，且无撤销。用户真实意图是“这项不用管”。
+- 实现：`AssignmentIgnoreUi.kt`（原 `AssignmentCompletionUi.kt`）新增共享卡片外壳 `AssignmentCard`（长按/右键菜单定位在按下处、手机端 `SwipeToDismissBox` 左滑、已忽略卡片 alpha 0.62 + 灰色“已忽略”徽章）、`partitionIgnoredAssignments`、`ignoredAssignmentsSection`（默认收起，`ignored:` 前缀 key）、`AssignmentIgnoreUndoBar`（壳层底部，临界阻尼进出）、`AssignmentIgnoreDetailButton`（`AssignmentMarkdownActions` 内）。`AssignmentCompletionStore` 增加 `undo` 流、`undoIgnore`/`dismissUndo`。四个列表（聚合、课程平台、物理在线、CITEL）筛选去掉手动标记分支，先筛选排序再拆两段；搜索结果仍含已忽略项且禁用左滑。
+- 验证：`:shared:desktopTest` 1305 项仅 `MacIndexedComposeErrorTest` 1 项失败（stash 后在干净基线同样失败，与本改动无关）；作业相关专项全过；`:androidApp:assembleDebug :shared:compileKotlinIosSimulatorArm64 :shared:compileKotlinIosArm64 :windowsApp:compileKotlinWindows :desktopApp:compileKotlin` 成功。离屏图在 `.artifacts/assignment-ignore/ui/`。
+- 未覆盖：宽屏课程平台独立页的详情面板（`HomeworkDetailPanel`）没有忽略按钮，靠右键菜单。
 
 ## 已合入 main：macOS 录像合成提速与渐进合成（PR #81，2026-10-31）
 
@@ -38,6 +47,8 @@
 
 
 ## 已合入 main：作业手动完成标记（PR #76，2026-10-29）
+
+- 注：下文的复选框交互与筛选规则表正由 `feat/homework-dismiss-redesign` 的“忽略”方案替换；存储与账号隔离部分仍有效。
 
 - 用户确认：课程平台、物理在线、CITEL 均支持；卡片右侧复选框沿用成绩页风格，可撤销；标记按账号保存在本机。聚合与独立列表共用状态。普通刷新、重新登录和重启保留；现有账号离线数据/全部本地数据清除操作会清除对应记录。真正已提交的作业仍按原有“隐藏已提交”规则处理，课程筛选仍然生效。最新显示要求：仅学校现有判定为未提交的作业显示复选框；手动已完成、但学校仍未提交的作业保留复选框以便撤销，不删除原有本地标记。
 - 已确认的手动完成作业规则：

@@ -49,21 +49,15 @@ data class AggregateAssignmentFilters(
     val active: Boolean get() = hideExpired || hideSubmitted || platformCourses.values.any { !it.allCourses }
 }
 
-/** “显示全部日期”只豁免手动完成项；学校已提交状态仍独立过滤。 */
-internal fun passesAssignmentCompletionFilter(submitted: Boolean, manuallyCompleted: Boolean,
-    hideExpired: Boolean, hideSubmitted: Boolean): Boolean =
-    !hideSubmitted || (!submitted && (!hideExpired || !manuallyCompleted))
-
 fun AggregatedAssignment.completionKey(): AssignmentCompletionKey? = when (source) {
     AssignmentSource.COURSE_PLATFORM -> homework?.completionKey()
     AssignmentSource.PHYVLAB -> physical?.completionKey()
     AssignmentSource.CITEL -> citel?.completionKey()
 }
 
-fun filterAggregateAssignments(items: List<AggregatedAssignment>, filters: AggregateAssignmentFilters, now: Long,
-    completedKeys: Set<AssignmentCompletionKey> = emptySet()): List<AggregatedAssignment> {
-    val visible = items.filter { filters.forSource(it.source).matches(it.courseId) &&
-        passesAssignmentCompletionFilter(it.submitted, it.completionKey() in completedKeys, filters.hideExpired, filters.hideSubmitted) &&
+/** 已忽略的作业照常参与筛选和排序，之后由列表拆到末尾的“已忽略”分组，见 [partitionIgnoredAssignments]。 */
+fun filterAggregateAssignments(items: List<AggregatedAssignment>, filters: AggregateAssignmentFilters, now: Long): List<AggregatedAssignment> {
+    val visible = items.filter { filters.forSource(it.source).matches(it.courseId) && (!filters.hideSubmitted || !it.submitted) &&
         (!filters.hideExpired || it.dueTime?.let { time -> time > now } != false) }
     return sortAggregateAssignments(visible, filters.sortOrder)
 }
