@@ -13,7 +13,7 @@ macOS 下载+播放的分阶段任务见 [playback-macos-acceptance.md](playback
 | 平台 | 当前结论 | 下一步 |
 | --- | --- | --- |
 | Windows | **下载+播放本轮验收完成，用户已确认结项** | 代码已在功能分支；保留兼容性边界，不重开稳定性大项 |
-| macOS | 浏览器播放、预览、helper 合成已有实现；整节与文件/生命周期未按 Windows 深度验收 | **优先**：按 [Mac 计划](playback-macos-acceptance.md) 做 P0 整节取证，再 P1 定向补齐 |
+| macOS | P0/P1 审查证据已齐；**真·`compose-indexed` 已落地**（边下边合等效例外已撤销）；**待用户确认结项** | 确认单 `.artifacts/macos-playback-p1/ACCEPTANCE-DECISION.md`；合主干/发版另批 |
 | Android | 产品侧仅在线播放；旧整节下载证据为历史 | 验收 App 内播放/预览/错误态；下载 P0/P1 **取消作为产品交付** |
 | iOS | 产品侧仅在线播放；下载/合成/后台活动实现不进入产品结项 | 验收 WKWebView 播放/预览/返回；下载整节与 AAC 合成差距 **不再阻塞产品** |
 

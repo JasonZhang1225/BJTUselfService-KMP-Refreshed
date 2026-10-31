@@ -388,6 +388,8 @@ private class FileStreamingDestination(
 ) : StreamingDestination {
     private var output: java.io.OutputStream? = Files.newOutputStream(temporary)
     override val displayName: String = target.name
+    /** 与 Windows 一致：完成后卡片可「打开视频 / 打开文件夹」。 */
+    override val outputPath: String = target.absolutePath
 
     override suspend fun write(bytes: ByteArray) {
         val stream = output ?: throw StreamingSinkIoException()

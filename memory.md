@@ -1,13 +1,12 @@
 # BJTUselfService 实时工作记忆
 
-> 当前工作：`feat/courseware-fallback-playback`（已与 `origin` 对齐）。**产品范围 2026-10-31**：录像下载/合成仅 Windows + macOS；Android/iOS 只保留在线播放（`playbackRecordingDownloadAvailable`）。
+> 当前工作：`feat/courseware-fallback-playback`（**未提交** P1 源码在工作区）。**产品范围**：录像下载/合成仅 Windows + macOS；Android/iOS 只保留在线播放。
 >
-> 本轮未提交改动：移动端隐藏下载/任务入口并硬拦截入队；新增 `docs/plans/playback-macos-acceptance.md`；四平台/安卓计划正文已去掉可执行的移动端下载测试步骤；顺手修 `AndroidMediaCompositor` 可空编译错误。
-> 已本地验证：`:shared:compileKotlinDesktop :shared:compileAndroidMain :shared:compileKotlinIosSimulatorArm64` 与 `:shared:desktopTest --tests '*PlaybackTaskManager*' --tests '*PlaybackSavedFile*'` 通过（未提交/推送）。
+> **macOS P1 已结项（2026-10-31，你确认收工）**：GUI 整节 20.50 min；开跑 ETA≈22 min 对齐；headless indexed 13.4 min；证据 `.artifacts/macos-playback-p1/`。未 commit / 未合主干 / 未发版；不碰安装版。
 >
-> **后续主线**：Windows 已结项 → **macOS P0 整节与差距**（见 Mac 计划）→ Mac P1 → 移动端仅播放验收。禁止再按旧安卓下载 P0/P1 排期。
+> 版本沿用 2.0.0-Alpha / Build45。
 >
-> 2026-10-28：Windows 课程回放结项并推送；功能分支未合 main。沿用 2.0.0-Alpha / Build45。
+> **接下来**：你要求时再 commit / PR；其余按需迭代。
 
 ## 已完成：Windows 保存结果入口、预览与最终验收（2026-10-28，功能分支待主干）
 
@@ -20,12 +19,15 @@
 - UI：三张实际Compose离屏图已检查浅色/深色/440宽1.6倍字号；Computer Use 实际点击新卡片，文件缺失会就地提示，父文件夹成功打开，视频交给系统打开方式选择器（未改默认播放器）。隔离窗口指定当前helper后，真实学校公开HLS的教师/课件两路预览均显示正常；未登录其他账号、未覆盖安装。初次共享测试UI类路径没有Windows资源，显示助手缺失，已用明确本地helper路径重启复验。证据 `.artifacts/windows-playback-final/{release-check.log,shared-full-final/,hardware-frozen-results.jsonl,ui-*.png,manifest.json}`。
 - 本轮交付：包含上述源码的新 MSI 已在下载文件夹（见下节），实际解包核对构建标识和原生helper哈希一致。用户已明确结项并授权提交推送；主干合入/发版另行决定，代理未安装新包。iOS共享测试、macOS共享测试/镜像已由本轮CI通过；Apple真机运行仍待设备验收，本机仅完成macOS JVM宿主编译；Intel真机、CPU整节、多小时耐久继续保留未验证边界，不作为本轮Windows完成阻塞。
 
-## 进行中：产品范围调整与 macOS 回放计划（2026-10-31）
+## 已完成：macOS P1 下载结项（2026-10-31，功能分支待提交）
 
-- 入口：`playbackRecordingDownloadAvailable`——desktop `true`，android/ios `false`。UI 不展示下载按钮/下载任务页/合成开关；`PlaybackTaskManager.enqueue` 移动端直接失败提示用 Windows/Mac。
-- 文档：`playback-four-platform-acceptance.md` 更新范围与优先级；**新增** `docs/plans/playback-macos-acceptance.md`（P0 整节取证 → P1 按缺口补 F10/生命周期/音轨/恢复）；`playback-android-performance.md` 收成归档指针，正文下载测试步骤已移除。
-- 不做：安卓/iOS 整节下载复测、9–10 分钟目标、PROMPT2/3、ADB 下载验收。移动端以后只验播放（F01–F03）。
-- 接下来：合入本轮源码+文档后，按 Mac 计划做 P0（真机/源码实例整节播放+下载）。
+- 你确认收工。GUI 整节 20.50 min；开跑 ETA≈22 min；headless indexed 13.4 min；F01–F14 与例外见 `.artifacts/macos-playback-p1/`。源码未 commit。
+
+## 已完成取证：macOS P0（2026-10-31，基线）
+
+- 源码包 `local-20261031-011820-932`，helper SHA256 `62c62293…`；证据 `.artifacts/macos-playback-p0/`。
+- 整节串行：大学物理（A)Ⅱ 2026-10-28 中档；约 22.2 min（下 4.1 + 合 18.1）；成片 1280×360 / 7022.44 s，`ffmpeg` 0；布局正确。
+- 另：单路教师、排队/暂停/取消、临时清理有 UI 证据。
 
 ## 审查标准索引（2026-10-31）
 
@@ -195,7 +197,7 @@
 
 ## 接下来
 
-1. Android P0：设备可用时按新四端标准和 PROMPT2，在独立 `.playbacktest` 包做真实测量/整节/恢复验收，所有 ADB 命令显式指定已确认序列号；不覆盖正式 App，不重复实现快速整理/矩阵/候选回退。
-2. Android P1：上一阶段报告证实最大两个瓶颈后再按 PROMPT3 定向优化，每次一项、同输入复测、独立提交；9–10分钟仅目标。增量整理、SAF直写、进一步流水线和跨芯片/串行回退只作待评估候选。
-3. iOS/macOS：按新标准先真实整节验收与采样，再决定加速/恢复；iOS AAC重编码、两端跨进程恢复及文件重新访问能力差距明确列待办。Windows已完成，不重启P0收尾；Intel/CPU整节仅保留兼容性边界。主干合入、改版本、正式发版由用户另行决定。
-4. 后续新开发从最新 main 建分支；保留以上其他真机待验证与当前痛点，不恢复已解决的旧待办。
+1. **等你确认** Mac P1 结项（是否接受边下边合等效例外）；确认后再考虑 commit。
+2. 不自动合主干/发版。
+3. **Android / iOS**：仅在线播放验收（F01–F03）。
+4. Windows 已结项；保留其他真机待验证与当前痛点。

@@ -17,19 +17,20 @@
 
 **iOS 下载/合成不再进入产品验收**；移动端只验播放（F01–F03）。
 
-## 2. 当前 macOS 能力快照（源码级，≠已验收）
+## 2. 当前 macOS 能力快照（2026-10-31 P1 取证后）
 
-| 能力 | 现状 | 相对 Windows 缺口 |
+| 能力 | 现状 | 相对 Windows / 结项状态 |
 | --- | --- | --- |
-| 在线播放 | 系统浏览器打开本地 HTML 播放页 | 需真机：暂停/拖动/调速/双路同步/全屏/返回（F03） |
-| 预览 | AVFoundation 截帧 helper（随包） | 需核对失败/重试/取消；缺 helper 时的占位（F02） |
-| 单路下载 | HLS → TS→MP4 无损转封装 + 流式保存 | 需整节真实下载与体积/路径验收（F04/F06/F10） |
-| 双路合成 | `MacHelperVideoCompositor`（helper） | 需整节左右布局、音轨策略、完整解码；压缩音频路径须测样本哈希，不能只凭 `outputSettings=nil`（F05/F06） |
-| 队列 | 共享 `PlaybackTaskManager` | 三任务排队/取消/失败推进须本机复验（F07） |
-| 中断恢复 | 桌面持久化弱于 Windows 已验深度 | 先列明进程退出后能做什么，再设计恢复；未实现前 F08/F13 标待补齐 |
-| 保存入口 | 共享路径字段；**打开文件/文件夹按钮目前主要接 Windows** | 补 NSWorkspace 打开/定位、中文/空格路径、失效提示（F10） |
-| 生命周期 | 单窗口；关窗≠退出（托盘设置） | 关窗/Dock 重开/菜单退出/强退分别测；禁止多源码实例、不碰安装版（F12） |
-| 安装包 | DMG + helper | 验收包与 helper 哈希、构建标识一致（F14） |
+| 在线播放 | 浏览器本地 HTML；P0 已抽查 | F03 Safari 内逐控仍为 P0 边界 |
+| 预览 | AVFoundation helper；P0 第十分钟抽查 | 失败重试未专项压 |
+| 单路 / 双路下载合成 | **真·`compose-indexed`**（异步 VT + VTPixelTransfer + 收尾 AAC）；headless 合成 13.4 min；**GUI 端到端 20.50 min**；remux 基线仍在 | **已结项**（2026-10-31） |
+| 双进度 / 总 ETA | PIPELINING 双条 + 总 ETA；开跑下限对齐实跑（界面约 22 分钟） | **已结项** |
+| 队列 | P0 三任务排队/暂停/取消 | 本轮未五轮复压（接受） |
+| 中断恢复 | `recovery-contract.md`：不保留编码进度（**同 Windows 已结项契约**） | **已接受** |
+| 保存入口 | macOS `open` / `open -R` + `outputPath` | F10 已点验 |
+| 生命周期 | helper `--parent-pid` + 单测；关窗隐藏已点验 | Dock/菜单破坏性未测（接受） |
+| 安装包 / 标识 | 源码包构建标识 + helper SHA256 已记 | 未做 DMG 安装验收（接受） |
+| **结项** | 证据 `.artifacts/macos-playback-p1/`；你确认收工 | **已结项** |
 
 ## 3. 阶段划分（对标 Android P0 → P1）
 

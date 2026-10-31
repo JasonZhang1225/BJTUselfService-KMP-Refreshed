@@ -8,14 +8,37 @@ import UniformTypeIdentifiers
 /// - 截帧预览：BJTUVideoFrameHelper <https-url> <秒> <输出.jpg> <最大宽度>
 ///   退出码：0 成功；64 参数错误；2 无法加载；3 写图失败；4 超时。
 /// - 左右并排合成：BJTUVideoFrameHelper compose <左.mp4> <右.mp4> <输出.mp4> <宽> <高> <码率>
+/// - 增长索引边下边合：BJTUVideoFrameHelper compose-indexed <左目录> <右目录> <输出.mp4> <宽> <高> <码率>
+///   --duration <秒> [--parent-pid <pid>]
 ///   标准输出逐行打印 `progress 0.123`；退出码 0 成功，非 0 失败（stderr 一行原因）。
 @main
 enum VideoFrameHelper {
     static func main() {
         let args = CommandLine.arguments
-        if args.count == 8, args[1] == "compose" {
+        if args.count >= 8, args[1] == "compose-indexed" {
             guard let width = Int(args[5]), let height = Int(args[6]), let bitRate = Int(args[7]),
                   width > 0, height > 0, bitRate > 0 else { exit(64) }
+            guard let durationIndex = args.firstIndex(of: "--duration"),
+                  durationIndex + 1 < args.count,
+                  let duration = Double(args[durationIndex + 1]), duration > 0 else { exit(64) }
+            watchParentIfRequested(args)
+            exit(IndexedSideBySideCompose.run(
+                leftDir: URL(fileURLWithPath: args[2]),
+                rightDir: URL(fileURLWithPath: args[3]),
+                output: URL(fileURLWithPath: args[4]),
+                width: width,
+                height: height,
+                bitRate: bitRate,
+                durationSeconds: duration
+            ))
+        }
+        if args.count >= 8, args[1] == "compose" {
+            guard let width = Int(args[5]), let height = Int(args[6]), let bitRate = Int(args[7]),
+                  width > 0, height > 0, bitRate > 0 else { exit(64) }
+            if args.count > 8 {
+                guard args.count == 10, args[8] == "--parent-pid", Int32(args[9]) != nil else { exit(64) }
+            }
+            watchParentIfRequested(args)
             exit(SideBySideCompositor.run(
                 left: URL(fileURLWithPath: args[2]),
                 right: URL(fileURLWithPath: args[3]),
@@ -33,6 +56,23 @@ enum VideoFrameHelper {
               let seconds = Double(args[2]),
               let maxWidth = Double(args[4]), maxWidth > 0 else { exit(64) }
         exit(capture(url: url, seconds: seconds, output: URL(fileURLWithPath: args[3]), maxWidth: maxWidth))
+    }
+
+    /// 父进程消失（强退/崩溃）时结束自身，避免脱离托管的编码进程。
+    private static func watchParentIfRequested(_ args: [String]) {
+        guard let index = args.firstIndex(of: "--parent-pid"),
+              index + 1 < args.count,
+              let pid = Int32(args[index + 1]),
+              pid > 1 else { return }
+        DispatchQueue.global(qos: .utility).async {
+            while true {
+                if kill(pid, 0) != 0 {
+                    FileHandle.standardError.write(Data("parent exited\n".utf8))
+                    _exit(1)
+                }
+                usleep(200_000)
+            }
+        }
     }
 
     private static func capture(url: URL, seconds: Double, output: URL, maxWidth: Double) -> Int32 {
