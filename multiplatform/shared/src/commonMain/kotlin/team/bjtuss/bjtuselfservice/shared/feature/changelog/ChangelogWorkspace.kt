@@ -18,6 +18,7 @@ import team.bjtuss.bjtuselfservice.shared.update.BundledChangelog
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
+import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 
 @Composable
 internal fun ChangelogWorkspace(modifier: Modifier = Modifier) {
@@ -29,9 +30,10 @@ internal fun ChangelogWorkspace(modifier: Modifier = Modifier) {
     // Keep the picker inside the same viewport as the notes so native scrolling,
     // safe-area padding and glass-bar progress all describe the whole page.
     key(selectedTag) {
+        val listState = rememberLazyListState()
         TopScrollLazyColumn(
-            state = rememberLazyListState(),
-            modifier = modifier,
+            state = listState,
+            modifier = modifier.desktopTouchScroll(listState),
             contentPadding = PaddingValues(
                 start = 16.dp, end = 16.dp,
                 top = 16.dp + topClearance, bottom = 16.dp + bottomClearance,

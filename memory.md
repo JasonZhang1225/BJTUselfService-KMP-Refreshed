@@ -4,6 +4,8 @@
 
 ## 进行中：更新日志应用与发布说明整理
 
+- PR #86 第二轮 Bugbot 修复：更新日志列表复用同一个 `LazyListState` 接入 `desktopTouchScroll`，恢复 Windows 触摸/远程触摸拖动；平台门禁继续由兼容层统一控制。`sync-bundled-changelog.py --check` 与 `git diff --check` 通过；本环境此前专项测试因缺少离线 Kotlin 序列化插件未能执行，触屏真机未验证，本轮编译与回归交由 PR CI。
+
 - PR #86 Bugbot 修复：页面改用 `TopScrollLazyColumn`，版本选择器与日志共用滚动视口；上下内容边距分别消费 `LocalTopBarClearance` / `LocalBottomBarClearance`，接入原生滚动控制与玻璃顶栏进度上报。新增离屏回归覆盖手机浅色、深色大字号、宽屏、动态顶栏高度、滚到底部与回顶；测试执行状态见本轮交付。
 
 - 应用页「设置」后增加独立「更新日志」，离线选择版本，默认最新草稿；沿用共享页面与原生二级导航。
