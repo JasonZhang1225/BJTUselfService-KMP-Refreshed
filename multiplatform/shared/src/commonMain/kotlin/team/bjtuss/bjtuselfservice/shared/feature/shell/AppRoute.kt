@@ -208,6 +208,7 @@ internal enum class AppSection(
     CALENDAR("校历下载"),
     REPORT_CARD_DOWNLOAD("成绩单下载"),
     SETTINGS("设置"),
+    CHANGELOG("更新日志"),
     MORE("应用"),
 }
 

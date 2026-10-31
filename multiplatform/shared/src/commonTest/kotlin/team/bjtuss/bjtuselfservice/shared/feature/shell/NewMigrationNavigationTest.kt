@@ -4,6 +4,14 @@ import kotlin.test.*
 import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 
 class NewMigrationNavigationTest {
+    @Test fun changelogFollowsSettingsAndUsesNativeNavigation() {
+        val preferences = AppPreferences(bottomNavigationItems = emptyList())
+        val sections = applicationSections(preferences)
+        assertEquals(sections.indexOf(AppSection.SETTINGS) + 1, sections.indexOf(AppSection.CHANGELOG))
+        assertTrue(shouldOpenNativeSectionRoute("CHANGELOG", true, bottomNavSections(preferences)))
+        assertEquals("更新日志", nativeRouteTitle("CHANGELOG"))
+    }
+
     @Test fun fixedEntriesAndLimitSurviveMalformedSavedConfiguration() {
         val preferences = AppPreferences(bottomNavigationItems = listOf("HOME", "MAILBOX", "MAILBOX", "UNKNOWN", "CLASSROOMS", "EXAMS", "COURSEWARE", "SETTINGS", "GRADES", "MORE"))
         val tabs = bottomNavSections(preferences)

@@ -80,7 +80,7 @@ internal fun MoreWorkspace(
             }
         }
         onOpenAgentPlugins?.let { open ->
-            // 设置始终排在最后：插件入口插到设置前面。
+            // 插件入口插到设置前面，更新日志紧随设置。
             val position = indexOfFirst { it.section == AppSection.SETTINGS }.takeIf { it >= 0 } ?: size
             add(position, ApplicationTile(agentPluginTitle, specialIcon = SpecialTileIcon.AGENT, onClick = open))
         }
