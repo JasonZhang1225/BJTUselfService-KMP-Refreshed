@@ -1,5 +1,7 @@
 # BJTUselfService 实时工作记忆
 
+> 当前工作：`feat/macos-playback-compose`（自 `feat/courseware-fallback-playback` 建出并合入最新 main，开 PR 到 main）。P1 源码在 `23a773ae`；Mac 合成提速 `4b2133eb`（见“进行中”）。**产品范围**：录像下载/合成仅 Windows + macOS；Android/iOS 只保留在线播放。
+>
 > 2026-10-31：Cloud Agent Linux 环境说明已写入 AGENTS.md（JDK 21、`/opt/android-sdk`、一次性编译密钥、`BJTU_ANDROID_ABIS=x86_64`、模拟器 `-accel off`）。iOS、macOS 桌面包和 Windows MSI 仍不能在该 Linux 镜像上构建。本条随 PR #80 合入；不改应用源码或版本号。
 >
 > 2026-10-30：Cursor 代理修复 PR #78：已 rebase 到最新 main（含已合入的 #76/#77/#79），折扣提醒走 `rememberHomeAssignmentReminders`，`filterHomeAssignmentReminders` / `reminderCompletionKey` 覆盖 `citel-discount-*`，并补手动完成隐藏/撤销测试。推送功能分支，未合并、未改版本号。
@@ -8,11 +10,19 @@
 >
 > 2026-10-28：用户明确标记 **Windows 课程回放开发与本轮验收完成**；代码已提交推送 `133cf398` 到 `feat/courseware-fallback-playback`。四端审查标准随本轮文档提交；跨平台安全检查 run `40631769655` 四项全部通过。新 MSI `local-20261028-111451-103` 已在下载文件夹；代理未执行安装。沿用 2.0.0-Alpha / Build45，不改版本号，功能分支未合 main。
 >
-> 2026-10-27：分支 `feat/courseware-fallback-playback`，回放与设备显示已提交 `19585a4a`，已合并远端 PR #72（`8847b785`），功能分支尚未合入 main。源码版本为 `2.0.0-Alpha` / Build 45，发布说明草稿 `docs/releases/v2.0.0-KMP.md`；iOS 系统版本与桌面安装器使用数字 `2.0.0`，iOS 最低 18.0。
+> **macOS P1 已结项（2026-10-31，你确认收工）**：当时 GUI 整节 20.50 min；证据 `.artifacts/macos-playback-p1/`。未合主干 / 未发版；不碰安装版。
 >
-> 用户持续目标：Windows 硬件加速与下载合成并行已完成本机隔离验收；安卓计划及现有修改保留，设备暂不在身边，ADB 与实机验收留待后续。安卓旧版整节验收实测不暂停总耗时约16分15秒，9–10分钟性能目标未达到。
+> 版本沿用 2.0.0-Alpha / Build45。
 >
-> **统一标准与后续工作：`docs/plans/playback-four-platform-acceptance.md`**。Windows 已结项；Android 按 PROMPT2 先做 P0 真机测量，再按 PROMPT3 做 P1 定向优化；iOS/macOS 先补当前包真实整节与能力差距验收。旧 Android 计划已加已实现事项更正，禁止重复实现。
+> **接下来**：等 PR CI 与所有者审查合入；其余按需迭代。
+
+## 进行中：macOS 录像合成提速（2026-10-31，`4b2133eb`，PR 到 main 待合入）
+
+- 先采样：瓶颈是逐帧 BGRA 像素传送 + CPU 清屏拷贝（57%）和每帧同步等解码（42%），编码器 0%。改为解码器直接输出缩放后的 NV12、两路异步解码（每路 4 帧在途）、NV12 平面拷贝拼接。
+- 实网 GUI 整节 20.5 min → **5.7 min**（344 s）；headless 13.4 → 5.7 min；现已到 M2 硬件解码上限。成片帧数、全解码、音轨逐字节、布局均对齐；翻页选帧比旧版更准（旧版晚 2 帧）。
+- ETA 下限 `片长/5.4` → `片长/20`（GUI 实网复验：开跑报 352 s，实跑 336.5 s）；生命周期测试改为 `compose-indexed` 空索引（原测试时序抖动）。回归 89 项 0 失败。
+- 改动文件：`IndexedSideBySideCompose.swift`、`VideoCompositor.desktop.kt`、`RemainingTimeEstimatorTest.kt`、`MacVideoFrameHelperLifecycleTest.kt`。证据 `.artifacts/macos-playback-perf/REPORT.md`、`.artifacts/macos-playback-p1/ui-harness-live-v2/`。
+- 未验证：其他芯片、高/低档整节、DMG 安装。
 
 ## 进行中：CITEL 首页 48 小时折扣提醒（PR #78，2026-10-30）
 
@@ -71,12 +81,22 @@
 - UI：三张实际Compose离屏图已检查浅色/深色/440宽1.6倍字号；Computer Use 实际点击新卡片，文件缺失会就地提示，父文件夹成功打开，视频交给系统打开方式选择器（未改默认播放器）。隔离窗口指定当前helper后，真实学校公开HLS的教师/课件两路预览均显示正常；未登录其他账号、未覆盖安装。初次共享测试UI类路径没有Windows资源，显示助手缺失，已用明确本地helper路径重启复验。证据 `.artifacts/windows-playback-final/{release-check.log,shared-full-final/,hardware-frozen-results.jsonl,ui-*.png,manifest.json}`。
 - 本轮交付：包含上述源码的新 MSI 已在下载文件夹（见下节），实际解包核对构建标识和原生helper哈希一致。用户已明确结项并授权提交推送；主干合入/发版另行决定，代理未安装新包。iOS共享测试、macOS共享测试/镜像已由本轮CI通过；Apple真机运行仍待设备验收，本机仅完成macOS JVM宿主编译；Intel真机、CPU整节、多小时耐久继续保留未验证边界，不作为本轮Windows完成阻塞。
 
-## 四端审查标准与下一阶段（2026-10-28）
+## 已完成：macOS P1 下载结项（2026-10-31，功能分支待提交）
 
-- 新文件 `docs/plans/playback-four-platform-acceptance.md` 统一 F01–F14 功能合同、媒体帧/PTS/DTS/AAC/完整解码要求、阶段计时与证据模板，以已完成 Windows 为参照；区分实现、测试、平台完成、四端完成与发布就绪。
-- Android 按 PROMPT2 先完成小米平板8 Pro 的 P0 真实测量，枚举确认序列号、全部操作显式 `adb -s`，只安装 `.playbacktest` 隔离包；快整理、矩阵、候选回退已经实现，不重复开发。报告后按 PROMPT3 对最大两个瓶颈做 P1 定向优化，一项一测一提交。iOS/macOS 先整节，iOS AAC 重编码与两端持久恢复/文件重新访问差距明确列待办。本次不操作设备或实施上述优化。
-- 两份旧计划 `playback-android-performance.md`、`playback-composite-android-windows.md` 顶部已更正状态，保留原分析作历史，避免把旧“未实施/四端完成/Windows无声”等描述当作当前结论。
-- Windows 代码 `133cf398` 已推送。安全检查 [40631769655](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/actions/runs/40631769655) 精确 head 为 `133cf398`，四项全部成功，含 macOS 全部共享测试、iOS 共享测试、Apple 原生检查/镜像、Android debug/优化版和 Windows 镜像。随后只改文档，应用源码树 `5f7c58c7a8c0a8da20aad31366663612c1b304ad` 不变；没有创建PR、合主干、改版本或发布。链接检查与 `git diff --check` 通过；原始最终状态在 `.artifacts/playback-four-platform-review/ci-final.json`。
+- 你确认收工。GUI 整节 20.50 min；开跑 ETA≈22 min；headless indexed 13.4 min；F01–F14 与例外见 `.artifacts/macos-playback-p1/`。源码未 commit。
+
+## 已完成取证：macOS P0（2026-10-31，基线）
+
+- 源码包 `local-20261031-011820-932`，helper SHA256 `62c62293…`；证据 `.artifacts/macos-playback-p0/`。
+- 整节串行：大学物理（A)Ⅱ 2026-10-28 中档；约 22.2 min（下 4.1 + 合 18.1）；成片 1280×360 / 7022.44 s，`ffmpeg` 0；布局正确。
+- 另：单路教师、排队/暂停/取消、临时清理有 UI 证据。
+
+## 审查标准索引（2026-10-31）
+
+- 总标准：`docs/plans/playback-four-platform-acceptance.md`（F01–F14；移动端下载条目标产品范围不适用）。
+- **Mac 现行**：`docs/plans/playback-macos-acceptance.md`。
+- 安卓下载旧文：仅归档，见 git 历史 / 原 `.artifacts/android-*`（若仍在）。
+- Windows 结项证据仍见下文「已完成」各节；CI run `40631769655` 等历史链接保留。
 
 ## Windows 视频回放与下载完成度复核（2026-10-28，初次结论及后续更新）
 
@@ -116,40 +136,10 @@
 - GitHub Release `v1.8.6-KMP` 已补四端 Github 下载列。
 - `faccdb88`：本地 `docs/releases/v1.8.6-KMP.md` 用线上正文覆盖（保留标题与日期）；历史版本 macOS `xattr` 路径补为 `交大自由行\ KMP.app`。已推送到 `feat/courseware-fallback-playback`，尚未合入 main。
 
-## 进行中：安卓修复已验收并提交，待功能分支合主干
+## 已归档：安卓录像下载（产品已关闭，2026-10-31）
 
-- `b05426ec`：共享渐进下载接口、TS压缩帧/配置解析与AAC处理；两路各2个分片连接，总并发仍4，无新增媒体依赖。
-- `f1f06c79`：Android两路硬件解码并行、提前一帧，与GL绘制/硬件编码重叠。平板实测为两个 `c2.qti.avc.decoder` 和 `c2.qti.avc.encoder`。此前 `eglSwapInterval(0)` 启用异步队列导致快送时丢帧，已改回1保留编码背压；每段及最终强校验提交/输出帧数。压缩帧和定长索引落盘，不保留整节索引对象；约60–70秒媒体内容提交一个成品段，重启只重做当前未提交段，最终无损整理。旧小MP4和直接MediaDataSource原型已清理。
-- `51ad5b3c`：非用户作用域取消保留PAUSED和保存位置，明确取消/退出账号才清理；历史加载取消不覆盖旧记录，立即暂停也执行收尾。增加暂停/继续、下载/合成/整理/保存独立进度、20秒时间常数的平滑ETA。整理阶段可暂停，继续复用完整编码结果；保存失败可只重做整理/复制。真实AppDataGraph关闭、重建会话仍复用应用执行器的回归测试已过。
-- `aae42176`：Android应用按账号持有唯一执行器、独立公开媒体transport、applicationContext和URI；页面/会话重建不替换下载执行器。明确退出账号/清除数据先等待任务停止写盘。debug独立入口支持实机完整管线、后台返回、重建、断网、覆盖安装和恢复；仅测试包，不读取学校凭据。
-
-### 整节实机验收证据
-
-- 设备：小米平板8 Pro（Android17），独立 `.playbacktest` debug包，原App未替换。无线ADB曾授权，已换AC充电器，电量回升；后续确认连接状态并显式指定平板，不能误操作模拟器或原App。
-- 恢复验收 `t1793028955283-0`：10月26日23:35:55→23:51:17 DONE。每路703片，总源3,853,388,624字节；成片 `Downloads/android-goal-final-20261026.mp4`，753,571,868字节、1:57:02.56、1920×540/25fps H.264，175564帧，AAC 44.1kHz单声道302430包。每个视频PTS间隔严格40000us；整段 `ffmpeg -v error -xerror -threads 0 -i goal-final-with-recovery.mp4 -f null -` 退出0。音轨SHA256与原轨完全一致：`61fcd3f23860e39eda9f7f39669d9de62ceb8f24430028bf69e83d91d1f99c09`。
-- 此轮后台返回、页面重建不掉任务，服务同实例且lastStartId=1；下载96%/合成23%手动暂停，保留686/668个原片、23个完成编码段。强停重开继续，从1568280000us恢复，仅补约141MB；最终102个成品段，前23个元数据完全未变，恢复后136357=136357帧。首/中/尾和恢复边界画面、平板媒体查看器实际播放已检查。覆盖安装后DONE仍在。含人工暂停约65秒，总约15分22秒，不作为无干预成绩。
-- 最终不暂停计时 `t1793030228149-0`：10月26日23:57:08→10月27日00:13:23 DONE，目标 `Downloads/android-goal-timed-20261026.mp4`，757,329,607字节。源码增加独立FINALIZING整理进度后再次真实全量下载，无断点复用。175564视频帧、每帧PTS间隔40000us、AAC302430包与上述SHA256完全一致，整段ffmpeg解码退出0。强停重开后DONE保留，原始临时分片已清理，通知服务结束。
-- 该轮下载完成首次观测00:05:22（约8分14秒，源字节平均约7.8MB/s，前慢后快）；编码含等待输入在00:11:33完成，175564提交=175564输出；整理首次观测00:11:35，保存首次观测00:13:06，DONE首次观测00:13:23。整理约1分31秒、保存/收尾约16秒；阶段观测间隔5秒。下载与编码重叠，不能相加；全程约16分15秒，不能声称达到9–10分钟。
-- 同期UI计速约3.9MB/s时系统约3.75MB/s；网络随后恢复，平均仍接近8MB/s。ETA按下载与合成瓶颈估算，最终“整理中”53%及不足1分钟已实机观察。浅/深色、1.4倍字体、预览/双路播放/全屏、三次2/4/8秒重试及耗尽后继续的既有实机证据仍见下方与原目录。
-
-### 构建与未验证边界
-
-- `build-finalizing-progress.log`：Android assembleDebug和66项相关测试全过；新增会话组合根重建测试 `test-session-rebuild.log` 通过。最终完整 `:shared:desktopTest` 共1176项、1171通过，5个既有Windows环境失败仍为DesktopAgentIntegrationTest 3和MacUninstallCleanerTest 2，新增回放相关用例均通过。提交后相关联合复查记录在 `build-committed-android.log`。
-- `:androidApp:minifyReleaseWithR8` 成功（`build-release-r8.log`），只编译/缩减，未签名或安装正式包。正式 `assembleRelease` 因本机缺上传密钥口令在配置阶段停止；正式签名仍待CI。Apple共享目标本轮未构建，不能引用旧CI证明本次源码。
-- 第一轮旧串行整节 `t1793017919242-0` 曾完整解码且音轨一致，纯合成约16分半；不能用它替代新流程验收，也不把已发现丢帧的11秒/160秒原型当性能成绩。
-- 尚保留旧测试任务 `t1793024019616-0`（PAUSED 60.5%，703×2原片、64成品段）和 `t1792993910544-0`（两路完整原始MP4，供性能对照/Windows复用）。不得误当进行中的新任务或误删原App数据。
-- 源码、构建、JSON状态、逐帧时轴、音轨校验、视频和截图证据在忽略目录 `.artifacts/android-full-acceptance/`、`.artifacts/tablet-playback/`。真实账号自动刷新的原现场未直接复现；已用平板页面重建与真实业务组合根回归覆盖取消路径。未复现的ANR/资源过量等历史退出不能宣称已全部根治。
-
-## 进行中：安卓合成提速与跨芯片兼容（计划见 `docs/plans/playback-android-performance.md`）
-
-- 基线拆解：下载8分14秒（≈14.2×实时）与合成重叠，合成到14分25秒才完（≈8.1×实时、约203帧/秒），之后整理≈1分31秒、保存≈16秒。瓶颈是合成而非网络；按公开规格粗算视频单元已用约六七成（未实测）。
-- 基线问题：整理逐样本重封装（约8MB/s）；保存二次复制且每1MB刷新一次状态；合成主循环逐帧串行、解码只提前一帧；解码器未设优先级。现已增加受限快速整理、保存进度节流与纹理矩阵，均待设备验证。
-- 跨芯片：只用标准 MediaCodec/Surface/EGL，不依赖高通私有接口。现已按硬件优先、软件随后尝试编解码器，并在启动失败时释放资源；仍没有两路串行回退，编码器自行丢帧也可能令帧数核对反复失败。这些路径与纹理矩阵修正均未跨设备验收。
-- 推荐顺序：P0 采样（日志三项耗时、只解码/只编码/完整流程基准、源帧参考类型）→ P1 分段盒层面直接拼接+增量整理+直写目标（预计尾段≈1分47秒→≈10秒）与变换矩阵修正 → P2 按采样结论选两条流水线并行或跳过不被选中的非参考帧 → P3 下载并发A/B；兼容性加固并行推进，需一台天玑设备验收。
-- 预期：只做P1约14.5分钟；合成≥14×实时后约8.5–9分钟。尚未实测，不能当作已达成；增量整理、SAF 随机写、P2/P3 和跨芯片回退仍未完成。
-- 2026-10-27 本地新改动：两路 SurfaceTexture 每次更新后读取各自变换矩阵，着色器按矩阵采样；大文件保存进度最多每 250ms 更新。MP4 盒快速整理仅接受严格检查通过的分段，否则回退原 MediaMuxer。编解码器按名称创建并在资源不足时尝试其他候选；新索引记录编码器名，恢复已提交分段时沿用原编码器，旧索引没有名称时仍依赖分段配置核验。第二路初始化失败会释放第一路和已创建资源；渐进输入每次提供独立格式，速率提示被拒时可真正退回默认格式。Android debug 和 release R8 已构建，尚未做 ADB、画面或跨芯片验证。
-- Kotlin 快速整理离线复用 3 个既有 Android MediaMuxer 分段，与原整理结果的 2493 视频包、6891 音频包逐包内容、PTS、DTS、大小和关键帧标志完全一致，ffmpeg 全解码退出 0。重复分段构成 102 段、444 MB 的压力样本，84,762 视频包和 234,294 音频包的内容及时间戳均正确，全解码退出 0；Windows 本机仅作逻辑/容器验证，不代表平板速度或整节新版本验收。
-- 既有整节日志 `goal-android-live.log` 的 175000 帧累计 `decodeMs=240737 / drawMs=376512 / encodeMs=236458`（这些是主循环等待/工作时间，不等于硬件利用率）；该日志未见 `offline rate hint rejected`。已有两路重封装 MP4 的前 60 秒分别只有 I/P 帧；屏幕路前三秒 trace 的 VCL 参考值均非零。此样本不足以支持计划中“约 27% 可跳过非参考帧”的推断，勿直接跳帧优化。设备恢复后仍需解码/编码单项基准。
+- 曾在功能分支提交渐进下载、平板整节约 16 分 15 秒等证据（`.artifacts/android-full-acceptance/` 等，若本机仍在）。**不再作为待办或结项门槛**；入口已关，勿再排 ADB 下载复测或 9–10 分钟优化。
+- 详细提交说明与计时拆解见 git 历史中的本文件旧版本；计划正文已从 `playback-android-performance.md` 移除。
 
 ## 已完成：Windows 硬件加速与稳定性证据（功能分支待主干）
 
@@ -164,8 +154,6 @@
 - 此前离线联合构建 `:androidApp:assembleDebug :androidApp:minifyReleaseWithR8`、47 项共享回放相关测试、4 项 Windows 恢复测试、`:windowsApp:createDistributable :windowsApp:packageMsi` 成功，镜像及 MSI 包内 helper 是 `35ff3b64…`，不含后来的显卡选择和设备显示。新改动运行共享任务/设备状态等 30 项测试、4 项 Windows 恢复测试、Android debug 构建通过；NVIDIA 自动选择、强制 AMD、软件模式短片和模拟 NVIDIA 启动失败后转 AMD 均校验音视频，Intel 优先级及回退经模拟测试，未在 Intel 真机验证。隔离界面验证 NVIDIA 具体型号、CPU 软件模式、页面刷新与暂停状态。另以无音轨 H.264 High profile 合成样本在 NVIDIA/AMD 各检查 100 帧和完整解码。Apple 目标在 Windows 不可构建；安卓新改动未连接 ADB 或做实机验收。使用本机既有 Gradle 缓存与 WiX，未安装依赖。当时未测真实账号/正式安装流程；后续用户已确认在线播和真实下载，见顶部结项记录。
 - 完整 `:shared:desktopTest` 在干净进程环境下运行 1193 项、1188 项通过；仍有既有的 `DesktopAgentIntegrationTest` 3 项和 `MacUninstallCleanerTest` 2 项在 Windows 因符号链接权限、macOS 脚本/路径假设失败，回放相关用例无失败。日志 `.artifacts/windows-gpu-playback/desktop-full-test-clean-env.log`。初次运行误将禁用的可选环境变量设置为空字符串，触发 4 个诊断用例；已清理该次生成的空文件，后用真正移除变量的环境重跑。
 - 先前 MSI 在 `multiplatform/windowsApp/build/compose/binaries/main/msi/`，只生成未安装；它不含最新设备显示和版本号，不能代表当前源码。MSI 使用项目现有升级码，安装可能替换既有安装版，不能当作隔离测试包。此前 `.artifacts/windows-gpu-playback/package-msi.log` 记录的是旧版本。
-- 9–10分钟仅是 Android 后续性能目标，当前安卓实测未达到；不能通过降帧/丢帧冒充提速，不影响 Windows 本轮完成状态。
-
 ## 已完成：Windows 课程回放多任务、缓存与恢复验收（功能分支待主干）
 
 - `a9bd0b52` 修复任务到达锁的调度次序可能与入队次序不同的问题；隔离测试覆盖三个任务的并发提交、先前任务完成/失败/暂停/取消和取消排队项，不改变 GPU 管线。
@@ -180,6 +168,22 @@
 
 - `isFavorableChange` 把“折扣时间”延后与截止时间延后同等视为向好（绿色），补 `HomeChangeFieldTest` 两条断言。
 - 考试页紧凑端“考试详情”和“添加到日历”两个 sheet 由 `needsFullHeight` 改为 `fitContentHeight`：iOS 走按正文定高的自定义 detent，安卓/桌面底部 sheet 按内容高度展开；正文不再自带 verticalScroll，由 sheet 滚动。未在模拟器/真机验收。
+
+## 进行中：课件大文件保存与 Windows 文件选择器（2026-10-28）
+
+- 平板反馈单文件页顶无总大小、右侧一直显示准备，以及 Android 整课/文件夹导出在旧版和本版均失败。源码确认单文件未传递列表标注大小，宽屏详情漏传进度；已修复并在无响应总长时注明“课件标注大小”，转换件不误用原文件大小。Android 原先把 OpenDocumentTree 返回的树 URI 直接作为 createDocument 的父文档 URI；现使用 getTreeDocumentId + buildDocumentUriUsingTree 构造目标文档 URI，失败提示区分授权与写入。修复原因是明确的 API 不匹配，但未连接 ADB，尚不能断言平板真实导出已成功。
+- 用户要求本地上传密钥签名 APK，暂不推送或远端打包。本地 `:shared:desktopTest --tests '*Courseware*' :windowsApp:compileKotlinWindows :desktopApp:compileKotlin :androidApp:assembleDebug -I ..\.artifacts\android-account-debug-signing.gradle --offline --no-configuration-cache --console=plain --continue` 成功，课件 84 项通过；随后不使用调试签名覆盖脚本，运行 `:androidApp:assembleDebug --offline --no-configuration-cache --console=plain` 成功。`apksigner verify` 验证签名与本机上传密钥证书一致，包名 `team.bjtuss.bjtuselfservice.kmp`，versionCode 45，arm64-v8a；APK dex 包含树 URI 转换、单文件大小状态及错误提示。测试包 `C:\Users\zjg\Downloads\交大自由行-KMP-2.0.0-Alpha-课件修复-local-20261028-155201-718-arm64.apk`，49,725,720 字节，SHA256 `59ED02117AB400320CC91060A5C9ABD5E8E18B8794EC5D503F95D768916BF577`，下载副本哈希一致。用户表示此版本可以；平板 SAF 的具体操作与结果未逐项记录，iOS/macOS 原生目标未验证。
+
+- 批量取消先确认，可选择保留已完成文件、舍弃本次目录、继续下载；未完成文件请求清理。非用户主动的协程取消默认保留已完成文件；保留时会话关闭失败不会转而删除目录，提示用户检查。测试覆盖首个文件完成后取消的两种选择，以及取消恰逢文件目标创建时清理句柄。初次边界测试失败，修复后重新运行通过；真实应用弹窗和实际文件系统交互、iOS 编译/云盘仍未验收。
+- 最新 Windows 测试包 `C:\Users\zjg\Downloads\交大自由行 KMP-2.0.0-Alpha-local-20261028-152439-059.msi`，88,829,952 字节，SHA256 `7F195EE79C84A24AF2076562D00C8A517126ECBE9F3243B61307C4280CD4A434`。课件专项与 Windows 测试、Android debug、桌面编译和 MSI 打包成功；解包核对共享 UI/模型、Windows 面板、回放 helper 与构建标识，下载副本哈希一致。未安装。证据 `.artifacts/courseware-cancel-package/`。
+
+- 用户反馈批量导出缺少当前文件序号和大小：现显示“第 1/6 个：文件名”，优先用响应实际总长度；未知时显示课程列表的标注大小并注明来源，标注也缺失则显示总大小未知，未知长度不伪造百分比。转换件不沿用原件标注大小。格式与取消清理测试、Windows 测试及 Android/桌面构建通过；iOS 构建、真实应用界面与大文件仍未验证。
+- 新测试包 `C:\Users\zjg\Downloads\交大自由行 KMP-2.0.0-Alpha-local-20261028-151429-562.msi`，88,813,568 字节，SHA256 `2E753712CA772ECA880733729766D51CC71FA453DEC327B53EF4C83FDC5DA1A5`。命令 `:shared:desktopTest --tests '*Courseware*' :windowsApp:windowsTest :windowsApp:packageMsi :desktopApp:compileKotlin :androidApp:assembleDebug -I ..\.artifacts\android-account-debug-signing.gradle -x downloadWix --offline --no-configuration-cache --console=plain --continue` 成功；Windows 33 项、0 失败、2 跳过，MSI 解包核对共享界面与模型 class、Windows 面板及回放 helper 和构建标识，下载副本哈希一致。未安装。证据 `.artifacts/courseware-size-package/`。
+
+- 普通课件先选择保存位置，再按下载票据流式写入；单文件详情显示进度，未知长度显示已下载字节。批量目录接入四端分块写入，按完成文件和当前文件进度显示，取消时请求清理本次目标；备用下载对忽略 Range 的响应在读取正文前拒绝，票据失败且尚未写入时仅回退原件。
+- Windows 单文件保存（含视频）及目录选择改用系统 IFileDialog，绑定应用窗口。独立窗口探针观察到现代面板、模态归属、取消返回和文件夹选择返回；未在真实账号的应用页面完成端到端下载验收。
+- 2026-10-28 按用户要求本地打包：`C:\Users\zjg\Downloads\交大自由行 KMP-2.0.0-Alpha-local-20261028-150301-335.msi`，88,813,568 字节，SHA256 `31BC34B65CA6B07D43DF0259575C01057547BC6E5304F7F43B31937F38817E90`。`JDK 21 .\gradlew.bat :windowsApp:windowsTest :windowsApp:packageMsi -x downloadWix --offline --no-configuration-cache --console=plain` 成功；Windows 测试 33 项、0 失败、2 跳过。MSI 解包核对课件模型和文件面板 class 与本次编译一致、回放 helper 哈希一致、构建标识匹配；源包与下载副本哈希一致。未安装，安装器与现有应用共享升级标识。证据 `.artifacts/courseware-package/`。
+- 已运行离线课件专项和本地 HTTP 流式测试，82 项通过；Windows/桌面 JVM 编译和 Android debug 构建通过。最后补充的等待态也已随同命令重新通过。iOS/macOS 原生目标与真机、iCloud 文件提供方、真实 500 MB 课件和完整界面状态尚未验证；本机 Windows 不能编译 iOS。该项待合入视频回放分支；本轮测试包未安装或发布。
 
 ## 进行中：课程回放分支收尾
 
@@ -270,7 +274,7 @@
 
 ## 接下来
 
-1. Android P0：设备可用时按新四端标准和 PROMPT2，在独立 `.playbacktest` 包做真实测量/整节/恢复验收，所有 ADB 命令显式指定已确认序列号；不覆盖正式 App，不重复实现快速整理/矩阵/候选回退。
-2. Android P1：上一阶段报告证实最大两个瓶颈后再按 PROMPT3 定向优化，每次一项、同输入复测、独立提交；9–10分钟仅目标。增量整理、SAF直写、进一步流水线和跨芯片/串行回退只作待评估候选。
-3. iOS/macOS：按新标准先真实整节验收与采样，再决定加速/恢复；iOS AAC重编码、两端跨进程恢复及文件重新访问能力差距明确列待办。Windows已完成，不重启P0收尾；Intel/CPU整节仅保留兼容性边界。主干合入、改版本、正式发版由用户另行决定。
-4. 后续新开发从最新 main 建分支；保留以上其他真机待验证与当前痛点，不恢复已解决的旧待办。
+1. Mac 合成提速 PR 到 main 等 CI 与审查；Mac 尚缺：恢复/失败路径的 Mac 专属回归测试、正式 App 关窗/Dock/菜单退出点验、F03 Safari 逐控、DMG 安装验收。
+2. 不自动合主干/发版。
+3. **Android / iOS**：仅在线播放验收（F01–F03）。
+4. Windows 已结项；保留其他真机待验证与当前痛点。

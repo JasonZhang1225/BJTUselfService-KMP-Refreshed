@@ -8,6 +8,12 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStream
 expect val playbackPlaysInApp: Boolean
 
 /**
+ * 课程回放录像的下载与合成是否对用户开放。
+ * 仅 Windows / macOS 为 true；Android / iOS 只保留在线播放（课件文件下载不受此项影响）。
+ */
+expect val playbackRecordingDownloadAvailable: Boolean
+
+/**
  * App 内播放容器。[streams] 供 Android 原生播放器使用；其他平台使用 HTML。
  * [baseUrl] 是录播服务器的 HTTPS origin，让页面与视频同源加载；
  * 页面只允许 `media-src https:`，不跟随任何链接。

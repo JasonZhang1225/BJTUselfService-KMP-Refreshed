@@ -14,22 +14,38 @@ class PlaybackSavedFileActionsTest {
         val root = Files.createTempDirectory("playback-open-test-").toFile()
         try {
             val video = File(root, "课程 & 测试（1）.mp4").apply { writeText("preserve original") }
-            val opened = mutableListOf<File>()
-            val actions = DesktopPlaybackSavedFileActions { opened += it }
+            val openedVideos = mutableListOf<File>()
+            val revealed = mutableListOf<File>()
+            val openedDirs = mutableListOf<File>()
+            val actions = DesktopPlaybackSavedFileActions(
+                openVideo = { openedVideos += it },
+                revealVideo = { revealed += it },
+                openDirectory = { openedDirs += it },
+            )
             assertNull(actions.open(video.absolutePath, false))
             assertNull(actions.open(video.absolutePath, true))
-            assertEquals(listOf(video, root), opened)
+            assertEquals(listOf(video), openedVideos)
+            assertEquals(listOf(video), revealed)
+            assertTrue(openedDirs.isEmpty())
             assertEquals("preserve original", video.readText())
             video.delete()
             assertNotNull(actions.open(video.absolutePath, false))
             assertNull(actions.open(video.absolutePath, true), "视频移动后仍可打开原文件夹")
+            assertEquals(listOf(root), openedDirs)
             assertNotNull(actions.open("relative.mp4", false))
             assertNotNull(actions.open(File(root, "not-video.exe").absolutePath, false))
-            assertEquals(3, opened.size)
+            assertEquals(1, openedVideos.size)
+            assertEquals(1, revealed.size)
             video.writeText("preserve original")
-            assertNotNull(DesktopPlaybackSavedFileActions { error("no file association") }.open(video.absolutePath, false))
+            assertNotNull(DesktopPlaybackSavedFileActions(
+                openVideo = { error("no file association") },
+            ).open(video.absolutePath, false))
             Unit
         } finally { root.deleteRecursively() }
+    }
+
+    @Test fun desktopActionsAreEnabledOnAllDesktopTargets() {
+        assertNotNull(playbackSavedFileActions())
     }
 
     @Test fun completedOutputPathsSurviveHistoryRoundTripAndOldRecordsRemainReadable() {

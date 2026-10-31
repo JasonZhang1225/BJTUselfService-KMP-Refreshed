@@ -1179,3 +1179,11 @@
 
 - 改动：普通性质筛选两态统一字重，避免选中导致固有宽度/换行变化；合并提交 `75f4e8f5`。
 - 验证：布局回归 384 组合与宿主构建见合入前 PR 记录。
+## 2026-10-31 macOS P1 课程回放下载结项（功能分支未提交）
+
+- 改动：Mac 渐进 `compose-indexed`（异步 VT + VTPixelTransfer）；F10 `open`/`open -R`；PIPELINING 双进度；`--playback-ui-harness`；开跑 ETA 下限 `provisionalEncodeSeconds=片长/5.4`（重叠取 max(实测, 按 stage 折算下限)），避免早期乐观报 13–15 分钟。
+- 原因/决策：对齐 Windows 下载审查深度；你确认约 20 分钟可接受且 ETA 须与实跑对齐后收工。不合主干/不发版；源码仍在 `feat/courseware-fallback-playback` 工作区未 commit。
+- 验证：GUI 整节（大学物理 2026-10-28 MEDIUM）墙钟 **20.50 min**、成片 7022.43s、`ffmpeg -xerror` 0、抽帧 `ui-harness-user-trial/frames/`；headless indexed 合成 **13.4 min**；ETA 短跑开跑投影 ≈21.7–22 min（界面截图 `ui-harness-eta-floor-shot/shots/pipelining-eta-22min.webp`）；`:shared:desktopTest` 过滤 RemainingTime/PlaybackTask/SavedFile/MacProgressive/MacVideoFrameHelperLifecycle **54** 项 0 失败（`regression-eta-floor.log`）。
+- 未验证：DMG 安装验收、Dock/菜单破坏性点验、F07 五轮复压、Intel Mac、多小时耐久、Safari 产品皮肤内全屏。F08/F13 同 Windows：中断不保留编码进度。
+- 包标识：GUI `local-20261031-100311-600` / helper `9add61c5…`；ETA 修复包 `local-20261031-130631-248` / `642556cd…`；headless 权威 `local-20261031-092406-660` / `52e0ca17…`。证据根目录 `.artifacts/macos-playback-p1/`；确认单已结项。
+

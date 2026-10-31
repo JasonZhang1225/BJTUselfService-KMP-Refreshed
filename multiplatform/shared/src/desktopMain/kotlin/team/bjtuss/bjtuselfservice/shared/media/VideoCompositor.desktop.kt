@@ -3,7 +3,6 @@ package team.bjtuss.bjtuselfservice.shared.media
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackCompositeQuality
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.locateVideoFrameHelper
@@ -23,8 +22,34 @@ actual fun defaultVideoCompositor(): VideoCompositor =
         MacHelperVideoCompositor
     }
 
-private object MacHelperVideoCompositor : VideoCompositor {
+/**
+ * macOS：完整 MP4 合成 + 渐进管线（下载并行 remux，两端齐后 compose）。
+ * 中断不保留已编码进度；已下载 HLS 分片仍可恢复。
+ */
+internal object MacHelperVideoCompositor : ProgressiveVideoCompositor {
     override val isAvailable: Boolean get() = locateVideoFrameHelper() != null
+    override val retainsEncodedSegmentsOnInterrupt: Boolean get() = false
+    override val encodingOverlapsDownload: Boolean get() = true
+
+    /**
+     * NV12 解码器缩放 + 异步双路解码后，本机（M2）GUI 实网整节合成约 20.7× 片长（7022 s 片长 339 s 合成），
+     * 瓶颈是硬件解码。取 20× 作编码墙钟下限，开跑即报约 6 分钟，与实跑 5.7 分钟对齐。
+     */
+    override fun provisionalEncodeSeconds(
+        contentDurationSeconds: Double,
+        quality: PlaybackCompositeQuality,
+    ): Long? {
+        if (contentDurationSeconds <= 0) return null
+        return kotlin.math.ceil(contentDurationSeconds / 20.0).toLong().coerceAtLeast(1)
+    }
+
+    override suspend fun openProgressive(
+        work: MediaWorkDirectory,
+        durationSeconds: Double,
+        quality: PlaybackCompositeQuality,
+    ): ProgressiveComposition = withContext(Dispatchers.IO) {
+        MacProgressiveComposition(work, durationSeconds, quality)
+    }
 
     override suspend fun composeSideBySide(
         leftPath: String,
@@ -44,19 +69,13 @@ private object MacHelperVideoCompositor : VideoCompositor {
             quality.width.toString(),
             quality.height.toString(),
             quality.bitRate.toString(),
-        )
-            .redirectError(ProcessBuilder.Redirect.PIPE)
-            .start()
+            "--parent-pid",
+            ProcessHandle.current().pid().toString(),
+        ).start()
         try {
-            process.inputStream.bufferedReader().useLines { lines ->
-                for (line in lines) {
-                    coroutineContext.ensureActive()
-                    line.removePrefix("progress ").toFloatOrNull()?.let(onProgress)
-                }
-            }
-            val code = process.waitFor()
-            if (code != 0) {
-                val reason = process.errorStream.bufferedReader().readText().trim().ifBlank { "退出码 $code" }
+            val result = awaitPlaybackHelper(process, onProgress, onStatus)
+            if (result.code != 0) {
+                val reason = result.diagnostic.ifBlank { "退出码 ${result.code}" }
                 File(outputPath).delete()
                 throw CompositionException(reason)
             }

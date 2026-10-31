@@ -143,3 +143,57 @@ private fun breakNumberedItems(text: String): String {
     )
     return result
 }
+
+/** Only retain text and presentation tags; never retain remote URLs, attributes or active content. */
+fun schoolRichTextSafeFragment(source: String): String {
+    fun escape(text: String) = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    fun render(node: Node): String {
+        if (node is TextNode) return escape(node.getWholeText())
+        if (node !is Element) return node.childNodes().joinToString("") { render(it) }
+        val tag = node.tagName().lowercase()
+        if (tag in ignoredTags || tag in setOf("iframe", "object", "embed")) return ""
+        val body = node.childNodes().joinToString("") { render(it) }
+        return when {
+            tag == "br" -> "<br>"
+            tag in blockTags || tag in setOf("b", "strong", "i", "em", "u", "s", "del", "table", "tr", "td", "th") -> "<$tag>$body</$tag>"
+            else -> body
+        }
+    }
+    return Ksoup.parse(source).body().childNodes().joinToString("") { render(it) }
+}
+
+/** Render a limited, non-interactive subset of school HTML as accessible Compose text. */
+fun schoolRichTextToAnnotated(source: String?): androidx.compose.ui.text.AnnotatedString {
+    if (source.isNullOrBlank()) return androidx.compose.ui.text.AnnotatedString("")
+    if (!source.contains('<') || !source.contains('>')) return androidx.compose.ui.text.AnnotatedString(schoolRichTextToPlainMultiline(source))
+    val builder = androidx.compose.ui.text.AnnotatedString.Builder()
+    fun lineBreak() { if (builder.length > 0 && !builder.toAnnotatedString().text.endsWith("\n")) builder.append("\n") }
+    fun visit(node: Node) {
+        if (node is TextNode) {
+            builder.append(node.getWholeText().replace(Regex("[\\t\\r\\n ]+"), " ").replace('\u00a0', ' '))
+            return
+        }
+        if (node !is Element) { node.childNodes().forEach(::visit); return }
+        val tag = node.tagName().lowercase()
+        if (tag in ignoredTags || tag in setOf("iframe", "object", "embed")) return
+        if (tag == "br") { lineBreak(); return }
+        if (tag in blockTags || tag == "tr") lineBreak()
+        val style = when (tag) {
+            "b", "strong", "th" -> androidx.compose.ui.text.SpanStyle(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            "i", "em" -> androidx.compose.ui.text.SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+            "u" -> androidx.compose.ui.text.SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)
+            "s", "del" -> androidx.compose.ui.text.SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)
+            else -> null
+        }
+        if (style != null) builder.pushStyle(style)
+        node.childNodes().forEach(::visit)
+        if (style != null) builder.pop()
+        if (tag == "td" || tag == "th") builder.append("  ")
+        if (tag in blockTags || tag == "tr") lineBreak()
+    }
+    Ksoup.parse(source).body().childNodes().forEach(::visit)
+    val result = builder.toAnnotatedString()
+    val start = result.text.indexOfFirst { !it.isWhitespace() }.coerceAtLeast(0)
+    val end = result.text.indexOfLast { !it.isWhitespace() } + 1
+    return if (end <= start) androidx.compose.ui.text.AnnotatedString("") else androidx.compose.ui.text.AnnotatedString.Builder().apply { append(result, start, end) }.toAnnotatedString()
+}

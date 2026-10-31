@@ -740,7 +740,9 @@ private fun configureOfflineCodec(codec: MediaCodec, format: () -> MediaFormat, 
         val mime = fast.getString(MediaFormat.KEY_MIME) ?: "video/avc"
         val maximum = runCatching {
             codec.codecInfo.getCapabilitiesForType(mime).videoCapabilities
-                .getSupportedFrameRatesFor(fast.getInteger(MediaFormat.KEY_WIDTH), fast.getInteger(MediaFormat.KEY_HEIGHT)).upper
+                ?.getSupportedFrameRatesFor(fast.getInteger(MediaFormat.KEY_WIDTH), fast.getInteger(MediaFormat.KEY_HEIGHT))
+                ?.upper
+                ?: 240.0
         }.getOrDefault(240.0)
         fast.setFloat(MediaFormat.KEY_OPERATING_RATE, maximum.coerceIn(25.0, 1000.0).toFloat())
     }

@@ -1269,8 +1269,7 @@ private fun HomeworkDetailSheetBody(
         }
         Text("作业要求", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(
-            schoolRichTextToPlainMultiline(detail?.content)
-                .ifBlank { "老师未填写文字要求。" },
+            team.bjtuss.bjtuselfservice.shared.util.schoolRichTextToAnnotated(detail?.content?.takeIf { it.isNotBlank() } ?: "老师未填写文字要求。"),
             style = MaterialTheme.typography.bodyLarge,
         )
         Text("老师提供的附件", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

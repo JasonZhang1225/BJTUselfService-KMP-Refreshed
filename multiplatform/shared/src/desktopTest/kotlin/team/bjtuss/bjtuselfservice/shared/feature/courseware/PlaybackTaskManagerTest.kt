@@ -617,6 +617,40 @@ class PlaybackTaskManagerTest {
             }
     }
 
+    /** 对齐 macOS：编码等两路输入齐后再开始，PIPELINING 阶段合成进度保持 0。 */
+    private class NonOverlappingProgressive : team.bjtuss.bjtuselfservice.shared.media.ProgressiveVideoCompositor {
+        var encodingGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+        override val retainsEncodedSegmentsOnInterrupt = false
+        override val encodingOverlapsDownload = false
+        override val isAvailable = true
+        override fun provisionalEncodeSeconds(contentDurationSeconds: Double, quality: PlaybackCompositeQuality) = 900L
+        override suspend fun composeSideBySide(leftPath: String, rightPath: String, outputPath: String,
+            quality: PlaybackCompositeQuality, onProgress: (Float) -> Unit, onStatus: (String?) -> Unit): Unit =
+            error("必须走渐进管线")
+        override suspend fun openProgressive(work: MediaWorkDirectory, durationSeconds: Double,
+            quality: PlaybackCompositeQuality): team.bjtuss.bjtuselfservice.shared.media.ProgressiveComposition =
+            object : team.bjtuss.bjtuselfservice.shared.media.ProgressiveComposition {
+                val inputsDone = kotlinx.coroutines.CompletableDeferred<Unit>()
+                val finished = java.util.concurrent.atomic.AtomicInteger(0)
+                override val resumeSeconds = 0.0
+                override val isComplete = false
+                override suspend fun append(index: Int, bytes: ByteArray) = Unit
+                override suspend fun finishInput(index: Int) {
+                    if (finished.incrementAndGet() == 2) inputsDone.complete(Unit)
+                }
+                override suspend fun compose(onProgress: (Float) -> Unit, onStatus: (String?) -> Unit,
+                    onFinalizing: (Float) -> Unit, onDevice: (String?) -> Unit) {
+                    inputsDone.await()
+                    onProgress(.1f)
+                    encodingGate?.await()
+                    onProgress(1f)
+                    onFinalizing(1f)
+                    File(work.file("composite.mp4").toString()).writeText("progressive-serial")
+                }
+                override suspend fun close() = Unit
+            }
+    }
+
     @Test
     fun progressiveDeviceSurvivesDownloadUpdatesAndIsClearedAfterPause() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -664,6 +698,39 @@ class PlaybackTaskManagerTest {
             assertEquals(PlaybackTaskPhase.DONE, manager.awaitFinished(id).phase)
             assertEquals(2, compositor.encodedRuns)
         } finally { gate.complete(Unit); scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join() }
+    }
+
+    @Test
+    fun nonOverlappingProgressiveShowsWallClockEtaWhileDownloading() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val compositor = NonOverlappingProgressive().apply { encodingGate = gate }
+        transport.segmentDelayMillis = 1_000
+        try {
+            val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(transport, 0), { compositor }, { null })
+            val detail = detail()
+            val id = assertIs<PlaybackEnqueueResult.Started>(
+                manager.enqueue(detail, detail.streams, "测试课程", true, MemoryGateway())).taskId
+            val observed = withTimeout(15_000) {
+                while (true) {
+                    val task = manager.tasks.value.single { it.id == id }
+                    val eta = task.remainingSeconds
+                    if (task.phase == PlaybackTaskPhase.PIPELINING &&
+                        (task.stageProgress ?: 0f) < 0.01f &&
+                        eta != null && eta >= 900L
+                    ) return@withTimeout task
+                    delay(50)
+                }
+                error("unreachable")
+            }
+            assertTrue(observed.remainingLabel.orEmpty().contains("含下载后合成"))
+            gate.complete(Unit)
+            assertEquals(PlaybackTaskPhase.DONE, manager.awaitFinished(id).phase)
+        } finally {
+            transport.segmentDelayMillis = 0
+            gate.complete(Unit)
+            scope.cancel(); scope.coroutineContext[kotlinx.coroutines.Job]!!.join()
+        }
     }
     @Test
     fun finalizationShowsSeparateProgressAndCanResumeWithoutEncodingAgain() = runBlocking {

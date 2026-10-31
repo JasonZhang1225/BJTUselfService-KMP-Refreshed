@@ -27,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,6 +65,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNode
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.VisibleCoursewareNode
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
@@ -89,13 +91,17 @@ fun CoursewareWorkspace(
     var fileFeedback by remember { mutableStateOf<String?>(null) }
     var directoryJob by remember { mutableStateOf<Job?>(null) }
     var isCancellingDirectory by remember { mutableStateOf(false) }
+    var showCancelDirectoryDialog by remember { mutableStateOf(false) }
+    var keepCompletedOnCancel by remember { mutableStateOf(true) }
 
-    fun cancelDirectoryExport() {
+    fun cancelDirectoryExport(keepCompleted: Boolean) {
         val job = directoryJob ?: return
-        if (isCancellingDirectory) return
+        if (isCancellingDirectory || !job.isActive) return
+        showCancelDirectoryDialog = false
+        keepCompletedOnCancel = keepCompleted
         isCancellingDirectory = true
         job.cancel()
-        fileFeedback = "已请求取消目录导出，正在清理本次未完成目录。"
+        fileFeedback = if (keepCompleted) "正在取消，保留已完成的文件…" else "正在取消并清理本次导出目录…"
     }
 
     fun saveResource(node: CoursewareNode) {
@@ -112,6 +118,17 @@ fun CoursewareWorkspace(
                         HomeworkFileSaveResult.Saved -> "文件已通过备用方式保存。"
                         HomeworkFileSaveResult.Cancelled -> "已取消保存，没有写入文件。"
                         is HomeworkFileSaveResult.Failed -> "保存失败，未完成的文件已删除，请重新选择位置。"
+                    }
+                }
+                return@launch
+            }
+            if (fileGateway.isStreamingSaveAvailable) {
+                when (val saved = model.saveResourceStreaming(node.stableKey, fileGateway)) {
+                    is CoursewareOperationResult.Failure -> Unit
+                    is CoursewareOperationResult.Success -> fileFeedback = when (saved.value) {
+                        HomeworkFileSaveResult.Saved -> "文件已保存。"
+                        HomeworkFileSaveResult.Cancelled -> "已取消保存，没有写入文件。"
+                        is HomeworkFileSaveResult.Failed -> "保存失败，未完成的文件已删除。"
                     }
                 }
                 return@launch
@@ -141,8 +158,13 @@ fun CoursewareWorkspace(
         directoryJob = scope.launch {
             fileFeedback = null
             isCancellingDirectory = false
+            keepCompletedOnCancel = true
+            var keepResult: HomeworkFileSaveResult? = null
             try {
-                when (val exported = model.exportDirectory(stableKey, directoryName, directoryGateway)) {
+                when (val exported = model.exportDirectory(stableKey, directoryName, directoryGateway,
+                    keepCompletedOnCancel = { keepCompletedOnCancel },
+                    onCancelledWithKeptFiles = { keepResult = it },
+                )) {
                     is CoursewareOperationResult.Failure -> Unit
                     is CoursewareOperationResult.Success -> {
                         fileFeedback = when (exported.value) {
@@ -155,20 +177,45 @@ fun CoursewareWorkspace(
                                 }
                             }
                             HomeworkFileSaveResult.Cancelled -> "已取消导出，没有写入目录。"
-                            is HomeworkFileSaveResult.Failed -> "目录导出失败；没有报告为完整成功。"
+                            is HomeworkFileSaveResult.Failed -> when (exported.value.reason) {
+                                HomeworkFileGatewayFailure.PERMISSION_DENIED -> "目录导出失败：没有目标文件夹的写入权限，请重新选择并授权。"
+                                HomeworkFileGatewayFailure.UNAVAILABLE -> "目录导出失败：文件选择器正忙或不可用，请稍后重试。"
+                                HomeworkFileGatewayFailure.IO -> "目录导出失败：无法创建目录或写入文件，请检查所选位置和可用空间。"
+                            }
                         }
                     }
                 }
             } catch (_: CancellationException) {
-                fileFeedback = "已取消目录导出；本次未完成目录已请求清理。"
+                fileFeedback = when {
+                    keepResult == HomeworkFileSaveResult.Saved -> "已取消导出，保留了已完成文件；未完成文件已请求清理。"
+                    keepResult != null -> "已取消导出；未删除已完成文件，但无法确认目录保存状态，请检查目标文件夹。"
+                    keepCompletedOnCancel -> "已取消导出；请检查目标文件夹中的已完成文件。"
+                    else -> "已取消导出；已请求清理本次导出目录。"
+                }
             } finally {
                 isCancellingDirectory = false
+                showCancelDirectoryDialog = false
                 directoryJob = null
             }
         }
     }
 
     LaunchedEffect(model) { model.initialize() }
+
+    if (showCancelDirectoryDialog && directoryJob?.isActive == true) {
+        AlertDialog(
+            onDismissRequest = { showCancelDirectoryDialog = false },
+            title = { Text("取消目录导出？") },
+            text = { Text("可以保留已完成下载的文件，或舍弃本次导出的整个目录。当前未完成的文件会清理。") },
+            confirmButton = {
+                Column {
+                    TextButton(onClick = { cancelDirectoryExport(true) }) { Text("取消导出，保留已完成文件") }
+                    TextButton(onClick = { cancelDirectoryExport(false) }) { Text("取消导出，舍弃全部文件") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { showCancelDirectoryDialog = false }) { Text("继续下载") } },
+        )
+    }
 
     Box(
         modifier = if (expanded) {
@@ -192,13 +239,18 @@ fun CoursewareWorkspace(
         if (state.directoryDownloadTotal > 0) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 LinearProgressIndicator(
-                    progress = { state.directoryDownloadCompleted.toFloat() / state.directoryDownloadTotal },
+                    progress = {
+                        val current = state.streamProgress?.let { (written, total) ->
+                            if (total > 0) (written.toFloat() / total).coerceIn(0f, 1f) else 0f
+                        } ?: 0f
+                        (state.directoryDownloadCompleted + current) / state.directoryDownloadTotal
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         if (isCancellingDirectory) {
-                            "正在取消并清理不完整目录…"
+                            if (keepCompletedOnCancel) "正在取消，保留已完成文件…" else "正在取消并清理导出目录…"
                         } else {
                             "正在导出目录 ${state.directoryDownloadCompleted}/${state.directoryDownloadTotal}"
                         },
@@ -207,19 +259,25 @@ fun CoursewareWorkspace(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     TextButton(
-                        onClick = ::cancelDirectoryExport,
+                        onClick = { showCancelDirectoryDialog = true },
                     ) { Text("取消") }
                 }
             }
         }
-        state.streamProgress?.let { (written, total) ->
+        if (state.streamProgress != null || state.directoryCurrentName != null) {
+            val (written, total) = state.streamProgress ?: (0L to 0L)
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                LinearProgressIndicator(
-                    progress = { if (total > 0) written.toFloat() / total else 0f },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                if (state.directoryDownloadTotal > 0 && state.directoryCurrentName != null) {
+                    Text(
+                        "第 ${state.directoryDownloadCompleted + 1}/${state.directoryDownloadTotal} 个：${state.directoryCurrentName}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (total > 0) LinearProgressIndicator(progress = { (written.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Text(
-                    "正在通过备用方式下载 ${formatByteSize(written)} / ${formatByteSize(total)}",
+                    formatCoursewareDownloadProgress(written, total, state.directoryCurrentSize ?: state.streamListedSize),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -236,12 +294,14 @@ fun CoursewareWorkspace(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        if (isCancellingDirectory) "正在取消并清理不完整目录…" else "正在等待系统目录或写入文件…",
+                        if (isCancellingDirectory) {
+                            if (keepCompletedOnCancel) "正在取消，保留已完成文件…" else "正在取消并清理导出目录…"
+                        } else "正在等待系统目录或写入文件…",
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     TextButton(
-                        onClick = ::cancelDirectoryExport,
+                        onClick = { showCancelDirectoryDialog = true },
                         enabled = !isCancellingDirectory,
                     ) { Text("取消") }
                 }
@@ -473,6 +533,8 @@ private fun CoursewareExpandedWorkspace(
             course = state.selectedCourse,
             node = state.selectedNode,
             isDownloading = state.isDownloading,
+            streamProgress = state.streamProgress.takeIf { state.streamNodeKey == state.selectedNodeKey },
+            streamListedSize = state.streamListedSize.takeIf { state.streamNodeKey == state.selectedNodeKey },
             fileGatewayAvailable = fileGatewayAvailable,
             directoryGatewayAvailable = directoryGatewayAvailable,
             onDownload = onDownload,
@@ -626,6 +688,8 @@ private fun CoursewareCompactWorkspace(
                 course = state.selectedCourse,
                 node = node,
                 isDownloading = state.isDownloading,
+                streamProgress = state.streamProgress.takeIf { state.streamNodeKey == node.stableKey },
+                streamListedSize = state.streamListedSize.takeIf { state.streamNodeKey == node.stableKey },
                 fileGatewayAvailable = fileGatewayAvailable,
                 directoryGatewayAvailable = directoryGatewayAvailable,
                 onDownload = onDownload,
@@ -769,6 +833,8 @@ private fun CoursewareDetailPanel(
     course: CoursewareCourse?,
     node: CoursewareNode?,
     isDownloading: Boolean,
+    streamProgress: Pair<Long, Long>?,
+    streamListedSize: String?,
     fileGatewayAvailable: Boolean,
     directoryGatewayAvailable: Boolean,
     onDownload: (CoursewareNode) -> Unit,
@@ -789,6 +855,8 @@ private fun CoursewareDetailPanel(
                 course = course,
                 node = node,
                 isDownloading = isDownloading,
+                streamProgress = streamProgress,
+                streamListedSize = streamListedSize,
                 fileGatewayAvailable = fileGatewayAvailable,
                 directoryGatewayAvailable = directoryGatewayAvailable,
                 onDownload = onDownload,
@@ -805,6 +873,8 @@ private fun CoursewareDetailContent(
     course: CoursewareCourse?,
     node: CoursewareNode,
     isDownloading: Boolean,
+    streamProgress: Pair<Long, Long>?,
+    streamListedSize: String?,
     fileGatewayAvailable: Boolean,
     directoryGatewayAvailable: Boolean,
     onDownload: (CoursewareNode) -> Unit,
@@ -823,6 +893,8 @@ private fun CoursewareDetailContent(
             course = course,
             node = node,
             isDownloading = isDownloading,
+            streamProgress = streamProgress,
+            streamListedSize = streamListedSize,
             fileGatewayAvailable = fileGatewayAvailable,
             directoryGatewayAvailable = directoryGatewayAvailable,
             onDownload = onDownload,
@@ -841,6 +913,8 @@ private fun CoursewareDetailSheetBody(
     onDownload: (CoursewareNode) -> Unit,
     onExportDirectory: (String?, String) -> Unit,
     modifier: Modifier = Modifier,
+    streamProgress: Pair<Long, Long>? = null,
+    streamListedSize: String? = null,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
@@ -901,6 +975,15 @@ private fun CoursewareDetailSheetBody(
                         else -> "下载并选择保存位置"
                     },
                 )
+            }
+            streamProgress?.let { (written, total) ->
+                if (total > 0) LinearProgressIndicator(progress = { (written.toFloat() / total).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text(formatCoursewareDownloadProgress(written, total, streamListedSize))
+            }
+            if (isDownloading && streamProgress == null) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text("正在准备下载…", style = MaterialTheme.typography.bodySmall)
             }
             if (!fileGatewayAvailable) {
                 Text(
@@ -1003,6 +1086,15 @@ internal fun formatCoursewareSize(raw: String): String {
     // 纯数字 / 小数
     if (trimmed.matches(Regex("""\d+(\.\d+)?"""))) return "$trimmed MB"
     return trimmed
+}
+
+internal fun formatCoursewareDownloadProgress(written: Long, total: Long, listedSize: String?): String {
+    val downloaded = formatByteSize(written)
+    return when {
+        total > 0 -> "正在下载 $downloaded / ${formatByteSize(total)}"
+        !listedSize.isNullOrBlank() -> "正在下载 $downloaded / ${formatCoursewareSize(listedSize)}（课件标注大小）"
+        else -> "正在下载 $downloaded（总大小未知）"
+    }
 }
 
 internal fun formatByteSize(bytes: Long): String = when {

@@ -28,11 +28,13 @@ internal class ProgressiveRecordingPipeline(private val downloader: HlsRecording
         onRetry: (Int, Long) -> Unit,
         onStatus: (String?) -> Unit,
         onDevice: (String?) -> Unit,
+        onDuration: (Double) -> Unit = {},
     ) {
         val playlists = coroutineScope { streams.map { stream -> async { downloader.resolvePlaylist(stream.hlsUrl, onRetry) } }.awaitAll() }
         if (playlists.any { it.durationSeconds <= 0 })
             throw HlsDownloadException(HlsDownloadFailure.MALFORMED_PLAYLIST)
         val duration = playlists.maxOf { it.durationSeconds }
+        onDuration(duration)
         val session = compositor.openProgressive(work, duration, quality)
         try {
             onComposition((session.resumeSeconds / duration).toFloat().coerceIn(0f, 1f))

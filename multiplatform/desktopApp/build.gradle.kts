@@ -39,6 +39,11 @@ abstract class CompileMacCalendarHelper : DefaultTask() {
     @get:InputFile
     abstract val swiftSource: RegularFileProperty
 
+    /** 额外 Swift 源文件（例如 VideoFrame 的 compose-indexed）。 */
+    @get:InputFiles
+    @get:Optional
+    abstract val extraSwiftSources: ConfigurableFileCollection
+
     @get:OutputFile
     abstract val executable: RegularFileProperty
 
@@ -53,24 +58,29 @@ abstract class CompileMacCalendarHelper : DefaultTask() {
     fun compile() {
         val output = executable.get().asFile
         output.parentFile.mkdirs()
+        val sources = buildList {
+            add(swiftSource.get().asFile.absolutePath)
+            extraSwiftSources.files.forEach { add(it.absolutePath) }
+        }
         execOperations.exec {
             developerDirectory.orNull?.let { environment("DEVELOPER_DIR", it) }
             commandLine(
-                "xcrun",
-                "swiftc",
-                "-O",
-                "-parse-as-library",
-                "-target",
-                "arm64-apple-macos12.0",
-                "-framework",
-                "AppKit",
-                "-framework",
-                "EventKit",
-                "-framework",
-                "Foundation",
-                swiftSource.get().asFile.absolutePath,
-                "-o",
-                output.absolutePath,
+                buildList {
+                    addAll(listOf(
+                        "xcrun", "swiftc", "-O", "-parse-as-library",
+                        "-target", "arm64-apple-macos12.0",
+                        "-framework", "AppKit",
+                        "-framework", "EventKit",
+                        "-framework", "Foundation",
+                        "-framework", "AVFoundation",
+                        "-framework", "VideoToolbox",
+                        "-framework", "CoreMedia",
+                        "-framework", "CoreVideo",
+                        "-framework", "CoreImage",
+                    ))
+                    addAll(sources)
+                    addAll(listOf("-o", output.absolutePath))
+                }
             )
         }.assertNormalExitValue()
     }
@@ -573,6 +583,7 @@ val compileMacCalendarHelper by tasks.registering(CompileMacCalendarHelper::clas
 // 课程回放画面预览用的截帧小程序；与日历助手同一个 swiftc 任务类型（Swift 会自动链接 AVFoundation 等框架）。
 val compileMacVideoFrameHelper by tasks.registering(CompileMacCalendarHelper::class) {
     swiftSource.set(videoFrameSwiftSource)
+    extraSwiftSources.from(project.file("src/main/swift/IndexedSideBySideCompose.swift"))
     executable.set(videoFrameHelperFile)
     xcodeDeveloperDirectory?.let(developerDirectory::set)
 }

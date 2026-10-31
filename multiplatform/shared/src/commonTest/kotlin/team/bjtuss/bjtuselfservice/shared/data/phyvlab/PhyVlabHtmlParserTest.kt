@@ -9,6 +9,18 @@ import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 
 class PhyVlabHtmlParserTest {
     @Test
+    fun preservesAssignmentFormattingAndDropsUnsafeAttributes() {
+        val activity = PhyVlabActivity(1, 2, "物理", "作业", "作业", "https://phyvlab.bjtu.edu.cn/mod/assign/view.php?id=1")
+        val result = assertIs<PhyVlabParseResult.Success<PhyVlabParsedAssignmentPage>>(
+            parsePhyVlabAssignmentPage("""<div id="intro"><p>第一行<br><strong>重点</strong></p><a href="https://example.com/?token=secret">链接</a><script>bad()</script></div>""", activity),
+        )
+        val detail = result.value.detail
+        assertEquals("第一行\n重点\n链接", detail.description)
+        assertTrue(detail.descriptionHtml.contains("<strong>重点</strong>"))
+        assertTrue(!detail.descriptionHtml.contains("secret") && !detail.descriptionHtml.contains("bad()"))
+    }
+
+    @Test
     fun parsesCourseCardsWithCategoryAndProgress() {
         val result = assertIs<PhyVlabParseResult.Success<List<team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse>>>(
             parsePhyVlabCourses(coursePageFixture()),

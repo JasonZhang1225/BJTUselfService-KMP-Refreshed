@@ -59,6 +59,11 @@ fun main(args: Array<String>) {
         // Enable only sanitized timing events; general business/debug logs stay off.
         team.bjtuss.bjtuselfservice.shared.logging.SyncTiming.sink = { println(it) }
     }
+    if ("--playback-ui-harness" in args) {
+        val rest = args.toList().dropWhile { it != "--playback-ui-harness" }.drop(1).toTypedArray()
+        team.bjtuss.bjtuselfservice.shared.runDesktopPlaybackUiHarness(rest)
+        return
+    }
     if ("--update-source-smoke" in args || "--remote-ui-smoke" in args || SYNC_STATUS_SMOKE_ARGUMENT in args || "--schedule-events-smoke" in args || "--new-migration-smoke" in args || "--agent-ui-smoke" in args) {
         application {
             Window(

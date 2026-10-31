@@ -1,10 +1,10 @@
-# 课程回放：Android 合成与后台、Windows 收尾计划
+# 归档：Android 合成与后台、早期 Windows 收尾（历史）
 
-**历史报告：下文记录截至 2026-10-26 的实现与样本验证，不代表当前四端验收完成。** 当前统一标准与后续工作见 [课程回放四平台审查标准](playback-four-platform-acceptance.md)，实时状态见仓库 `memory.md`。
+**2026-10-31**：Android/iOS **产品侧已关闭录像下载**；本文不再安排移动端下载/合成测试或优化。现行工作见 [四平台标准](playback-four-platform-acceptance.md) 与 [macOS 计划](playback-macos-acceptance.md)。下文为截至 2026-10-26 前后的历史实现笔记，仅供排查。
 
-2026-10-28 更正：Windows 已完成本轮本机验收并由用户确认结项，已具备 AAC 音轨、硬件流水线、持久任务恢复、成片路径入口和真实预览；下文“无声音”“CPU慢速”“文字占位”等是旧状态。Android 最新性能改动待 P0 真机测量，iOS/macOS 待当前包真实整节与恢复能力验收；CI 出包或短样本不能代表这些项目已通过。以下旧事实保留用于排查，不按旧结论重复开发。
+2026-10-28 更正：Windows 已结项；下文“无声音”“CPU慢速”“文字占位”等是旧状态。
 
-分支 `feat/courseware-fallback-playback`。iOS / macOS 已实现并在本机验证；Android 合成与后台、Windows 实机验证已在 2026-10-25 完成（结果见下）。
+分支 `feat/courseware-fallback-playback`。
 
 ## 合成清晰度（2026-10-25 追加，已实现）
 

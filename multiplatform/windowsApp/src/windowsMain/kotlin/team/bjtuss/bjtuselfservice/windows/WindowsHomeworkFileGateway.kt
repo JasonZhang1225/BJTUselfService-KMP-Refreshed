@@ -35,9 +35,7 @@ import team.bjtuss.bjtuselfservice.shared.files.safeExportFileName
 import team.bjtuss.bjtuselfservice.shared.files.safeExportPathSegment
 
 /**
- * Windows 文件网关：AWT FileDialog（系统原生对话框）+ 临时文件原子写入。
- * 逻辑与 macOS desktopApp 的 DesktopHomeworkFileGateway 一致，仅去掉
- * macOS 目录对话框的属性开关（Windows 上无此属性，默认即目录选择）。
+ * Windows 文件网关：系统文件面板 + 临时文件原子写入。
  */
 class WindowsHomeworkFileGateway(
     private val owner: () -> Frame? = { null },
@@ -95,7 +93,7 @@ class WindowsHomeworkFileGateway(
         }
         try {
             val selected = try {
-                showDialog(FileDialog.SAVE, safeExportFileName(file.fileName), allowMultiple = false).singleOrNull()
+                withContext(Dispatchers.IO) { WindowsFileDialog.save(safeExportFileName(file.fileName), nativeOwner()) }
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
@@ -127,7 +125,7 @@ class WindowsHomeworkFileGateway(
         }
         // 面板只需串行到用户选好位置；之后的长时间写入不占锁，其他保存照常可用。
         val selected = try {
-            showDialog(FileDialog.SAVE, safeExportFileName(fileName), allowMultiple = false).singleOrNull()
+            withContext(Dispatchers.IO) { WindowsFileDialog.save(safeExportFileName(fileName), nativeOwner()) }
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {
@@ -202,6 +200,25 @@ class WindowsHomeworkFileGateway(
     ) : CoursewareDirectoryWriteSession {
         private val lifecycleMutex = Mutex()
         private var closed = false
+
+        override val supportsStreamingFiles: Boolean = true
+
+        override suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult = lifecycleMutex.withLock {
+            if (closed) return@withLock StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            withContext(Dispatchers.IO) {
+                try {
+                    val folder = file.relativeFolders.fold(root) { parent, segment -> File(parent, safeExportPathSegment(segment)) }
+                    if (!folder.exists() && !folder.mkdirs()) throw IllegalStateException("Unable to create export folder")
+                    val target = File(folder, safeExportFileName(file.content.fileName))
+                    if (target.exists()) throw IllegalStateException("Export file already exists")
+                    StreamingDestinationResult.Opened(prepareFileStreamingDestination(target, folder))
+                } catch (_: SecurityException) {
+                    StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+                } catch (_: Exception) {
+                    StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+                }
+            }
+        }
 
         override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult =
             lifecycleMutex.withLock {
@@ -280,24 +297,15 @@ class WindowsHomeworkFileGateway(
     }
 
     private suspend fun showDirectoryDialog(): File? = withContext(Dispatchers.IO) {
-        var selected: File? = null
-        val show = {
-            val dialog = FileDialog(owner(), "选择课件导出位置", FileDialog.LOAD)
-            try {
-                dialog.isVisible = true
-                val directory = dialog.directory
-                val fileName = dialog.file
-                selected = when {
-                    directory == null -> null
-                    fileName == null -> File(directory)
-                    else -> File(directory, fileName)
-                }
-            } finally {
-                dialog.dispose()
-            }
+        WindowsFileDialog.folder(nativeOwner())
+    }
+
+    private fun nativeOwner(): com.sun.jna.Pointer? {
+        var pointer: com.sun.jna.Pointer? = null
+        SwingUtilities.invokeAndWait {
+            owner()?.takeIf { it.isDisplayable }?.let { pointer = com.sun.jna.Native.getComponentPointer(it) }
         }
-        SwingUtilities.invokeAndWait { show() }
-        selected
+        return pointer
     }
 
     /**
