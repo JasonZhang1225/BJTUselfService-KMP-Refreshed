@@ -1,20 +1,72 @@
 # BJTUselfService 实时工作记忆
 
-> 当前工作：`feat/courseware-fallback-playback`。P1 源码在 `23a773ae`；Mac 合成提速已提交 `4b2133eb`（未推送，见“进行中”）。**产品范围**：录像下载/合成仅 Windows + macOS；Android/iOS 只保留在线播放。
+> 当前工作：`feat/macos-playback-compose`（自 `feat/courseware-fallback-playback` 建出并合入最新 main，开 PR 到 main）。P1 源码在 `23a773ae`；Mac 合成提速 `4b2133eb`（见“进行中”）。**产品范围**：录像下载/合成仅 Windows + macOS；Android/iOS 只保留在线播放。
+>
+> 2026-10-30：Cursor 代理修复 PR #78：已 rebase 到最新 main（含已合入的 #76/#77/#79），折扣提醒走 `rememberHomeAssignmentReminders`，`filterHomeAssignmentReminders` / `reminderCompletionKey` 覆盖 `citel-discount-*`，并补手动完成隐藏/撤销测试。推送功能分支，未合并、未改版本号。
+>
+> 2026-10-30：PR #76（作业手动完成 + 首页截止提醒过滤）、#77（成绩筛选布局）、#79（完成标记保存生命周期）已合入 main。
+>
+> 2026-10-28：用户明确标记 **Windows 课程回放开发与本轮验收完成**；代码已提交推送 `133cf398` 到 `feat/courseware-fallback-playback`。四端审查标准随本轮文档提交；跨平台安全检查 run `40631769655` 四项全部通过。新 MSI `local-20261028-111451-103` 已在下载文件夹；代理未执行安装。沿用 2.0.0-Alpha / Build45，不改版本号，功能分支未合 main。
 >
 > **macOS P1 已结项（2026-10-31，你确认收工）**：当时 GUI 整节 20.50 min；证据 `.artifacts/macos-playback-p1/`。未合主干 / 未发版；不碰安装版。
 >
 > 版本沿用 2.0.0-Alpha / Build45。
 >
-> **接下来**：你要求时再推送 / 开 PR；其余按需迭代。
+> **接下来**：等 PR CI 与所有者审查合入；其余按需迭代。
 
-## 进行中：macOS 录像合成提速（2026-10-31，已提交 `4b2133eb`，未推送/未合主干）
+## 进行中：macOS 录像合成提速（2026-10-31，`4b2133eb`，PR 到 main 待合入）
 
 - 先采样：瓶颈是逐帧 BGRA 像素传送 + CPU 清屏拷贝（57%）和每帧同步等解码（42%），编码器 0%。改为解码器直接输出缩放后的 NV12、两路异步解码（每路 4 帧在途）、NV12 平面拷贝拼接。
 - 实网 GUI 整节 20.5 min → **5.7 min**（344 s）；headless 13.4 → 5.7 min；现已到 M2 硬件解码上限。成片帧数、全解码、音轨逐字节、布局均对齐；翻页选帧比旧版更准（旧版晚 2 帧）。
 - ETA 下限 `片长/5.4` → `片长/20`（GUI 实网复验：开跑报 352 s，实跑 336.5 s）；生命周期测试改为 `compose-indexed` 空索引（原测试时序抖动）。回归 89 项 0 失败。
 - 改动文件：`IndexedSideBySideCompose.swift`、`VideoCompositor.desktop.kt`、`RemainingTimeEstimatorTest.kt`、`MacVideoFrameHelperLifecycleTest.kt`。证据 `.artifacts/macos-playback-perf/REPORT.md`、`.artifacts/macos-playback-p1/ui-harness-live-v2/`。
 - 未验证：其他芯片、高/低档整节、DMG 安装。
+
+## 进行中：CITEL 首页 48 小时折扣提醒（PR #78，2026-10-30）
+
+- 分支 `feat/citel-discount-reminders`，已 rebase 到 main `28cf03fa`（含 #79）；目标仍为 main，未合并。
+- 行为：未来 48 小时内未完成的 CITEL 折扣事件单独成卡（折扣在上、截止在下；空类不占位）；各自计数、前三项与剩余数量，沿用“查看作业”。
+- 与 #76 衔接：`HomeScreen` 保留 `reminders = rememberHomeAssignmentReminders(...)`；折扣列表取过滤后的 `reminders.dueSoonDiscountEvents`；`filterHomeAssignmentReminders` 裁剪折扣列表；`reminderCompletionKey` 将 `citel-discount-*` 与 `citel-due-*` 同等关联。手动完成后两类提醒一起消失，撤销后按原窗口恢复。
+- 范围：`HomeAgenda.kt`、`HomeAssignmentReminders.kt`、`HomeScreen.kt`、折扣/完成过滤测试与本记录；不改版本、依赖或平台宿主。折扣窗口为秒级闭区间（有意区别于截止的整小时截断，见代码注释）。
+- 验证：`./gradlew :shared:desktopTest --tests '*HomeAssignmentReminders*' --tests '*HomeDiscount*' --tests '*HomeAgendaTest*'` BUILD SUCCESSFUL；相关 36 项全过（含新增折扣隐藏/撤销 2 项），0 失败/跳过。Apple 原生/真机与本轮 PR CI 仍待跑。
+
+## 已合入 main：首页 48 小时提醒排除手动完成作业（PR #76）
+
+- 当前交付授权：用户要求更新 PR #76，并要求所有者更新内容优先；只向功能分支追加提交，不强推、不关闭审查、不合并 main。以下“仅本地／禁止提交／未提交”的描述为前一验证阶段的历史边界，本轮以本条为准。
+
+- 用户已确认全部四步一次实施，不需逐步确认；明确禁止本轮提交、推送或更新 PR。三来源手动完成后移出首页临近截止条目及数量，取消后仅按原有时间/提交规则恢复；账号隔离，作业页筛选和首页周日程等其余显示规则保持原样。
+- 开发基线：作业分支 `feat/assignment-completion` / `993e1346a26f9241c167c0cb18524a57b3101870`，本地工作树原干净，与远端 PR #76 head 一致；远端 main `ff0968b7a5752c0080925e21159c850a0c00e5d3`。PR 仍开放、未合并；此前 CI 已通过的事实不代表本轮新增代码通过 CI。
+- 当前实现：新增首页专用过滤/订阅函数，复用当前账号的 AssignmentCompletionStore；先按原 HomeAgenda 规则生成提醒，再排除本地完成键。周日程列表沿用原实例；Shell 只额外传入未经作业页筛选的完整聚合作业，用来源/课程/任务/题型及明确链接关联事件，未知或歧义事件保留原提醒，不按标题猜测。
+- 最终验证：专项 `gradlew.bat :shared:desktopTest --tests '*HomeAssignmentReminders*' --tests '*HomeAgendaTest*' --tests '*AssignmentCompletion*' --offline --no-daemon --no-configuration-cache --console=plain --continue -Pkotlin.compiler.execution.strategy=in-process -x :shared:generatePackageBuildInfo` 返回 BUILD SUCCESSFUL（3m8s），49 项全过无跳过，其中本轮新增规则 9 项、SQLite/Compose 3 项。全量 `gradlew.bat :shared:desktopTest :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :androidApp:assembleDebug --offline --no-daemon --no-configuration-cache --console=plain --continue -Pkotlin.compiler.execution.strategy=in-process -x :shared:generatePackageBuildInfo` 共 1255 项、1249 通过、5 失败、1 跳过，联合命令退出 1（3m 55s）；仅 DesktopAgentIntegrationTest 3 项、MacUninstallCleanerTest 2 项为既有 Windows 环境失败。Android assembleDebug、macOS JVM 宿主 compileKotlin、Windows compileKotlinWindows 均成功。
+- 账号与规则证据：真实 SQLite 中 A/B 同一作业独立标记，B 首帧不继承 A；B 的标记不影响 A，A 撤销后 B 与各自重建 store 的数据保持正确。实际三来源卡片点击验证提醒 3→2→3；原 HomeAgenda 日程 days 实例不变；原时间窗口、学校提交/AC、同 ID 的课程与题型、未知/歧义事件、作业页全部筛选组合均有回归。
+- 视觉：实际 HomeWorkspace 离屏渲染浅/深色、正常/全部完成/取消恢复、加载、错误、440dp 窄屏、1000dp 宽屏与 1.6 倍字号共 14 张图；已人工查看代表场景。浅/深色各自取消全部标记后的截图与初始截图字节完全一致；全部完成时顶部提醒消失而周日程事项保留。不是手机/Apple 真机验收，本轮未操作 Computer Use 或安装 App。
+- 范围与边界：本次只有 3 个生产文件（含新增首页提醒函数）、2 个新增测试文件与 memory.md；原源码目录和作业工作树对应源文件一致，未暂存/提交/推送/更新 PR，main 与成绩分支工作树仍干净。Apple 原生编译、模拟器、真机及本轮 CI 均未运行；原 PR #76 的保存协程生命周期 P2 审查没有纳入本次范围，本次联动使用保存成功后发布的完成状态。旧 CI 通过不代表本轮新增代码已过 CI。
+
+
+## 已合入 main：作业手动完成标记（PR #76，2026-10-29）
+
+- 用户确认：课程平台、物理在线、CITEL 均支持；卡片右侧复选框沿用成绩页风格，可撤销；标记按账号保存在本机。聚合与独立列表共用状态。普通刷新、重新登录和重启保留；现有账号离线数据/全部本地数据清除操作会清除对应记录。真正已提交的作业仍按原有“隐藏已提交”规则处理，课程筛选仍然生效。最新显示要求：仅学校现有判定为未提交的作业显示复选框；手动已完成、但学校仍未提交的作业保留复选框以便撤销，不删除原有本地标记。
+- 已确认的手动完成作业规则：
+
+| 当前筛选条件 | 手动标记“已完成”的作业 |
+|---|---|
+| 隐藏已过期＋隐藏已提交 | 隐藏 |
+| 隐藏已过期，关闭隐藏已提交 | 按原有日期规则显示 |
+| 显示全部日期，无论是否隐藏已提交 | 显示，保留勾选状态 |
+
+- 存储与账号隔离：`feature/assignment/AssignmentCompletionStore.kt` 用现有 CacheStore metadata 存储版本化的作业身份集合，无表结构改动。按当前 MIS 登录账号 `profile.studentId` 命名空间读写，身份另包含来源、课程 ID、作业/活动 ID，CITEL 区分编程/书面类型；不同账号的同一作业 ID 不共享标记。StateFlow 只读；串行保存，落盘成功后发布；读失败阻止覆盖，写失败保留原标记；`clearWith` 与写入互斥，账号离线缓存清除后立即重载状态，避免旧标记写回。
+- 会话与界面：`AppDataGraph.kt` 按账号拥有唯一 store，`AuthenticatedSessionFactory.kt` 将其交给会话，原生页面沿用同一实例。`AuthenticatedAppShell.kt` 向各目的地提供该实例；`AssignmentCompletionUi.kt` 用 `key(store)` 重建订阅，修复切账号首帧短暂沿用旧勾选的问题。聚合、课程平台、物理在线和 CITEL 独立列表应用上表规则；搜索仍搜全部作业，结果可撤销标记。三个来源复用 `AssignmentCardHeader.kt` 的 48dp 复选框，只调整显示条件；点击框不打开详情，点击卡片正文仍打开详情。列表自身计数与完成状态一致，首页提醒、学校提交状态/提交接口没有改动。
+- 专项测试（最终源码）：`AssignmentCompletionStoreTest` 9 项、`AssignmentCompletionPersistenceTest` 7 项、`AssignmentCompletionFilterTest` 5 项、`AssignmentCompletionUiTest` 4 项，共 25 项全过，无跳过。覆盖来源/账号隔离、真实 SQLite 重开、清除一个账号不影响另一个、并发/失败/取消、筛选组合、真实卡片点击和切账号首帧。最新 UI 回归逐一验证课程平台提交记录、物理在线、CITEL 报告与编程 AC 卡片均无复选框，点击原框位置只打开详情，不改动已保存标记；未提交作业的勾选与撤销仍通过。
+- 实际验证（最终源码，JDK 21，multiplatform/）：`:shared:desktopTest :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :androidApp:assembleDebug --offline --no-daemon --no-configuration-cache --console=plain --continue -Pkotlin.compiler.execution.strategy=in-process -x :shared:generatePackageBuildInfo`：1243 项，1237 通过、5 失败、1 跳过，联合命令退出 1（3m45s）。失败仍为 DesktopAgentIntegrationTest 3 项、MacUninstallCleanerTest 2 项（Windows 符号链接权限/运行 Unix 脚本等）；本轮新增用例全部通过。日志、XML、汇总在 `.artifacts/assignment-checkbox-visibility/{validation.log,test-summary.json}`，复现脚本 `validate.ps1`；仅复用已有构建标识生成文件，未改产品版本。前轮证据仍在 `.artifacts/assignment-completion-final/`。
+- 构建环境：首次 Gradle/JVM worker 报 `Unable to establish loopback connection` / AF_UNIX `Invalid argument: connect`。仅当前验证进程设置 TEMP/TMP 与 `jdk.net.unixdomain.tmpdir` 至 `.artifacts/assignment-completion-step1/socket-temp` 后继续运行；未改系统设置或工程构建配置。复现脚本 `.artifacts/assignment-completion-step1/validate.ps1`，新用例 XML、完整日志与汇总 JSON 同目录。
+- 各端宿主检查：前轮正常解析工程已有依赖后，桌面离线依赖阻塞已解除；本轮最新源码的 `:desktopApp:compileKotlin`、`:windowsApp:compileKotlinWindows`、`:androidApp:assembleDebug` 均通过。联合命令仅因上述 5 项共享测试失败而退出 1。Android 使用现有 debug.keystore 验证签名，没有安装；没有更改依赖声明。本机 Windows 无法构建/运行 iOS cinterop 与模拟器；Apple 原生构建、真实设备验证及本次 CI 未执行。
+- 手动界面证据：本地示例窗口验证过勾选后同时隐藏已过期/已提交时由 3 项变 2 项，显示全部日期后恢复 3 项且勾选保留；进程重启后示例账号 A 标记恢复，切到示例账号 B 的首帧不继承 A 勾选。后续交叉标记检查两次被用户按 Esc 中断，未完成部分不标通过。离屏截图已检查浅/深色、空列表、读失败与 1.6 倍字号，见 `.artifacts/assignment-completion-final/ui/`。
+- 原文件备份与差异：`.artifacts/assignment-completion-step1/`、`.artifacts/assignment-completion-final/`；最新显示调整备份在 `.artifacts/assignment-checkbox-visibility/before/`。本目录无 Git 元数据，没有初始化仓库、创建分支、提交、推送或发版。AGENTS.md、历史日志和无关模块保持原样。
+- 最新改动范围：仅 `AssignmentCardHeader.kt` 的 `!submitted` 显示条件、`AssignmentCompletionUiTest.kt` 的相关回归与本工作记录；账号隔离、筛选和本地保存机制保持原有实现。新增已提交卡片截图已人工查看（课程平台与 CITEL AC），无复选框且标题恢复完整可用宽度；截图在 `.artifacts/assignment-checkbox-visibility/ui/`。本轮未再操作 Computer Use；前述未完成的交叉账号手动检查仍列未验证，不据此宣称真机验收通过。
+
+- 本次 PR 准备：仅迁入本项源码、测试及记录；分支 `feat/assignment-completion` 从最新 main `ff0968b7a575` 创建。原无 Git 的源码副本保留，隔离检出目录已建立 Git 分支；本项没有提交或合并到 main。
+
+- 独立分支复验（2026-10-29）：本分支不含另一项功能；`gradlew.bat :shared:desktopTest --tests '*AssignmentCompletion*' :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :androidApp:assembleDebug --offline --no-daemon --no-configuration-cache --console=plain --continue -Pkotlin.compiler.execution.strategy=in-process -x :shared:generatePackageBuildInfo` 返回 BUILD SUCCESSFUL，专项 25 项全过，无失败/跳过；Android debug 与两个桌面宿主编译成功。证据 `.artifacts/pr-split/assignment-validation.log`，临时环境仅限验证进程，未安装应用。Apple 原生验证交由 PR CI，当前仍未合入 main。
 
 ## 已完成：Windows 保存结果入口、预览与最终验收（2026-10-28，功能分支待主干）
 
@@ -175,6 +227,21 @@
 - 私人 Site 的线上版本与手机/电脑真实长码配对、同时上传、ChatGPT 手机授权、Windows 混合 DPI 托盘与退出回调仍需验证；不能用旧构建或虚构数据界面当成端到端成功。
 - 既有真机待验收：小组件侧载共享容器与各尺寸、上课前后实时活动切换、通知权限说明、版本弹窗只出现一次、CITEL/编程题真实上传、系统保存/预览/二维码入口、Windows 原生缓存/DPAPI 往返。旧 Build42/43 包的检查不是当前 Build45 真机证据。
 
+## 已合入 main：成绩课程性质筛选布局稳定（PR #77，2026-10-29）
+
+- 用户要求：同一窗口宽度/字号下，勾选或取消课程性质不能造成按钮错位、换行行数变化；空间足够时尽量一行显示，空间不足时自然换行，不强制四项一行。
+- 原因证据：普通性质筛选原用“选中 SemiBold / 未选 Normal”。先抽出实际生产芯片组件并保留旧行为，新增布局测试失败：220dp、1.0 字号、浅色下，限选按钮由 73px 变 72px，证明选择状态改变了固有尺寸；临界行宽下可改变换行。基线日志/XML 在 `.artifacts/grade-course-type-layout/before-fix-test.*`。
+- 改动：`GradeScreen.kt` 的普通性质筛选调用 `GradeCourseTypeFilterChip`，两态文字统一 Normal，用原有选中色与描边表达状态；外层 FlowRow、间距、顺序、数量、标签、字号和筛选回调保留。自选课程计算分支未修改；未加固定宽高、强制单行、缩字或横向滚动。
+- 回归：`GradeCourseTypeFilterLayoutTest.kt` 两项用例全部通过，无跳过；检查 220/280/320/360/420/640dp、1.0/1.6 字号、浅/深色、16 种选择组合共 384 种布局，每个按钮边界均稳定。另从实际测量尺寸求恰好容纳四项的宽度，验证一行展示，再减小 20dp 验证自然换行；模拟点击也正常切换且边界不变。已人工查看选中/取消时的一行截图，以及窄屏 1.6 倍字号的换行截图。
+- 实际命令（multiplatform/，Gradle JAVA_HOME 指向 JDK 21）：`:shared:desktopTest :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :androidApp:assembleDebug --offline --no-daemon --no-configuration-cache --console=plain --continue -Pkotlin.compiler.execution.strategy=in-process -x :shared:generatePackageBuildInfo`。全量 1245 项、1239 通过、5 失败、1 跳过；仅既有 DesktopAgentIntegrationTest 3 项、MacUninstallCleanerTest 2 项因 Windows 环境失败，联合命令退出 1，耗时 2m18s。Android assembleDebug、macOS JVM 宿主 compileKotlin、Windows compileKotlinWindows 均成功；没有安装 App。
+- 证据：`.artifacts/grade-course-type-layout/{before-fix-test.xml,after-fix-test.xml,test-summary.json,validation.log,ui/}`。复用前轮已取证的进程级临时 TEMP/TMP 与 `jdk.net.unixdomain.tmpdir`，没有修改系统设置；复用已有生成构建标识，不改版本号。Android 使用已有 debug.keystore 验证签名。
+- 范围与回退：本任务只修改 `GradeScreen.kt`、新增一个 desktopTest 与本工作记录；备份在 `.artifacts/grade-course-type-layout/before/`。源码目录仍无 `.git`，未初始化仓库、提交或推送。前一项作业功能按用户决定结项，保持其源码及既有记录。
+- 未验证：Windows 无法执行 Apple 原生编译/模拟器，本轮未操作 Computer Use 或安装 App；不把离屏 Compose 测量当作 Android 真机或 Apple 运行验证。
+
+- 本次 PR 准备：仅迁入本项源码、测试及记录；分支 `fix/grade-filter-layout` 从最新 main `ff0968b7a575` 创建。原无 Git 的源码副本保留，隔离检出目录已建立 Git 分支；本项没有提交或合并到 main。
+
+- 独立分支复验（2026-10-29）：本分支不含另一项功能；`gradlew.bat :shared:desktopTest --tests '*GradeCourseTypeFilterLayoutTest*' :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :androidApp:assembleDebug --offline --no-daemon --no-configuration-cache --console=plain --continue -Pkotlin.compiler.execution.strategy=in-process -x :shared:generatePackageBuildInfo` 返回 BUILD SUCCESSFUL，专项 2 项全过，无失败/跳过；Android debug 与两个桌面宿主编译成功。证据 `.artifacts/pr-split/grade-validation.log`，临时环境仅限验证进程，未安装应用。Apple 原生验证交由 PR CI，当前仍未合入 main。
+
 ## 当前痛点
 
 - iOS 覆盖安装后丢独立密码、设置重置及首页字号/布局异常：用户决定暂按偶发处理，原因未定（SideStore 仅为猜测），停止继续追查。已在主干禁用自动删库并保护凭据；日程等待重启后恢复。若复发再取真机证据；Beta2 / Build43 下载包已包含保护修复；旧 Build42 包仍未替换。
@@ -205,7 +272,7 @@
 
 ## 接下来
 
-1. Mac 合成提速已提交 `4b2133eb`，推送/PR 等你要求；Mac 尚缺：恢复/失败路径的 Mac 专属回归测试、正式 App 关窗/Dock/菜单退出点验、F03 Safari 逐控、DMG 安装验收。
+1. Mac 合成提速 PR 到 main 等 CI 与审查；Mac 尚缺：恢复/失败路径的 Mac 专属回归测试、正式 App 关窗/Dock/菜单退出点验、F03 Safari 逐控、DMG 安装验收。
 2. 不自动合主干/发版。
 3. **Android / iOS**：仅在线播放验收（F01–F03）。
 4. Windows 已结项；保留其他真机待验证与当前痛点。

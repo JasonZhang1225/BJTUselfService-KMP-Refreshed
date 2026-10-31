@@ -104,6 +104,7 @@ class AppDataGraph(
     nowEpochSeconds: () -> Long = { kotlin.time.Clock.System.now().epochSeconds },
 ) {
     val accountScope: String = profile.studentId
+    val assignmentCompletionStore = team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCompletionStore(cacheStore, accountScope)
 
     private val smartPlatformEndpoint = smartPlatformEndpointFor(platformFamily)
     val homeChangeFeed = CacheStoreHomeChangeFeedRepository(accountScope, cacheStore)
@@ -196,7 +197,7 @@ class AppDataGraph(
         ),
         persistPreferences = onPreferencesChanged,
         clearAccountCache = {
-            runCatching { cacheStore.clearAccount(accountScope) }.isSuccess
+            assignmentCompletionStore.clearWith { cacheStore.clearAccount(accountScope) }
         },
         prepareUninstall = {
             playbackTaskManager.cancelAllAndJoin()
@@ -352,6 +353,7 @@ class AppDataGraph(
     }
 
     fun close() {
+        assignmentCompletionStore.close()
         refreshCoordinator.close()
         playbackModel.close()
     }

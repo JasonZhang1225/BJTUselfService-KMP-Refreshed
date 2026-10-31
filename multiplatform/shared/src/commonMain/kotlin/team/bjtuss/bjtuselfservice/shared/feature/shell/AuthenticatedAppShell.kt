@@ -1456,6 +1456,7 @@ fun AuthenticatedAppShell(
                 ) {
                     CompositionLocalProvider(
                         LocalBottomBarClearance provides if (usesBottomUnderlap) bottomContentClearance else 0.dp,
+                        team.bjtuss.bjtuselfservice.shared.feature.assignment.LocalAssignmentCompletionStore provides session.assignmentCompletionStore,
                         LocalTopBarClearance provides topBarClearance,
                         LocalReportTopScroll provides reportTopScroll,
                         LocalNativeScrollControllerReporter provides reportNativeScrollController.takeIf { nativeScrollingEnabled },
@@ -1562,6 +1563,7 @@ fun AuthenticatedAppShell(
                         homework = homeworkState.homework,
                         exams = examState.exams,
                         phyVlabEvents = homeAgendaEvents,
+                        reminderAssignments = aggregatedAssignments,
                         currentWeek = courseState.currentWeek,
                         academicWeeks = courseState.homeAcademicWeeks,
                         // 周数只在被校历确认后显示：确认前统一「日程加载中」，
