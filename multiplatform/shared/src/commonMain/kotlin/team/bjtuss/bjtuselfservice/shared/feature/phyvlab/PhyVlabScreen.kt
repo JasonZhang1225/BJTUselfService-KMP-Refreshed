@@ -785,7 +785,7 @@ private fun PhyVlabTimeDetailSection(
         }
         submittedAt?.let {
             PhyVlabDetailLine(
-                label = "提交",
+                label = if (submitted) "提交" else "上传",
                 value = buildString {
                     append(it)
                     submissionTiming?.let { timing ->
