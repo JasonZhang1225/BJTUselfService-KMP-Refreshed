@@ -32,11 +32,24 @@
 >
 > **接下来**：等本次 KMP package 产物；Android P0 真机测量（PROMPT2）与 iOS/macOS 其余验收按需推进。
 >
-> 2026-11-01：进行中 `feat/homework-filter-split`——作业筛选拆成“截止日期”“提交状态”两个切换器，指定日期接系统原生选择器，旧设置迁移，详见下节。
+> 2026-11-01：进行中 `feat/device-timezone`（全应用按手机时区显示，本地 5 个提交未推送）；`feat/homework-filter-split` 为 PR #87，用户准备合并。
+>
+> 2026-11-01：`feat/homework-filter-split`——作业筛选拆成“截止日期”“提交状态”两个切换器，指定日期接系统原生选择器，旧设置迁移，详见下节。
 >
 > 2026-10-31：`feat/homework-dismiss-redesign`（PR #84）与 PR #85（日期输入框）已合入 main（`cdd315ed`），待移入日志。原记录：（基于 main `ad874581`）——把作业卡片上的“已完成”复选框改成“忽略”：卡片无常驻控件，长按/右键菜单、手机左滑、详情页按钮、读屏自定义操作进入；忽略后移到列表末尾“已忽略 N 项”分组，底栏上方 4 秒撤销提示；与“隐藏已提交”筛选解耦。存储键 `assignment.manualCompletion.v1` 不变，旧标记直接显示为已忽略。详见下节。
 >
 > 2026-10-31：进行中 PR #83 `cursor/fix-bugbot-playback-compose-e4cd` —— Bugbot 三条 Medium 修复；CI Android/Windows 因 `recordingDownloadsEnabled` 插在 `restoreDestination` 前导致位置实参类型不匹配，正改为命名参数。不改版本号、不打 `v*`。
+
+## 进行中：全应用按手机时区显示时间（`feat/device-timezone`，基于 PR #87 分支 `9fffbed7`，2026-11-01）
+
+- 用户决定：学校时间一律按北京时间解析成时刻，显示、“现在/今天”按手机时区；课表、教室查询、小组件、实时活动的格子仍按北京时间的星期和节次排，只换显示的时刻（跨天标“前日/次日”，课表标题下有说明）。
+- 关键位置：`domain/time/SchoolTime.kt`（`SchoolTimeZone`、`displayTimeZone`、`displaySchoolClockText`、`endOfDayEpochSeconds` 等）；`widgetClock` 统一换显示；Swift `CourseWidgetCalendar.calendar` 改北京时间、新增 `displayCalendar` 只用于格式化。
+- “指定日期”改存截止时刻 `untilEpoch`（所选那天在当时时区的 24:00），换时区后显示随之换算；旧的北京日期 `untilDate`/`beforeDate`/`homework_filter_until_date` 自动迁移。Moodle 日历格子的日期标记仍归北京那天，`activity-`/`citel-` 事件按真实时刻归日。
+- 数据变动：比较的是原始数据或同一次刷新里同一时区格式化的文字，换时区不会产生变动；已记录的变动文字不随时区重算。
+- JVM 测试固定 `user.timezone=Asia/Shanghai`（`shared/build.gradle.kts`）。
+- 验证：`:shared:desktopTest` 1332 项全过；Android、iOS arm64/模拟器、Windows、macOS 编译通过；签名模拟器以 `SIMCTL_CHILD_TZ=America/New_York` 启动看到课表节次换算（“前日 20:00”）与说明。5 个提交仅在本地，未推送、未开 PR。
+- 未验证：Android 真机时区切换、实时活动与小组件在非东八区的实际表现；首页周日程中课程按北京星期、作业按手机日期分组，跨时区时同一天两类可能错开。
+- 未完成：上一轮用户要求的本地 IPA 打包到下载文件夹、APK 装平板被中断，尚未执行。
 
 ## 进行中：作业筛选拆成“截止日期”“提交状态”两个切换器（`feat/homework-filter-split`，2026-11-01）
 
