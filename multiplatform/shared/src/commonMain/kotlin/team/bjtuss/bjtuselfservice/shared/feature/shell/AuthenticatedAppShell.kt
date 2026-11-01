@@ -326,6 +326,14 @@ fun AuthenticatedAppShell(
         scheduleEventCourses(examState.exams, if (physicsLabEnabled) physicsLabState.labs else emptyList(),
             courseState.homeAcademicWeeks, if (physicsDemoState.enabled) physicsDemoState.bookings else emptyList())
     }
+    // 仅主宿主持有时钟；切时区或跨零点后，即使没有网络刷新也更新作业和首页时间。
+    LaunchedEffect(homeworkModel, forcedRouteId, nativeTabBarEnabled) {
+        if (!shouldStartPhyVlabAutoSync(forcedRouteId, nativeTabBarEnabled)) return@LaunchedEffect
+        while (true) {
+            homeworkModel.updateTime()
+            delay(30_000L)
+        }
+    }
     // iOS 课程小组件：课表、实验、校历或日期变化时重写快照；内容（不含生成时间）不变就不写，
     // 避免每次重组都让 WidgetKit 重新加载时间线。
     // iOS 每个原生 Tab 都有一个壳宿主，只让主宿主写（否则同步期间每个宿主各算一遍、各写一遍、
@@ -1543,7 +1551,7 @@ fun AuthenticatedAppShell(
                 syncFailureItems = homeSyncFailureItems,
                 scrollUnderTopBar = true,
             ) {
-                val homeToday = homeworkState.now.date
+                val homeToday = homeworkState.now.toSchoolTime(homeworkState.timeZone).date
                 val homeSchedulePresentation = remember(courseState.courses, homeScheduleEvents,
                     courseState.homeAcademicWeeks, courseState.currentWeek, homeToday, gradeState.courseTypesByCode, staggeredClassTimes) {
                     team.bjtuss.bjtuselfservice.shared.feature.home.HomeSchedulePresentation(

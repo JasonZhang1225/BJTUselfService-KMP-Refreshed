@@ -226,7 +226,7 @@ private struct LiveTimelineBar: View {
             }
             .progressViewStyle(.linear)
             .tint(accent)
-            Text(clock(state.end))
+            Text(clock(state.end, schoolDate: state.start))
         }
         .font(font.monospacedDigit().weight(.medium))
         .foregroundStyle(.secondary)
@@ -289,7 +289,7 @@ private struct LiveCountdown: View {
             if style == .compact {
                 // 收起态显示下课时刻：系统分钟计时只有全称单位（“1 小时 29 分钟”），会把灵动岛两侧对称撑宽；
                 // 静态时刻最短，剩余多少由进度环表达。
-                Text(clock(state.end))
+                Text(clock(state.end, schoolDate: state.start))
                     .font(timerFont)
                     .foregroundStyle(accent)
                     .lineLimit(1)

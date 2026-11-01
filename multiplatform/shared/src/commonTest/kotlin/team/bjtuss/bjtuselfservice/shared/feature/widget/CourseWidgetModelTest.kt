@@ -35,6 +35,19 @@ class CourseWidgetModelTest {
     private fun ready(snapshot: CourseWidgetSnapshot, now: LocalDateTime) =
         assertIs<CourseWidgetState.Ready>(courseWidgetState(snapshot, now)).model
 
+    @Test fun convertedClocksUseOccurrenceDateAcrossBothDstTransitions() {
+        val zone = kotlinx.datetime.TimeZone.of("America/New_York")
+        assertEquals("前日 20:00", widgetClock(480, LocalDate(2026, 10, 31), zone))
+        assertEquals("前日 19:00", widgetClock(480, LocalDate(2026, 11, 2), zone))
+        assertEquals("前日 19:00", widgetClock(480, LocalDate(2026, 3, 7), zone))
+        assertEquals("前日 20:00", widgetClock(480, LocalDate(2026, 3, 9), zone))
+        assertEquals("前日\n19:00", widgetClock(480, LocalDate(2026, 11, 2), zone, "\n"))
+        assertEquals("08:00", widgetClock(480, monday, team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone))
+        val occurrence = WidgetOccurrence(session("早课", 480, 590), LocalDate(2026, 11, 2))
+        assertEquals("前日 19:00 - 前日 20:50", occurrence.timeRange(zone))
+        assertEquals("次日 01:00", widgetClock(1200, LocalDate(2026, 11, 2), kotlinx.datetime.TimeZone.of("Pacific/Auckland")))
+    }
+
     @Test fun missingOrOutdatedSnapshotsAreReported() {
         assertEquals(CourseWidgetState.SignedOut, courseWidgetState(null, at(0, 9, 0)))
         assertEquals(CourseWidgetState.Stale, courseWidgetState(snapshot(), at(30, 9, 0)))

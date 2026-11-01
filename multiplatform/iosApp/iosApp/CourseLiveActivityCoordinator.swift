@@ -404,8 +404,7 @@ final class CourseLiveActivityCoordinator {
     #endif
 
     private static func clock(_ date: Date) -> String {
-        let parts = CourseWidgetCalendar.displayCalendar.dateComponents([.hour, .minute], from: date)
-        return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
+        CourseWidgetCalendar.displayClock(date, schoolDate: date)
     }
 
     private func runningActivities() -> [Activity<CourseLiveActivityAttributes>] {

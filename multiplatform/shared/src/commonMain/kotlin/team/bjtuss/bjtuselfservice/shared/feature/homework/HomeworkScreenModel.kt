@@ -81,15 +81,14 @@ class HomeworkScreenModel(
     private val repository: HomeworkRepository,
     private val changeRecorder: DataChangeRecorder<Homework>? = null,
     // “现在”按手机时区取；课程平台的北京时间截止文本在比较前先换成时刻，见 filterHomework。
-    private val timeZone: TimeZone = displayTimeZone(),
+    timeZone: TimeZone? = null,
     private val clock: Clock = Clock.System,
-    private val nowProvider: () -> LocalDateTime = {
-        clock.now().toLocalDateTime(timeZone)
-    },
+    private val nowProvider: (() -> LocalDateTime)? = null,
     private val filterStore: HomeworkFilterPreferencesStore? = null,
+    private val timeZoneProvider: () -> TimeZone = { timeZone ?: displayTimeZone() },
 ) {
     private val mutableState = MutableStateFlow(
-        HomeworkUiState(timeZone = timeZone, now = nowProvider()),
+        HomeworkUiState().withCurrentTime(),
     )
     val state: StateFlow<HomeworkUiState> = mutableState.asStateFlow()
 
@@ -98,10 +97,21 @@ class HomeworkScreenModel(
     private val refreshMutex = Mutex()
     private var detailRequestKey: String? = null
 
+    /** 同一次更新使用同一个时区快照，避免切换时区后墙钟与比较时区不匹配。 */
+    private fun HomeworkUiState.withCurrentTime(): HomeworkUiState {
+        val zone = timeZoneProvider()
+        return copy(timeZone = zone, now = nowProvider?.invoke() ?: clock.now().toLocalDateTime(zone))
+    }
+
+    fun updateTime() {
+        mutableState.value = mutableState.value.withCurrentTime()
+    }
+
     /**
      * @param refreshFromNetwork false 只读缓存；true 在登录成功后由 shell 触发自动同步。
      */
     suspend fun initialize(refreshFromNetwork: Boolean = true) {
+        updateTime()
         if (!cacheLoaded) {
             cacheLoaded = true
             val cached = runCatching(repository::load).getOrNull()
@@ -115,8 +125,7 @@ class HomeworkScreenModel(
                 mutableState.value = mutableState.value.copy(
                     isLoading = true,
                     failure = HomeworkSyncFailure.CACHE,
-                    now = nowProvider(),
-                )
+                ).withCurrentTime()
             }
             if (!refreshFromNetwork) {
                 mutableState.value = mutableState.value.copy(isLoading = false, isRefreshing = false)
@@ -144,8 +153,7 @@ class HomeworkScreenModel(
             isLoading = before.homework.isEmpty(),
             isRefreshing = before.homework.isNotEmpty(),
             failure = null,
-            now = nowProvider(),
-        )
+        ).withCurrentTime()
         try {
             when (val result = repository.refresh()) {
                 is HomeworkRefreshResult.Success -> {
@@ -199,8 +207,7 @@ class HomeworkScreenModel(
             isSubmittedAttachmentsLoading = false,
             detailFailure = null,
             fileFailure = null,
-            now = nowProvider(),
-        )
+        ).withCurrentTime()
         persistFilters()
     }
 
@@ -215,8 +222,7 @@ class HomeworkScreenModel(
             isSubmittedAttachmentsLoading = false,
             detailFailure = null,
             fileFailure = null,
-            now = nowProvider(),
-        )
+        ).withCurrentTime()
         persistFilters()
     }
 
@@ -235,8 +241,7 @@ class HomeworkScreenModel(
             isSubmittedAttachmentsLoading = false,
             detailFailure = null,
             fileFailure = null,
-            now = nowProvider(),
-        )
+        ).withCurrentTime()
         persistFilters()
     }
 
@@ -251,8 +256,7 @@ class HomeworkScreenModel(
             isSubmittedAttachmentsLoading = false,
             detailFailure = null,
             fileFailure = null,
-            now = nowProvider(),
-        )
+        ).withCurrentTime()
         persistFilters()
     }
 
@@ -267,7 +271,7 @@ class HomeworkScreenModel(
 
     fun setSortOrder(order: HomeworkSortOrder) {
         if (mutableState.value.sortOrder == order) return
-        mutableState.value = mutableState.value.copy(sortOrder = order, now = nowProvider())
+        mutableState.value = mutableState.value.copy(sortOrder = order).withCurrentTime()
         persistFilters()
     }
 
@@ -288,8 +292,7 @@ class HomeworkScreenModel(
             hideSubmitted = prefs.hideSubmitted,
             sortOrder = prefs.sortOrder,
             untilEpoch = prefs.untilEpoch,
-            now = nowProvider(),
-        )
+        ).withCurrentTime()
     }
 
     private fun persistFilters() {
@@ -472,8 +475,7 @@ class HomeworkScreenModel(
             isRefreshing = false,
             source = source,
             failure = failure,
-            now = nowProvider(),
-        )
+        ).withCurrentTime()
     }
 
     private fun recordFileResult(result: HomeworkOperationResult<*>) {

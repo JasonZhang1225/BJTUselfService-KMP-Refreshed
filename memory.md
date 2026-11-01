@@ -1,3 +1,17 @@
+# 进行中：PR #88 时区审查修复（2026-11-01）
+
+> 当前工作树 `/workspace/BJTUselfService-KMP-Refreshed`，本地分支 `fix/pr88-timezone-review`。用户已明确授权将本轮修复提交并推送至 PR #88 的 `feat/device-timezone`；提交前已快进同步远端 `039c2bca`（保留新增的 iOS 模拟器测试时区配置）。本轮只向 PR 功能分支追加提交，不强推，不合并或发布；未回复或关闭审查线程。
+
+- 处理 Cursor Bugbot 4 条、Copilot 6 条评论及汇总中的相关问题：首页按当地“今天”选自然周，北京日期仍作为教学周回退锚点，并修复周差误当日差；首页课程/实验归日及行内时间显式传递展示时区。
+- 共享时间格式化要求显式学校日期；课表日/周页、课程详情、教室占用、小组件、实时活动使用实际课程/查询日期换算，避免 DST 跨周时差错一小时。Android 与 Swift 格式化补齐前日/次日，窄时间轴标记换行；iOS Live 提前菜单与提醒也走相同规则。
+- 课表日期选择器的默认选中日期、显示月份与“今天”按北京日期；课程平台作业状态在更新时成对刷新当前时区与墙钟，主宿主生命周期内每 30 秒更新，无需重新登录；已保存截止时刻不随切区变动。CITEL 题面抓取时间标签改为当地时间。
+- 回归：补充首页北京周一/当地周日、有/无校历、当地领先北京跨周、课表实际日期、DST 两次切换、跨日标记和运行中切时区；Swift 9 项断言接入 Apple CI，增加课程 ActivityKit 协调器的真实源码 typecheck。
+- 最终验证：`./gradlew :shared:desktopTest :windowsApp:compileKotlinWindows :desktopApp:compileKotlin --init-script /tmp/pr88-test.init.gradle --no-daemon --no-configuration-cache --console=plain -Porg.gradle.java.installations.paths=/workspace/jdk-pr88 -Porg.gradle.java.installations.auto-detect=false` 返回 BUILD SUCCESSFUL（4m34s），1341 项中 1340 通过、1 跳过，零失败；两个桌面宿主编译成功。命令环境：`JAVA_HOME=/workspace/jdk-pr88`、`GRADLE_USER_HOME=/workspace/.gradle-pr88`、`ANDROID_USER_HOME=/workspace/.android-pr88`、`XDG_CACHE_HOME=/workspace/.cache-pr88`，并为 Gradle 设置环境已有的 HTTP(S) 代理。`git diff --check`、`python3 scripts/sync-bundled-changelog.py --check`、工作流 YAML 和小组件 XML 解析通过。
+- UI：离屏图 `multiplatform/shared/build/reports/pr88-timezone/` 已查看纽约夏令时前后、浅色、深色 1.6 倍字号与课程详情；同一北京早课按实际周显示“前日 20:00”/“前日 19:00”。复验修复了跨日标记及表头日期的大字号裁切（表头随字体缩放、紧凑轴显式行距、最小网格行高）。这不是手机/小组件真机验收。
+- 环境：JRE 含 `jdk.compiler` 模块但没有 javac 启动器，在仓库外 `/workspace/jdk-pr88` 补齐启动器供本次构建；首次 UI 回归因 `/home/agent/.skiko` 只读失败，后用外部 init script 将测试 user.home/java.io.tmpdir 指到工作区，最终全过。没有修改系统设置或仓库构建配置。日志与环境 init script 保存在 `.artifacts/pr88-review/`。
+- 推送前复查：快进同步 `039c2bca` 后，`./gradlew help --no-daemon --no-configuration-cache` 配置检查通过（24s），新增 iOS 测试时区任务配置可正常加载；更新日志同步与 `git diff --check` 再次通过。本轮业务代码和测试沿用上述已通过的最终验证结果。
+- 未验证：`:androidApp:assembleDebug` 已尝试，配置阶段因缺少 `/home/agent/.android/bjtu-kmp-upload.keystore` 失败（11s），且本机无 Android SDK；未新建密钥。无 Xcode、模拟器与真机；Android/iOS 编译、Swift 新增 9 项断言/协调器 typecheck 和实际小组件/实时活动视觉检查需后续 PR CI/设备验证，本轮未运行 Apple CI。
+
 # 进行中：午夜截止与作业日期筛选（PR #85，2026-10-31）
 
 - 分支 fix/deadline-date-filter 同步 upstream main d3e84f78，保留最新忽略作业分组和首页提醒机制，解决筛选与CITEL卡片冲突。

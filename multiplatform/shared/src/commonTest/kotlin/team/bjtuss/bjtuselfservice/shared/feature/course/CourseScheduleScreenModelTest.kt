@@ -27,6 +27,18 @@ import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.PlatformInfo
 
 class CourseScheduleScreenModelTest {
+    @Test fun selectedWeekSuppliesTheCourseDateAcrossDstBoundary() {
+        val zone = kotlinx.datetime.TimeZone.of("America/New_York")
+        val morning = course(1, week = 7).copy(courseLocationIndex = 1)
+        val before = morning.dateInWeek(LocalDate(2026, 10, 26))
+        val after = morning.dateInWeek(LocalDate(2026, 11, 2))
+        assertEquals(LocalDate(2026, 10, 26), before)
+        assertEquals(LocalDate(2026, 11, 2), after)
+        assertEquals("前日 20:00", team.bjtuss.bjtuselfservice.shared.domain.time.displaySchoolClockText("08:00", before, zone))
+        assertEquals("前日 19:00", team.bjtuss.bjtuselfservice.shared.domain.time.displaySchoolClockText("08:00", after, zone))
+        assertEquals(LocalDate(2026, 11, 8), morning.copy(courseLocationIndex = 7).dateInWeek(LocalDate(2026, 11, 2)))
+    }
+
     @Test fun cancelledStartupCanInitializeAgainWithoutRestartingApp() = runBlocking {
         val started = CompletableDeferred<Unit>()
         var calls = 0

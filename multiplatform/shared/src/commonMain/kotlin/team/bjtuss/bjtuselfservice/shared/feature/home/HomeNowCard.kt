@@ -83,6 +83,7 @@ internal fun HomeNowSection(
                 session,
                 accent = courseCategoryAccent(category),
                 liveTarget = liveTarget,
+                schoolDate = today,
                 onClick = { selected = session.course },
             )
         }
@@ -108,6 +109,7 @@ internal fun HomeNowCard(
     onClick: () -> Unit,
     /** iOS 实时活动（灵动岛）的 Live 按钮；其余平台不显示。 */
     liveTarget: LiveActivityTarget? = null,
+    schoolDate: kotlinx.datetime.LocalDate = team.bjtuss.bjtuselfservice.shared.domain.time.schoolNow().date,
 ) {
     val scheme = MaterialTheme.colorScheme
     val status = when {
@@ -173,7 +175,7 @@ internal fun HomeNowCard(
                 }
                 if (session.timeRange.isNotBlank()) {
                     Text(
-                        displaySchoolClockText(session.timeRange),
+                        displaySchoolClockText(session.timeRange, schoolDate),
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSurfaceVariant,
                     )

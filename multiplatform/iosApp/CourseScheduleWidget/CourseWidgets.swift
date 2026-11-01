@@ -194,7 +194,7 @@ private struct UpNextRectangular: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(upNext.isFutureDay
                      ? "\(dayName(occurrence.start, now: model.now)) \(timeRange(occurrence))"
-                     : (occurrence.isOngoing(at: model.now) ? "正在上 · 至 \(clock(occurrence.end))" : "下一节 · \(timeRange(occurrence))"))
+                     : (occurrence.isOngoing(at: model.now) ? "正在上 · 至 \(clock(occurrence.end, schoolDate: occurrence.start))" : "下一节 · \(timeRange(occurrence))"))
                     .font(.caption2)
                     .widgetAccentable()
                 Text(occurrence.session.name)
@@ -383,7 +383,7 @@ private struct TodayRow: View {
             Spacer(minLength: 4)
             VStack(alignment: .trailing, spacing: 0) {
                 Text(clock(occurrence.start))
-                Text(clock(occurrence.end)).foregroundStyle(.secondary)
+                Text(clock(occurrence.end, schoolDate: occurrence.start)).foregroundStyle(.secondary)
             }
             .font(.caption.monospacedDigit())
         }
@@ -750,13 +750,12 @@ struct WidgetMessage: View {
 
 // MARK: - 格式化
 
-func clock(_ date: Date) -> String {
-    let parts = CourseWidgetCalendar.displayCalendar.dateComponents([.hour, .minute], from: date)
-    return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
+func clock(_ date: Date, schoolDate: Date? = nil) -> String {
+    CourseWidgetCalendar.displayClock(date, schoolDate: schoolDate ?? date)
 }
 
 private func timeRange(_ occurrence: CourseOccurrence) -> String {
-    "\(clock(occurrence.start)) - \(clock(occurrence.end))"
+    "\(clock(occurrence.start)) - \(clock(occurrence.end, schoolDate: occurrence.start))"
 }
 
 func monthDay(_ date: Date) -> String {

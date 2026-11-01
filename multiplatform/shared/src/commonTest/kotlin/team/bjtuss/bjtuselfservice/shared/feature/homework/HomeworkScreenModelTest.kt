@@ -379,6 +379,42 @@ class HomeworkScreenModelTest {
         assertEquals(1, model.state.value.dueSoonCount)
     }
 
+    @Test
+    fun runningSessionRefreshesZoneAndNowTogetherWithoutMovingSavedCutoff() = runBlocking {
+        val clock = object : kotlin.time.Clock {
+            override fun now() = kotlin.time.Instant.parse("2026-10-29T15:59:00Z")
+        }
+        var zone = SchoolTimeZone
+        val snapshot = HomeworkSnapshot(listOf(
+            homework(1, "程序设计", "2026-10-30 00:00"),
+            homework(2, "程序设计", "2026-10-29 23:58"),
+        ))
+        val model = HomeworkScreenModel(
+            repository = FakeRepository(snapshot, snapshot), clock = clock, timeZoneProvider = { zone },
+        )
+        model.initialize(refreshFromNetwork = false)
+        model.setDeadlineScope(true, endOfDayEpochSeconds(LocalDate(2026, 10, 30), zone))
+        val savedCutoff = model.state.value.untilEpoch
+        assertEquals(listOf(1), model.state.value.visibleHomework.map(Homework::id))
+        assertEquals(LocalDateTime(2026, 10, 29, 23, 59), model.state.value.now)
+
+        zone = TimeZone.of("America/New_York")
+        model.updateTime() // 会话计时器，无网络刷新或筛选操作。
+        assertEquals(zone, model.state.value.timeZone)
+        assertEquals(LocalDateTime(2026, 10, 29, 11, 59), model.state.value.now)
+        assertEquals(savedCutoff, model.state.value.untilEpoch)
+        assertEquals(listOf(1), model.state.value.visibleHomework.map(Homework::id))
+        assertEquals(1, model.state.value.dueSoonCount)
+
+        zone = TimeZone.of("Pacific/Auckland")
+        model.setHideSubmitted(true) // 普通状态更新也必须重取时区。
+        assertEquals(zone, model.state.value.timeZone)
+        assertEquals(LocalDateTime(2026, 10, 30, 4, 59), model.state.value.now)
+        assertEquals(savedCutoff, model.state.value.untilEpoch)
+        assertEquals(listOf(1), model.state.value.visibleHomework.map(Homework::id))
+        assertEquals(1, model.state.value.dueSoonCount)
+    }
+
     private class MemoryFilterStore(
         var saved: HomeworkFilterPreferences = HomeworkFilterPreferences(),
     ) : HomeworkFilterPreferencesStore {

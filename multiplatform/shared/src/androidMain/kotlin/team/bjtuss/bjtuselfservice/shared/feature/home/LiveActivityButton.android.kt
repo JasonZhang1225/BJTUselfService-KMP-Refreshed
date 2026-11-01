@@ -158,7 +158,7 @@ internal actual fun LiveActivityButton(target: LiveActivityTarget, modifier: Mod
 }
 
 private fun leadTitle(target: LiveActivityTarget, minutes: Int): String =
-    "课前 $minutes 分钟显示 (${widgetClock((target.startMinute - minutes).coerceAtLeast(0))})"
+    "课前 $minutes 分钟显示 (${widgetClock((target.startMinute - minutes).coerceAtLeast(0), target.date)})"
 
 /** 已到课前 N 分钟：此时没在显示说明被关掉了，按钮叫“重新开启”。 */
 private fun isWithinLeadWindow(target: LiveActivityTarget, leadMinutes: Int): Boolean {

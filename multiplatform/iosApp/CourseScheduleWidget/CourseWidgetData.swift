@@ -199,11 +199,21 @@ enum CourseWidgetCalendar {
         return calendar
     }
 
-    /// 北京时间当天第 `minute` 分钟，在手机时区显示成 "HH:mm"。
-    static func displayClock(minute: Int, on date: Date = .now) -> String {
-        let day = calendar.startOfDay(for: date).addingTimeInterval(TimeInterval(minute * 60))
-        let parts = displayCalendar.dateComponents([.hour, .minute], from: day)
-        return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
+    /// 以正在渲染的北京日期换算时刻，夏令时偏移也取该日的实际值。
+    static func displayClock(minute: Int, on date: Date, zone: TimeZone = .current, markerSeparator: String = " ") -> String {
+        let instant = calendar.startOfDay(for: date).addingTimeInterval(TimeInterval(minute * 60))
+        return displayClock(instant, schoolDate: date, zone: zone, markerSeparator: markerSeparator)
+    }
+
+    static func displayClock(_ instant: Date, schoolDate: Date, zone: TimeZone = .current, markerSeparator: String = " ") -> String {
+        var localCalendar = displayCalendar
+        localCalendar.timeZone = zone
+        let parts = localCalendar.dateComponents([.year, .month, .day, .hour, .minute], from: instant)
+        // 将当地年月日当作北京日历日期比较；不能用两个时区的 startOfDay 比时刻。
+        let localDay = calendar.date(from: DateComponents(year: parts.year, month: parts.month, day: parts.day))!
+        let shift = dayOffset(localDay, from: schoolDate)
+        let marker = shift < 0 ? "前日" + markerSeparator : (shift > 0 ? "次日" + markerSeparator : "")
+        return marker + String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
     }
 
     static func dayKey(_ date: Date) -> String {
