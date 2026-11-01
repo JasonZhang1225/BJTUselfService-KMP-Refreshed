@@ -5,7 +5,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventType
-import kotlin.test.assertNull
+import kotlin.test.assertEquals
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.plus
+import kotlinx.datetime.toLocalDateTime
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Density
@@ -44,15 +48,25 @@ class DeadlineFilterVisualTest {
     }
 
     @Test fun renderDateFilters() = SwingUtilities.invokeAndWait {
-        for ((name, dark, scale) in listOf(Triple("light", false, 1f), Triple("dark", true, 1f), Triple("large", false, 1.5f))) {
-            var filters by mutableStateOf(AggregateAssignmentFilters(beforeDate = "2026-10-30"))
+        val until = AggregateAssignmentFilters(hideSubmitted = true).withDeadlineScope(true,
+            kotlin.time.Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.plus(7, DateTimeUnit.DAY))
+        val cases = listOf(
+            Triple("all-light", false, 1f) to AggregateAssignmentFilters(),
+            Triple("upcoming-dark", true, 1f) to AggregateAssignmentFilters(hideExpired = true, hideSubmitted = true),
+            Triple("until-light", false, 1f) to until,
+            Triple("until-dark", true, 1f) to until,
+            Triple("until-large", false, 1.6f) to until,
+        )
+        for ((spec, initial) in cases) {
+            val (name, dark, scale) = spec
+            var filters by mutableStateOf(initial)
             val scene = ImageComposeScene(440, 1000, density = Density(1f, scale),
                 coroutineContext = Dispatchers.Unconfined) {
                 PlatformAppTheme(dark, false) {
                     Surface(Modifier.fillMaxSize()) {
                         Column(Modifier.fillMaxSize().padding(16.dp)) {
                             AggregateAssignmentFilterSheet(emptyList(), AssignmentSource.entries,
-                                filters, { filters = it })
+                                filters, 3, { filters = it })
                         }
                     }
                 }
@@ -65,14 +79,34 @@ class DeadlineFilterVisualTest {
                     try { File("build/reports/deadline-filter/$name.png").apply { parentFile.mkdirs(); writeBytes(data.bytes) } }
                     finally { data.close() }
                 } finally { image.close() }
-                if (name == "light") {
-                    // Position verified against the rendered 440px fixture: "显示全部日期".
-                    scene.sendPointerEvent(PointerEventType.Press, Offset(90f, 497f))
-                    scene.sendPointerEvent(PointerEventType.Release, Offset(90f, 497f))
-                    repeat(3) { scene.render(2_000_000_000L + it * 100_000_000L).close() }
-                    assertNull(filters.beforeDate)
-                }
             } finally { scene.close() }
         }
+    }
+
+    /** 单独布局的切换器：宽 300、三段各 100，点中间段与右段，验证互斥选择与已选段不重复回调。 */
+    @Test fun segmentedControlSelectsByTap() = SwingUtilities.invokeAndWait {
+        var selected by mutableStateOf(0)
+        var calls = 0
+        val scene = ImageComposeScene(304, 60, density = Density(1f), coroutineContext = Dispatchers.Unconfined) {
+            PlatformAppTheme(false, false) {
+                Surface(Modifier.fillMaxSize()) {
+                    AppleSegmentedControl(listOf("全部", "未过期", "指定日期"), selected, { calls++; selected = it })
+                }
+            }
+        }
+        try {
+            fun tap(x: Float) {
+                scene.sendPointerEvent(PointerEventType.Press, Offset(x, 18f))
+                scene.sendPointerEvent(PointerEventType.Release, Offset(x, 18f))
+                repeat(3) { scene.render(it * 100_000_000L).close() }
+            }
+            scene.render().close()
+            tap(150f)
+            assertEquals(1, selected)
+            tap(260f)
+            assertEquals(2, selected)
+            tap(260f)
+            assertEquals(2, calls, "点已选中的段不应再回调")
+        } finally { scene.close() }
     }
 }

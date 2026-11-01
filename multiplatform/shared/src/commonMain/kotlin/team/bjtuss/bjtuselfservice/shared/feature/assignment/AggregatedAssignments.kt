@@ -1,9 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.assignment
 
+import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
-import team.bjtuss.bjtuselfservice.shared.domain.time.deadlineDisplay
+import kotlinx.datetime.minus
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.serialization.Serializable
@@ -47,11 +46,23 @@ data class AggregateCourseFilter(val allCourses: Boolean = true, val courses: Se
 data class AggregateAssignmentFilters(
     val platformCourses: Map<AssignmentSource, AggregateCourseFilter> = emptyMap(),
     val hideExpired: Boolean = false, val hideSubmitted: Boolean = false, val sortOrder: Int = 1,
+    /** “截止日期”选了指定日期时的那一天（含当天），见 [DeadlineScope]。 */
+    val untilDate: String? = null,
+    /** 1.8.x 一度用过的“截止早于某天（不含当天）”，只为读取旧设置保留，加载时由 [migrated] 转成 [untilDate]。 */
     val beforeDate: String? = null,
 ) {
     fun forSource(source: AssignmentSource): AggregateCourseFilter = platformCourses[source] ?: AggregateCourseFilter()
     fun withSource(source: AssignmentSource, filter: AggregateCourseFilter) = copy(platformCourses = platformCourses + (source to filter))
-    val active: Boolean get() = beforeDate != null || hideExpired || hideSubmitted || platformCourses.values.any { !it.allCourses }
+    val until: LocalDate? get() = parseUntilDate(untilDate)
+    val active: Boolean get() = until != null || hideExpired || hideSubmitted || platformCourses.values.any { !it.allCourses }
+    fun withDeadlineScope(hideExpired: Boolean, until: LocalDate?) =
+        copy(hideExpired = hideExpired || until != null, untilDate = until?.toString(), beforeDate = null)
+
+    /** “早于 D（不含）”等于“截至 D 前一天（含）”；新的指定日期档本身不含已过期作业。 */
+    fun migrated(): AggregateAssignmentFilters {
+        val before = parseUntilDate(beforeDate) ?: return if (beforeDate != null) copy(beforeDate = null) else this
+        return if (until != null) copy(beforeDate = null) else withDeadlineScope(true, before.minus(1, DateTimeUnit.DAY))
+    }
 }
 
 fun AggregatedAssignment.completionKey(): AssignmentCompletionKey? = when (source) {
@@ -62,13 +73,9 @@ fun AggregatedAssignment.completionKey(): AssignmentCompletionKey? = when (sourc
 
 /** 已忽略的作业照常参与筛选和排序，之后由列表拆到末尾的“已忽略”分组，见 [partitionIgnoredAssignments]。 */
 fun filterAggregateAssignments(items: List<AggregatedAssignment>, filters: AggregateAssignmentFilters, now: Long): List<AggregatedAssignment> {
-    val before = filters.beforeDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    val until = filters.until
     val visible = items.filter { filters.forSource(it.source).matches(it.courseId) && (!filters.hideSubmitted || !it.submitted) &&
-        (!filters.hideExpired || it.dueTime?.let { time -> time > now } != false) &&
-        (before == null || it.dueTime?.let { time ->
-            // Midnight is displayed as the previous day's 24:00 and belongs to that day.
-            deadlineDisplay(Instant.fromEpochSeconds(time).toLocalDateTime(TimeZone.of("Asia/Shanghai"))).date < before
-        } == true) }
+        deadlineInScope(it.dueTime, now, filters.hideExpired, until) }
     return sortAggregateAssignments(visible, filters.sortOrder)
 }
 
@@ -103,7 +110,7 @@ class AggregateAssignmentFilterStore(private val cache: CacheStore, private val 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     fun load(): AggregateAssignmentFilters = runCatching {
         json.decodeFromString<AggregateAssignmentFilters>(cache.metadata(account, "assignment.aggregate.filters").orEmpty())
-    }.getOrDefault(AggregateAssignmentFilters())
+    }.getOrDefault(AggregateAssignmentFilters()).migrated()
     fun save(filters: AggregateAssignmentFilters) { cache.putMetadata(account, "assignment.aggregate.filters", json.encodeToString(filters)) }
 }
 

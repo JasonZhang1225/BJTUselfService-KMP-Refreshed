@@ -4,6 +4,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.assignment.assignmentGradeText
 import team.bjtuss.bjtuselfservice.shared.domain.time.assignmentDeadlineText
 import team.bjtuss.bjtuselfservice.shared.domain.time.assignmentStartText
 import team.bjtuss.bjtuselfservice.shared.domain.time.formatDeadlineEpoch
+import kotlinx.datetime.LocalDate
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -33,6 +34,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.foundation.text.selection.SelectionContainer
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.domain.homework.deadlineInScope
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.files.UnavailableCoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
@@ -63,7 +65,7 @@ fun CitelWorkspace(model: CitelModel, holdNetwork: Boolean, onOpen: (String) -> 
     val scroll = rememberLazyListState()
     val completion = assignmentCompletionState()
     val (tasks, ignoredTasks) = partitionIgnoredAssignments(
-        filteredCitelTasks(state.tasks.filter { selectedCourses.isEmpty() || it.courseId in selectedCourses }, pendingOnly, hideExpired, null, sortOrder, now),
+        filteredCitelTasks(state.tasks.filter { selectedCourses.isEmpty() || it.courseId in selectedCourses }, pendingOnly, hideExpired, null, sortOrder, now, filters.until),
         completion.completedKeys, { it.completed }, { it.completionKey() })
     var ignoredExpanded by rememberIgnoredSectionExpanded()
     val topClearance = LocalTopBarClearance.current
@@ -103,16 +105,17 @@ fun CitelWorkspace(model: CitelModel, holdNetwork: Boolean, onOpen: (String) -> 
             CitelDetailWorkspace(model, fileGateway, onOpen, holdNetwork, directoryGateway = directoryGateway)
         }
     }
-    if (showFilters) AppleSheet(onDismissRequest = { showFilters = false }, title = "作业筛选", needsFullHeight = true, scrollableBody = true) {
-        AssignmentFilterSheet(state.tasks.distinctBy { it.courseId }.map { it.courseId to it.courseName }, filters, model::updateFilters)
+    if (showFilters) AppleSheet(onDismissRequest = { showFilters = false }, title = "作业筛选", fitContentHeight = true) {
+        AssignmentFilterSheet(state.tasks.distinctBy { it.courseId }.map { it.courseId to it.courseName }, filters,
+            ignoredAssignmentCount(state.tasks, completion.completedKeys, { it.completed }, { it.completionKey() }), model::updateFilters)
     }
 
 }
 
 internal fun filteredCitelTasks(tasks: List<CitelTask>, pendingOnly: Boolean, hideExpired: Boolean,
-    courseId: Int?, sortOrder: Int, now: Long): List<CitelTask> {
+    courseId: Int?, sortOrder: Int, now: Long, untilDate: LocalDate? = null): List<CitelTask> {
     val filtered = tasks.filter { (!pendingOnly || !it.completed) &&
-        (!hideExpired || it.dueTime?.let { due -> due > now } != false) && (courseId == null || it.courseId == courseId) }
+        deadlineInScope(it.dueTime, now, hideExpired, untilDate) && (courseId == null || it.courseId == courseId) }
     return when (sortOrder) {
         1 -> filtered.sortedBy { it.dueTime ?: Long.MAX_VALUE }
         2 -> filtered.sortedByDescending { it.dueTime ?: Long.MIN_VALUE }

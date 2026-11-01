@@ -8,6 +8,9 @@ import team.bjtuss.bjtuselfservice.shared.domain.time.formatSchoolDeadline
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceEmptyState
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentDeadlineFilter
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentSubmissionFilter
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.ignoredAssignmentCount
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadAction
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadFiles
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadMessage
@@ -298,10 +301,13 @@ fun HomeworkWorkspace(
         AppleSheet(
             onDismissRequest = { showFilterSheet = false },
             title = "作业筛选",
-            needsFullHeight = true,
-            scrollableBody = true,
+            fitContentHeight = true,
         ) {
-            HomeworkFilterSheet(state = state, model = model)
+            HomeworkFilterSheet(
+                state = state,
+                model = model,
+                ignoredCount = ignoredAssignmentCount(state.homework, completion.completedKeys, ::isHomeworkSubmitted) { it.completionKey() },
+            )
         }
     }
 
@@ -698,70 +704,32 @@ private fun HomeworkSortBarsIcon(
     }
 }
 
-@Composable
-private fun HomeworkBehaviorFilters(state: HomeworkUiState, model: HomeworkScreenModel) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        HomeworkDeadlineFilterChips(state = state, model = model)
-        OutlinedButton(onClick = model::cycleSortOrder, modifier = Modifier.fillMaxWidth()) {
-            Text(
-                when (state.sortOrder) {
-                    HomeworkSortOrder.ORIGINAL -> "截止时间 · 原顺序"
-                    HomeworkSortOrder.ASCENDING -> "截止时间 · 由近到远"
-                    HomeworkSortOrder.DESCENDING -> "截止时间 · 由远到近"
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-/** 截止时间：两个圆角矩形，互斥（显示全部 / 隐藏已过期），另加独立的隐藏已提交。 */
-@OptIn(ExperimentalLayoutApi::class)
+/** 截止日期与提交状态两个切换器，互相独立。 */
 @Composable
 private fun HomeworkDeadlineFilterChips(
     state: HomeworkUiState,
     model: HomeworkScreenModel,
+    ignoredCount: Int,
 ) {
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        FilterChip(
-            selected = !state.hideExpired,
-            onClick = { model.setHideExpired(false) },
-            shape = RoundedCornerShape(10.dp),
-            label = { Text("显示全部日期") },
-        )
-        FilterChip(
-            selected = state.hideExpired,
-            onClick = { model.setHideExpired(true) },
-            shape = RoundedCornerShape(10.dp),
-            label = { Text("隐藏已过期") },
-        )
-        FilterChip(
-            selected = state.hideSubmitted,
-            onClick = { model.setHideSubmitted(!state.hideSubmitted) },
-            shape = RoundedCornerShape(10.dp),
-            label = { Text("隐藏已提交") },
-        )
+    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        AssignmentDeadlineFilter(state.hideExpired, state.untilDate, model::setDeadlineScope)
+        AssignmentSubmissionFilter(state.hideSubmitted, ignoredCount, model::setHideSubmitted)
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ColumnScope.HomeworkFilterSheet(
+private fun HomeworkFilterSheet(
     state: HomeworkUiState,
     model: HomeworkScreenModel,
+    ignoredCount: Int,
 ) {
-    val filterScrollState = rememberScrollState()
+    // 弹层按内容定高（fitContentHeight），滚动和底部安全区由弹层负责，这里不再套滚动。
     Column(
         modifier = Modifier
-            .weight(1f)
             .fillMaxWidth()
-            .verticalScroll(filterScrollState)
-            .desktopTouchScroll(filterScrollState)
-            .sheetScrollContentPadding(),
+            .padding(horizontal = 20.dp)
+            .padding(top = 8.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Text("筛选与排序", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -801,14 +769,7 @@ private fun ColumnScope.HomeworkFilterSheet(
             }
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                "截止时间",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            HomeworkDeadlineFilterChips(state = state, model = model)
-        }
+        HomeworkDeadlineFilterChips(state = state, model = model, ignoredCount = ignoredCount)
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(

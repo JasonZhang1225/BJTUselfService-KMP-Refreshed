@@ -1,6 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.homework
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
@@ -307,6 +308,49 @@ class HomeworkScreenModelTest {
         assertEquals(HOMEWORK_AUTO_SYNC_MAX_ATTEMPTS, repository.refreshCount)
         assertEquals(HomeworkSyncFailure.NETWORK, model.state.value.failure)
         assertEquals(HomeworkContentSource.CACHE, model.state.value.source)
+    }
+
+    @Test
+    fun deadlineScopeIsExclusiveAndUntilDateSurvivesRestart() = runBlocking {
+        val store = MemoryFilterStore()
+        val snapshot = HomeworkSnapshot(
+            listOf(
+                homework(1, "程序设计", "2026-07-29 08:00"), // 已过期
+                homework(2, "程序设计", "2026-08-01 00:00"), // 显示为 7 月 31 日 24:00
+                homework(3, "程序设计", "2026-08-01 00:01"),
+                homework(4, "程序设计", ""), // 没有截止时间
+            ),
+        )
+        val model = HomeworkScreenModel(
+            repository = FakeRepository(snapshot, snapshot),
+            timeZone = TimeZone.UTC,
+            nowProvider = { now },
+            filterStore = store,
+        )
+        model.initialize(refreshFromNetwork = false)
+
+        model.setDeadlineScope(hideExpired = false, untilDate = LocalDate(2026, 7, 31))
+        assertEquals(listOf(2), model.state.value.visibleHomework.map(Homework::id))
+        assertTrue(model.state.value.hideExpired, "指定日期写回 hideExpired，旧版本读到时退回“未过期”")
+        assertEquals(LocalDate(2026, 7, 31), store.saved.untilDate)
+
+        val restored = HomeworkScreenModel(
+            repository = FakeRepository(snapshot, snapshot),
+            timeZone = TimeZone.UTC,
+            nowProvider = { now },
+            filterStore = store,
+        )
+        restored.initialize(refreshFromNetwork = false)
+        assertEquals(LocalDate(2026, 7, 31), restored.state.value.untilDate)
+        assertEquals(listOf(2), restored.state.value.visibleHomework.map(Homework::id))
+
+        // 切回“未过期”清掉日期；没有截止时间的作业重新出现。
+        restored.setHideExpired(true)
+        assertEquals(null, restored.state.value.untilDate)
+        assertEquals(listOf(2, 3, 4), restored.state.value.visibleHomework.map(Homework::id))
+        restored.setDeadlineScope(hideExpired = false, untilDate = null)
+        assertEquals(4, restored.state.value.visibleHomework.size)
+        assertEquals(HomeworkFilterPreferences(), store.saved)
     }
 
     private class MemoryFilterStore(

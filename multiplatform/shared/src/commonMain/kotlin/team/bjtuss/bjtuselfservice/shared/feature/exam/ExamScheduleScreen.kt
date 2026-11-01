@@ -195,7 +195,8 @@ fun ExamScheduleWorkspace(
         AppleSheet(
             onDismissRequest = { showFilterSheet = false },
             title = "考试筛选",
-            needsFullHeight = true,
+            // 只有几个类型选项，按内容定高，不铺满全屏。
+            fitContentHeight = true,
         ) {
             ExamFilterSheet(
                 state = state,
