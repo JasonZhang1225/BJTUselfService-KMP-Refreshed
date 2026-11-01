@@ -1479,7 +1479,7 @@ private fun AgendaDayDetails(
             )
         }
         day.exams.forEach { exam ->
-            AgendaEventRow("考试", displayScheduleCourseName(exam.courseName), exam.examTimeAndPlace, { onOpenExams(exam) }, canNavigate)
+            AgendaEventRow("考试", displayScheduleCourseName(exam.courseName), team.bjtuss.bjtuselfservice.shared.domain.exam.displayExamTimeAndPlace(exam.examTimeAndPlace), { onOpenExams(exam) }, canNavigate)
         }
         day.phyVlabEvents.forEach { event ->
             AgendaEventRow(
