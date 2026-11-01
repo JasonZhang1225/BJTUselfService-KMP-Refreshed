@@ -168,3 +168,7 @@ compose.resources {
 tasks.withType<Test>().configureEach {
     systemProperty("user.timezone", "Asia/Shanghai")
 }
+// iOS 模拟器测试同理：SIMCTL_CHILD_ 前缀的变量会传给模拟器里的测试进程。
+tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
+    environment("SIMCTL_CHILD_TZ", "Asia/Shanghai")
+}
