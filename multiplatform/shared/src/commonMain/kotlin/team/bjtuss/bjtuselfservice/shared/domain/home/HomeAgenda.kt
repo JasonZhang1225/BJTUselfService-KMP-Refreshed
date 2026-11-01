@@ -18,6 +18,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkDueSoon
 import team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkSubmitted
 import team.bjtuss.bjtuselfservice.shared.domain.homework.parseSchoolLocalDateTime
 import team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.exam.examDisplayDate
 import team.bjtuss.bjtuselfservice.shared.domain.time.displayTimeZone
 import team.bjtuss.bjtuselfservice.shared.domain.time.schoolToDisplay
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
@@ -75,7 +76,7 @@ fun buildHomeAgenda(
                 .sortedWith(compareBy(Homework::courseName, Homework::title)),
             homeworkDue = homework.filter { homeworkDueDate(it, timeZone) == date }
                 .sortedBy(Homework::endTime),
-            exams = exams.filter { examDate(it) == date }
+            exams = exams.filter { examDate(it, timeZone) == date }
                 .sortedBy(ExamSchedule::examTimeAndPlace),
             phyVlabEvents = phyVlabEvents.filter { phyVlabEventDate(it, timeZone) == date }
                 .sortedWith(compareBy<PhyVlabEvent> { it.dayTimestamp }.thenBy { it.title }),
@@ -165,11 +166,13 @@ fun homeworkDueDate(homework: Homework, timeZone: TimeZone): LocalDate? =
         ?.toLocalDateTime(timeZone)
         ?.date
 
-fun examDate(exam: ExamSchedule): LocalDate? = try {
-    LocalDate.parse(exam.examTimeAndPlace.trim().substringBefore(' '))
-} catch (_: IllegalArgumentException) {
-    null
-}
+/** 考试按开始时刻在 [timeZone]（手机时区）的日期归日；时刻解析不了时退回原文开头的日期。 */
+fun examDate(exam: ExamSchedule, timeZone: TimeZone = displayTimeZone()): LocalDate? =
+    examDisplayDate(exam.examTimeAndPlace, timeZone) ?: try {
+        LocalDate.parse(exam.examTimeAndPlace.trim().substringBefore(' '))
+    } catch (_: IllegalArgumentException) {
+        null
+    }
 
 /**
  * 由作业换算出的事件（物理在线活动 `activity-`、CITEL `citel-`）带真实时刻，按手机时区归日；

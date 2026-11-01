@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.exam
 
+import team.bjtuss.bjtuselfservice.shared.domain.exam.displayExamTimeAndPlace
+
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceEmptyState
@@ -256,7 +258,7 @@ internal fun ExamScheduleDetailWorkspace(
     ) {
         Text(exam.courseName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         ExamDetailLine("类型", exam.examType)
-        ExamDetailLine("时间地点", exam.examTimeAndPlace)
+        ExamDetailLine("时间地点", displayExamTimeAndPlace(exam.examTimeAndPlace))
         ExamDetailLine("状态", exam.examStatus)
         ExamDetailLine("详情", exam.detail.ifBlank { "未提供" })
     }
@@ -520,7 +522,7 @@ private fun ExamCard(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
-            ExamCardLine("时间地点", exam.examTimeAndPlace)
+            ExamCardLine("时间地点", displayExamTimeAndPlace(exam.examTimeAndPlace))
             ExamCardLine("状态", exam.examStatus)
             if (exam.detail.isNotBlank()) {
                 ExamCardLine("详情", exam.detail)
@@ -592,7 +594,7 @@ private fun ExamDetailSheetBody(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text(exam.courseName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         ExamDetailLine("类型", exam.examType)
-        ExamDetailLine("时间地点", exam.examTimeAndPlace)
+        ExamDetailLine("时间地点", displayExamTimeAndPlace(exam.examTimeAndPlace))
         ExamDetailLine("状态", exam.examStatus)
         ExamDetailLine("详情", exam.detail.ifBlank { "未提供" })
         Button(onClick = { onAddToCalendar(exam) }, modifier = Modifier.fillMaxWidth()) {
