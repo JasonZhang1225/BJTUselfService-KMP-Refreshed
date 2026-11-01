@@ -1,14 +1,12 @@
 name: KMP security checks
 
+# 只在 PR 上检查；main 只能经 PR 合入，合入后不再重复跑。
+# 草稿 PR 不跑，转为“准备审查”时才跑；同一 PR 再次推送会取消上一轮。
+# changes 任务按改动文件决定跑哪些平台：只改 Android 不跑 macOS/Windows，只改文档或说明只跑更新日志一致性检查。
+# Actions → KMP security checks → Run workflow 手动运行时全部检查都跑。
 on:
-  push:
-    branches: [main, audit]
-    paths:
-      - "multiplatform/**"
-      - "docs/releases/**"
-      - "scripts/sync-bundled-changelog.py"
-      - ".github/workflows/kmp-security-check.yml"
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "multiplatform/**"
       - "docs/releases/**"
@@ -16,12 +14,79 @@ on:
       - ".github/workflows/kmp-security-check.yml"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Decide which checks to run
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      site: ${{ steps.filter.outputs.site }}
+      android: ${{ steps.filter.outputs.android }}
+      apple: ${{ steps.filter.outputs.apple }}
+      windows: ${{ steps.filter.outputs.windows }}
+      agent: ${{ steps.filter.outputs.agent }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # PR 检出的是合并提交，第一个父提交就是当前目标分支。
+          fetch-depth: 2
+
+      - name: Classify changed files
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+
+          flags = dict.fromkeys(("site", "android", "apple", "windows", "agent"), False)
+          if os.environ["EVENT_NAME"] != "pull_request":
+              flags = dict.fromkeys(flags, True)
+          else:
+              files = subprocess.run(
+                  ["git", "diff", "--name-only", "HEAD^1", "HEAD"],
+                  check=True, capture_output=True, text=True,
+              ).stdout.split()
+              print("\n".join(files))
+              # 模块目录 → 需要构建的平台；其余 multiplatform 改动（shared、Gradle 配置）影响全部平台。
+              modules = {"androidApp": ("android",), "iosApp": ("apple",),
+                         "desktopApp": ("apple",), "windowsApp": ("windows", "agent")}
+              agent_dirs = ("shared/src/desktopMain/", "shared/src/commonMain/")
+              for f in files:
+                  if f == ".github/workflows/kmp-security-check.yml":
+                      flags = dict.fromkeys(flags, True)
+                      continue
+                  if not f.startswith("multiplatform/"):
+                      continue  # docs/releases、更新日志脚本只影响 changelog 任务
+                  rel = f.removeprefix("multiplatform/")
+                  if rel.startswith("remote-site-template/"):
+                      flags["site"] = True
+                      continue
+                  # 源码目录以外的说明文档不影响构建；src/ 下的 .md 可能是打包资源，照常检查。
+                  if rel.endswith(".md") and "/src/" not in rel:
+                      continue
+                  module = rel.split("/", 1)[0]
+                  for platform in modules.get(module, ("android", "apple", "windows")):
+                      flags[platform] = True
+                  if rel.startswith(agent_dirs) and ("/agent/" in rel or (rel.startswith("shared/src/commonMain/") and "/sync/" in rel)):
+                      flags["agent"] = True
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              for name, value in flags.items():
+                  print(f"{name}={str(value).lower()}")
+                  out.write(f"{name}={str(value).lower()}\n")
+          PY
+
   changelog:
     name: Offline changelog consistency
+    needs: changes
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +95,8 @@ jobs:
 
   remote-site-template:
     name: Remote site template tests
+    needs: changes
+    if: ${{ needs.changes.outputs.site == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
@@ -49,6 +116,8 @@ jobs:
 
   android:
     name: Android debug and optimized release checks
+    needs: changes
+    if: ${{ needs.changes.outputs.android == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     defaults:
@@ -116,6 +185,8 @@ jobs:
 
   apple:
     name: iOS compile and macOS security tests
+    needs: changes
+    if: ${{ needs.changes.outputs.apple == 'true' }}
     runs-on: macos-26
     timeout-minutes: 60
     defaults:
@@ -183,16 +254,11 @@ jobs:
             iosApp/CourseScheduleWidget/CourseLiveActivityAttributes.swift \
             iosApp/iosApp/CourseLiveActivityCoordinator.swift
 
-      - name: Compile desktop test sources
+      - name: Run macOS and iOS shared tests
+        # --continue：桌面测试失败时仍跑完 iOS 测试，一次看到两端结果。
         run: |
           chmod +x ./gradlew
-          ./gradlew :shared:compileTestKotlinDesktop --stacktrace
-
-      - name: Run macOS security tests
-        run: ./gradlew :shared:desktopTest --stacktrace
-
-      - name: Run iOS shared tests
-        run: ./gradlew :shared:iosSimulatorArm64Test --stacktrace
+          ./gradlew :shared:desktopTest :shared:iosSimulatorArm64Test --continue --stacktrace
 
       - name: Build macOS app image without captcha assets
         env:
@@ -231,9 +297,13 @@ jobs:
           if-no-files-found: warn
 
   windows:
-    name: Windows app image check
+    name: Windows app image and agent CLI checks
+    needs: changes
+    if: ${{ needs.changes.outputs.windows == 'true' }}
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      GRADLE_OPTS: -Dorg.gradle.daemon=false
     defaults:
       run:
         working-directory: multiplatform
@@ -249,6 +319,8 @@ jobs:
       - name: Build Windows app image and report size
         env:
           WINDOWS_PACKAGE_JAVA_HOME: ${{ env.JAVA_HOME }}
+          # ASCII 目录名，下面的 Agent CLI 冒烟按固定路径找 exe。
+          WINDOWS_PACKAGE_NAME: BJTUselfServiceKMP
         run: |
           .\gradlew.bat :windowsApp:createDistributable --stacktrace
           if ($LASTEXITCODE -ne 0) { throw "Windows app image build failed" }
@@ -286,3 +358,89 @@ jobs:
             Write-Host "Windows ${part}: $size bytes"
           }
           Write-Host "Windows app image total bytes: $(($files | Measure-Object Length -Sum).Sum)"
+
+      - name: Refresh IPC, coordinator and remote agent tests on Windows
+        if: ${{ needs.changes.outputs.agent == 'true' }}
+        # 本机 IPC（回环端口、端点文件权限回退）、公共刷新协调器与远程常驻组件在真实 Windows 上跑一遍；
+        # 远程令牌的 DPAPI 往返只用独立测试节点。
+        run: |
+          @'
+          allprojects {
+              tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+                  testLogging {
+                      events 'failed'
+                      exceptionFormat 'full'
+                      showExceptions = true
+                      showCauses = true
+                      showStackTraces = true
+                  }
+              }
+          }
+          '@ | Set-Content -Path "$env:RUNNER_TEMP/bjtu-test-diagnostics.gradle" -Encoding utf8
+          .\gradlew.bat -I "$env:RUNNER_TEMP/bjtu-test-diagnostics.gradle" :shared:desktopTest --tests "*RefreshIpcTest*" --tests "*AppRefreshCoordinatorTest*" --tests "*agent.remote*" --tests "*AgentCacheUpdateTest*" :windowsApp:windowsTest --tests "*WindowsRemoteSecretStoreTest*" --stacktrace
+
+      - name: Preserve Windows test reports even on failure
+        if: ${{ always() && needs.changes.outputs.agent == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-cli-test-diagnostics
+          path: |
+            multiplatform/shared/build/test-results/desktopTest/**/*.xml
+            multiplatform/shared/build/reports/tests/desktopTest/**
+            multiplatform/windowsApp/build/test-results/windowsTest/**/*.xml
+          if-no-files-found: warn
+
+      - name: Run CLI with redirected handles (how agents spawn it)
+        if: ${{ needs.changes.outputs.agent == 'true' }}
+        run: |
+          $exe = (Resolve-Path "windowsApp\build\compose\binaries\main\app\BJTUselfServiceKMP\BJTUselfServiceKMP.exe").Path
+          function Invoke-Cli([string]$arguments) {
+            $psi = New-Object Diagnostics.ProcessStartInfo $exe, $arguments
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.UseShellExecute = $false
+            $psi.StandardOutputEncoding = [Text.Encoding]::UTF8
+            $psi.StandardErrorEncoding = [Text.Encoding]::UTF8
+            $p = [Diagnostics.Process]::Start($psi)
+            $out = $p.StandardOutput.ReadToEnd()
+            $err = $p.StandardError.ReadToEnd()
+            $p.WaitForExit()
+            Write-Host "[$arguments] exit=$($p.ExitCode)`nstdout=$out`nstderr=$err"
+            return @{ Code = $p.ExitCode; Out = $out; Err = $err }
+          }
+          $help = Invoke-Cli "agent help"
+          if ($help.Code -ne 0 -or -not $help.Out.Contains("calendar")) { throw "help failed" }
+          $status = Invoke-Cli "agent status --json"
+          if ($status.Code -ne 2) { throw "expected exit 2 without cache" }
+          $json = $status.Out | ConvertFrom-Json
+          if ($json.schemaVersion -ne 2 -or -not $json.error) { throw "unexpected JSON" }
+          $bad = Invoke-Cli "agent calendar --from 2026-13-01"
+          if ($bad.Code -ne 64) { throw "expected usage exit 64" }
+          # 全量刷新：没有 App 在运行、也没有缓存时，在联网前就以退出码 2 结束，并且不留下 IPC 端点。
+          $update = Invoke-Cli "agent cache update --json"
+          if ($update.Code -ne 2) { throw "expected cache update exit 2 without cache" }
+          $endpoint = Join-Path $env:LOCALAPPDATA "BJTUselfServiceKMP\agent-ipc.json"
+          if (Test-Path $endpoint) { throw "cache update left an IPC endpoint behind" }
+          $unknown = Invoke-Cli "agent cache update shell"
+          if ($unknown.Code -ne 64) { throw "expected usage exit 64 for unknown source" }
+
+      - name: Install skill and call through bjtu.cmd
+        if: ${{ needs.changes.outputs.agent == 'true' }}
+        run: |
+          $exe = (Resolve-Path "windowsApp\build\compose\binaries\main\app\BJTUselfServiceKMP\BJTUselfServiceKMP.exe").Path
+          $psi = New-Object Diagnostics.ProcessStartInfo $exe, "agent install --no-claude"
+          $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true; $psi.UseShellExecute = $false
+          $psi.StandardOutputEncoding = [Text.Encoding]::UTF8; $psi.StandardErrorEncoding = [Text.Encoding]::UTF8
+          $p = [Diagnostics.Process]::Start($psi); $out = $p.StandardOutput.ReadToEnd(); $err = $p.StandardError.ReadToEnd(); $p.WaitForExit()
+          Write-Host "install exit=$($p.ExitCode)`n$out`n$err"
+          if ($p.ExitCode -ne 0) { throw "install failed" }
+          $cmd = Join-Path $env:LOCALAPPDATA "BJTUselfServiceKMP\bin\bjtu.cmd"
+          $skill = Join-Path $env:USERPROFILE ".agents\skills\bjtuss\SKILL.md"
+          if (-not (Test-Path $cmd) -or -not (Test-Path $skill)) { throw "files missing" }
+          $json = & $cmd status --json | Out-String
+          Write-Host "bjtu.cmd status exit=$LASTEXITCODE`n$json"
+          if ($LASTEXITCODE -ne 2) { throw "expected exit 2 through bjtu.cmd" }
+          if (($json | ConvertFrom-Json).schemaVersion -ne 2) { throw "bad JSON through bjtu.cmd" }
+          & $exe agent uninstall | Out-String | Write-Host
+          if ((Test-Path $cmd) -or (Test-Path $skill)) { throw "uninstall left files" }
+          exit 0
