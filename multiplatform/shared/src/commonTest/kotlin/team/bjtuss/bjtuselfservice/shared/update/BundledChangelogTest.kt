@@ -16,8 +16,16 @@ class BundledChangelogTest {
     @Test fun everyVersionHasThreeReadableSections() {
         BundledChangelog.entries.forEach { release ->
             assertEquals(listOf("新增", "优化", "修复"), release.sections.map { it.title }, release.tag)
-            assertTrue(release.sections.all { section -> section.items.isNotEmpty() && section.items.all { it.isNotBlank() } })
-            assertFalse(release.sections.flatMap { it.items }.any { "**" in it || "`" in it })
+            assertTrue(release.sections.all { section -> section.items.isNotEmpty() && section.items.all { it.body.isNotBlank() } })
+            val texts = release.sections.flatMap { it.items }.flatMap { listOfNotNull(it.title, it.body) }
+            assertFalse(texts.any { "**" in it || "`" in it })
+            assertTrue(texts.all { it.isNotBlank() })
         }
+    }
+
+    @Test fun boldLeadInBecomesItemTitle() {
+        val replay = BundledChangelog.entries.first().sections.first().items.first()
+        assertEquals("课程回放", replay.title)
+        assertFalse(replay.body.startsWith("课程回放"))
     }
 }

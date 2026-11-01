@@ -51,25 +51,51 @@ class ChangelogWorkspaceTest {
                 fun node(text: String) = texts().first { node ->
                     node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == text } == true
                 }
+                fun picker(): SemanticsNode {
+                    fun collect(node: SemanticsNode): List<SemanticsNode> =
+                        listOf(node) + node.children.flatMap(::collect)
+                    return scene.semanticsOwners.flatMap { collect(it.unmergedRootSemanticsNode) }.first { node ->
+                        node.config.getOrNull(SemanticsProperties.ContentDescription)?.any { it.startsWith("当前版本") } == true
+                    }
+                }
                 settle()
-                assertTrue(node("选择版本，查看本次更新").boundsInRoot.top >= 128f)
+                assertTrue(picker().boundsInRoot.top >= 128f)
                 assertNotNull(controller, "The whole page must participate in native scrolling")
                 assertTrue(controller!!.canScrollForward)
                 // A newly measured or rotated title bar must keep the picker clear.
                 top.value = 140.dp
                 settle()
-                assertTrue(node("选择版本，查看本次更新").boundsInRoot.top >= 156f)
+                assertTrue(picker().boundsInRoot.top >= 156f)
                 assertTrue(controller!!.consumeScroll(100_000f) > 0f)
                 settle()
                 assertFalse(controller!!.canScrollForward)
-                val lastNote = "• " + BundledChangelog.entries.first().sections.last().items.last()
+                val lastNote = BundledChangelog.entries.first().sections.last().items.last().body
                 assertTrue(node(lastNote).boundsInRoot.bottom <= 844f - 84f - 16f + 1f,
                     "The final note must be fully above the bottom bar")
                 assertTrue(reports.any { it > 0f }, "Scrolling must update glass-bar progress")
                 controller!!.alignToStart()
                 settle()
-                assertTrue(node("选择版本，查看本次更新").boundsInRoot.top >= 156f)
+                assertTrue(picker().boundsInRoot.top >= 156f)
                 assertEquals(0f, reports.last())
+            } finally { scene.close() }
+        }
+    }
+
+    @Test fun renderForReview() = SwingUtilities.invokeAndWait {
+        for ((name, dark) in listOf("light" to false, "dark" to true)) {
+            val scene = ImageComposeScene(390, 1400, density = Density(1f), coroutineContext = Dispatchers.Unconfined) {
+                PlatformAppTheme(dark, false) {
+                    Surface(Modifier.fillMaxSize()) { ChangelogWorkspace(Modifier.fillMaxSize()) }
+                }
+            }
+            try {
+                repeat(5) { scene.render(it * 16_000_000L).close() }
+                val image = scene.render(1_000_000_000L)
+                try {
+                    val data = image.encodeToData(org.jetbrains.skia.EncodedImageFormat.PNG)!!
+                    try { java.io.File("build/reports/changelog/$name.png").apply { parentFile.mkdirs(); writeBytes(data.bytes) } }
+                    finally { data.close() }
+                } finally { image.close() }
             } finally { scene.close() }
         }
     }
