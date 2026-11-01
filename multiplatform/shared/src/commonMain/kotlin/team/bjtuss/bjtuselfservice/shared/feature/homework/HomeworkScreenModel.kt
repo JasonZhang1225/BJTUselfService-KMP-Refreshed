@@ -22,6 +22,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkDetail
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferences
+import team.bjtuss.bjtuselfservice.shared.domain.homework.SchoolTimeZone
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferencesStore
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkSortOrder
 import team.bjtuss.bjtuselfservice.shared.domain.homework.SubmittedHomeworkAttachment
@@ -80,7 +81,8 @@ data class HomeworkUiState(
 class HomeworkScreenModel(
     private val repository: HomeworkRepository,
     private val changeRecorder: DataChangeRecorder<Homework>? = null,
-    private val timeZone: TimeZone = TimeZone.currentSystemDefault(),
+    // 课程平台的截止时间是北京时间文本，“现在”也要按北京时间取，才能和它直接比较；手机不在东八区时也不会错开。
+    private val timeZone: TimeZone = SchoolTimeZone,
     private val clock: Clock = Clock.System,
     private val nowProvider: () -> LocalDateTime = {
         clock.now().toLocalDateTime(timeZone)
