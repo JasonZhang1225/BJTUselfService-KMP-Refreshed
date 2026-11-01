@@ -374,10 +374,11 @@ fun AuthenticatedAppShell(
     val phyVlabEnabled = settingsState.preferences.isPhyVlabEnabled
     // 同步期间壳层随任一状态流重组；只在来源数据变化时重新聚合，作业页才能跳过无关重组。
     val aggregatedAssignments = remember(homeworkState.homework, phyVlabState, phyVlabEnabled,
-        citelState.tasks, citelEnabled, homeworkState.timeZone) {
+        citelState.tasks, citelEnabled) {
+        // 不传手机时区：聚合按学校的北京时间换算，与日期筛选一致。
         aggregateAssignments(homeworkState.homework,
             if (phyVlabEnabled) phyVlabModel.allActivities() else emptyList(),
-            if (citelEnabled) citelState.tasks else emptyList(), homeworkState.timeZone)
+            if (citelEnabled) citelState.tasks else emptyList())
     }
     val renderAssignmentMarkdownActions: @Composable (AssignmentSource) -> Unit = { source ->
         val selected = when (source) {

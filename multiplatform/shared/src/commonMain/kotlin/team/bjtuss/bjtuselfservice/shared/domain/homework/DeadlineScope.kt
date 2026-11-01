@@ -34,7 +34,8 @@ fun deadlineInScope(deadline: LocalDateTime?, now: LocalDateTime, hideExpired: B
         DeadlineScope.UNTIL_DATE -> deadline != null && deadline > now && deadlineDisplay(deadline).date <= untilDate!!
     }
 
-private val schoolZone = TimeZone.of("Asia/Shanghai")
+/** 学校接口给出的本地时间都是北京时间；换算成时刻、再按日期归类都用它，不随手机时区变化。 */
+val SchoolTimeZone: TimeZone = TimeZone.of("Asia/Shanghai")
 
 /** Unix 秒版本（CITEL、物理在线、聚合列表），日期按北京时间归日。 */
 fun deadlineInScope(dueEpochSeconds: Long?, nowEpochSeconds: Long, hideExpired: Boolean, untilDate: LocalDate?): Boolean =
@@ -42,7 +43,7 @@ fun deadlineInScope(dueEpochSeconds: Long?, nowEpochSeconds: Long, hideExpired: 
         DeadlineScope.ALL -> true
         DeadlineScope.UPCOMING -> dueEpochSeconds == null || dueEpochSeconds > nowEpochSeconds
         DeadlineScope.UNTIL_DATE -> dueEpochSeconds != null && dueEpochSeconds > nowEpochSeconds &&
-            deadlineDisplay(Instant.fromEpochSeconds(dueEpochSeconds).toLocalDateTime(schoolZone)).date <= untilDate!!
+            deadlineDisplay(Instant.fromEpochSeconds(dueEpochSeconds).toLocalDateTime(SchoolTimeZone)).date <= untilDate!!
     }
 
 /** 持久化的日期文本；格式不对按未设置处理。 */
