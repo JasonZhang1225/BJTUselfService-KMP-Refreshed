@@ -1,3 +1,13 @@
+> 2026-11-01：当前工作树 `/Users/zjg/.codex/worktrees/phyvlab-upload-time/BJTUselfService`，分支 `fix/phyvlab-upload-time`，从 `feat/device-timezone`（`f492eef1`）新建；本轮只调整物理在线详情时间标签，用户已授权提交、推送并创建 PR，正在准备。基线 PR #88 尚未合并，本 PR 先以 `feat/device-timezone` 为目标，避免重复包含时区改动；版本仍为 2.0.0-Alpha / Build45，未合并或发布。原工作树的 `multiplatform/.artifacts/` 未跟踪文件保留。
+
+## 进行中：物理在线草稿时间标为上传
+
+- `PhyVlabScreen.kt` 时间区按现有 `submitted` 判定显示标签：只上传、尚未最终提交时为“上传”；最终提交后为“提交”。沿用时间格式、截止状态配色和最终提交后的按时/逾期说明，四端共享。
+- 验证：在 `multiplatform/` 使用本机 JDK 25，执行 `./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64 --offline --no-configuration-cache --console=plain --continue`，`BUILD SUCCESSFUL`（10m 1s）；共享测试 1334 项、0 失败、0 错误、1 跳过。Android 仅使用既有 debug.keystore 编译，未安装。日志 `.artifacts/phyvlab-upload-time/validation.log`。
+- 视觉：用忽略目录里的临时预览入口调用实际 `PhyVlabDetailWorkspace`，内存 fixture 仓库与 transport 不连接学校；`./gradlew :shared:renderPhyVlabUploadTime -I ../.artifacts/phyvlab-upload-time/preview.gradle -x :shared:generatePackageBuildInfo --offline --no-configuration-cache --console=plain` 成功（36s）。覆盖草稿/最终提交、浅/深色、1.0/1.6 字号、440/1000px 宽共 16 张图，已人工抽查两种标签及正常、大字号宽窄布局。大字号窄屏的既有截止状态后缀会被截断，本轮未扩展修复。证据 `.artifacts/phyvlab-upload-time/{preview.log,ui/}`，未新增正式测试文件。
+- iOS：`JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home xcodebuild -project multiplatform/iosApp/iosApp.xcodeproj -scheme iosApp -configuration Debug -destination 'platform=iOS Simulator,id=6857828A-CCEA-47D0-B26A-93462734DD91' -derivedDataPath .artifacts/phyvlab-upload-time/ios-derived CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES DEVELOPMENT_TEAM=34S53DC6T6 build` 返回 `BUILD SUCCEEDED`；生成的模拟器宿主与小组件已签名，`codesign --verify --deep --strict --verbose=1` 校验宿主通过。证据 `.artifacts/phyvlab-upload-time/{ios-build.log,ios-signature.log}`。没有安装或替换 App。
+- 边界：未进行学校真实上传/最终提交、App 端到端或真机验收，也未启动本工作树的桌面应用；不把 fixture 预览当作真实交互验证。回退只需撤销该时间标签改动。本轮共享测试生成的未跟踪截图已移到根目录忽略路径 `.artifacts/phyvlab-upload-time/shared-test-artifacts/`；提交范围仅 `PhyVlabScreen.kt` 与 `memory.md` 两个跟踪文件。远端时区分支后续增加的 `039c2bca` 仅固定 iOS 测试时区，未改变本修复源码；保留已验证基线，不重写本地或远端其他分支。
+
 # 进行中：PR #88 第三轮考试结束时间 review 修复（2026-11-02）
 
 > 工作树 `/workspace/BJTUselfService-KMP-Refreshed`，本地分支 `fix/pr88-timezone-review`，基于第二轮修复 `b8d39704`；沿用用户已授权的 PR 提交推送范围，目标为 `feat/device-timezone`，不强推、不合并、不发布。
