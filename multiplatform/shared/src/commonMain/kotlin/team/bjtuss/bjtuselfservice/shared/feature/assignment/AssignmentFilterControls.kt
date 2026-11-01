@@ -33,24 +33,23 @@ import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
-import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlinx.coroutines.delay
 import team.bjtuss.bjtuselfservice.shared.LocalReduceMotion
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.currentPlatform
 import team.bjtuss.bjtuselfservice.shared.domain.homework.DeadlineScope
-import team.bjtuss.bjtuselfservice.shared.domain.homework.SchoolTimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.time.deadlineDisplay
+import team.bjtuss.bjtuselfservice.shared.domain.time.displayTimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.time.endOfDayEpochSeconds
+import team.bjtuss.bjtuselfservice.shared.domain.time.epochToLocal
 import team.bjtuss.bjtuselfservice.shared.domain.homework.deadlineScope
 import team.bjtuss.bjtuselfservice.shared.feature.course.IosCompactDatePicker
 
 private const val MILLIS_PER_DAY = 86_400_000L
 
-/** 面板打开期间重新读取当前日期的间隔。 */
-private const val TODAY_REFRESH_MILLIS = 60_000L
-
-// 按北京时间取“今天”，与列表判断过期用的“现在”和截止日期归日一致，不随手机时区变化。
-private fun currentLocalDate(): LocalDate = Clock.System.now().toLocalDateTime(SchoolTimeZone).date
+/** 面板打开期间重新读取当前时间的间隔。 */
+private const val NOW_REFRESH_MILLIS = 60_000L
 
 /** 切到“指定日期”且之前没选过日期时，默认看一周内。 */
 private const val DEFAULT_UNTIL_DAYS = 7
@@ -58,24 +57,30 @@ private const val DEFAULT_UNTIL_DAYS = 7
 /**
  * 三个作业列表（聚合、课程平台、物理在线/CITEL）共用的“截止日期”切换器。
  * 全部 / 未过期 / 指定日期三档互斥；选指定日期时下方展开系统日期选择入口。
+ *
+ * 指定日期存的是截止点 [untilEpoch]：所选那天在当时手机时区的 24:00。显示时按手机现在的时区换算，
+ * 换了时区后日期按钮和说明里的时刻会跟着变，筛选结果不变。
  */
 @Composable
 internal fun AssignmentDeadlineFilter(
     hideExpired: Boolean,
-    untilDate: LocalDate?,
-    onChange: (hideExpired: Boolean, untilDate: LocalDate?) -> Unit,
+    untilEpoch: Long?,
+    onChange: (hideExpired: Boolean, untilEpoch: Long?) -> Unit,
 ) {
-    // 面板开着跨过零点时“今天”也要跟着变，否则日期下限和过期提示停在前一天。
-    val today by produceState(currentLocalDate()) {
+    // 面板开着跨过零点或换了时区，“今天”和过期判断也要跟着变。
+    val nowEpoch by produceState(Clock.System.now().epochSeconds) {
         while (true) {
-            delay(TODAY_REFRESH_MILLIS)
-            value = currentLocalDate()
+            delay(NOW_REFRESH_MILLIS)
+            value = Clock.System.now().epochSeconds
         }
     }
-    val scope = deadlineScope(hideExpired, untilDate)
+    val zone = displayTimeZone()
+    val today = epochToLocal(nowEpoch, zone).date
+    val cutoff = untilEpoch?.let { deadlineDisplay(epochToLocal(it, zone)) }
+    val scope = deadlineScope(hideExpired, untilEpoch)
     // 切走再切回“指定日期”时沿用上次的日期，而不是每次重置。
-    var lastUntil by remember { mutableStateOf(untilDate ?: today.plus(DEFAULT_UNTIL_DAYS, DateTimeUnit.DAY)) }
-    if (untilDate != null && untilDate != lastUntil) lastUntil = untilDate
+    var lastUntil by remember { mutableStateOf(cutoff?.date ?: today.plus(DEFAULT_UNTIL_DAYS, DateTimeUnit.DAY)) }
+    if (cutoff != null && cutoff.date != lastUntil) lastUntil = cutoff.date
     // 展开日期行时整体高度平滑变化。
     Column(Modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         FilterSectionTitle("截止日期")
@@ -86,23 +91,23 @@ internal fun AssignmentDeadlineFilter(
                 when (DeadlineScope.entries[index]) {
                     DeadlineScope.ALL -> onChange(false, null)
                     DeadlineScope.UPCOMING -> onChange(true, null)
-                    DeadlineScope.UNTIL_DATE -> onChange(true, lastUntil)
+                    DeadlineScope.UNTIL_DATE -> onChange(true, endOfDayEpochSeconds(lastUntil, zone))
                 }
             },
         )
         if (scope == DeadlineScope.UNTIL_DATE) {
-            UntilDateRow(date = untilDate ?: lastUntil, today = today, onPick = { picked ->
+            UntilDateRow(date = cutoff?.date ?: lastUntil, today = today, onPick = { picked ->
                 lastUntil = picked
-                onChange(true, picked)
+                onChange(true, endOfDayEpochSeconds(picked, zone))
             })
         }
-        val stale = scope == DeadlineScope.UNTIL_DATE && untilDate != null && untilDate < today
+        val stale = untilEpoch != null && untilEpoch <= nowEpoch
         FilterFootnote(
             when (scope) {
                 DeadlineScope.ALL -> "显示全部作业，包括已过截止时间的。"
                 DeadlineScope.UPCOMING -> "只显示还没到截止时间的作业。"
                 DeadlineScope.UNTIL_DATE -> if (stale) "所选日期已经过去，请重新选择。"
-                else "显示现在到 ${untilDate?.let { shortDateText(it, today) }.orEmpty()} 24:00 之间截止的作业。"
+                else "显示现在到 ${cutoff?.let { shortDateText(it.date, today) + " " + it.clock }.orEmpty()} 之间截止的作业。"
             },
             isError = stale,
         )

@@ -170,7 +170,7 @@ internal fun AggregateAssignmentFilterSheet(assignments: List<AggregatedAssignme
                 }
             }
         }
-        AssignmentDeadlineFilter(filters.hideExpired, filters.until) { hideExpired, until ->
+        AssignmentDeadlineFilter(filters.hideExpired, filters.untilEpoch) { hideExpired, until ->
             onChange(filters.withDeadlineScope(hideExpired, until))
         }
         AssignmentSubmissionFilter(filters.hideSubmitted, ignoredCount) { onChange(filters.copy(hideSubmitted = it)) }

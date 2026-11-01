@@ -135,7 +135,8 @@ class HomeAgendaTest {
             exams = emptyList(),
             today = LocalDate(2026, 7, 30),
             now = LocalDateTime(2026, 7, 30, 10, 0),
-            timeZone = TimeZone.UTC,
+            // 课程平台截止时间是北京时间文本；手机在东八区时直接按墙钟比较。
+            timeZone = team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone,
         )
 
         assertEquals(listOf("sooner", "later"), agenda.dueSoonHomework.map(Homework::title))

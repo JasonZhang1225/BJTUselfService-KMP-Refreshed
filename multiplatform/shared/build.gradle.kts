@@ -162,3 +162,9 @@ compose.resources {
     publicResClass = true
     packageOfResClass = "team.bjtuss.bjtuselfservice.shared.resources"
 }
+
+// 应用按手机时区显示时间；JVM 测试统一跑在北京时间，结果不随开发机或 CI 所在时区变化。
+// 需要验证其他时区的测试显式传入时区。
+tasks.withType<Test>().configureEach {
+    systemProperty("user.timezone", "Asia/Shanghai")
+}

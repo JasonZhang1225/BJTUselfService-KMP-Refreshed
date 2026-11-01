@@ -8,6 +8,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.time.formatSchoolDeadline
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceEmptyState
+import team.bjtuss.bjtuselfservice.shared.domain.time.formatSchoolDateTime
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentDeadlineFilter
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentSubmissionFilter
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.ignoredAssignmentCount
@@ -712,7 +713,7 @@ private fun HomeworkDeadlineFilterChips(
     ignoredCount: Int,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        AssignmentDeadlineFilter(state.hideExpired, state.untilDate, model::setDeadlineScope)
+        AssignmentDeadlineFilter(state.hideExpired, state.untilEpoch, model::setDeadlineScope)
         AssignmentSubmissionFilter(state.hideSubmitted, ignoredCount, model::setHideSubmitted)
     }
 }
@@ -1151,7 +1152,7 @@ internal fun homeworkDetailToMarkdown(
         appendLine()
         appendLine("- 课程：${homework.courseName}")
         appendLine("- 类型：${homework.typeLabel()}")
-        appendLine("- 开放时间：${homework.openDate.ifBlank { "未提供" }}")
+        appendLine("- 开放时间：${homework.openDate.ifBlank { "未提供" }.let(::formatSchoolDateTime)}")
         appendLine("- 截止时间：${homework.endTime.ifBlank { "未提供" }.let(::formatSchoolDeadline)}")
         appendLine("- 提交状态：${homework.subStatus.ifBlank { "未标明" }}")
         if (homework.score.isNotBlank()) appendLine("- 评分：${homework.score}")
@@ -1219,7 +1220,7 @@ private fun HomeworkDetailSheetBody(
         Text(homework.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         HomeworkDetailLine("课程", homework.courseName)
         HomeworkDetailLine("类型", homework.typeLabel())
-        HomeworkDetailLine("开放时间", homework.openDate.ifBlank { "未提供" })
+        HomeworkDetailLine("开放时间", homework.openDate.ifBlank { "未提供" }.let(::formatSchoolDateTime))
         HomeworkDetailLine("截止时间", homework.endTime.ifBlank { "未提供" }.let(::formatSchoolDeadline))
         HomeworkDetailLine("提交状态", homework.subStatus.ifBlank { "未标明" })
         if (homework.score.isNotBlank()) HomeworkDetailLine("评分", homework.score)
