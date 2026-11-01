@@ -87,6 +87,8 @@ data class ParsedExamCalendarTime(
     val endHour: Int,
     val endMinute: Int,
     val location: String,
+    /** false 时结束时刻只是日历事件的默认时长，不能作为学校公布的考试安排显示。 */
+    val hasExplicitEndTime: Boolean = true,
 )
 
 /**
@@ -309,6 +311,7 @@ fun parseExamCalendarTime(value: String): ParsedExamCalendarTime? {
         endHour = end.first,
         endMinute = end.second,
         location = location,
+        hasExplicitEndTime = times.size > 1,
     )
 }
 
