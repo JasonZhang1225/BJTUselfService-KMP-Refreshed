@@ -1674,11 +1674,12 @@ private fun CompactWeekGrid(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            displaySchoolClockText(compactSlotLabels[slot]),
+                            displaySchoolClockText(compactSlotLabels[slot], markerSeparator = "\n"),
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
-                            maxLines = 2,
+                            // 换时区后可能多一行“前日/次日”。
+                            maxLines = 3,
                         )
                     }
                     repeat(7) { day ->
