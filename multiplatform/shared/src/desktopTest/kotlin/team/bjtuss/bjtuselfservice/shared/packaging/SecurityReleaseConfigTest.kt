@@ -64,10 +64,17 @@ class SecurityReleaseConfigTest {
     }
 
     @Test
-    fun securityCheckWorkflowWatchesMainAndAuditNotDeletedLiquidBranch() {
+    fun securityCheckWorkflowRunsOnReadyPullRequestsAndCoversAgentCli() {
         val workflow = root.resolve(".github/workflows/kmp-security-check.yml").readText()
-        assertTrue("branches: [main, audit]" in workflow)
+        // main 只经 PR 合入，合入后不重复检查；草稿 PR 不跑，再次推送取消上一轮。
+        assertTrue("pull_request:" in workflow)
+        assertTrue("ready_for_review" in workflow)
+        assertTrue("!github.event.pull_request.draft" in workflow)
+        assertTrue("cancel-in-progress: true" in workflow)
         assertFalse("branches: [Liquid]" in workflow)
+        // 原独立的 Windows Agent CLI 冒烟并入 Windows 任务。
+        assertTrue("agent cache update --json" in workflow)
+        assertFalse(root.resolve(".github/workflows/agent-cli-windows.yml").exists())
     }
 
     @Test
