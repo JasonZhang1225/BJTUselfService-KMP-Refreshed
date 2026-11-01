@@ -179,8 +179,8 @@ fun phyVlabEventDate(event: PhyVlabEvent, timeZone: TimeZone): LocalDate? =
         val instant = Instant.fromEpochSeconds(event.dayTimestamp)
         val local = instant.toLocalDateTime(PHYVLAB_TIME_ZONE)
         val effectiveInstant = if (
-            event.kind == PhyVlabEventKind.DEADLINE &&
-            local.hour == 0 && local.minute == 0
+            (event.kind == PhyVlabEventKind.DEADLINE || event.kind == PhyVlabEventKind.DISCOUNT) &&
+            local.hour == 0 && local.minute == 0 && local.second == 0
         ) {
             instant.minus(1.minutes)
         } else {

@@ -171,9 +171,26 @@ internal fun ColumnScope.AggregateAssignmentFilterSheet(assignments: List<Aggreg
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            var dateInput by remember(filters.beforeDate) { mutableStateOf(filters.beforeDate.orEmpty()) }
+            val validDate = dateInput.isBlank() || runCatching { kotlinx.datetime.LocalDate.parse(dateInput) }.isSuccess
+            OutlinedTextField(
+                value = dateInput,
+                onValueChange = { value ->
+                    dateInput = value
+                    if (value.isBlank()) onChange(filters.copy(beforeDate = null))
+                    else if (runCatching { kotlinx.datetime.LocalDate.parse(value) }.isSuccess)
+                        onChange(filters.copy(beforeDate = value))
+                },
+                label = { Text("截止日期早于（不含当天）") },
+                placeholder = { Text("YYYY-MM-DD") },
+                supportingText = { Text(if (validDate) "按显示日期筛选；留空显示全部日期" else "请输入有效日期，例如 2026-10-30") },
+                isError = !validDate,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
             Text("截止时间", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(!filters.hideExpired, { onChange(filters.copy(hideExpired = false)) }, shape = RoundedCornerShape(10.dp), label = { Text("显示全部日期") })
+                FilterChip(!filters.hideExpired && filters.beforeDate == null, { onChange(filters.copy(hideExpired = false, beforeDate = null)) }, shape = RoundedCornerShape(10.dp), label = { Text("显示全部日期") })
                 FilterChip(filters.hideExpired, { onChange(filters.copy(hideExpired = true)) }, shape = RoundedCornerShape(10.dp), label = { Text("隐藏已过期") })
                 FilterChip(filters.hideSubmitted, { onChange(filters.copy(hideSubmitted = !filters.hideSubmitted)) }, shape = RoundedCornerShape(10.dp), label = { Text("隐藏已提交") })
             }

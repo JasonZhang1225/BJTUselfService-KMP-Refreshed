@@ -1,3 +1,9 @@
+# 进行中：午夜截止与作业日期筛选（PR #85，2026-10-31）
+
+- 分支 fix/deadline-date-filter 同步 upstream main d3e84f78，保留最新忽略作业分组和首页提醒机制，解决筛选与CITEL卡片冲突。
+- 日期筛选按北京时间显示日期判断，包含指定日期前一天24:00（实际为指定日00:00），排除指定日00:00:01及以后；忽略分组仍遵守日期、课程、学校提交状态筛选。
+- 新增午夜前后一秒、跨年、三个作业来源及忽略分组组合测试；日期/UI专项与跨平台编译验证结果见PR描述及CI。未使用真实账号数据，未合并或发布。
+
 # BJTUselfService 实时工作记忆
 
 > 2026-10-31：当前工作树 `/workspace/changelog-app`，分支 `feat/changelog-app`，基于最新 main `d3e84f78`；更新日志应用与发布说明整理已推送 PR #86（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/86），未合入，不改版本号、不发版。
