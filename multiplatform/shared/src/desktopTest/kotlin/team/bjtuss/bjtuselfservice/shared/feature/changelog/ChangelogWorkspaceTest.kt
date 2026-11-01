@@ -60,6 +60,8 @@ class ChangelogWorkspaceTest {
                 }
                 settle()
                 assertTrue(picker().boundsInRoot.top >= 128f)
+                // 读屏和键盘也要能打开版本菜单。
+                assertNotNull(picker().config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.OnClick))
                 assertNotNull(controller, "The whole page must participate in native scrolling")
                 assertTrue(controller!!.canScrollForward)
                 // A newly measured or rotated title bar must keep the picker clear.

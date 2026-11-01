@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.currentPlatform
+import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 
 /**
  * A shared sheet whose iOS presentation is owned by UIKit.
@@ -227,8 +228,11 @@ fun AppleSheet(
                         // 与 iOS 同义：fitContentHeight 的 content 不自带滚动和底部安全区，由 sheet 提供。
                         .then(
                             if (fitContentHeight) {
+                                // Windows 触摸屏要靠 desktopTouchScroll 才能拖动滚动，原生滚动的平台上它不起作用。
+                                val fitScroll = rememberScrollState()
                                 Modifier
-                                    .verticalScroll(rememberScrollState())
+                                    .verticalScroll(fitScroll)
+                                    .desktopTouchScroll(fitScroll)
                                     .windowInsetsPadding(WindowInsets.bottomSystemBars)
                             } else {
                                 Modifier
