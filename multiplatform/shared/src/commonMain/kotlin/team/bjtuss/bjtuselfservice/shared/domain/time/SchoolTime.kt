@@ -49,7 +49,13 @@ private val schoolClock = Regex("""(\d{1,2}):(\d{2})""")
  * [schoolDate] 是这些时刻所在的北京日期；换算后不在同一天时，在第一个时刻前注明“前日 ”或“次日 ”。
  * 手机在东八区时原样返回。课表格子仍按北京时间排，只有显示的时刻随手机时区变化。
  */
-fun displaySchoolClockText(text: String, schoolDate: LocalDate = schoolNow().date, zone: TimeZone = displayTimeZone()): String {
+fun displaySchoolClockText(
+    text: String,
+    schoolDate: LocalDate = schoolNow().date,
+    zone: TimeZone = displayTimeZone(),
+    /** 标注与时刻之间的分隔；窄列里用换行，标注单独占一行。 */
+    markerSeparator: String = " ",
+): String {
     if (zone == SchoolTimeZone) return text
     var first = true
     return schoolClock.replace(text) { match ->
@@ -60,8 +66,8 @@ fun displaySchoolClockText(text: String, schoolDate: LocalDate = schoolNow().dat
         val clock = "${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
         val shift = local.date.toEpochDays() - schoolDate.toEpochDays()
         val marker = if (!first) "" else when {
-            shift < 0 -> "前日 "
-            shift > 0 -> "次日 "
+            shift < 0 -> "前日$markerSeparator"
+            shift > 0 -> "次日$markerSeparator"
             else -> ""
         }
         first = false
