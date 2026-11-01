@@ -751,7 +751,7 @@ struct WidgetMessage: View {
 // MARK: - 格式化
 
 func clock(_ date: Date) -> String {
-    let parts = CourseWidgetCalendar.calendar.dateComponents([.hour, .minute], from: date)
+    let parts = CourseWidgetCalendar.displayCalendar.dateComponents([.hour, .minute], from: date)
     return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
 }
 

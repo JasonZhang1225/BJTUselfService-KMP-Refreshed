@@ -93,8 +93,9 @@ class ClassroomOccupancyScreenModel(
     private val repository: ClassroomOccupancyRepository,
     private val peopleRepository: team.bjtuss.bjtuselfservice.shared.data.classroom.ClassroomRepository? = null,
     private val currentWeekProvider: () -> Int = { 1 },
+    // 教室占用按北京时间的星期和节次排。
     private val todayWeekdayProvider: () -> Int = {
-        Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).dayOfWeek.isoDayNumber
+        Clock.System.now().toLocalDateTime(team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone).dayOfWeek.isoDayNumber
     },
 ) {
     private val mutableState = MutableStateFlow(ClassroomOccupancyUiState())

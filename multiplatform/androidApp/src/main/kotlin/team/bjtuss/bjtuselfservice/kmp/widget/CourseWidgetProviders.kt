@@ -25,6 +25,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.widget.CourseWidgetState
 import team.bjtuss.bjtuselfservice.shared.feature.widget.courseWidgetNextRefresh
 import team.bjtuss.bjtuselfservice.shared.feature.widget.courseWidgetState
 import team.bjtuss.bjtuselfservice.shared.feature.widget.readAndroidCourseWidgetSnapshot
+import team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone
 
 /** 三种小组件，与 iOS 的 UpNext / Today / Week 一一对应。 */
 enum class CourseWidgetKind { UP_NEXT, TODAY, WEEK }
@@ -94,7 +95,7 @@ object CourseWidgetUpdater {
         runCatching { manager.updateAppWidget(id, views) }
     }
 
-    private fun now() = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+    private fun now() = Clock.System.now().toLocalDateTime(SchoolTimeZone)
 
     private fun build(context: Context, kind: CourseWidgetKind, options: Bundle): RemoteViews {
         val renderer = CourseWidgetRenderer(context)
@@ -196,7 +197,7 @@ object CourseWidgetUpdater {
             alarm.cancel(intent)
             return
         }
-        val zone = TimeZone.currentSystemDefault()
+        val zone = SchoolTimeZone
         val next = courseWidgetNextRefresh(readAndroidCourseWidgetSnapshot(context), now())
         alarm.set(AlarmManager.RTC, next.toInstant(zone).toEpochMilliseconds(), intent)
     }

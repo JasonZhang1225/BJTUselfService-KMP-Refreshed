@@ -40,6 +40,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.course.Course
 import team.bjtuss.bjtuselfservice.shared.domain.course.displayScheduleCourseName
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeNowSession
 import team.bjtuss.bjtuselfservice.shared.domain.home.pickHomeNowSessions
+import team.bjtuss.bjtuselfservice.shared.domain.time.displaySchoolClockText
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseDetailContent
 import team.bjtuss.bjtuselfservice.shared.feature.course.courseCategoryAccent
 import team.bjtuss.bjtuselfservice.shared.feature.course.courseColorCategory
@@ -172,7 +173,7 @@ internal fun HomeNowCard(
                 }
                 if (session.timeRange.isNotBlank()) {
                     Text(
-                        session.timeRange,
+                        displaySchoolClockText(session.timeRange),
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSurfaceVariant,
                     )

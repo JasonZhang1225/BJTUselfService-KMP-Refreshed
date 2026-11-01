@@ -182,11 +182,28 @@ struct CourseWidgetModel {
 }
 
 enum CourseWidgetCalendar {
+    /// 课表快照的日期和分钟都是北京时间：解析日期、算“今天”、排周视图都按北京时间，
+    /// 手机换到别的时区也不会把课挪到别的格子。
     static var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        calendar.locale = Locale(identifier: "zh_CN")
+        return calendar
+    }
+
+    /// 显示给人看的时刻按手机当前时区；东八区时与 [calendar] 相同。
+    static var displayCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
         calendar.locale = Locale(identifier: "zh_CN")
         return calendar
+    }
+
+    /// 北京时间当天第 `minute` 分钟，在手机时区显示成 "HH:mm"。
+    static func displayClock(minute: Int, on date: Date = .now) -> String {
+        let day = calendar.startOfDay(for: date).addingTimeInterval(TimeInterval(minute * 60))
+        let parts = displayCalendar.dateComponents([.hour, .minute], from: day)
+        return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
     }
 
     static func dayKey(_ date: Date) -> String {
