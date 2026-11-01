@@ -32,7 +32,6 @@ import androidx.compose.ui.unit.dp
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
@@ -41,6 +40,7 @@ import team.bjtuss.bjtuselfservice.shared.LocalReduceMotion
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.currentPlatform
 import team.bjtuss.bjtuselfservice.shared.domain.homework.DeadlineScope
+import team.bjtuss.bjtuselfservice.shared.domain.homework.SchoolTimeZone
 import team.bjtuss.bjtuselfservice.shared.domain.homework.deadlineScope
 import team.bjtuss.bjtuselfservice.shared.feature.course.IosCompactDatePicker
 
@@ -49,7 +49,8 @@ private const val MILLIS_PER_DAY = 86_400_000L
 /** 面板打开期间重新读取当前日期的间隔。 */
 private const val TODAY_REFRESH_MILLIS = 60_000L
 
-private fun currentLocalDate(): LocalDate = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+// 按北京时间取“今天”，与列表判断过期用的“现在”和截止日期归日一致，不随手机时区变化。
+private fun currentLocalDate(): LocalDate = Clock.System.now().toLocalDateTime(SchoolTimeZone).date
 
 /** 切到“指定日期”且之前没选过日期时，默认看一周内。 */
 private const val DEFAULT_UNTIL_DAYS = 7
