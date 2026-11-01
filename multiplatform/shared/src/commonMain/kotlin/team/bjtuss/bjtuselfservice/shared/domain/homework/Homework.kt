@@ -1,5 +1,6 @@
 package team.bjtuss.bjtuselfservice.shared.domain.homework
 
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
@@ -115,6 +116,8 @@ data class HomeworkFilterPreferences(
     val hideExpired: Boolean = false,
     val hideSubmitted: Boolean = false,
     val sortOrder: HomeworkSortOrder = HomeworkSortOrder.ORIGINAL,
+    /** “截止日期”选了指定日期时的那一天，见 [DeadlineScope]。 */
+    val untilDate: LocalDate? = null,
 )
 
 /** 筛选偏好读写口；跨进程/重启 persistence 由调用方（缓存）提供，null 表示不持久化。 */
@@ -167,10 +170,9 @@ fun filterHomework(
     hideExpired: Boolean,
     now: LocalDateTime,
     hideSubmitted: Boolean = false,
+    untilDate: LocalDate? = null,
 ): List<Homework> = homework.filter { item ->
-    val deadline = parseSchoolLocalDateTime(item.endTime)
-    val hasValidDate = deadline?.let { it > now } ?: true
-    val dateMatches = !hideExpired || hasValidDate
+    val dateMatches = deadlineInScope(parseSchoolLocalDateTime(item.endTime), now, hideExpired, untilDate)
     val courseMatches = selectedCourses.isEmpty() || item.courseName in selectedCourses
     val submittedMatches = !hideSubmitted || !isHomeworkSubmitted(item)
     dateMatches && courseMatches && submittedMatches

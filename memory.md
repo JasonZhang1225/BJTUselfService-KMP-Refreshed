@@ -32,9 +32,22 @@
 >
 > **接下来**：等本次 KMP package 产物；Android P0 真机测量（PROMPT2）与 iOS/macOS 其余验收按需推进。
 >
-> 2026-10-31：进行中 `feat/homework-dismiss-redesign`（基于 main `ad874581`）——把作业卡片上的“已完成”复选框改成“忽略”：卡片无常驻控件，长按/右键菜单、手机左滑、详情页按钮、读屏自定义操作进入；忽略后移到列表末尾“已忽略 N 项”分组，底栏上方 4 秒撤销提示；与“隐藏已提交”筛选解耦。存储键 `assignment.manualCompletion.v1` 不变，旧标记直接显示为已忽略。详见下节。
+> 2026-11-01：进行中 `feat/homework-filter-split`——作业筛选拆成“截止日期”“提交状态”两个切换器，指定日期接系统原生选择器，旧设置迁移，详见下节。
+>
+> 2026-10-31：`feat/homework-dismiss-redesign`（PR #84）与 PR #85（日期输入框）已合入 main（`cdd315ed`），待移入日志。原记录：（基于 main `ad874581`）——把作业卡片上的“已完成”复选框改成“忽略”：卡片无常驻控件，长按/右键菜单、手机左滑、详情页按钮、读屏自定义操作进入；忽略后移到列表末尾“已忽略 N 项”分组，底栏上方 4 秒撤销提示；与“隐藏已提交”筛选解耦。存储键 `assignment.manualCompletion.v1` 不变，旧标记直接显示为已忽略。详见下节。
 >
 > 2026-10-31：进行中 PR #83 `cursor/fix-bugbot-playback-compose-e4cd` —— Bugbot 三条 Medium 修复；CI Android/Windows 因 `recordingDownloadsEnabled` 插在 `restoreDestination` 前导致位置实参类型不匹配，正改为命名参数。不改版本号、不打 `v*`。
+
+## 进行中：作业筛选拆成“截止日期”“提交状态”两个切换器（`feat/homework-filter-split`，2026-11-01）
+
+- 基于 main `cdd315ed`（已含 PR #84 忽略交互、PR #85 日期输入框）。未提交、未推送。
+- 改动：三处筛选面板（聚合、课程平台独立页、物理在线/CITEL 独立页）统一用 `AssignmentFilterControls.kt`：`AppleSegmentedControl`（临界阻尼滑块、按下变淡、减少动态效果时直接跳）；“截止日期”全部 / 未过期 / 指定日期三档互斥，指定日期 = 现在到所选日当天 24:00 之间截止（零点截止算前一天，不含已过期和无截止时间的）；“提交状态”全部 / 未提交。日期选择：iOS 用原生 `UIDatePickerStyleCompact`（`IosCompactDatePicker`，系统弹出日历，早于今天不可选），Android/桌面用 Material `DatePickerDialog`。规则集中在 `domain/homework/DeadlineScope.kt`。
+- 兼容：持久化仍写 `hideExpired`，新增 `untilDate`（聚合/物理在线/CITEL 进 JSON，课程平台进 `homework_filter_until_date`），选指定日期时 `hideExpired=true`，旧版本读到退回“未过期”。PR #85 的 `beforeDate`（早于 D、不含当天）加载时迁移为 `untilDate = D-1`，并改为不含已过期。
+- 验证：`:shared:desktopTest` 1320 项全过（1 跳过）；`:androidApp:assembleDebug :shared:compileKotlinIosArm64 :windowsApp:compileKotlinWindows :desktopApp:compileKotlin` 成功；签名 iOS 模拟器构建（iPhone 17 Pro）实测：旧设置“未过期+未提交”升级后保留；指定日期后原生日历弹出、选择后列表与说明文字更新，重启后保留。离屏图在 `shared/build/reports/deadline-filter/`，模拟器截图在 `.artifacts/filter-split-ui/`。
+- 追加（用户 2026-11-01 要求）：“提交状态”说明改为“左滑可忽略作业，忽略后收纳在列表末尾的“已忽略”分组里。”，并在下方用主题色显示“您当前忽略了 N 项作业”（N 按当前账号全部作业统计，0 时不显示，行为不变）；三处作业筛选与考试筛选的弹层改为按内容定高（`fitContentHeight`），删掉课程平台页未被调用的 `HomeworkBehaviorFilters`。复验：`:shared:desktopTest` 1320 项全过；五个目标编译通过；debug 包 `adb install -r` 装到平板（Xiaomi 25091RP04C，签名同已装版本，数据保留），作业筛选按内容定高、旧设置保留；iOS 模拟器作业筛选与考试筛选均按内容定高，忽略计数显示正常。
+- 追加（同分支）：重写 `docs/releases/v2.0.0-KMP.md`，以 1.8.6 为基准——回放/双画面/录像下载合并为一条“课程回放”，删去 2.0 开发期间自身的优化与修复（边下载边合成、macOS 提速、回放各类修复、忽略卡片修复等），修复只保留 1.8.6 已有功能的问题。`scripts/sync-bundled-changelog.py` 把“**标题**：正文”拆成 `ChangelogItem(title, body)`；更新日志页改为可点的版本卡片（“切换”+下拉箭头，显示共 N 个版本）和分板块卡片（板块标题 > 条目小标题 > 缩进正文，新增/优化/修复用 primary/tertiary/secondary 区分）。验证：`:shared:desktopTest` 1322 项全过，`--check` 同步，五目标编译通过，平板实装查看正常；离屏图 `shared/build/reports/changelog/`。
+- 修过的坑：紧凑日期按钮用 `sizeThatFits` 会把提议宽度原样返回，导致整行被撑满、标签宽度为 0；改为 `UILayoutFittingCompressedSize`，并在值变化时 `setNeedsLayout`。
+- 未验证：平板上的 `DatePickerDialog` 与切换器手感（已装好待用户看）；macOS/Windows 桌面实际窗口；iOS 浅色模式与大字号（离屏图已看 1.6 倍字号）。
 
 ## 进行中：作业“忽略”交互重做（`feat/homework-dismiss-redesign`，2026-10-31）
 

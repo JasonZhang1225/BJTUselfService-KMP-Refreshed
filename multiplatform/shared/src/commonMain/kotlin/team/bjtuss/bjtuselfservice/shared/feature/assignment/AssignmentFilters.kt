@@ -1,20 +1,18 @@
 package team.bjtuss.bjtuselfservice.shared.feature.assignment
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
-import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
-import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetScrollContentPadding
+import team.bjtuss.bjtuselfservice.shared.domain.homework.parseUntilDate
 
 /** Only preferences are persisted; visible tasks are recomputed from the current snapshot and time. */
 @Serializable
@@ -23,8 +21,13 @@ data class AssignmentFilters(
     val hideExpired: Boolean = false,
     val hideSubmitted: Boolean = false,
     val sortOrder: Int = 1,
+    /** “截止日期”选了指定日期时的那一天（含当天），见 [DeadlineScope]。 */
+    val untilDate: String? = null,
 ) {
-    val active: Boolean get() = courses.isNotEmpty() || hideExpired || hideSubmitted
+    val until: LocalDate? get() = parseUntilDate(untilDate)
+    val active: Boolean get() = courses.isNotEmpty() || hideExpired || hideSubmitted || until != null
+    fun withDeadlineScope(hideExpired: Boolean, until: LocalDate?) =
+        copy(hideExpired = hideExpired || until != null, untilDate = until?.toString())
 }
 
 class AssignmentFilterStore(private val cache: CacheStore, private val account: String, source: String) {
@@ -38,11 +41,11 @@ class AssignmentFilterStore(private val cache: CacheStore, private val account: 
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun ColumnScope.AssignmentFilterSheet(courses: List<Pair<Int, String>>, filters: AssignmentFilters, onChange: (AssignmentFilters) -> Unit) {
-    val scroll = rememberScrollState()
+internal fun AssignmentFilterSheet(courses: List<Pair<Int, String>>, filters: AssignmentFilters, ignoredCount: Int,
+    onChange: (AssignmentFilters) -> Unit) {
+    // 弹层按内容定高（fitContentHeight），滚动和底部安全区由弹层负责，这里不再套滚动。
     Column(
-        Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).desktopTouchScroll(scroll)
-            .sheetScrollContentPadding(),
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Text("筛选与排序", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -57,14 +60,10 @@ internal fun ColumnScope.AssignmentFilterSheet(courses: List<Pair<Int, String>>,
                 }
             }
         }
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("截止时间", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(!filters.hideExpired, { onChange(filters.copy(hideExpired = false)) }, shape = RoundedCornerShape(10.dp), label = { Text("显示全部日期") })
-                FilterChip(filters.hideExpired, { onChange(filters.copy(hideExpired = true)) }, shape = RoundedCornerShape(10.dp), label = { Text("隐藏已过期") })
-                FilterChip(filters.hideSubmitted, { onChange(filters.copy(hideSubmitted = !filters.hideSubmitted)) }, shape = RoundedCornerShape(10.dp), label = { Text("隐藏已提交") })
-            }
+        AssignmentDeadlineFilter(filters.hideExpired, filters.until) { hideExpired, until ->
+            onChange(filters.withDeadlineScope(hideExpired, until))
         }
+        AssignmentSubmissionFilter(filters.hideSubmitted, ignoredCount) { onChange(filters.copy(hideSubmitted = it)) }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("排序", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

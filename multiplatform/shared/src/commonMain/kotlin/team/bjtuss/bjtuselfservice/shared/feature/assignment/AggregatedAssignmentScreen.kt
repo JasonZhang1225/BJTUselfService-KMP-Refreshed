@@ -120,8 +120,9 @@ internal fun AggregatedAssignmentWorkspace(
             }
         }
     } else renderList(modifier.fillMaxSize())
-    if (showFilters) AppleSheet(onDismissRequest = { showFilters = false }, title = "作业筛选", needsFullHeight = true, scrollableBody = true) {
-        AggregateAssignmentFilterSheet(assignments, sync.map { it.source }, filters) { next ->
+    if (showFilters) AppleSheet(onDismissRequest = { showFilters = false }, title = "作业筛选", fitContentHeight = true) {
+        AggregateAssignmentFilterSheet(assignments, sync.map { it.source }, filters,
+            ignoredAssignmentCount(assignments, completion.completedKeys, { it.submitted }, { it.completionKey() })) { next ->
             store?.save(next)
             filters = next
         }
@@ -144,12 +145,11 @@ internal fun AggregatedAssignmentCard(item: AggregatedAssignment, now: Long, sel
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun ColumnScope.AggregateAssignmentFilterSheet(assignments: List<AggregatedAssignment>, sources: List<AssignmentSource>,
-    filters: AggregateAssignmentFilters, onChange: (AggregateAssignmentFilters) -> Unit) {
-    val scroll = rememberScrollState()
+internal fun AggregateAssignmentFilterSheet(assignments: List<AggregatedAssignment>, sources: List<AssignmentSource>,
+    filters: AggregateAssignmentFilters, ignoredCount: Int, onChange: (AggregateAssignmentFilters) -> Unit) {
+    // 弹层按内容定高（fitContentHeight），滚动和底部安全区由弹层负责，这里不再套滚动。
     Column(
-        Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).desktopTouchScroll(scroll)
-            .sheetScrollContentPadding(),
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Text("筛选与排序", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -170,31 +170,10 @@ internal fun ColumnScope.AggregateAssignmentFilterSheet(assignments: List<Aggreg
                 }
             }
         }
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            var dateInput by remember(filters.beforeDate) { mutableStateOf(filters.beforeDate.orEmpty()) }
-            val validDate = dateInput.isBlank() || runCatching { kotlinx.datetime.LocalDate.parse(dateInput) }.isSuccess
-            OutlinedTextField(
-                value = dateInput,
-                onValueChange = { value ->
-                    dateInput = value
-                    if (value.isBlank()) onChange(filters.copy(beforeDate = null))
-                    else if (runCatching { kotlinx.datetime.LocalDate.parse(value) }.isSuccess)
-                        onChange(filters.copy(beforeDate = value))
-                },
-                label = { Text("截止日期早于（不含当天）") },
-                placeholder = { Text("YYYY-MM-DD") },
-                supportingText = { Text(if (validDate) "按显示日期筛选；留空显示全部日期" else "请输入有效日期，例如 2026-10-30") },
-                isError = !validDate,
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text("截止时间", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(!filters.hideExpired && filters.beforeDate == null, { onChange(filters.copy(hideExpired = false, beforeDate = null)) }, shape = RoundedCornerShape(10.dp), label = { Text("显示全部日期") })
-                FilterChip(filters.hideExpired, { onChange(filters.copy(hideExpired = true)) }, shape = RoundedCornerShape(10.dp), label = { Text("隐藏已过期") })
-                FilterChip(filters.hideSubmitted, { onChange(filters.copy(hideSubmitted = !filters.hideSubmitted)) }, shape = RoundedCornerShape(10.dp), label = { Text("隐藏已提交") })
-            }
+        AssignmentDeadlineFilter(filters.hideExpired, filters.until) { hideExpired, until ->
+            onChange(filters.withDeadlineScope(hideExpired, until))
         }
+        AssignmentSubmissionFilter(filters.hideSubmitted, ignoredCount) { onChange(filters.copy(hideSubmitted = it)) }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("排序", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

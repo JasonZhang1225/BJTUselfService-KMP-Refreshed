@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -44,6 +45,7 @@ data class HomeworkUiState(
     val hideExpired: Boolean = false,
     val hideSubmitted: Boolean = false,
     val sortOrder: HomeworkSortOrder = HomeworkSortOrder.ORIGINAL,
+    val untilDate: LocalDate? = null,
     val selectedHomeworkKey: String? = null,
     val detail: HomeworkDetail? = null,
     val submittedAttachments: List<SubmittedHomeworkAttachment> = emptyList(),
@@ -66,7 +68,7 @@ data class HomeworkUiState(
         get() = homework.map(Homework::courseName).filter(String::isNotBlank).distinct().sorted()
 
     val visibleHomework: List<Homework>
-        get() = sortHomework(filterHomework(homework, selectedCourses, hideExpired, now, hideSubmitted), sortOrder)
+        get() = sortHomework(filterHomework(homework, selectedCourses, hideExpired, now, hideSubmitted, untilDate), sortOrder)
 
     val dueSoonCount: Int
         get() = dueSoonHomeworkCount(visibleHomework, now, timeZone)
@@ -217,10 +219,14 @@ class HomeworkScreenModel(
         persistFilters()
     }
 
-    fun setHideExpired(hideExpired: Boolean) {
+    fun setHideExpired(hideExpired: Boolean) = setDeadlineScope(hideExpired, untilDate = null)
+
+    /** “截止日期”切换器：全部 / 未过期 / 指定日期（[untilDate] 非空），三者互斥。 */
+    fun setDeadlineScope(hideExpired: Boolean, untilDate: LocalDate?) {
         detailRequestKey = null
         mutableState.value = mutableState.value.copy(
-            hideExpired = hideExpired,
+            hideExpired = hideExpired || untilDate != null,
+            untilDate = untilDate,
             selectedHomeworkKey = null,
             detail = null,
             submittedAttachments = emptyList(),
@@ -280,6 +286,7 @@ class HomeworkScreenModel(
             hideExpired = prefs.hideExpired,
             hideSubmitted = prefs.hideSubmitted,
             sortOrder = prefs.sortOrder,
+            untilDate = prefs.untilDate,
             now = nowProvider(),
         )
     }
@@ -294,6 +301,7 @@ class HomeworkScreenModel(
                     hideExpired = current.hideExpired,
                     hideSubmitted = current.hideSubmitted,
                     sortOrder = current.sortOrder,
+                    untilDate = current.untilDate,
                 ),
             )
         }

@@ -10,3 +10,11 @@ internal actual fun IosNativeDatePicker(
     onDateSelected: (LocalDate) -> Unit,
     modifier: Modifier,
 ) = Unit
+
+@Composable
+internal actual fun IosCompactDatePicker(
+    selectedDate: LocalDate,
+    minimumDate: LocalDate?,
+    onDateSelected: (LocalDate) -> Unit,
+    modifier: Modifier,
+) = Unit

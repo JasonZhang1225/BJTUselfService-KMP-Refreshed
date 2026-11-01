@@ -14,6 +14,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferen
 import team.bjtuss.bjtuselfservice.shared.domain.homework.decodeHomeworkFilterCourses
 import team.bjtuss.bjtuselfservice.shared.domain.homework.decodeHomeworkSortOrder
 import team.bjtuss.bjtuselfservice.shared.domain.homework.encodeHomeworkFilterCourses
+import team.bjtuss.bjtuselfservice.shared.domain.homework.parseUntilDate
 
 data class AppPreferences(
     val autoSyncGrades: Boolean = true,
@@ -306,7 +307,7 @@ class CacheStore(
     }
 
     /**
-     * 作业筛选面板的上次状态（按账号存）：课程多选、隐藏过期/已提交、排序。
+     * 作业筛选面板的上次状态（按账号存）：课程多选、截止日期档位（隐藏过期/指定日期）、隐藏已提交、排序。
      * 退出登录清账号数据时一起清除；课程名对不上当前数据时读取方自行裁剪。
      */
     fun homeworkFilter(accountScope: String): HomeworkFilterPreferences {
@@ -316,6 +317,7 @@ class CacheStore(
             hideExpired = metadata(scope, HOMEWORK_FILTER_HIDE_EXPIRED_KEY) == "true",
             hideSubmitted = metadata(scope, HOMEWORK_FILTER_HIDE_SUBMITTED_KEY) == "true",
             sortOrder = decodeHomeworkSortOrder(metadata(scope, HOMEWORK_FILTER_SORT_KEY)),
+            untilDate = parseUntilDate(metadata(scope, HOMEWORK_FILTER_UNTIL_DATE_KEY)),
         )
     }
 
@@ -326,6 +328,7 @@ class CacheStore(
             putMetadata(scope, HOMEWORK_FILTER_HIDE_EXPIRED_KEY, preferences.hideExpired.toString())
             putMetadata(scope, HOMEWORK_FILTER_HIDE_SUBMITTED_KEY, preferences.hideSubmitted.toString())
             putMetadata(scope, HOMEWORK_FILTER_SORT_KEY, preferences.sortOrder.name)
+            putMetadata(scope, HOMEWORK_FILTER_UNTIL_DATE_KEY, preferences.untilDate?.toString().orEmpty())
         }
     }
 
@@ -673,6 +676,7 @@ private const val HOMEWORK_FILTER_COURSES_KEY = "homework_filter_courses"
 private const val HOMEWORK_FILTER_HIDE_EXPIRED_KEY = "homework_filter_hide_expired"
 private const val HOMEWORK_FILTER_HIDE_SUBMITTED_KEY = "homework_filter_hide_submitted"
 private const val HOMEWORK_FILTER_SORT_KEY = "homework_filter_sort"
+private const val HOMEWORK_FILTER_UNTIL_DATE_KEY = "homework_filter_until_date"
 private const val COURSE_CURRENT_WEEK_KEY = "course_current_week"
 private const val COURSE_MAX_WEEK = 30
 private const val PROFILE_NAME_KEY = "profile_name"

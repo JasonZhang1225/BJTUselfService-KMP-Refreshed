@@ -82,6 +82,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.domain.homework.deadlineInScope
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
 
@@ -264,8 +265,9 @@ fun PhyVlabWorkspace(
         }
     }
 
-    if (showFilters) AppleSheet(onDismissRequest = { showFilters = false }, title = "作业筛选", needsFullHeight = true, scrollableBody = true) {
-        AssignmentFilterSheet(state.courses.map { it.id to it.name }, filters, model::updateFilters)
+    if (showFilters) AppleSheet(onDismissRequest = { showFilters = false }, title = "作业筛选", fitContentHeight = true) {
+        AssignmentFilterSheet(state.courses.map { it.id to it.name }, filters,
+            ignoredAssignmentCount(allActivities, completion.completedKeys, { it.completed }, { it.completionKey() }), model::updateFilters)
     }
 
     if (showDetailSheet) state.selectedActivity?.let { activity ->
@@ -377,7 +379,7 @@ private fun PhyVlabCourseRow(course: PhyVlabCourse, selected: Boolean, onSelect:
 internal fun filterPhyVlabActivities(activities: List<PhyVlabActivity>, filters: AssignmentFilters, now: Long): List<PhyVlabActivity> {
     val visible = activities.filter { (filters.courses.isEmpty() || it.courseId in filters.courses) &&
         (!filters.hideSubmitted || !it.completed) &&
-        (!filters.hideExpired || it.dueTimestamp?.let { due -> due > now } != false) }
+        deadlineInScope(it.dueTimestamp, now, filters.hideExpired, filters.until) }
     return when (filters.sortOrder) {
         1 -> visible.sortedBy { it.dueTimestamp ?: Long.MAX_VALUE }
         2 -> visible.sortedByDescending { it.dueTimestamp ?: Long.MIN_VALUE }

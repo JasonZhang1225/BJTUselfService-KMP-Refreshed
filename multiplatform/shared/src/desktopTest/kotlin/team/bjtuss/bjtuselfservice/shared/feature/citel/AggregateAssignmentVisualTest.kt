@@ -89,7 +89,7 @@ class AggregateAssignmentVisualTest {
                         }
                         Panel("按平台筛选课程", Modifier.weight(1f)) {
                             AggregateAssignmentFilterSheet(items, AssignmentSource.entries,
-                                AggregateAssignmentFilters().withSource(AssignmentSource.PHYVLAB, AggregateCourseFilter(false)), {})
+                                AggregateAssignmentFilters().withSource(AssignmentSource.PHYVLAB, AggregateCourseFilter(false)), 0, {})
                         }
                         Panel("设置与独立同步状态", Modifier.weight(1f)) {
                             AssignmentAggregationCard(true, {})
