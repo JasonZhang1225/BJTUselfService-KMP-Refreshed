@@ -52,6 +52,15 @@
 
 # BJTUselfService 实时工作记忆
 
+> 2026-11-02：进行中 `chore/ci-slim`（基于 main `13b41b41`，未提交）——精简 CI，详见下节。`feat/device-timezone` 本地分支保持原样。
+
+## 进行中：CI 精简（`chore/ci-slim`，2026-11-02）
+
+- `kmp-security-check.yml`：去掉 push main/audit（main 只经 PR 合入）；PR 只在 opened/synchronize/reopened/ready_for_review 触发，草稿 PR 不跑；同一 PR 新推送取消旧轮（concurrency）。新增 `changes` 任务按改动文件分流：androidApp→Android，iosApp/desktopApp→macOS 任务，windowsApp→Windows，shared/Gradle 配置→三端，remote-site-template→Node 测试，src 以外的 .md 与 docs/releases 只跑更新日志检查；手动运行全跑。macOS 任务两次 Gradle 测试合成一次（`--continue`）。
+- `agent-cli-windows.yml` 删除，测试与冒烟步骤并入 Windows 任务，只在 windowsApp、shared 的 agent/、commonMain 的 sync/ 改动时执行；Windows 包改用 ASCII 名 `BJTUselfServiceKMP`。
+- `kmp-package.yml`：去掉被 `v*` 覆盖的标签模式和已失效的 `pull_request` 条件，行为不变。
+- `SecurityReleaseConfigTest` 改为断言新触发方式与冒烟已并入。验证：两个配置测试 16 项通过；分类脚本用 11 种模拟改动核对；actionlint 1.7.12：`kmp-security-check.yml`、`gitee-release-mirror.yml` 无告警；`kmp-package.yml` 的 4 条（`xcode-27` 自定义标签、2 条 shellcheck）main 上原样存在，非本次引入。实际运行效果待 PR CI。
+
 > 2026-10-31：当前工作树 `/workspace/changelog-app`，分支 `feat/changelog-app`，基于最新 main `d3e84f78`；更新日志应用与发布说明整理已推送 PR #86（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/86），未合入，不改版本号、不发版。
 
 ## 进行中：更新日志应用与发布说明整理
