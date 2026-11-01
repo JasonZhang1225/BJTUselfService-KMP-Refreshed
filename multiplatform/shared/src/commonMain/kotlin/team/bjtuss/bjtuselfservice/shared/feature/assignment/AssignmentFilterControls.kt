@@ -153,7 +153,9 @@ private fun UntilDateRow(date: LocalDate, today: LocalDate, onPick: (LocalDate) 
     ) {
         Text("截止不晚于", style = MaterialTheme.typography.bodyLarge, maxLines = 1, modifier = Modifier.weight(1f))
         if (currentPlatform().family == PlatformFamily.IOS) {
-            IosCompactDatePicker(selectedDate = date, minimumDate = today, onDateSelected = onPick)
+            // 已过去的保存日期不能被下限夹到今天：setDate 不回调，按钮会显示今天而列表仍按旧日期筛选。
+            // 下限放宽到该日期，按钮如实显示旧日期，配合下方红字提示，点今天即可生效。
+            IosCompactDatePicker(selectedDate = date, minimumDate = minOf(date, today), onDateSelected = onPick)
         } else {
             MaterialDateButton(date = date, today = today, onPick = onPick)
         }
