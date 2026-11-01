@@ -66,6 +66,7 @@ fun buildHomeAgenda(
     timeZone: TimeZone,
     phyVlabEvents: List<PhyVlabEvent> = emptyList(),
     weekStartDate: LocalDate? = null,
+    nowInstant: Instant = now.toInstant(timeZone),
 ): HomeAgenda {
     val monday = weekStartDate ?: today.minus(today.dayOfWeek.isoDayNumber - 1, DateTimeUnit.DAY)
     val days = (0..6).map { offset ->
@@ -82,10 +83,10 @@ fun buildHomeAgenda(
                 .sortedWith(compareBy<PhyVlabEvent> { it.dayTimestamp }.thenBy { it.title }),
         )
     }
-    val dueSoon = homework.filter { isHomeworkDueSoon(it, now, timeZone) }
+    val dueSoon = homework.filter { isHomeworkDueSoon(it, now, timeZone, nowInstant) }
         .sortedWith(compareBy<Homework> { parseSchoolLocalDateTime(it.endTime) == null }
             .thenBy { parseSchoolLocalDateTime(it.endTime) })
-    val nowEpochSeconds = now.toInstant(timeZone).epochSeconds
+    val nowEpochSeconds = nowInstant.epochSeconds
     val dueSoonEvents = phyVlabEvents
         .filter { isPhyVlabDeadlineDueSoon(it, nowEpochSeconds) }
         .sortedWith(compareBy<PhyVlabEvent> { it.dayTimestamp }.thenBy { it.title })

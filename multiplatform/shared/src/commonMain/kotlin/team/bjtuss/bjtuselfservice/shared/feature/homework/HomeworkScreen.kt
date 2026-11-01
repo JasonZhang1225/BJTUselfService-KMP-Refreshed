@@ -575,7 +575,7 @@ private fun HomeworkSummary(
     onOpenFilter: (() -> Unit)? = null,
 ) {
     // 已忽略的作业不进入数量和 48 小时提醒。
-    val dueSoon = team.bjtuss.bjtuselfservice.shared.domain.homework.dueSoonHomeworkCount(visible, state.now, state.timeZone)
+    val dueSoon = team.bjtuss.bjtuselfservice.shared.domain.homework.dueSoonHomeworkCount(visible, state.now, state.timeZone, state.nowInstant)
     // 仅课程/过期/已提交过滤算「筛选」；改排序不算。
     val filtered = state.selectedCourses.isNotEmpty() || state.hideExpired || state.hideSubmitted
     val subtitle = buildString {

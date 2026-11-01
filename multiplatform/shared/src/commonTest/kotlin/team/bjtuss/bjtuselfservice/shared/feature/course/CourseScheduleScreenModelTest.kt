@@ -27,6 +27,14 @@ import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.PlatformInfo
 
 class CourseScheduleScreenModelTest {
+    @Test fun crossDstWeeksCannotShareOneLocalClockAxis() {
+        val zone = kotlinx.datetime.TimeZone.of("America/New_York")
+        assertTrue(weekNeedsOccurrenceClocks(LocalDate(2026, 10, 26), zone))
+        assertTrue(weekNeedsOccurrenceClocks(LocalDate(2026, 3, 2), zone))
+        assertFalse(weekNeedsOccurrenceClocks(LocalDate(2026, 11, 2), zone))
+        assertFalse(weekNeedsOccurrenceClocks(LocalDate(2026, 10, 26), team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone))
+    }
+
     @Test fun selectedWeekSuppliesTheCourseDateAcrossDstBoundary() {
         val zone = kotlinx.datetime.TimeZone.of("America/New_York")
         val morning = course(1, week = 7).copy(courseLocationIndex = 1)

@@ -26,6 +26,19 @@ class SchoolTimeTest {
         assertEquals("没有时刻的文字", displaySchoolClockText("没有时刻的文字", monday, newYork))
     }
 
+    @Test fun sharedAxisRequiresIdenticalClocksOnEveryDateAndEverySlot() {
+        val week = (26..31).map { LocalDate(2026, 10, it) } + LocalDate(2026, 11, 1)
+        // 北京周日 08:00 尚未回拨，14:10 已回拨，不能只比较早课或日界线的偏移。
+        assertEquals("前日 20:00", displaySchoolClockText("08:00", week.last(), newYork))
+        assertEquals("01:10", displaySchoolClockText("14:10", week.last(), newYork))
+        assertEquals(true, schoolClockTextsAreUniform(listOf("08:00"), week, newYork))
+        assertEquals(false, schoolClockTextsAreUniform(listOf("08:00", "14:10"), week, newYork))
+        assertEquals(true, schoolClockTextsAreUniform(listOf("08:00", "14:10"), week, SchoolTimeZone))
+        assertEquals(true, schoolClockTextsAreUniform(listOf("14:10"), week.take(5), newYork))
+        val springWeek = (2..8).map { LocalDate(2026, 3, it) }
+        assertEquals(false, schoolClockTextsAreUniform(listOf("19:00"), springWeek, newYork))
+    }
+
     @Test fun conversionHelpersRoundTrip() {
         val beijing = LocalDateTime(2026, 11, 2, 8, 0)
         assertEquals(LocalDateTime(2026, 11, 1, 19, 0), beijing.schoolToDisplay(newYork))

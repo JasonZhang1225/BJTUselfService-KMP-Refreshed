@@ -21,6 +21,17 @@ struct CourseWidgetClockRegression {
         expect("2026-11-02", 480, "Asia/Shanghai", "08:00")
         expect("2026-11-02", 480, "Europe/London", "00:00")
         expect("2026-12-31", 1200, "Pacific/Auckland", "次日 01:00")
+        // 切换发生在北京周日的下午，早课仍使用前一天的夏令时偏移。
+        expect("2026-11-01", 480, "America/New_York", "前日 20:00")
+        expect("2026-11-01", 850, "America/New_York", "01:10")
+        expect("2026-10-26", 850, "America/New_York", "02:10")
+        let weekDates = ["2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29", "2026-10-30", "2026-10-31", "2026-11-01"]
+            .map { CourseWidgetCalendar.date(fromKey: $0)! }
+        let newYork = TimeZone(identifier: "America/New_York")!
+        precondition(!CourseWidgetCalendar.clocksAreUniform(minutes: [480, 850], dates: weekDates, zone: newYork))
+        precondition(CourseWidgetCalendar.clocksAreUniform(minutes: [480], dates: weekDates, zone: newYork))
+        precondition(CourseWidgetCalendar.clocksAreUniform(minutes: [480, 850], dates: weekDates, zone: TimeZone(identifier: "Asia/Shanghai")!))
+        checks += 3
         // 实时活动提醒和课程起止时刻使用同一真实时刻格式化入口。
         let schoolDate = CourseWidgetCalendar.date(fromKey: "2026-11-02")!
         let instant = schoolDate.addingTimeInterval(480 * 60)

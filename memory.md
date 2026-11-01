@@ -1,3 +1,15 @@
+# 进行中：PR #88 第二轮 Codex / Copilot 审查（2026-11-02）
+
+> 工作树 `/workspace/BJTUselfService-KMP-Refreshed`，本地分支 `fix/pr88-timezone-review`，基于首轮修复 `315e9f3b`，推送目标为 PR 的 `feat/device-timezone`。沿用用户此前将修复提交推送至 PR #88 的授权，向该功能分支追加提交；不强推、不合并、不发布。
+
+- Codex 1 条新增意见：`HomeworkUiState` 成对保留原始 `Instant`、显示时区和当地墙钟；筛选、48 小时计数、首页截止/折扣提醒与教学周锚点直接使用原始时刻。首页 `remember` 也包含时刻，避免回拨期间相同的 01:30 阻止更新。已过去不足一小时的作业不再因整小时截断落入未来提醒。
+- Copilot 3 条新增意见：共享课表、Android 周小组件、iOS 周小组件按全部显示日期及节次检查当地时刻是否一致；跨夏令时切换的一周，共享轴只显示节次，课程格按自己的学校日期显示当地开始时刻。普通周保留原时间轴，课表格子仍按北京时间日期和节次排列。
+- 回归：纽约重复小时的筛选/首页提醒及真实 HomeWorkspace 重组、春秋切换周检测、周一与周日格内各自时刻、窄屏/宽屏/深色大字号离屏图；Swift 时刻断言扩展至 15 项。特意覆盖 2026-11-01 北京 08:00 仍为纽约前日 20:00，而北京 14:10 已为纽约当天 01:10，不能把整天当成同一偏移。
+- 旧日期选择器评论已复核：当前 `CourseDatePickerDialog` 明确接收 `schoolNow().date`，Material 的初始选中日期与 iOS 的“今天”均使用该北京日期，已由首轮提交修复，本轮不重复改动该逻辑。
+- 最终验证：`./gradlew :shared:desktopTest :windowsApp:compileKotlinWindows :desktopApp:compileKotlin --init-script /tmp/pr88-test.init.gradle --no-daemon --no-configuration-cache --console=plain -Porg.gradle.java.installations.paths=/workspace/jdk-pr88 -Porg.gradle.java.installations.auto-detect=false` 返回 BUILD SUCCESSFUL（4m56s），1347 项中 1346 通过、1 跳过，零失败；两个桌面宿主编译成功。沿用下节仓库外 JDK/缓存与测试目录配置。`git diff --check`、更新日志同步与小组件 XML 解析通过。日志 `.artifacts/pr88-review/round2-validation.log`。
+- 窄屏、宽屏、深色 1.6 倍字号离屏图已查看，周一/周日各自的 02:10/01:10 同时存在且显示完整；测试直接断言真实 Compose 语义树中的两个时刻。图片 `multiplatform/shared/build/reports/pr88-timezone/`。这不是原生小组件真机验收。
+- CI 边界：首轮 CI run `41322773121` 的 Android、Windows、iOS/Swift/macOS 全部检查成功（属于基线 `315e9f3b`，不代表本轮）。本环境 Android SDK/签名、Xcode/设备边界沿用下节；本轮 Android/iOS 原生代码与 Swift 15 项断言需新提交的 PR CI 验证。未新增密钥、未安装应用或使用真实账号。
+
 # 进行中：PR #88 时区审查修复（2026-11-01）
 
 > 当前工作树 `/workspace/BJTUselfService-KMP-Refreshed`，本地分支 `fix/pr88-timezone-review`。用户已明确授权将本轮修复提交并推送至 PR #88 的 `feat/device-timezone`；提交前已快进同步远端 `039c2bca`（保留新增的 iOS 模拟器测试时区配置）。本轮只向 PR 功能分支追加提交，不强推，不合并或发布；未回复或关闭审查线程。

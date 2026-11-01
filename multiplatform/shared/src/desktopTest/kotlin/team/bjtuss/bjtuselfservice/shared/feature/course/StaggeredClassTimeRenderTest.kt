@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Density
@@ -36,20 +37,27 @@ class StaggeredClassTimeRenderTest {
         val originalZone = java.util.TimeZone.getDefault()
         java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/New_York"))
         try {
-            val courses = listOf(course(1, "测试早课", 1, "思源楼101"))
+            val courses = listOf(
+                course(1, "测试早课", 1, "思源楼101"),
+                course(2, "周一下午", 25, "思源楼102"),
+                course(3, "周日下午", 31, "思源楼103"),
+            )
             SwingUtilities.invokeAndWait {
                 for ((name, date, dark, scale) in listOf(
                     Scenario("before-dst", LocalDate(2026, 10, 26), false, 1f),
+                    Scenario("cross-dst-dark-large", LocalDate(2026, 10, 26), true, 1.6f),
+                    Scenario("cross-dst-wide", LocalDate(2026, 10, 26), false, 1f),
                     Scenario("after-dst", LocalDate(2026, 11, 2), false, 1f),
                     Scenario("after-dst-dark-large", LocalDate(2026, 11, 2), true, 1.6f),
                     Scenario("after-dst-detail", LocalDate(2026, 11, 2), false, 1f),
                 )) {
-                    val scene = ImageComposeScene(width = 780, height = 1688, density = Density(2f, scale),
+                    val wide = name.endsWith("wide")
+                    val scene = ImageComposeScene(width = if (wide) 1600 else 780, height = if (wide) 1000 else 1688, density = Density(if (wide) 1f else 2f, scale),
                         coroutineContext = Dispatchers.Unconfined) {
                         PlatformAppTheme(useDarkTheme = dark, dynamicColorEnabled = false) {
                             Surface(Modifier.fillMaxSize()) {
                                 if (name.endsWith("detail")) {
-                                    CourseDetailContent(courses.single(), false, Modifier.fillMaxSize().padding(24.dp), schoolDate = date)
+                                    CourseDetailContent(courses.first(), false, Modifier.fillMaxSize().padding(24.dp), schoolDate = date)
                                 } else {
                                     val model = remember {
                                         CourseScheduleScreenModel(object : CourseScheduleRepository {
@@ -61,7 +69,7 @@ class StaggeredClassTimeRenderTest {
                                         CourseScheduleUiState(courses = courses,
                                             academicWeeks = listOf(OccupancyWeekDate(7, "", "", date)),
                                             selectedWeek = 7, isLoading = false, currentWeek = 7, weekResolved = true),
-                                        emptyMap(), false, model, UnavailableHomeworkFileGateway, UnavailableSystemCalendarGateway,
+                                        emptyMap(), wide, model, UnavailableHomeworkFileGateway, UnavailableSystemCalendarGateway,
                                         showCalendarExportSheet = false, onDismissCalendarExport = {}, onRefresh = {},
                                         modifier = Modifier.fillMaxSize(),
                                     )
@@ -71,6 +79,14 @@ class StaggeredClassTimeRenderTest {
                     }
                     try {
                         repeat(8) { scene.render(1_000_000_000L + it * 16_000_000L).close() }
+                        if (date == LocalDate(2026, 10, 26)) {
+                            fun texts(node: androidx.compose.ui.semantics.SemanticsNode): List<String> =
+                                node.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)
+                                    .orEmpty().map { it.text } + node.children.flatMap(::texts)
+                            val labels = scene.semanticsOwners.flatMap { texts(it.unmergedRootSemanticsNode) }
+                            assertTrue("02:10" in labels, "周一格应显示 02:10：$labels")
+                            assertTrue("01:10" in labels, "周日格应显示 01:10：$labels")
+                        }
                         val image = scene.render(1_200_000_000L)
                         try {
                             val data = image.encodeToData(EncodedImageFormat.PNG)!!

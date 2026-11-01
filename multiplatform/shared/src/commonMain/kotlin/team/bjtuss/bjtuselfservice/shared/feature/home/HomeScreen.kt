@@ -102,7 +102,6 @@ import kotlinx.datetime.toLocalDateTime
 import team.bjtuss.bjtuselfservice.shared.domain.homework.parseSchoolLocalDateTime
 import team.bjtuss.bjtuselfservice.shared.domain.home.phyVlabEventHasInstant
 import team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone
-import team.bjtuss.bjtuselfservice.shared.domain.time.toSchoolTime
 import team.bjtuss.bjtuselfservice.shared.domain.time.displaySchoolClockText
 import team.bjtuss.bjtuselfservice.shared.domain.time.displayTimeZone
 import team.bjtuss.bjtuselfservice.shared.domain.time.schoolEpochSeconds
@@ -176,6 +175,7 @@ fun HomeWorkspace(
     modifier: Modifier = Modifier,
     /** 未经作业页筛选的来源数据，仅用于把截止提醒关联到本地完成标记。 */
     reminderAssignments: List<team.bjtuss.bjtuselfservice.shared.feature.assignment.AggregatedAssignment> = emptyList(),
+    nowInstant: Instant = now.toInstant(timeZone),
 ) {
     val state by model.state.collectAsState()
     val pageListState = rememberLazyListState()
@@ -224,13 +224,13 @@ fun HomeWorkspace(
         }
     }
 
-    // 作业模型每发一次状态都会重取秒级 now；日程只需要分钟精度。截到分钟后，同步期间
-    // now 不再每次都变，各周日程的 remember 才不会在每次重组时整周重算。
+    // 日期/钟面展示保留分钟精度；截止比较另带原始时刻。
+    // 夏令时回拨时两次同名分钟不能共用提醒结果，remember 也必须包含 nowInstant。
     val agendaNow = remember(now.date, now.hour, now.minute) {
         LocalDateTime(now.date, LocalTime(now.hour, now.minute))
     }
-    val reminderAgenda = remember(homework, exams, phyVlabEvents, agendaNow, timeZone) {
-        buildHomeAgenda(homework, exams, agendaNow.date, agendaNow, timeZone, phyVlabEvents)
+    val reminderAgenda = remember(homework, exams, phyVlabEvents, agendaNow, timeZone, nowInstant) {
+        buildHomeAgenda(homework, exams, agendaNow.date, agendaNow, timeZone, phyVlabEvents, nowInstant = nowInstant)
     }
     val reminders = rememberHomeAssignmentReminders(reminderAgenda, reminderAssignments)
     val dueSoonItems = remember(reminders, timeZone) {
@@ -302,6 +302,7 @@ fun HomeWorkspace(
                         currentWeek = currentWeek,
                         academicWeeks = academicWeeks,
                         now = agendaNow,
+                        nowInstant = nowInstant,
                         timeZone = timeZone,
                         isLoading = isAgendaLoading,
                         expanded = expanded,
@@ -332,6 +333,7 @@ fun HomeWorkspace(
                         currentWeek = currentWeek,
                         academicWeeks = academicWeeks,
                         now = agendaNow,
+                        nowInstant = nowInstant,
                         timeZone = timeZone,
                         isLoading = isAgendaLoading,
                         expanded = expanded,
@@ -519,6 +521,7 @@ private fun HomeAgendaSection(
     academicWeeks: List<OccupancyWeekDate>,
     now: LocalDateTime,
     timeZone: TimeZone,
+    nowInstant: Instant,
     isLoading: Boolean,
     expanded: Boolean,
     /** 周数是否已由本学期校历确认；未确认时首页显示「日程加载中」。 */
@@ -532,7 +535,7 @@ private fun HomeAgendaSection(
     // 校历确认之前不显示任何周数（含缓存值），统一显示「日程加载中」，
     // 拿到确切结果后一次性显示最终周；这样卡片不会随中间值反复弹跳。
     val weekValueIsPending = !isWeekResolved
-    val schoolToday = now.toSchoolTime(timeZone).date
+    val schoolToday = nowInstant.toLocalDateTime(SchoolTimeZone).date
     val weekSlots = remember(currentWeek, academicWeeks, today, schoolToday) {
         homeAgendaWeekSlots(currentWeek, today, academicWeeks, schoolToday)
     }
@@ -603,6 +606,7 @@ private fun HomeAgendaSection(
             weekSlot = pendingSlot,
             selectedDate = selectedDateFor(pendingSlot),
             now = now,
+            nowInstant = nowInstant,
             timeZone = timeZone,
             isLoading = isLoading,
             isWeekResolved = isWeekResolved,
@@ -720,6 +724,7 @@ private fun HomeAgendaSection(
                         phyVlabEvents,
                         today,
                         now,
+                        nowInstant,
                         timeZone,
                         weekStartDate,
                         homeSchedule,
@@ -729,6 +734,7 @@ private fun HomeAgendaSection(
                             exams = exams,
                             today = today,
                             now = now,
+                            nowInstant = nowInstant,
                             timeZone = timeZone,
                             phyVlabEvents = phyVlabEvents,
                             weekStartDate = weekStartDate,
@@ -848,6 +854,7 @@ private fun HomeAgendaSection(
                             phyVlabEvents,
                             today,
                             now,
+                            nowInstant,
                             timeZone,
                             weekStartDate,
                             homeSchedule,
@@ -857,6 +864,7 @@ private fun HomeAgendaSection(
                                 exams = exams,
                                 today = today,
                                 now = now,
+                                nowInstant = nowInstant,
                                 timeZone = timeZone,
                                 phyVlabEvents = phyVlabEvents,
                                 weekStartDate = weekStartDate,
@@ -898,6 +906,7 @@ private fun HomeAgendaSection(
             weekSlot = selectedSlot,
             selectedDate = selectedDateFor(selectedSlot),
             now = now,
+            nowInstant = nowInstant,
             timeZone = timeZone,
             isLoading = isLoading,
             isWeekResolved = isWeekResolved,
@@ -934,6 +943,7 @@ private fun HomeAgendaWeekCard(
     selectedDate: LocalDate,
     now: LocalDateTime,
     timeZone: TimeZone,
+    nowInstant: Instant,
     isLoading: Boolean,
     /** 周数是否已由本学期校历确认；未确认时明确显示「日程加载中」。 */
     isWeekResolved: Boolean = true,
@@ -957,12 +967,13 @@ private fun HomeAgendaWeekCard(
     val homeSchedule = LocalHomeSchedule.current
     val today = now.date
     val weekStartDate = weekSlot.startDate
-    val weekAgenda = remember(homework, exams, phyVlabEvents, today, now, timeZone, weekStartDate, homeSchedule) {
+    val weekAgenda = remember(homework, exams, phyVlabEvents, today, now, nowInstant, timeZone, weekStartDate, homeSchedule) {
         buildHomeAgenda(
             homework = homework,
             exams = exams,
             today = today,
             now = now,
+            nowInstant = nowInstant,
             timeZone = timeZone,
             phyVlabEvents = phyVlabEvents,
             weekStartDate = weekStartDate,

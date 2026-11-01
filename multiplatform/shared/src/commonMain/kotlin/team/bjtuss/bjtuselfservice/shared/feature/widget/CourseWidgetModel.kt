@@ -10,6 +10,7 @@ import kotlinx.datetime.plus
 import kotlinx.serialization.json.Json
 import team.bjtuss.bjtuselfservice.shared.domain.time.displayTimeZone
 import team.bjtuss.bjtuselfservice.shared.domain.time.displaySchoolClockText
+import team.bjtuss.bjtuselfservice.shared.domain.time.schoolClockTextsAreUniform
 
 /**
  * 桌面小组件的展示逻辑（Android RemoteViews 用）。规则与 iOS 小组件
@@ -189,19 +190,23 @@ data class WidgetWeekBlock(
     val laneCount: Int,
 )
 
-class WidgetWeekLayout(model: CourseWidgetDisplayModel) {
+class WidgetWeekLayout(model: CourseWidgetDisplayModel, zone: TimeZone = displayTimeZone()) {
     val days: List<WidgetDayPlan>
     /** 显示哪些大节（下标对应 slots）。 */
     val rows: List<Int>
     val slots: List<IntRange> = model.slots
     val blocks: List<WidgetWeekBlock>
     val todayColumn: Int?
+    val showOccurrenceTimes: Boolean
 
     init {
         // 周末没课且不是今天就不占列，给工作日更宽的色块。
         days = model.week.filterIndexed { index, day ->
             index < 5 || day.occurrences.isNotEmpty() || day.date == model.now.date
         }
+        showOccurrenceTimes = !schoolClockTextsAreUniform(
+            slots.flatMap { listOf(it.first, it.last) }.map(::schoolMinuteClock), days.map { it.date }, zone,
+        )
         fun overlaps(occurrence: WidgetOccurrence, slot: IntRange): Boolean =
             occurrence.session.slotStartMinute < slot.last && occurrence.session.slotEndMinute > slot.first
         // 上午两节、下午两节始终显示，构成稳定骨架；午间、晚上的大节有课才显示。
@@ -255,6 +260,9 @@ private fun LocalDate.atMinute(minute: Int): LocalDateTime {
 
 fun dayOffset(date: LocalDate, from: LocalDate): Int = (date.toEpochDays() - from.toEpochDays()).toInt()
 
+private fun schoolMinuteClock(minute: Int): String =
+    "${(minute / 60).toString().padStart(2, '0')}:${(minute % 60).toString().padStart(2, '0')}"
+
 /**
  * 课表的分钟数是 [schoolDate] 北京日期当天的第几分钟；显示时换成手机时区，保留跨日标记。
  * 小组件、实时活动都只把它用于显示，比较先后仍用北京时间的分钟数。
@@ -265,7 +273,7 @@ fun widgetClock(
     zone: TimeZone = displayTimeZone(),
     markerSeparator: String = " ",
 ): String {
-    val clock = "${(minute / 60).toString().padStart(2, '0')}:${(minute % 60).toString().padStart(2, '0')}"
+    val clock = schoolMinuteClock(minute)
     return displaySchoolClockText(
         clock, schoolDate, zone, markerSeparator,
     )

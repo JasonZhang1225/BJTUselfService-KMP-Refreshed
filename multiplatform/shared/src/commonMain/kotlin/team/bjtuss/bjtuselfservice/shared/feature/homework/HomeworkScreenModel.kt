@@ -9,6 +9,8 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
+import kotlin.time.Instant
+import kotlinx.datetime.toInstant
 import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkDetailResult
 import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkRefreshResult
 import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkRepository
@@ -63,15 +65,17 @@ data class HomeworkUiState(
     val failure: HomeworkSyncFailure? = null,
     val now: LocalDateTime = LocalDateTime(1970, 1, 1, 0, 0),
     val timeZone: TimeZone = TimeZone.UTC,
+    /** 原始时刻；墙钟在夏令时回拨的重复小时内不能唯一确定一个时刻。 */
+    val nowInstant: Instant = now.toInstant(timeZone),
 ) {
     val courseOptions: List<String>
         get() = homework.map(Homework::courseName).filter(String::isNotBlank).distinct().sorted()
 
     val visibleHomework: List<Homework>
-        get() = sortHomework(filterHomework(homework, selectedCourses, hideExpired, now, hideSubmitted, untilEpoch, timeZone), sortOrder)
+        get() = sortHomework(filterHomework(homework, selectedCourses, hideExpired, now, hideSubmitted, untilEpoch, timeZone, nowInstant), sortOrder)
 
     val dueSoonCount: Int
-        get() = dueSoonHomeworkCount(visibleHomework, now, timeZone)
+        get() = dueSoonHomeworkCount(visibleHomework, now, timeZone, nowInstant)
 
     val selectedHomework: Homework?
         get() = homework.firstOrNull { it.stableKey() == selectedHomeworkKey }
@@ -100,7 +104,9 @@ class HomeworkScreenModel(
     /** 同一次更新使用同一个时区快照，避免切换时区后墙钟与比较时区不匹配。 */
     private fun HomeworkUiState.withCurrentTime(): HomeworkUiState {
         val zone = timeZoneProvider()
-        return copy(timeZone = zone, now = nowProvider?.invoke() ?: clock.now().toLocalDateTime(zone))
+        val suppliedNow = nowProvider?.invoke()
+        val instant = suppliedNow?.toInstant(zone) ?: clock.now()
+        return copy(timeZone = zone, now = suppliedNow ?: instant.toLocalDateTime(zone), nowInstant = instant)
     }
 
     fun updateTime() {

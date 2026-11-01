@@ -1,5 +1,6 @@
 package team.bjtuss.bjtuselfservice.shared.feature.shell
 
+import kotlinx.datetime.toLocalDateTime
 import team.bjtuss.bjtuselfservice.shared.feature.widget.encode
 import androidx.compose.foundation.layout.windowInsetsPadding
 import team.bjtuss.bjtuselfservice.shared.feature.grade.GradeChangeNoticeDialog
@@ -220,7 +221,6 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.stableKey
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeKind
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeDomain
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeRecord
-import team.bjtuss.bjtuselfservice.shared.domain.time.toSchoolTime
 
 /**
  * 物理在线的列表和首页日程共用同一个模型，因此自动同步只能由一个稳定的宿主启动。
@@ -338,8 +338,8 @@ fun AuthenticatedAppShell(
     // 避免每次重组都让 WidgetKit 重新加载时间线。
     // iOS 每个原生 Tab 都有一个壳宿主，只让主宿主写（否则同步期间每个宿主各算一遍、各写一遍、
     // 各触发一次 WidgetKit 全量刷新）；同步时数据连续变化，先等一会儿合并成一次，计算放到后台线程。
-    // 小组件快照按北京时间的日期展开课表；homeworkState.now 是手机时区的墙钟，先换成北京时间的日期。
-    val widgetToday = homeworkState.now.toSchoolTime(homeworkState.timeZone).date
+    // 小组件快照按北京时间展开；从原始时刻取北京日期，避免重新推断回拨期间的当地墙钟。
+    val widgetToday = homeworkState.nowInstant.toLocalDateTime(team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone).date
     var lastWidgetDays by remember(session) { mutableStateOf<List<team.bjtuss.bjtuselfservice.shared.feature.widget.CourseWidgetDay>?>(null) }
     val staggeredClassTimes = settingsState.preferences.staggeredSecondSlot
     LaunchedEffect(courseState.courses, homeScheduleEvents, courseState.homeAcademicWeeks, courseState.currentWeek, widgetToday,
@@ -1551,7 +1551,7 @@ fun AuthenticatedAppShell(
                 syncFailureItems = homeSyncFailureItems,
                 scrollUnderTopBar = true,
             ) {
-                val homeToday = homeworkState.now.toSchoolTime(homeworkState.timeZone).date
+                val homeToday = homeworkState.nowInstant.toLocalDateTime(team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone).date
                 val homeSchedulePresentation = remember(courseState.courses, homeScheduleEvents,
                     courseState.homeAcademicWeeks, courseState.currentWeek, homeToday, gradeState.courseTypesByCode, staggeredClassTimes) {
                     team.bjtuss.bjtuselfservice.shared.feature.home.HomeSchedulePresentation(
@@ -1591,6 +1591,7 @@ fun AuthenticatedAppShell(
                         // 拿到确切结果后一次显示最终值，不再出现中间值弹跳。
                         isWeekResolved = courseState.weekResolved,
                         now = homeworkState.now,
+                        nowInstant = homeworkState.nowInstant,
                         timeZone = homeworkState.timeZone,
                         isAgendaLoading = homeworkState.isLoading || examState.isLoading ||
                             courseState.isLoading || (phyVlabEnabled && phyVlabState.isLoading) || citelState.refreshing,
