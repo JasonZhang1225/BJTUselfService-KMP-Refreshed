@@ -353,6 +353,20 @@ class HomeworkScreenModelTest {
         assertEquals(HomeworkFilterPreferences(), store.saved)
     }
 
+    @Test
+    fun defaultTimeZoneIsSchoolTimeSoBeijingDeadlinesCompareCorrectly() = runBlocking {
+        // 北京时间 10-29 23:59；无论跑测试的机器在哪个时区，默认都按北京时间取“现在”。
+        val clock = object : kotlin.time.Clock {
+            override fun now() = kotlin.time.Instant.parse("2026-10-29T15:59:00Z")
+        }
+        val snapshot = HomeworkSnapshot(listOf(homework(1, "程序设计", "2026-10-30 00:00")))
+        val model = HomeworkScreenModel(repository = FakeRepository(snapshot, snapshot), clock = clock)
+        model.initialize(refreshFromNetwork = false)
+        assertEquals(LocalDateTime(2026, 10, 29, 23, 59), model.state.value.now)
+        model.setDeadlineScope(hideExpired = true, untilDate = LocalDate(2026, 10, 29))
+        assertEquals(listOf(1), model.state.value.visibleHomework.map(Homework::id))
+    }
+
     private class MemoryFilterStore(
         var saved: HomeworkFilterPreferences = HomeworkFilterPreferences(),
     ) : HomeworkFilterPreferencesStore {
