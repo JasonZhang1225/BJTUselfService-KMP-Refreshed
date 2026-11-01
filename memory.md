@@ -47,8 +47,9 @@
 - “指定日期”改存截止时刻 `untilEpoch`（所选那天在当时时区的 24:00），换时区后显示随之换算；旧的北京日期 `untilDate`/`beforeDate`/`homework_filter_until_date` 自动迁移。Moodle 日历格子的日期标记仍归北京那天，`activity-`/`citel-` 事件按真实时刻归日。
 - 数据变动：比较的是原始数据或同一次刷新里同一时区格式化的文字，换时区不会产生变动；已记录的变动文字不随时区重算。
 - JVM 测试固定 `user.timezone=Asia/Shanghai`（`shared/build.gradle.kts`）。
-- 验证：`:shared:desktopTest` 1332 项全过；Android、iOS arm64/模拟器、Windows、macOS 编译通过；签名模拟器以 `SIMCTL_CHILD_TZ=America/New_York` 启动看到课表节次换算（“前日 20:00”）与说明。5 个提交仅在本地，未推送、未开 PR。
-- 未验证：Android 真机时区切换、实时活动与小组件在非东八区的实际表现；首页周日程中课程按北京星期、作业按手机日期分组，跨时区时同一天两类可能错开。
+- 验证：`:shared:desktopTest` 1334 项全过；Android、iOS arm64/模拟器、Windows、macOS 编译通过；签名模拟器以 `SIMCTL_CHILD_TZ=America/New_York` 启动看到课表节次换算（“前日 20:00”）与说明。提交仅在本地，未推送、未开 PR。
+- 首页周日程不是格子：课程与实验按开始时刻在手机时区的日期归日（查北京前一天/当天/后一天），时刻不再标“前日/次日”；正在上课卡片与小组件仍按北京时间。模拟器纽约时区下，周日显示北京周一第 1、2 节为 19:00、21:10。
+- 未验证：Android 真机时区切换、实时活动与小组件在非东八区的实际表现。
 - 未完成：上一轮用户要求的本地 IPA 打包到下载文件夹、APK 装平板被中断，尚未执行。
 
 ## 进行中：作业筛选拆成“截止日期”“提交状态”两个切换器（`feat/homework-filter-split`，2026-11-01）

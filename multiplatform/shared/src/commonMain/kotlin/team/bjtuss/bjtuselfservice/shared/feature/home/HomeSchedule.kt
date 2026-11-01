@@ -3,6 +3,14 @@ package team.bjtuss.bjtuselfservice.shared.feature.home
 import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.course.classTimeRange
+import team.bjtuss.bjtuselfservice.shared.domain.home.parseHmRange
+import team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.time.displayTimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.time.schoolToDisplay
 import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
@@ -58,7 +66,52 @@ internal fun homePhysicsLabsOnDate(schedule: HomeSchedulePresentation, date: Loc
         (it.scheduleEventKind == "physicslab" || it.scheduleEventKind == "phydemo") && date.toString() in it.eventDates
     }.distinctBy(Course::id).sortedWith(compareBy({ it.scheduleEventTime }, { it.courseName }))
 
-internal fun HomeAgenda.withCourses(schedule: HomeSchedulePresentation): HomeAgenda =
+/** 一次课：课程本身和它所在的北京日期（课表按北京日期排）。 */
+internal data class HomeCourseOccurrence(val course: Course, val schoolDate: LocalDate)
+
+/** 课程或实验的开始分钟（北京时间当天第几分钟）。 */
+private fun Course.schoolStartMinute(staggered: Boolean): Int? =
+    (scheduleEventTime ?: classTimeRange(staggered))?.let { parseHmRange(it)?.first }
+
+/**
+ * 首页周日程不是格子，按手机时区归日：手机日期 [date] 上的课，是北京时间前一天、当天、后一天里
+ * 开始时刻换算到手机时区后落在 [date] 的那些。东八区时就是北京当天。
+ */
+private fun homeOccurrencesOnLocalDate(
+    schedule: HomeSchedulePresentation,
+    date: LocalDate,
+    zone: TimeZone,
+    onSchoolDate: (LocalDate) -> List<Course>,
+): List<HomeCourseOccurrence> {
+    if (zone == SchoolTimeZone) return onSchoolDate(date).map { HomeCourseOccurrence(it, date) }
+    return (-1..1).flatMap { offset ->
+        val schoolDate = date.plus(offset, DateTimeUnit.DAY)
+        onSchoolDate(schoolDate).mapNotNull { course ->
+            val minute = course.schoolStartMinute(schedule.staggeredClassTimes)
+            val localDate = minute?.let { LocalDateTime(schoolDate, LocalTime(it / 60, it % 60)).schoolToDisplay(zone).date }
+                ?: schoolDate
+            HomeCourseOccurrence(course, schoolDate).takeIf { localDate == date }
+        }
+    }.sortedWith(compareBy({ it.schoolDate }, { it.course.schoolStartMinute(schedule.staggeredClassTimes) ?: 0 }))
+}
+
+internal fun homeCourseOccurrencesOnLocalDate(
+    schedule: HomeSchedulePresentation,
+    date: LocalDate,
+    zone: TimeZone = displayTimeZone(),
+): List<HomeCourseOccurrence> = homeOccurrencesOnLocalDate(schedule, date, zone) { homeCoursesOnDate(schedule, it) }
+
+internal fun homePhysicsLabOccurrencesOnLocalDate(
+    schedule: HomeSchedulePresentation,
+    date: LocalDate,
+    zone: TimeZone = displayTimeZone(),
+): List<HomeCourseOccurrence> = homeOccurrencesOnLocalDate(schedule, date, zone) { homePhysicsLabsOnDate(schedule, it) }
+
+/** 首页周日程的课程与实验，按手机时区归日；正在上课、小组件仍按北京时间，见 [homeCoursesOnDate]。 */
+internal fun HomeAgenda.withCourses(schedule: HomeSchedulePresentation, zone: TimeZone = displayTimeZone()): HomeAgenda =
     copy(days = days.map {
-        it.copy(courses = homeCoursesOnDate(schedule, it.date), physicsLabCourses = homePhysicsLabsOnDate(schedule, it.date))
+        it.copy(
+            courses = homeCourseOccurrencesOnLocalDate(schedule, it.date, zone).map(HomeCourseOccurrence::course),
+            physicsLabCourses = homePhysicsLabOccurrencesOnLocalDate(schedule, it.date, zone).map(HomeCourseOccurrence::course),
+        )
     })
