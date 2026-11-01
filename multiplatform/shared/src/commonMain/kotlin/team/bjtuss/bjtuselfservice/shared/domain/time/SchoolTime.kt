@@ -55,6 +55,8 @@ fun displaySchoolClockText(
     zone: TimeZone = displayTimeZone(),
     /** 标注与时刻之间的分隔；窄列里用换行，标注单独占一行。 */
     markerSeparator: String = " ",
+    /** 已按手机日期归日的地方（首页周日程）不需要“前日/次日”。 */
+    markDayShift: Boolean = true,
 ): String {
     if (zone == SchoolTimeZone) return text
     var first = true
@@ -65,7 +67,7 @@ fun displaySchoolClockText(
         val local = LocalDateTime(schoolDate, kotlinx.datetime.LocalTime(hour, minute)).schoolToDisplay(zone)
         val clock = "${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}"
         val shift = local.date.toEpochDays() - schoolDate.toEpochDays()
-        val marker = if (!first) "" else when {
+        val marker = if (!first || !markDayShift) "" else when {
             shift < 0 -> "前日$markerSeparator"
             shift > 0 -> "次日$markerSeparator"
             else -> ""

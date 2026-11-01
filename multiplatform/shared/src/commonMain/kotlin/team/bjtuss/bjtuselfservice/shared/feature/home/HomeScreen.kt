@@ -1499,23 +1499,28 @@ private fun AgendaDayDetails(
                 done = event.submitted,
             )
         }
-        if (day.physicsLabCourses.isNotEmpty()) {
+        // 课程与实验已按手机日期归到这一天；时刻按各自的北京日期换算，不再标“前日/次日”。
+        val homeSchedule = LocalHomeSchedule.current
+        val labOccurrences = remember(homeSchedule, day.date) { homePhysicsLabOccurrencesOnLocalDate(homeSchedule, day.date) }
+        val courseOccurrences = remember(homeSchedule, day.date) { homeCourseOccurrencesOnLocalDate(homeSchedule, day.date) }
+        if (labOccurrences.isNotEmpty()) {
             Text("当天实验", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
-            day.physicsLabCourses.forEach { lab ->
+            labOccurrences.forEach { (lab, schoolDate) ->
                 AgendaEventRow(
                     type = "实验",
                     title = lab.copy(courseName = lab.courseName.removeSuffix("（实验）")).displayTitleWithTeacher(),
-                    detail = listOf(lab.scheduleEventTime.orEmpty().let { displaySchoolClockText(it, day.date) }, team.bjtuss.bjtuselfservice.shared.domain.course.displayCoursePlace(lab.coursePlace))
+                    detail = listOf(lab.scheduleEventTime.orEmpty().let { displaySchoolClockText(it, schoolDate, markDayShift = false) }, team.bjtuss.bjtuselfservice.shared.domain.course.displayCoursePlace(lab.coursePlace))
                         .filter(String::isNotBlank).joinToString(" · "),
                     onClick = { selectedCourse = lab },
                     canNavigate = canNavigate,
                 )
             }
         }
-        if (day.courses.isNotEmpty()) {
+        if (courseOccurrences.isNotEmpty()) {
             Text("当天课表", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
-            day.courses.forEach { course ->
-                val time = course.classTimeRange(staggered)?.replace('-', '–')?.let { displaySchoolClockText(it, day.date) }.orEmpty()
+            courseOccurrences.forEach { (course, schoolDate) ->
+                val time = course.classTimeRange(staggered)?.replace('-', '–')
+                    ?.let { displaySchoolClockText(it, schoolDate, markDayShift = false) }.orEmpty()
                 AgendaEventRow(
                     type = "课程",
                     markColor = team.bjtuss.bjtuselfservice.shared.feature.course.courseCategoryAccent(
