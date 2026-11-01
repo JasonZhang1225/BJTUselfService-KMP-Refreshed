@@ -3,15 +3,13 @@ package team.bjtuss.bjtuselfservice.shared.feature.widget
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
 import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.serialization.json.Json
-import kotlinx.datetime.LocalTime
-import team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone
 import team.bjtuss.bjtuselfservice.shared.domain.time.displayTimeZone
-import team.bjtuss.bjtuselfservice.shared.domain.time.schoolNow
-import team.bjtuss.bjtuselfservice.shared.domain.time.schoolToDisplay
+import team.bjtuss.bjtuselfservice.shared.domain.time.displaySchoolClockText
 
 /**
  * 桌面小组件的展示逻辑（Android RemoteViews 用）。规则与 iOS 小组件
@@ -258,18 +256,23 @@ private fun LocalDate.atMinute(minute: Int): LocalDateTime {
 fun dayOffset(date: LocalDate, from: LocalDate): Int = (date.toEpochDays() - from.toEpochDays()).toInt()
 
 /**
- * 课表的分钟数是北京时间当天的第几分钟；显示时换成手机时区的 "HH:mm"（东八区原样）。
+ * 课表的分钟数是 [schoolDate] 北京日期当天的第几分钟；显示时换成手机时区，保留跨日标记。
  * 小组件、实时活动都只把它用于显示，比较先后仍用北京时间的分钟数。
  */
-fun widgetClock(minute: Int): String {
-    val local = if (displayTimeZone() == SchoolTimeZone || minute !in 0 until 24 * 60) null
-    else LocalDateTime(schoolNow().date, LocalTime(minute / 60, minute % 60)).schoolToDisplay()
-    val hour = local?.hour ?: (minute / 60)
-    val min = local?.minute ?: (minute % 60)
-    return "${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}"
+fun widgetClock(
+    minute: Int,
+    schoolDate: LocalDate,
+    zone: TimeZone = displayTimeZone(),
+    markerSeparator: String = " ",
+): String {
+    val clock = "${(minute / 60).toString().padStart(2, '0')}:${(minute % 60).toString().padStart(2, '0')}"
+    return displaySchoolClockText(
+        clock, schoolDate, zone, markerSeparator,
+    )
 }
 
-fun WidgetOccurrence.timeRange(): String = "${widgetClock(session.startMinute)} - ${widgetClock(session.endMinute)}"
+fun WidgetOccurrence.timeRange(zone: TimeZone = displayTimeZone()): String =
+    "${widgetClock(session.startMinute, date, zone)} - ${widgetClock(session.endMinute, date, zone)}"
 
 fun widgetMonthDay(date: LocalDate): String = "${date.month.ordinal + 1}.${date.day.toString().padStart(2, '0')}"
 

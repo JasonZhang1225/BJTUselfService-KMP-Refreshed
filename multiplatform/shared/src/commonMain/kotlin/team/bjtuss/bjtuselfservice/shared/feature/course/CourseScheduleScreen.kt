@@ -83,12 +83,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.time.Clock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
-import kotlinx.datetime.toLocalDateTime
 import team.bjtuss.bjtuselfservice.shared.accessibleAlpha
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.currentPlatform
@@ -98,6 +95,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.course.coursesForWeek
 import team.bjtuss.bjtuselfservice.shared.domain.course.displayCoursePlace
 import team.bjtuss.bjtuselfservice.shared.domain.course.parseCourseWeeks
 import team.bjtuss.bjtuselfservice.shared.domain.course.classTimeRange
+import team.bjtuss.bjtuselfservice.shared.domain.time.schoolNow
 import team.bjtuss.bjtuselfservice.shared.domain.time.displaySchoolClockText
 import team.bjtuss.bjtuselfservice.shared.domain.time.schoolTimeConversionNote
 import team.bjtuss.bjtuselfservice.shared.domain.course.isStaggered
@@ -156,17 +154,22 @@ private fun Modifier.courseBlockPlacement(course: Course, cellHeight: Dp, stagge
     return offset(y = shift).height(cellHeight - shift + minOf(shift, 2.dp))
 }
 
+/** 所选北京周的实际上课日期，供课程详情使用该日的夏令时偏移。 */
+internal fun Course.dateInWeek(weekStartDate: LocalDate?): LocalDate =
+    weekStartDate?.plusDays((courseLocationIndex % 8 - 1).coerceIn(0, 6))
+        ?: schoolNow().date
+
 /** "10:30-12:20" → "10:30–12:20"，与节次标签的排版一致。 */
-private fun Course.displayClassTime(staggered: Boolean): String? =
-    classTimeRange(staggered)?.replace('-', '–')?.let { displaySchoolClockText(it) }
+private fun Course.displayClassTime(staggered: Boolean, schoolDate: LocalDate): String? =
+    classTimeRange(staggered)?.replace('-', '–')?.let { displaySchoolClockText(it, schoolDate) }
 
 /** 节次标签里的北京时间换成手机时区；东八区原样。 */
-private fun slotLabel(slot: Int): String = displaySchoolClockText(slotLabels[slot])
+private fun slotLabel(slot: Int, schoolDate: LocalDate): String = displaySchoolClockText(slotLabels[slot], schoolDate)
 
 /** 有具体日期的事件（实验、考试）按它自己的北京日期换算时刻。 */
-private fun Course.displayEventTime(): String? = scheduleEventTime?.let { time ->
-    val date = (scheduleEventDates.firstOrNull() ?: scheduleEventDate)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-    if (date != null) displaySchoolClockText(time, date) else displaySchoolClockText(time)
+private fun Course.displayEventTime(occurrenceDate: LocalDate? = null): String? = scheduleEventTime?.let { time ->
+    val date = occurrenceDate?.takeIf { it.toString() in eventDates } ?: (scheduleEventDates.firstOrNull() ?: scheduleEventDate)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    if (date != null) displaySchoolClockText(time, date) else displaySchoolClockText(time, occurrenceDate ?: schoolNow().date)
 }
 
 @OptIn(
@@ -317,6 +320,7 @@ fun CourseScheduleWorkspace(
                                 }
                             }
                             CourseDetailPanel(
+                                weekStartDate = state.selectedNonTeachingWeekStart ?: state.weekDate()?.startDate,
                                 course = state.selectedCourse,
                                 modifier = Modifier.weight(0.35f).fillMaxHeight(),
                             )
@@ -357,6 +361,7 @@ fun CourseScheduleWorkspace(
                             val detailScrollState = rememberScrollState()
                             CourseDetailContent(
                                 course = course,
+                                schoolDate = course.dateInWeek(state.selectedNonTeachingWeekStart ?: state.weekDate()?.startDate),
                                 staggeredClassTimes = staggered,
                                 modifier = Modifier.fillMaxWidth()
                                     .verticalScroll(detailScrollState)
@@ -474,6 +479,7 @@ fun CourseScheduleWorkspace(
     if (showDatePicker) {
         CourseDatePickerDialog(
             selectedDate = state.selectedDate,
+            today = schoolNow().date,
             locateWeekOnly = expanded || state.compactViewMode == CourseCompactViewMode.WEEK,
             onSelect = { date ->
                 model.selectDate(date)
@@ -678,15 +684,13 @@ private fun SummaryAction(label: String, description: String, onClick: () -> Uni
 @Composable
 private fun CourseDatePickerDialog(
     selectedDate: LocalDate?,
+    today: LocalDate,
     locateWeekOnly: Boolean,
     onSelect: (LocalDate) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val isIos = currentPlatform().family == PlatformFamily.IOS
-    val initialMillis = selectedDate?.toEpochDays()?.times(MILLIS_PER_DAY)
-    val today = remember {
-        Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-    }
+    val initialMillis = (selectedDate ?: today).toEpochDays() * MILLIS_PER_DAY
     var nativeSelectedDate by remember(selectedDate, today) {
         mutableStateOf(selectedDate ?: today)
     }
@@ -851,9 +855,9 @@ private fun ReadableWeekGridViewport(modifier: Modifier, fitAllSlots: Boolean = 
         val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f)
         // Normal portrait and unfolded views fit all seven slots. Only genuinely
         // short landscape viewports retain a larger scrollable grid.
-        val gridHeight = if (fitAllSlots) maxOf(maxHeight, 42.dp + 28.dp * 7 * fontScale + 2.dp)
+        val gridHeight = if (fitAllSlots) maxOf(maxHeight, (42.dp + 36.dp * 7) * fontScale + 2.dp)
             else if (maxHeight >= 300.dp * fontScale) maxHeight
-            else maxOf(maxHeight, 42.dp + 56.dp * 7 * fontScale + 2.dp)
+            else maxOf(maxHeight, (42.dp + 56.dp * 7) * fontScale + 2.dp)
         val scrollState = rememberScrollState()
         Box(Modifier.fillMaxSize().verticalScroll(scrollState)) {
             content(Modifier.fillMaxWidth().height(gridHeight))
@@ -872,6 +876,7 @@ private fun WeekGrid(
     fitAllSlots: Boolean = false,
 ) {
     val byLocation = courses.groupBy(Course::courseLocationIndex)
+    val headerHeight = 42.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f)
     ReadableWeekGridViewport(modifier, fitAllSlots) { gridModifier ->
         Column(
             modifier = gridModifier.border(
@@ -880,7 +885,7 @@ private fun WeekGrid(
                 shape = RoundedCornerShape(16.dp),
             ).padding(1.dp),
         ) {
-            Row(modifier = Modifier.fillMaxWidth().height(42.dp)) {
+            Row(modifier = Modifier.fillMaxWidth().height(headerHeight)) {
                 Box(modifier = Modifier.width(78.dp).fillMaxHeight())
                 dayLabels.forEachIndexed { index, day ->
                     Box(modifier = Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
@@ -905,7 +910,7 @@ private fun WeekGrid(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            slotLabel(slot),
+                            slotLabel(slot, weekStartDate ?: schoolNow().date),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1159,6 +1164,7 @@ private fun CourseCompactScrollableContent(
                     NonTeachingDateState(state.selectedDate, tableModifier)
                 } else if (state.compactViewMode == CourseCompactViewMode.DAY) {
                     CompactDayPager(
+                        weekStartDate = state.selectedNonTeachingWeekStart ?: state.weekDate()?.startDate,
                         courses = state.visibleCourses, courseTypesByCode = courseTypesByCode,
                         selectedDay = state.selectedDay, onSelectDay = model::selectDay, onOpen = onOpen,
                         modifier = tableModifier,
@@ -1189,6 +1195,7 @@ private fun CourseCompactScrollableContent(
                 } else if (state.compactViewMode == CourseCompactViewMode.DAY) {
                     CompactDaySelector(state.selectedDay, model::selectDay)
                     CompactDayPager(
+                        weekStartDate = state.selectedNonTeachingWeekStart ?: state.weekDate()?.startDate,
                         courses = state.visibleCourses,
                         courseTypesByCode = courseTypesByCode,
                         selectedDay = state.selectedDay,
@@ -1332,6 +1339,7 @@ private fun CompactTableIcon(modifier: Modifier) {
 
 @Composable
 private fun CompactDayPager(
+    weekStartDate: LocalDate?,
     courses: List<Course>,
     courseTypesByCode: Map<String, CourseType>?,
     selectedDay: Int,
@@ -1363,7 +1371,8 @@ private fun CompactDayPager(
             items((0 until 7).toList(), key = { "day-$day-slot-$it" }) { slot ->
                 val location = slot * 8 + day + 1
                 DayScheduleSlotRow(
-                    slotLabel = slotLabel(slot),
+                    slotLabel = slotLabel(slot, (weekStartDate ?: schoolNow().date).plusDays(day)),
+                    schoolDate = (weekStartDate ?: schoolNow().date).plusDays(day),
                     slotCourses = byLocation[location].orEmpty(),
                     courseTypesByCode = courseTypesByCode,
                     onOpen = onOpen,
@@ -1639,13 +1648,14 @@ private fun CompactWeekGrid(
     fitAllSlots: Boolean = false,
 ) {
     val byLocation = courses.groupBy(Course::courseLocationIndex)
+    val headerHeight = 38.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f)
     ReadableWeekGridViewport(modifier, fitAllSlots) { gridModifier ->
         Column(
             modifier = gridModifier
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(13.dp))
                 .padding(1.dp),
         ) {
-            Row(modifier = Modifier.fillMaxWidth().height(38.dp)) {
+            Row(modifier = Modifier.fillMaxWidth().height(headerHeight)) {
                 Box(modifier = Modifier.width(45.dp).fillMaxHeight())
                 compactDayLabels.forEachIndexed { day, label ->
                     Box(
@@ -1674,8 +1684,8 @@ private fun CompactWeekGrid(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            displaySchoolClockText(compactSlotLabels[slot], markerSeparator = "\n"),
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                            displaySchoolClockText(compactSlotLabels[slot], weekStartDate ?: schoolNow().date, markerSeparator = "\n"),
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 11.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                             // 换时区后可能多一行“前日/次日”。
@@ -1685,6 +1695,7 @@ private fun CompactWeekGrid(
                     repeat(7) { day ->
                         val location = slot * 8 + day + 1
                         CompactCourseGridCell(
+                            schoolDate = (weekStartDate ?: schoolNow().date).plusDays(day),
                             courses = byLocation[location].orEmpty(),
                             courseTypesByCode = courseTypesByCode,
                             aggregateAllWeeks = aggregateAllWeeks,
@@ -1700,6 +1711,7 @@ private fun CompactWeekGrid(
 
 @Composable
 private fun CompactCourseGridCell(
+    schoolDate: LocalDate,
     courses: List<Course>,
     courseTypesByCode: Map<String, CourseType>?,
     aggregateAllWeeks: Boolean,
@@ -1723,6 +1735,7 @@ private fun CompactCourseGridCell(
                 ),
             ).forEach { course ->
                 CompactCourseColorBlock(
+                    schoolDate = schoolDate,
                     course = course,
                     courseTypesByCode = courseTypesByCode,
                     onOpen = onOpen,
@@ -1738,6 +1751,7 @@ private fun CompactCourseGridCell(
     ) {
         courses.forEach { course ->
             CompactCourseColorBlock(
+                schoolDate = schoolDate,
                 course = course,
                 courseTypesByCode = courseTypesByCode,
                 onOpen = onOpen,
@@ -1749,6 +1763,7 @@ private fun CompactCourseGridCell(
 
 @Composable
 private fun CompactCourseColorBlock(
+    schoolDate: LocalDate,
     course: Course,
     courseTypesByCode: Map<String, CourseType>?,
     onOpen: (Int) -> Unit,
@@ -1764,8 +1779,8 @@ private fun CompactCourseColorBlock(
         Surface(
             onClick = { onOpen(course.id) },
             modifier = Modifier.fillMaxWidth().courseBlockPlacement(course, maxHeight, staggered).semantics {
-                val time = course.displayEventTime()
-                    ?: listOfNotNull(course.displayClassTime(staggered).takeIf { course.isStaggered(staggered) }, course.courseTime).joinToString(" ")
+                val time = course.displayEventTime(schoolDate)
+                    ?: listOfNotNull(course.displayClassTime(staggered, schoolDate).takeIf { course.isStaggered(staggered) }, course.courseTime).joinToString(" ")
                 contentDescription = "${displayScheduleCourseName(course.courseName)}，${course.eventDatesLabel()} $time，${displayCoursePlace(course.coursePlace)}，点按查看详情"
             },
             color = colors.container,
@@ -1778,6 +1793,7 @@ private fun CompactCourseColorBlock(
 @Composable
 private fun DayScheduleSlotRow(
     slotLabel: String,
+    schoolDate: LocalDate,
     slotCourses: List<Course>,
     courseTypesByCode: Map<String, CourseType>?,
     onOpen: (Int) -> Unit,
@@ -1785,7 +1801,7 @@ private fun DayScheduleSlotRow(
     val staggered = LocalStaggeredClassTimes.current
     // 整节都是错峰课：左侧标签直接写错峰时间；与普通课混在一节时标签不变，错峰课在卡片上单独写时间。
     val staggeredLabel = slotCourses.firstOrNull()?.takeIf { slotCourses.all { it.isStaggered(staggered) } }
-        ?.displayClassTime(staggered)?.let { "${slotLabel.substringBefore('\n')}\n$it" }
+        ?.displayClassTime(staggered, schoolDate)?.let { "${slotLabel.substringBefore('\n')}\n$it" }
     val label = staggeredLabel ?: slotLabel
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
         Text(
@@ -1807,7 +1823,7 @@ private fun DayScheduleSlotRow(
                 )
             } else {
                 slotCourses.forEach { course ->
-                    CourseListCard(course, courseTypesByCode, onOpen, showStaggeredTime = staggeredLabel == null)
+                    CourseListCard(course, courseTypesByCode, onOpen, showStaggeredTime = staggeredLabel == null, schoolDate = schoolDate)
                 }
             }
         }
@@ -1820,6 +1836,7 @@ private fun CourseListCard(
     courseTypesByCode: Map<String, CourseType>?,
     onOpen: (Int) -> Unit,
     showStaggeredTime: Boolean,
+    schoolDate: LocalDate,
 ) {
     // 底色与「色块概览」同源：培养方案课程号 → 课程性质 → 配色；未命中用 UNKNOWN 灰。
     val courseType = courseTypesByCode?.let { mapping ->
@@ -1848,8 +1865,8 @@ private fun CourseListCard(
                 color = colors.onContainer.accessibleAlpha(0.78f),
             )
             Text(
-                course.displayEventTime()?.let { "${course.eventDatesLabel()} · $it" }
-                    ?: course.displayClassTime(staggered)?.takeIf { showStaggeredTime && course.isStaggered(staggered) }
+                course.displayEventTime(schoolDate)?.let { "${course.eventDatesLabel()} · $it" }
+                    ?: course.displayClassTime(staggered, schoolDate)?.takeIf { showStaggeredTime && course.isStaggered(staggered) }
                         ?.let { "$it · ${course.courseTime}" }
                     ?: course.courseTime,
                 style = MaterialTheme.typography.labelMedium,
@@ -1860,7 +1877,7 @@ private fun CourseListCard(
 }
 
 @Composable
-private fun CourseDetailPanel(course: Course?, modifier: Modifier) {
+private fun CourseDetailPanel(course: Course?, modifier: Modifier, weekStartDate: LocalDate?) {
     val detailScrollState = rememberScrollState()
     Surface(
         modifier = modifier,
@@ -1874,6 +1891,7 @@ private fun CourseDetailPanel(course: Course?, modifier: Modifier) {
         } else {
             CourseDetailContent(
                 course = course,
+                schoolDate = course.dateInWeek(weekStartDate),
                 staggeredClassTimes = LocalStaggeredClassTimes.current,
                 modifier = Modifier
                     .fillMaxSize()
@@ -1886,7 +1904,7 @@ private fun CourseDetailPanel(course: Course?, modifier: Modifier) {
 }
 
 @Composable
-internal fun CourseDetailContent(course: Course, staggeredClassTimes: Boolean, modifier: Modifier) {
+internal fun CourseDetailContent(course: Course, staggeredClassTimes: Boolean, modifier: Modifier, schoolDate: LocalDate = schoolNow().date) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text(displayScheduleCourseName(course.courseName), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         if (course.scheduleEventKind == null) CourseDetailLine("编号", course.courseId)
@@ -1897,10 +1915,10 @@ internal fun CourseDetailContent(course: Course, staggeredClassTimes: Boolean, m
         val day = course.courseLocationIndex % 8 - 1
         if (course.scheduleEventTime != null) {
             CourseDetailLine("日期", course.eventDates.joinToString("\n"))
-            CourseDetailLine("时间", course.displayEventTime().orEmpty())
+            CourseDetailLine("时间", course.displayEventTime(schoolDate).orEmpty())
         } else {
             val slotName = slotLabels.getOrNull(slot)?.substringBefore('\n') ?: "未知"
-            val time = course.displayClassTime(staggeredClassTimes).orEmpty()
+            val time = course.displayClassTime(staggeredClassTimes, schoolDate).orEmpty()
             val note = if (course.isStaggered(staggeredClassTimes)) "（错峰）" else ""
             CourseDetailLine("时间", "${dayLabels.getOrElse(day) { "未知" }} · $slotName $time$note".trimEnd())
         }

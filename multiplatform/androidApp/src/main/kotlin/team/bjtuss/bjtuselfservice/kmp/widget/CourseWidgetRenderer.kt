@@ -188,7 +188,7 @@ internal class CourseWidgetRenderer(private val context: Context) {
         val next = model.nextDay
         val first = next?.occurrences?.firstOrNull()
         if (next != null && first != null) {
-            val whenText = "${widgetDayName(next.date, model.now.date)} ${widgetClock(first.session.startMinute)}"
+            val whenText = "${widgetDayName(next.date, model.now.date)} ${widgetClock(first.session.startMinute, first.date)}"
             setTextViewText(R.id.rest_next, if (compact) "下次上课 $whenText" else "下次上课 · $whenText ${first.session.name}")
             setViewVisibility(R.id.rest_next, View.VISIBLE)
         }
@@ -494,7 +494,7 @@ internal class CourseWidgetRenderer(private val context: Context) {
                 val first = hiddenUpcoming.firstOrNull()
                 setTextViewText(R.id.summary_upcoming, when {
                     first == null -> ""
-                    hiddenUpcoming.size == 1 -> "还有 1 节未显示 · ${widgetClock(first.session.startMinute)} ${first.session.name}"
+                    hiddenUpcoming.size == 1 -> "还有 1 节未显示 · ${widgetClock(first.session.startMinute, first.date)} ${first.session.name}"
                     else -> "还有 ${hiddenUpcoming.size} 节未上"
                 })
                 setTextViewText(R.id.summary_finished, if (hiddenFinished > 0) "已上完 $hiddenFinished 节" else "")
@@ -564,8 +564,8 @@ internal class CourseWidgetRenderer(private val context: Context) {
             }
             setTextViewText(R.id.row_detail, occurrence.session.detailLine())
             size(R.id.row_detail, 12.5f)
-            setTextViewText(R.id.row_start, widgetClock(occurrence.session.startMinute))
-            setTextViewText(R.id.row_end, widgetClock(occurrence.session.endMinute))
+            setTextViewText(R.id.row_start, widgetClock(occurrence.session.startMinute, occurrence.date))
+            setTextViewText(R.id.row_end, widgetClock(occurrence.session.endMinute, occurrence.date))
             size(R.id.row_start, 12.5f)
             size(R.id.row_end, 12.5f)
         }
@@ -585,7 +585,7 @@ internal class CourseWidgetRenderer(private val context: Context) {
             }
             setTextViewText(R.id.row_detail, occurrence.session.roomAndTeacher())
             size(R.id.row_detail, 11.5f)
-            setTextViewText(R.id.row_start, widgetClock(occurrence.session.startMinute))
+            setTextViewText(R.id.row_start, widgetClock(occurrence.session.startMinute, occurrence.date))
             size(R.id.row_start, 12.5f)
             if (ongoing) setNightAwareTextColor(this, R.id.row_start, R.color.widget_text_primary)
         }
@@ -612,8 +612,8 @@ internal class CourseWidgetRenderer(private val context: Context) {
             axis.addView(R.id.week_axis, views(R.layout.widget_week_slot_label).apply {
                 val range = layout.slots[slot]
                 setTextViewText(R.id.slot_index, "${slot + 1}")
-                setTextViewText(R.id.slot_start, widgetClock(range.first))
-                setTextViewText(R.id.slot_end, widgetClock(range.last))
+                setTextViewText(R.id.slot_start, widgetClock(range.first, layout.days.firstOrNull()?.date ?: model.now.date, markerSeparator = "\n"))
+                setTextViewText(R.id.slot_end, widgetClock(range.last, layout.days.firstOrNull()?.date ?: model.now.date, markerSeparator = "\n"))
                 if (rowHeight < 34) setViewVisibility(R.id.slot_end, View.GONE)
             })
         }

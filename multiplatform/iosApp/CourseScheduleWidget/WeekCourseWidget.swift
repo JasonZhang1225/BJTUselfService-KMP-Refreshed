@@ -150,7 +150,7 @@ private struct WeekGrid: View {
                 }
 
                 ForEach(Array(layout.rows.enumerated()), id: \.offset) { row, slot in
-                    SlotLabel(index: slot, range: layout.slots[slot], compact: rowHeight < 34)
+                    SlotLabel(index: slot, range: layout.slots[slot], schoolDate: layout.days.first?.date ?? now, compact: rowHeight < 34)
                         .frame(width: axisWidth, height: rowHeight)
                         .offset(y: headerHeight + gap + CGFloat(row) * (rowHeight + gap))
                 }
@@ -216,6 +216,7 @@ private struct DayHeader: View {
 private struct SlotLabel: View {
     let index: Int
     let range: ClosedRange<Int>
+    let schoolDate: Date
     let compact: Bool
 
     var body: some View {
@@ -223,16 +224,16 @@ private struct SlotLabel: View {
             Text("\(index + 1)")
                 .font(.system(size: 13, weight: .semibold).monospacedDigit())
             // 格子按北京时间的节次排，标签上的时刻换成手机时区。
-            Text(CourseWidgetCalendar.displayClock(minute: range.lowerBound))
+            Text(CourseWidgetCalendar.displayClock(minute: range.lowerBound, on: schoolDate, markerSeparator: "\n"))
                 .font(.system(size: 8).monospacedDigit())
                 .foregroundStyle(.secondary)
             if !compact {
-                Text(CourseWidgetCalendar.displayClock(minute: range.upperBound))
+                Text(CourseWidgetCalendar.displayClock(minute: range.upperBound, on: schoolDate, markerSeparator: "\n"))
                     .font(.system(size: 8).monospacedDigit())
                     .foregroundStyle(.tertiary)
             }
         }
-        .lineLimit(1)
+        .lineLimit(2)
         .minimumScaleFactor(0.8)
     }
 }

@@ -226,7 +226,7 @@ private fun buildMenu(target: LiveActivityTarget, active: Boolean, status: LiveA
 }
 
 private fun leadTitle(target: LiveActivityTarget, minutes: Int): String =
-    "课前 $minutes 分钟显示 (${hm((target.startMinute - minutes).coerceAtLeast(0))})"
+    "课前 $minutes 分钟显示 (${team.bjtuss.bjtuselfservice.shared.feature.widget.widgetClock((target.startMinute - minutes).coerceAtLeast(0), target.date)})"
 
 /** 记作以后所有课程的默认提前时间；没在显示时顺便恢复这一项的自动出现。 */
 private fun chooseLeadMinutes(minutes: Int, target: LiveActivityTarget, active: Boolean) {
@@ -247,12 +247,6 @@ private fun isWithinLeadWindow(target: LiveActivityTarget, leadMinutes: Int): Bo
     if (now.date != target.date) return now.date > target.date
     val minute = now.hour * 60 + now.minute
     return minute >= target.startMinute - leadMinutes
-}
-
-private fun hm(minuteOfDay: Int): String {
-    val h = minuteOfDay / 60
-    val m = minuteOfDay % 60
-    return "${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}"
 }
 
 /** iOS 实时活动有单独的系统开关，不依赖通知权限，不必先问。 */

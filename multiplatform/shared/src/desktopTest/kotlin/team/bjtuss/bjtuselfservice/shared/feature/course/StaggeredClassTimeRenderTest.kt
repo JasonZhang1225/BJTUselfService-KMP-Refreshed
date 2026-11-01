@@ -32,6 +32,62 @@ class StaggeredClassTimeRenderTest {
         courseTime = "第1-16周", coursePlace = place, isCurrentSemester = false,
     )
 
+    @Test fun renderOccurrenceDatesInNewYorkAcrossDst() {
+        val originalZone = java.util.TimeZone.getDefault()
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/New_York"))
+        try {
+            val courses = listOf(course(1, "测试早课", 1, "思源楼101"))
+            SwingUtilities.invokeAndWait {
+                for ((name, date, dark, scale) in listOf(
+                    Scenario("before-dst", LocalDate(2026, 10, 26), false, 1f),
+                    Scenario("after-dst", LocalDate(2026, 11, 2), false, 1f),
+                    Scenario("after-dst-dark-large", LocalDate(2026, 11, 2), true, 1.6f),
+                    Scenario("after-dst-detail", LocalDate(2026, 11, 2), false, 1f),
+                )) {
+                    val scene = ImageComposeScene(width = 780, height = 1688, density = Density(2f, scale),
+                        coroutineContext = Dispatchers.Unconfined) {
+                        PlatformAppTheme(useDarkTheme = dark, dynamicColorEnabled = false) {
+                            Surface(Modifier.fillMaxSize()) {
+                                if (name.endsWith("detail")) {
+                                    CourseDetailContent(courses.single(), false, Modifier.fillMaxSize().padding(24.dp), schoolDate = date)
+                                } else {
+                                    val model = remember {
+                                        CourseScheduleScreenModel(object : CourseScheduleRepository {
+                                            override fun load() = CourseScheduleSnapshot(courses, 7)
+                                            override suspend fun refresh() = CourseScheduleRefreshResult.Success(load())
+                                        })
+                                    }
+                                    CourseScheduleWorkspace(
+                                        CourseScheduleUiState(courses = courses,
+                                            academicWeeks = listOf(OccupancyWeekDate(7, "", "", date)),
+                                            selectedWeek = 7, isLoading = false, currentWeek = 7, weekResolved = true),
+                                        emptyMap(), false, model, UnavailableHomeworkFileGateway, UnavailableSystemCalendarGateway,
+                                        showCalendarExportSheet = false, onDismissCalendarExport = {}, onRefresh = {},
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    try {
+                        repeat(8) { scene.render(1_000_000_000L + it * 16_000_000L).close() }
+                        val image = scene.render(1_200_000_000L)
+                        try {
+                            val data = image.encodeToData(EncodedImageFormat.PNG)!!
+                            val file = File("build/reports/pr88-timezone/$name.png")
+                            file.parentFile.mkdirs()
+                            file.writeBytes(data.bytes)
+                            data.close()
+                            assertTrue(file.length() > 1000)
+                        } finally { image.close() }
+                    } finally { scene.close() }
+                }
+            }
+        } finally { java.util.TimeZone.setDefault(originalZone) }
+    }
+
+    private data class Scenario(val name: String, val date: LocalDate, val dark: Boolean, val scale: Float)
+
     @Test fun renderStaggeredWeekGridDayListAndDetail() {
         val courses = listOf(
             course(1, "高等数学", 1, "海淀主校区,思源楼,SY101"),

@@ -51,7 +51,7 @@ private val schoolClock = Regex("""(\d{1,2}):(\d{2})""")
  */
 fun displaySchoolClockText(
     text: String,
-    schoolDate: LocalDate = schoolNow().date,
+    schoolDate: LocalDate,
     zone: TimeZone = displayTimeZone(),
     /** 标注与时刻之间的分隔；窄列里用换行，标注单独占一行。 */
     markerSeparator: String = " ",

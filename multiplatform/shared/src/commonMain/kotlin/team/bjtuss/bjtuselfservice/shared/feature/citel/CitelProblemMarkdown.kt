@@ -69,7 +69,7 @@ fun citelProblemMarkdown(task: CitelTask, cached: CitelCachedProblem): String = 
     appendLine("- 来源：CITEL")
     appendLine("- 课程：${task.courseName}")
     appendLine("- 模块：${task.id}")
-    appendLine("- 抓取时间：${citelDateText(cached.fetchedAt)}（北京时间）")
+    appendLine("- 抓取时间：${citelDateText(cached.fetchedAt)}（当地时间）")
     appendLine("- 截止：${task.dueTime?.let(::formatDeadlineEpoch) ?: "未提供"}")
     appendLine("- 评测：${task.submissionStatusText()}")
     if (problem.gradeLine.isNotBlank()) appendLine("- ${problem.gradeLine}")

@@ -383,6 +383,8 @@ private fun OccupancyDetail(
 
     LaunchedEffect(selected.id) { model.refreshPeople() }
     val nowLocal = rememberOccupancyNow()
+    val selectedSchoolDate = model.weekDateOf(state.selectedWeek)?.startDate
+        ?.plus(state.selectedWeekday - 1, DateTimeUnit.DAY) ?: nowLocal.date
     val viewingCurrentSchedule = state.selectedSemester == null &&
         !state.isNonTeachingWeek &&
         state.selectedWeek == model.currentWeek &&
@@ -436,7 +438,7 @@ private fun OccupancyDetail(
             Column(modifier = Modifier.animateContentSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 OccupancyLegendRow(showSlotTimes, onToggleSlotTimes = { showSlotTimes = !showSlotTimes })
                 AnimatedVisibility(visible = showSlotTimes, enter = fadeIn(), exit = fadeOut()) {
-                    SlotTimeRangesLegend()
+                    SlotTimeRangesLegend(selectedSchoolDate)
                 }
             }
             if (state.isNonTeachingWeek) {
@@ -522,6 +524,7 @@ private fun OccupancyDetail(
                             items(query.rooms, key = ClassroomOccupancy::room) { room ->
                                 ClassroomOccupancyCard(
                                     room = room, weekday = state.selectedWeekday,
+                                    schoolDate = selectedSchoolDate,
                                     currentPeriod = currentPeriod,
                                     people = matchingRoomPeople(room.room, state.people),
                                     supportsPeople = selected.name in CLASSROOM_BUILDINGS,
@@ -939,14 +942,14 @@ private fun WeekArrow(
 /** 7 个节次完整时间段（与 aa stuschedule 表头一致，每节为两小节连上的大节）。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SlotTimeRangesLegend() {
+private fun SlotTimeRangesLegend(schoolDate: LocalDate) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         SLOT_TIME_RANGES.forEachIndexed { index, range ->
             Text(
-                "第${index + 1}节 ${displaySchoolClockText(range)}",
+                "第${index + 1}节 ${displaySchoolClockText(range, schoolDate)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1021,6 +1024,7 @@ internal fun ClassroomOccupancyCard(
     peopleLoading: Boolean = false,
     currentPeriod: Int? = null,
     onRefreshPeople: () -> Unit = {},
+    schoolDate: LocalDate = team.bjtuss.bjtuselfservice.shared.domain.time.schoolNow().date,
 ) {
     ElevatedCard(
         shape = RoundedCornerShape(12.dp),
@@ -1057,6 +1061,7 @@ internal fun ClassroomOccupancyCard(
                         OccupancyCell(
                             kind = room.kindAt(weekday, period),
                             period = period,
+                            schoolDate = schoolDate,
                             emphasized = currentPeriod == period,
                             modifier = Modifier.weight(1f).then(
                                 if (currentPeriod == period) {
@@ -1098,13 +1103,14 @@ private fun CurrentOccupancyTag(kind: OccupancyKind) {
  */
 @Composable
 private fun OccupancyCell(
+    schoolDate: LocalDate,
     kind: OccupancyKind,
     period: Int,
     emphasized: Boolean,
     modifier: Modifier,
 ) {
     val (background, content) = occupancyCellColors(kind)
-    val startTime = SLOT_TIME_RANGES.getOrNull(period - 1)?.substringBefore('-')?.let { displaySchoolClockText(it) } ?: ""
+    val startTime = SLOT_TIME_RANGES.getOrNull(period - 1)?.substringBefore('-')?.let { displaySchoolClockText(it, schoolDate) } ?: ""
     Surface(
         color = background,
         contentColor = content,

@@ -166,6 +166,23 @@ jobs:
             iosApp/CourseScheduleWidget/PlaybackDownloadAttributes.swift \
             iosApp/iosApp/PlaybackDownloadCoordinator.swift
 
+      - name: Test widget and live activity clock conversion
+        run: |
+          xcrun swiftc -swift-version 5 \
+            iosApp/CourseScheduleWidget/CourseWidgetData.swift \
+            iosApp/tests/CourseWidgetClockTests.swift \
+            -o "$RUNNER_TEMP/course-widget-clock-tests"
+          "$RUNNER_TEMP/course-widget-clock-tests"
+
+      - name: Typecheck course ActivityKit coordinator
+        run: |
+          xcrun --sdk iphonesimulator swiftc -typecheck -swift-version 5 \
+            -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
+            -target arm64-apple-ios18.0-simulator \
+            iosApp/CourseScheduleWidget/CourseWidgetData.swift \
+            iosApp/CourseScheduleWidget/CourseLiveActivityAttributes.swift \
+            iosApp/iosApp/CourseLiveActivityCoordinator.swift
+
       - name: Compile desktop test sources
         run: |
           chmod +x ./gradlew

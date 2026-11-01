@@ -24,6 +24,7 @@ internal data class HomeSchedulePresentation(
     val courses: List<Course> = emptyList(),
     val academicWeeks: List<OccupancyWeekDate> = emptyList(),
     val currentWeek: Int = 0,
+    /** currentWeek 对应的北京日期；首页当地日期另由 now/timeZone 提供。 */
     val today: LocalDate = LocalDate(2000, 1, 1),
     val supplementalCourses: List<Course> = emptyList(),
     /** 培养方案课程性质，决定课程配色；未同步时为 null，课程按“未知”着色。 */

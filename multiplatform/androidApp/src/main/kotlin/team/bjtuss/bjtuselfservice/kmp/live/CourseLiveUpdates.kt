@@ -274,9 +274,9 @@ object CourseLiveUpdates : AndroidLiveActivityHost {
         val endAt = LocalDateTime(target.date.year, target.date.month, target.date.day, target.endMinute / 60, target.endMinute % 60)
         val endMillis = endAt.toInstant(zone).toEpochMilliseconds()
         val nowMillis = Clock.System.now().toEpochMilliseconds()
-        val time = "${widgetClock(target.startMinute)}–${widgetClock(target.endMinute)}"
+        val time = "${widgetClock(target.startMinute, target.date)}–${widgetClock(target.endMinute, target.date)}"
         val detail = listOf(time, target.place, target.teacher).filter(String::isNotEmpty).joinToString(" · ")
-        val nextLine = next?.let { "接下来 ${widgetClock(it.startMinute)} ${it.name}" }
+        val nextLine = next?.let { "接下来 ${widgetClock(it.startMinute, it.date)} ${it.name}" }
         val glyph = kindIcon(target)
         val progress = progressStyle(target, phase, now, leadMinutes(context), accent)
 
@@ -338,9 +338,9 @@ object CourseLiveUpdates : AndroidLiveActivityHost {
         val plain = !target.isLab && !target.isExam
         return when (phase) {
             LiveActivityPhase.UPCOMING ->
-                widgetClock(target.startMinute) + if (target.isExam) "考试" else if (target.isLab) "开始" else "上课"
+                widgetClock(target.startMinute, target.date) + if (target.isExam) "考试" else if (target.isLab) "开始" else "上课"
             LiveActivityPhase.ONGOING, LiveActivityPhase.FINISHED ->
-                widgetClock(target.endMinute) + if (plain) "下课" else "结束"
+                widgetClock(target.endMinute, target.date) + if (plain) "下课" else "结束"
         }
     }
 
