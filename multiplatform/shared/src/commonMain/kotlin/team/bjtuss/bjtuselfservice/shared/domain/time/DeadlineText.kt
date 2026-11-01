@@ -19,8 +19,6 @@ data class DeadlineDisplay(val date: LocalDate, val clock: String) {
     val isMidnight: Boolean get() = clock == "24:00"
 }
 
-private val schoolZone = TimeZone.of("Asia/Shanghai")
-
 fun deadlineDisplay(dateTime: LocalDateTime): DeadlineDisplay =
     if (dateTime.hour == 0 && dateTime.minute == 0 && dateTime.second == 0) {
         DeadlineDisplay(dateTime.date.minus(1, DateTimeUnit.DAY), "24:00")
@@ -31,13 +29,17 @@ fun deadlineDisplay(dateTime: LocalDateTime): DeadlineDisplay =
 /** `2026-10-19 24:00`；与原有 `yyyy-MM-dd HH:mm` 文案同格式。 */
 fun formatDeadline(dateTime: LocalDateTime): String = deadlineDisplay(dateTime).let { "${it.date} ${it.clock}" }
 
-/** 学校接口的本地时间文本（如课程平台 `endTime`）；解析不了时原样返回。 */
+/** 学校接口的北京时间文本（如课程平台 `endTime`），换成手机时区显示；解析不了时原样返回。 */
 fun formatSchoolDeadline(raw: String): String =
-    raw.trim().takeIf(String::isNotEmpty)?.let(::parseSchoolLocalDateTime)?.let(::formatDeadline) ?: raw
+    raw.trim().takeIf(String::isNotEmpty)?.let(::parseSchoolLocalDateTime)?.schoolToDisplay()?.let(::formatDeadline) ?: raw
 
-/** Unix 秒（CITEL、物理在线时间戳），按北京时间显示。 */
-fun formatDeadlineEpoch(epochSeconds: Long): String =
-    formatDeadline(Instant.fromEpochSeconds(epochSeconds).toLocalDateTime(schoolZone))
+/** 学校的北京时间文本（如课程平台开放时间）换成手机时区，格式不变（`yyyy-MM-dd HH:mm`）；解析不了时原样返回。 */
+fun formatSchoolDateTime(raw: String): String =
+    raw.trim().takeIf(String::isNotEmpty)?.let(::parseSchoolLocalDateTime)?.schoolToDisplay()
+        ?.let { "${it.date} ${it.hour.pad()}:${it.minute.pad()}" } ?: raw
+
+/** Unix 秒（CITEL、物理在线时间戳），按手机时区显示。 */
+fun formatDeadlineEpoch(epochSeconds: Long): String = formatDeadline(epochToLocal(epochSeconds))
 
 // 物理在线（Moodle）原文在日期和时刻之间可能夹着星期（`2026年10月20日 Tuesday 00:00`），与解析器口径一致。
 private val chineseDatePattern = Regex("""(\d{4})年(\d{1,2})月(\d{1,2})日(?:\s+[^\d\s]+)?\s+(\d{1,2}):(\d{2})""")
@@ -52,7 +54,7 @@ fun formatChineseDeadline(value: String): String {
     val dateTime = runCatching {
         LocalDateTime(year.toInt(), month.toInt(), day.toInt(), hour.toInt(), minute.toInt())
     }.getOrNull() ?: return value
-    return formatDeadlineDateTime(dateTime)
+    return formatDeadlineDateTime(dateTime.schoolToDisplay())
 }
 
 private const val UNSPECIFIED_TIME = "未指定"
@@ -66,21 +68,21 @@ fun assignmentStartText(value: String?): String = assignmentDateTimeText(value, 
 /** 作业卡片的截止时间，样式同开始时间；00:00 按截止规则显示为前一天 24:00。 */
 fun assignmentDeadlineText(value: String?): String = assignmentDateTimeText(value, ::formatDeadlineDateTime)
 
-/** CITEL 的 Unix 秒开始时间，按北京时间显示；没有时为“未指定”。 */
+/** CITEL 的 Unix 秒开始时间，按手机时区显示；没有时为“未指定”。 */
 fun assignmentStartText(epochSeconds: Long?): String =
     epochSeconds?.let { formatStartDateTime(epochDateTime(it)) } ?: UNSPECIFIED_TIME
 
-/** CITEL 的 Unix 秒截止时间，按北京时间显示；没有时为“未指定”。 */
+/** CITEL 的 Unix 秒截止时间，按手机时区显示；没有时为“未指定”。 */
 fun assignmentDeadlineText(epochSeconds: Long?): String =
     epochSeconds?.let { formatDeadlineDateTime(epochDateTime(it)) } ?: UNSPECIFIED_TIME
 
 private fun assignmentDateTimeText(value: String?, format: (LocalDateTime) -> String): String {
     val text = value?.trim().orEmpty()
     if (text.isEmpty()) return UNSPECIFIED_TIME
-    return parseAssignmentDateTime(text)?.let(format) ?: text
+    return parseAssignmentDateTime(text)?.schoolToDisplay()?.let(format) ?: text
 }
 
-/** 课程平台本地时间（`2026-10-14 00:00`）或物理在线中文日期（`2026年10月14日 00:00`）。 */
+/** 课程平台本地时间（`2026-10-14 00:00`）或物理在线中文日期（`2026年10月14日 00:00`），都是北京时间。 */
 private fun parseAssignmentDateTime(text: String): LocalDateTime? {
     parseSchoolLocalDateTime(text)?.let { return it }
     val match = chineseDatePattern.find(text) ?: return null
@@ -90,8 +92,7 @@ private fun parseAssignmentDateTime(text: String): LocalDateTime? {
     }.getOrNull()
 }
 
-private fun epochDateTime(epochSeconds: Long): LocalDateTime =
-    Instant.fromEpochSeconds(epochSeconds).toLocalDateTime(schoolZone)
+private fun epochDateTime(epochSeconds: Long): LocalDateTime = epochToLocal(epochSeconds)
 
 private fun formatStartDateTime(dateTime: LocalDateTime): String =
     chineseDateText(dateTime.date, "${dateTime.hour.pad()}:${dateTime.minute.pad()}")

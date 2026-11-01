@@ -100,6 +100,10 @@ import kotlinx.datetime.plus
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import team.bjtuss.bjtuselfservice.shared.domain.homework.parseSchoolLocalDateTime
+import team.bjtuss.bjtuselfservice.shared.domain.home.phyVlabEventHasInstant
+import team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.time.displayTimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.time.schoolEpochSeconds
 import kotlinx.coroutines.flow.collect
 import kotlin.time.Instant
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
@@ -1234,7 +1238,7 @@ private fun dueSoonSummaryItems(
 ): List<DueSoonSummaryItem> {
     val homeworkItems = homework.map { item ->
         DueSoonSummaryItem(
-            sortKey = parseSchoolLocalDateTime(item.endTime)?.toInstant(timeZone)?.epochSeconds ?: Long.MAX_VALUE,
+            sortKey = parseSchoolLocalDateTime(item.endTime)?.schoolEpochSeconds() ?: Long.MAX_VALUE,
             text = "${displayScheduleCourseName(item.courseName)} · ${item.title} · ${formatSchoolDeadline(item.endTime)}",
         )
     }
@@ -1594,14 +1598,16 @@ private fun weekdayName(date: LocalDate): String = "星期${weekdayShortName(dat
 
 private fun formatPhyVlabAgendaDate(event: PhyVlabEvent): String {
     // 由作业截止生成的事件（物理在线活动、CITEL）：零点截止显示为前一天 24:00，与它所在的日程日一致。
+    // 带真实时刻的事件按手机时区显示；Moodle 日历格子的日期标记仍按北京时间那天。
+    val zone = if (phyVlabEventHasInstant(event)) displayTimeZone() else SchoolTimeZone
     if (event.kind == PhyVlabEventKind.DEADLINE || event.kind == PhyVlabEventKind.DISCOUNT) {
-        val shown = deadlineDisplay(Instant.fromEpochSeconds(event.dayTimestamp).toLocalDateTime(TimeZone.of("Asia/Shanghai")))
+        val shown = deadlineDisplay(Instant.fromEpochSeconds(event.dayTimestamp).toLocalDateTime(zone))
         return "${shown.date} ${shown.clock} · ${shown.date.dayOfWeek.chineseLabel()}"
     }
     if (Regex("·\\s*周[一二三四五六日]").containsMatchIn(event.dateText)) return event.dateText
     val weekday = runCatching {
         Instant.fromEpochSeconds(event.dayTimestamp)
-            .toLocalDateTime(TimeZone.of("Asia/Shanghai"))
+            .toLocalDateTime(zone)
             .date
     }.getOrNull()?.let { date -> "周${weekdayShortName(date)}" }
     return if (weekday == null || event.dateText.isBlank()) {

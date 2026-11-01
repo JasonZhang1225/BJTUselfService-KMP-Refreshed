@@ -379,7 +379,7 @@ private fun PhyVlabCourseRow(course: PhyVlabCourse, selected: Boolean, onSelect:
 internal fun filterPhyVlabActivities(activities: List<PhyVlabActivity>, filters: AssignmentFilters, now: Long): List<PhyVlabActivity> {
     val visible = activities.filter { (filters.courses.isEmpty() || it.courseId in filters.courses) &&
         (!filters.hideSubmitted || !it.completed) &&
-        deadlineInScope(it.dueTimestamp, now, filters.hideExpired, filters.until) }
+        deadlineInScope(it.dueTimestamp, now, filters.hideExpired, filters.untilEpoch) }
     return when (filters.sortOrder) {
         1 -> visible.sortedBy { it.dueTimestamp ?: Long.MAX_VALUE }
         2 -> visible.sortedByDescending { it.dueTimestamp ?: Long.MIN_VALUE }
@@ -888,25 +888,8 @@ private val phyVlabUiDatePattern = Regex(
     """(\d{4})年(\d{1,2})月(\d{1,2})日(?:\s+[^\d\s]+)?\s+(\d{1,2}):(\d{2})""",
 )
 
-private fun formatPhyVlabDateTime(value: String): String {
-    val match = phyVlabUiDatePattern.find(value) ?: return value
-    val (year, month, day, hour, minute) = match.destructured
-    val date = runCatching {
-        LocalDate(year.toInt(), month.toInt(), day.toInt())
-    }.getOrNull() ?: return value
-    val normalized = buildString {
-        append(year)
-        append("年")
-        append(month.padStart(2, '0'))
-        append("月")
-        append(day.padStart(2, '0'))
-        append("日 ")
-        append(hour.padStart(2, '0'))
-        append(":")
-        append(minute.padStart(2, '0'))
-    }
-    return normalized + " · " + date.dayOfWeek.chineseLabel()
-}
+/** 物理在线的北京时间中文日期，换成手机时区后显示为 `2026年10月14日 00:00 · 周三`。 */
+private fun formatPhyVlabDateTime(value: String): String = assignmentStartText(value)
 
 private fun kotlinx.datetime.DayOfWeek.chineseLabel(): String = when (this) {
     kotlinx.datetime.DayOfWeek.MONDAY -> "周一"
@@ -968,7 +951,7 @@ private fun PhyVlabFailureBanner(
 private fun formatPhyVlabCacheTime(epochMillis: Long?): String? {
     val dateTime = epochMillis?.let {
         runCatching {
-            Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.of("Asia/Shanghai"))
+            Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.currentSystemDefault())
         }.getOrNull()
     } ?: return null
     return buildString {

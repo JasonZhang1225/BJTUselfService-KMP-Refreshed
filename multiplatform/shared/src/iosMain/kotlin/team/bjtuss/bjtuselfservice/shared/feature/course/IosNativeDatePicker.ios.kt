@@ -18,6 +18,12 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCAction
 import kotlinx.cinterop.useContents
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Instant
+import team.bjtuss.bjtuselfservice.shared.domain.time.displayTimeZone
 import platform.CoreGraphics.CGRectMake
 import platform.CoreGraphics.CGSizeMake
 import platform.Foundation.NSDate
@@ -166,18 +172,15 @@ private class NativeDatePickerView(
         )
     }
 
+    // 系统日期控件按手机时区显示日期，换算也按手机时区；取当天中午，避开夏令时切换的那一小时。
     private fun dateToNSDate(date: LocalDate): NSDate = NSDate(
         timeIntervalSinceReferenceDate =
-            date.toEpochDays() * 86_400.0 + 12.0 * 3_600.0 - UNIX_REFERENCE_SECONDS,
+            LocalDateTime(date, LocalTime(12, 0)).toInstant(displayTimeZone()).epochSeconds.toDouble() - UNIX_REFERENCE_SECONDS,
     )
 
-    private fun localDateFromDate(date: NSDate): LocalDate {
-        val epochDay = kotlin.math.floor(
-            (date.timeIntervalSinceReferenceDate + UNIX_REFERENCE_SECONDS + 8.0 * 3_600.0) /
-                86_400.0,
-        ).toInt()
-        return LocalDate.fromEpochDays(epochDay)
-    }
+    private fun localDateFromDate(date: NSDate): LocalDate =
+        Instant.fromEpochMilliseconds(((date.timeIntervalSinceReferenceDate + UNIX_REFERENCE_SECONDS) * 1000).toLong())
+            .toLocalDateTime(displayTimeZone()).date
 }
 
 @OptIn(ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)

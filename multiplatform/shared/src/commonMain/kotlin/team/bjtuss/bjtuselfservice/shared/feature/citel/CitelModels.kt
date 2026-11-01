@@ -39,7 +39,8 @@ internal val CitelTask.cardStatusText: String
     get() = if (completed) { if (programming) "AC" else "已提交" } else "未提交"
 
 fun citelDateText(seconds: Long): String =
-    Instant.fromEpochSeconds(seconds).toLocalDateTime(citelTimeZone).toString().replace('T', ' ').take(16)
+    // 解析学校时间用 citelTimeZone（北京时间）；显示按手机时区。
+    Instant.fromEpochSeconds(seconds).toLocalDateTime(TimeZone.currentSystemDefault()).toString().replace('T', ' ').take(16)
 
 fun CitelTask.deadlineStatus(now: Long): String = when {
     dueTime == null -> "未公布截止时间"

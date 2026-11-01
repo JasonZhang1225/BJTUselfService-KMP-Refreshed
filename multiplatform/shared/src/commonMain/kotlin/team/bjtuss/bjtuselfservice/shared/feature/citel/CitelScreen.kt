@@ -4,7 +4,6 @@ import team.bjtuss.bjtuselfservice.shared.domain.assignment.assignmentGradeText
 import team.bjtuss.bjtuselfservice.shared.domain.time.assignmentDeadlineText
 import team.bjtuss.bjtuselfservice.shared.domain.time.assignmentStartText
 import team.bjtuss.bjtuselfservice.shared.domain.time.formatDeadlineEpoch
-import kotlinx.datetime.LocalDate
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -65,7 +64,7 @@ fun CitelWorkspace(model: CitelModel, holdNetwork: Boolean, onOpen: (String) -> 
     val scroll = rememberLazyListState()
     val completion = assignmentCompletionState()
     val (tasks, ignoredTasks) = partitionIgnoredAssignments(
-        filteredCitelTasks(state.tasks.filter { selectedCourses.isEmpty() || it.courseId in selectedCourses }, pendingOnly, hideExpired, null, sortOrder, now, filters.until),
+        filteredCitelTasks(state.tasks.filter { selectedCourses.isEmpty() || it.courseId in selectedCourses }, pendingOnly, hideExpired, null, sortOrder, now, filters.untilEpoch),
         completion.completedKeys, { it.completed }, { it.completionKey() })
     var ignoredExpanded by rememberIgnoredSectionExpanded()
     val topClearance = LocalTopBarClearance.current
@@ -113,9 +112,9 @@ fun CitelWorkspace(model: CitelModel, holdNetwork: Boolean, onOpen: (String) -> 
 }
 
 internal fun filteredCitelTasks(tasks: List<CitelTask>, pendingOnly: Boolean, hideExpired: Boolean,
-    courseId: Int?, sortOrder: Int, now: Long, untilDate: LocalDate? = null): List<CitelTask> {
+    courseId: Int?, sortOrder: Int, now: Long, untilEpoch: Long? = null): List<CitelTask> {
     val filtered = tasks.filter { (!pendingOnly || !it.completed) &&
-        deadlineInScope(it.dueTime, now, hideExpired, untilDate) && (courseId == null || it.courseId == courseId) }
+        deadlineInScope(it.dueTime, now, hideExpired, untilEpoch) && (courseId == null || it.courseId == courseId) }
     return when (sortOrder) {
         1 -> filtered.sortedBy { it.dueTime ?: Long.MAX_VALUE }
         2 -> filtered.sortedByDescending { it.dueTime ?: Long.MIN_VALUE }

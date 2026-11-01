@@ -1,8 +1,10 @@
 package team.bjtuss.bjtuselfservice.shared.domain.homework
 
-import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.time.displayTimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.time.schoolEpochSeconds
 import kotlinx.datetime.toInstant
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
@@ -116,8 +118,8 @@ data class HomeworkFilterPreferences(
     val hideExpired: Boolean = false,
     val hideSubmitted: Boolean = false,
     val sortOrder: HomeworkSortOrder = HomeworkSortOrder.ORIGINAL,
-    /** “截止日期”选了指定日期时的那一天，见 [DeadlineScope]。 */
-    val untilDate: LocalDate? = null,
+    /** “截止日期”选了指定日期时的截止点（Unix 秒），见 [DeadlineScope]。 */
+    val untilEpoch: Long? = null,
 )
 
 /** 筛选偏好读写口；跨进程/重启 persistence 由调用方（缓存）提供，null 表示不持久化。 */
@@ -170,9 +172,12 @@ fun filterHomework(
     hideExpired: Boolean,
     now: LocalDateTime,
     hideSubmitted: Boolean = false,
-    untilDate: LocalDate? = null,
+    untilEpoch: Long? = null,
+    timeZone: TimeZone = displayTimeZone(),
 ): List<Homework> = homework.filter { item ->
-    val dateMatches = deadlineInScope(parseSchoolLocalDateTime(item.endTime), now, hideExpired, untilDate)
+    // 截止时间是北京时间文本，换成时刻后和手机时区的“现在”比较。
+    val due = parseSchoolLocalDateTime(item.endTime)?.schoolEpochSeconds()
+    val dateMatches = deadlineInScope(due, now.toInstant(timeZone).epochSeconds, hideExpired, untilEpoch)
     val courseMatches = selectedCourses.isEmpty() || item.courseName in selectedCourses
     val submittedMatches = !hideSubmitted || !isHomeworkSubmitted(item)
     dateMatches && courseMatches && submittedMatches
@@ -230,7 +235,8 @@ fun isHomeworkDueSoon(
 ): Boolean {
     if (isHomeworkSubmitted(homework)) return false
     val deadline = parseSchoolLocalDateTime(homework.endTime) ?: return false
-    val hours = (deadline.toInstant(timeZone) - now.toInstant(timeZone)).inWholeHours
+    // 截止时间按北京时间换成时刻；[now] 是 [timeZone] 的墙钟。
+    val hours = (deadline.toInstant(SchoolTimeZone) - now.toInstant(timeZone)).inWholeHours
     return hours in 0..48
 }
 

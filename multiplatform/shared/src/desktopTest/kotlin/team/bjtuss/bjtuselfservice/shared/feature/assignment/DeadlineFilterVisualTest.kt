@@ -49,7 +49,8 @@ class DeadlineFilterVisualTest {
 
     @Test fun renderDateFilters() = SwingUtilities.invokeAndWait {
         val until = AggregateAssignmentFilters(hideSubmitted = true).withDeadlineScope(true,
-            kotlin.time.Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.plus(7, DateTimeUnit.DAY))
+            team.bjtuss.bjtuselfservice.shared.domain.time.endOfDayEpochSeconds(
+                kotlin.time.Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date.plus(7, DateTimeUnit.DAY)))
         val cases = listOf(
             Triple("all-light", false, 1f) to AggregateAssignmentFilters(),
             Triple("upcoming-dark", true, 1f) to AggregateAssignmentFilters(hideExpired = true, hideSubmitted = true),

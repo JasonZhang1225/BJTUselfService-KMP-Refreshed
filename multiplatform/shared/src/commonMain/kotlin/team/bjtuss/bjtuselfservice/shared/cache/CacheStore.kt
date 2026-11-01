@@ -14,7 +14,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferen
 import team.bjtuss.bjtuselfservice.shared.domain.homework.decodeHomeworkFilterCourses
 import team.bjtuss.bjtuselfservice.shared.domain.homework.decodeHomeworkSortOrder
 import team.bjtuss.bjtuselfservice.shared.domain.homework.encodeHomeworkFilterCourses
-import team.bjtuss.bjtuselfservice.shared.domain.homework.parseUntilDate
+import team.bjtuss.bjtuselfservice.shared.domain.homework.legacyUntilDateToEpoch
 
 data class AppPreferences(
     val autoSyncGrades: Boolean = true,
@@ -317,7 +317,9 @@ class CacheStore(
             hideExpired = metadata(scope, HOMEWORK_FILTER_HIDE_EXPIRED_KEY) == "true",
             hideSubmitted = metadata(scope, HOMEWORK_FILTER_HIDE_SUBMITTED_KEY) == "true",
             sortOrder = decodeHomeworkSortOrder(metadata(scope, HOMEWORK_FILTER_SORT_KEY)),
-            untilDate = parseUntilDate(metadata(scope, HOMEWORK_FILTER_UNTIL_DATE_KEY)),
+            // 新版存截止点；只有旧版按北京时间日期存的值时，换算成那天北京时间 24:00。
+            untilEpoch = metadata(scope, HOMEWORK_FILTER_UNTIL_EPOCH_KEY)?.toLongOrNull()
+                ?: legacyUntilDateToEpoch(metadata(scope, HOMEWORK_FILTER_UNTIL_DATE_KEY)),
         )
     }
 
@@ -328,7 +330,8 @@ class CacheStore(
             putMetadata(scope, HOMEWORK_FILTER_HIDE_EXPIRED_KEY, preferences.hideExpired.toString())
             putMetadata(scope, HOMEWORK_FILTER_HIDE_SUBMITTED_KEY, preferences.hideSubmitted.toString())
             putMetadata(scope, HOMEWORK_FILTER_SORT_KEY, preferences.sortOrder.name)
-            putMetadata(scope, HOMEWORK_FILTER_UNTIL_DATE_KEY, preferences.untilDate?.toString().orEmpty())
+            putMetadata(scope, HOMEWORK_FILTER_UNTIL_EPOCH_KEY, preferences.untilEpoch?.toString().orEmpty())
+            putMetadata(scope, HOMEWORK_FILTER_UNTIL_DATE_KEY, "")
         }
     }
 
@@ -677,6 +680,7 @@ private const val HOMEWORK_FILTER_HIDE_EXPIRED_KEY = "homework_filter_hide_expir
 private const val HOMEWORK_FILTER_HIDE_SUBMITTED_KEY = "homework_filter_hide_submitted"
 private const val HOMEWORK_FILTER_SORT_KEY = "homework_filter_sort"
 private const val HOMEWORK_FILTER_UNTIL_DATE_KEY = "homework_filter_until_date"
+private const val HOMEWORK_FILTER_UNTIL_EPOCH_KEY = "homework_filter_until_epoch"
 private const val COURSE_CURRENT_WEEK_KEY = "course_current_week"
 private const val COURSE_MAX_WEEK = 30
 private const val PROFILE_NAME_KEY = "profile_name"

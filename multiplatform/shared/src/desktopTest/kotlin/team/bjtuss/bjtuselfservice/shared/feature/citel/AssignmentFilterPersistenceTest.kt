@@ -44,4 +44,25 @@ class AssignmentFilterPersistenceTest {
         val new = old.copy(id = 2, dueTimestamp = 250)
         assertEquals(listOf(new), filterPhyVlabActivities(listOf(old, new), filters, 200))
     }
+
+    @Test fun coursePlatformLegacyUntilDateLoadsAsBeijingEndOfDay() {
+        val file = Files.createTempFile("homework-filter", ".db")
+        try {
+            val driver = JdbcSqliteDriver("jdbc:sqlite:$file")
+            CacheDatabaseSql.Schema.create(driver)
+            CacheStore(driver).let { cache ->
+                try {
+                    // 上一版按北京时间日期存“截至 10 月 29 日”。
+                    cache.putMetadata("student-a", "homework_filter_until_date", "2026-10-29")
+                    val loaded = cache.homeworkFilter("student-a")
+                    assertEquals(kotlin.time.Instant.parse("2026-10-29T16:00:00Z").epochSeconds, loaded.untilEpoch)
+                    // 新版只写截止点，并清掉旧键，下次读到的就是新值。
+                    cache.saveHomeworkFilter("student-a", loaded.copy(untilEpoch = 42))
+                    assertEquals(42L, cache.homeworkFilter("student-a").untilEpoch)
+                    cache.saveHomeworkFilter("student-a", loaded.copy(untilEpoch = null))
+                    assertNull(cache.homeworkFilter("student-a").untilEpoch)
+                } finally { cache.close() }
+            }
+        } finally { Files.deleteIfExists(file) }
+    }
 }

@@ -5,7 +5,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -22,7 +21,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkDetail
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferences
-import team.bjtuss.bjtuselfservice.shared.domain.homework.SchoolTimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.time.displayTimeZone
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferencesStore
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkSortOrder
 import team.bjtuss.bjtuselfservice.shared.domain.homework.SubmittedHomeworkAttachment
@@ -46,7 +45,7 @@ data class HomeworkUiState(
     val hideExpired: Boolean = false,
     val hideSubmitted: Boolean = false,
     val sortOrder: HomeworkSortOrder = HomeworkSortOrder.ORIGINAL,
-    val untilDate: LocalDate? = null,
+    val untilEpoch: Long? = null,
     val selectedHomeworkKey: String? = null,
     val detail: HomeworkDetail? = null,
     val submittedAttachments: List<SubmittedHomeworkAttachment> = emptyList(),
@@ -69,7 +68,7 @@ data class HomeworkUiState(
         get() = homework.map(Homework::courseName).filter(String::isNotBlank).distinct().sorted()
 
     val visibleHomework: List<Homework>
-        get() = sortHomework(filterHomework(homework, selectedCourses, hideExpired, now, hideSubmitted, untilDate), sortOrder)
+        get() = sortHomework(filterHomework(homework, selectedCourses, hideExpired, now, hideSubmitted, untilEpoch, timeZone), sortOrder)
 
     val dueSoonCount: Int
         get() = dueSoonHomeworkCount(visibleHomework, now, timeZone)
@@ -81,8 +80,8 @@ data class HomeworkUiState(
 class HomeworkScreenModel(
     private val repository: HomeworkRepository,
     private val changeRecorder: DataChangeRecorder<Homework>? = null,
-    // 课程平台的截止时间是北京时间文本，“现在”也要按北京时间取，才能和它直接比较；手机不在东八区时也不会错开。
-    private val timeZone: TimeZone = SchoolTimeZone,
+    // “现在”按手机时区取；课程平台的北京时间截止文本在比较前先换成时刻，见 filterHomework。
+    private val timeZone: TimeZone = displayTimeZone(),
     private val clock: Clock = Clock.System,
     private val nowProvider: () -> LocalDateTime = {
         clock.now().toLocalDateTime(timeZone)
@@ -221,14 +220,14 @@ class HomeworkScreenModel(
         persistFilters()
     }
 
-    fun setHideExpired(hideExpired: Boolean) = setDeadlineScope(hideExpired, untilDate = null)
+    fun setHideExpired(hideExpired: Boolean) = setDeadlineScope(hideExpired, untilEpoch = null)
 
-    /** “截止日期”切换器：全部 / 未过期 / 指定日期（[untilDate] 非空），三者互斥。 */
-    fun setDeadlineScope(hideExpired: Boolean, untilDate: LocalDate?) {
+    /** “截止日期”切换器：全部 / 未过期 / 指定日期（[untilEpoch] 非空），三者互斥。 */
+    fun setDeadlineScope(hideExpired: Boolean, untilEpoch: Long?) {
         detailRequestKey = null
         mutableState.value = mutableState.value.copy(
-            hideExpired = hideExpired || untilDate != null,
-            untilDate = untilDate,
+            hideExpired = hideExpired || untilEpoch != null,
+            untilEpoch = untilEpoch,
             selectedHomeworkKey = null,
             detail = null,
             submittedAttachments = emptyList(),
@@ -288,7 +287,7 @@ class HomeworkScreenModel(
             hideExpired = prefs.hideExpired,
             hideSubmitted = prefs.hideSubmitted,
             sortOrder = prefs.sortOrder,
-            untilDate = prefs.untilDate,
+            untilEpoch = prefs.untilEpoch,
             now = nowProvider(),
         )
     }
@@ -303,7 +302,7 @@ class HomeworkScreenModel(
                     hideExpired = current.hideExpired,
                     hideSubmitted = current.hideSubmitted,
                     sortOrder = current.sortOrder,
-                    untilDate = current.untilDate,
+                    untilEpoch = current.untilEpoch,
                 ),
             )
         }

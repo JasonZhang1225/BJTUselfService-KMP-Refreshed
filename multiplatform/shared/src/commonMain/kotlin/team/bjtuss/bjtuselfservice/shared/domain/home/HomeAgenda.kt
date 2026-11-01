@@ -17,6 +17,9 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkDueSoon
 import team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkSubmitted
 import team.bjtuss.bjtuselfservice.shared.domain.homework.parseSchoolLocalDateTime
+import team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.time.displayTimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.time.schoolToDisplay
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEventKind
 
@@ -68,7 +71,7 @@ fun buildHomeAgenda(
         val date = monday.plus(offset, DateTimeUnit.DAY)
         HomeAgendaDay(
             date = date,
-            homeworkStarting = homework.filter { homeworkStartDate(it) == date }
+            homeworkStarting = homework.filter { homeworkStartDate(it, timeZone) == date }
                 .sortedWith(compareBy(Homework::courseName, Homework::title)),
             homeworkDue = homework.filter { homeworkDueDate(it, timeZone) == date }
                 .sortedBy(Homework::endTime),
@@ -151,12 +154,13 @@ fun isHomeAgendaDayFullySubmitted(day: HomeAgendaDay): Boolean {
             .all(PhyVlabEvent::submitted)
 }
 
-fun homeworkStartDate(homework: Homework): LocalDate? =
-    parseSchoolLocalDateTime(homework.openDate)?.date
+/** 课程平台时间是北京时间文本；归到 [timeZone]（手机时区）的哪一天。 */
+fun homeworkStartDate(homework: Homework, timeZone: TimeZone = displayTimeZone()): LocalDate? =
+    parseSchoolLocalDateTime(homework.openDate)?.schoolToDisplay(timeZone)?.date
 
 fun homeworkDueDate(homework: Homework, timeZone: TimeZone): LocalDate? =
     parseSchoolLocalDateTime(homework.endTime)
-        ?.toInstant(timeZone)
+        ?.toInstant(SchoolTimeZone)
         ?.minus(1.minutes)
         ?.toLocalDateTime(timeZone)
         ?.date
@@ -168,16 +172,18 @@ fun examDate(exam: ExamSchedule): LocalDate? = try {
 }
 
 /**
- * Moodle 日历以北京时间当天零点的 Unix 时间戳标记安排。
- *
- * [timeZone] 保留在函数签名中以兼容首页议程调用方，但物理在线事件不能按设备时区
- * 还原，否则海外设备会把北京时间零点的截止日显示成前一天。
+ * 由作业换算出的事件（物理在线活动 `activity-`、CITEL `citel-`）带真实时刻，按手机时区归日；
+ * Moodle 日历格子里的事件只用北京时间当天零点的时间戳标记“哪一天”，不是时刻，仍归到北京时间那天，
+ * 否则海外设备会把它挪到前一天。
  */
-@Suppress("UNUSED_PARAMETER")
+fun phyVlabEventHasInstant(event: PhyVlabEvent): Boolean =
+    event.id.startsWith("activity-") || event.id.startsWith("citel-")
+
 fun phyVlabEventDate(event: PhyVlabEvent, timeZone: TimeZone): LocalDate? =
     runCatching {
+        val zone = if (phyVlabEventHasInstant(event)) timeZone else PHYVLAB_TIME_ZONE
         val instant = Instant.fromEpochSeconds(event.dayTimestamp)
-        val local = instant.toLocalDateTime(PHYVLAB_TIME_ZONE)
+        val local = instant.toLocalDateTime(zone)
         val effectiveInstant = if (
             (event.kind == PhyVlabEventKind.DEADLINE || event.kind == PhyVlabEventKind.DISCOUNT) &&
             local.hour == 0 && local.minute == 0 && local.second == 0
@@ -186,7 +192,7 @@ fun phyVlabEventDate(event: PhyVlabEvent, timeZone: TimeZone): LocalDate? =
         } else {
             instant
         }
-        effectiveInstant.toLocalDateTime(PHYVLAB_TIME_ZONE).date
+        effectiveInstant.toLocalDateTime(zone).date
     }.getOrNull()
 
 /** Start and deadline counters include every homework source; discounts are distinct agenda events. */

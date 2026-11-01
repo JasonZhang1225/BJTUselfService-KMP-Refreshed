@@ -1,14 +1,13 @@
 package team.bjtuss.bjtuselfservice.shared.feature.assignment
 
-import kotlinx.datetime.DateTimeUnit
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.minus
+import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.domain.homework.*
+import team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.feature.citel.CitelTask
 import team.bjtuss.bjtuselfservice.shared.feature.citel.completed
@@ -47,22 +46,30 @@ data class AggregateCourseFilter(val allCourses: Boolean = true, val courses: Se
 data class AggregateAssignmentFilters(
     val platformCourses: Map<AssignmentSource, AggregateCourseFilter> = emptyMap(),
     val hideExpired: Boolean = false, val hideSubmitted: Boolean = false, val sortOrder: Int = 1,
-    /** “截止日期”选了指定日期时的那一天（含当天），见 [DeadlineScope]。 */
+    /** “截止日期”选了指定日期时的截止点（Unix 秒），见 [DeadlineScope]。 */
+    val untilEpoch: Long? = null,
+    /** 上一版按北京时间日期存的“截至某天（含）”，只为读取旧设置保留，加载时由 [migrated] 转成 [untilEpoch]。 */
     val untilDate: String? = null,
-    /** 1.8.x 一度用过的“截止早于某天（不含当天）”，只为读取旧设置保留，加载时由 [migrated] 转成 [untilDate]。 */
+    /** 1.8.x 一度用过的“截止早于某天（不含当天）”，同样只为读取旧设置保留。 */
     val beforeDate: String? = null,
 ) {
     fun forSource(source: AssignmentSource): AggregateCourseFilter = platformCourses[source] ?: AggregateCourseFilter()
     fun withSource(source: AssignmentSource, filter: AggregateCourseFilter) = copy(platformCourses = platformCourses + (source to filter))
-    val until: LocalDate? get() = parseUntilDate(untilDate)
-    val active: Boolean get() = until != null || hideExpired || hideSubmitted || platformCourses.values.any { !it.allCourses }
-    fun withDeadlineScope(hideExpired: Boolean, until: LocalDate?) =
-        copy(hideExpired = hideExpired || until != null, untilDate = until?.toString(), beforeDate = null)
+    val active: Boolean get() = untilEpoch != null || hideExpired || hideSubmitted || platformCourses.values.any { !it.allCourses }
+    fun withDeadlineScope(hideExpired: Boolean, untilEpoch: Long?) =
+        copy(hideExpired = hideExpired || untilEpoch != null, untilEpoch = untilEpoch, untilDate = null, beforeDate = null)
 
-    /** “早于 D（不含）”等于“截至 D 前一天（含）”；新的指定日期档本身不含已过期作业。 */
+    /**
+     * 旧设置都按北京时间理解：“截至 D（含）”的截止点是 D 的北京时间 24:00，“早于 D（不含）”是 D 的北京时间 0 点。
+     * 新的指定日期档本身不含已过期作业。已有截止点时以它为准。
+     */
     fun migrated(): AggregateAssignmentFilters {
-        val before = parseUntilDate(beforeDate) ?: return if (beforeDate != null) copy(beforeDate = null) else this
-        return if (until != null) copy(beforeDate = null) else withDeadlineScope(true, before.minus(1, DateTimeUnit.DAY))
+        if (untilDate == null && beforeDate == null) return this
+        if (untilEpoch != null) return copy(untilDate = null, beforeDate = null)
+        val epoch = legacyUntilDateToEpoch(untilDate)
+            ?: parseUntilDate(beforeDate)?.atStartOfDayIn(SchoolTimeZone)?.epochSeconds
+            ?: return copy(untilDate = null, beforeDate = null)
+        return withDeadlineScope(true, epoch)
     }
 }
 
@@ -74,9 +81,8 @@ fun AggregatedAssignment.completionKey(): AssignmentCompletionKey? = when (sourc
 
 /** 已忽略的作业照常参与筛选和排序，之后由列表拆到末尾的“已忽略”分组，见 [partitionIgnoredAssignments]。 */
 fun filterAggregateAssignments(items: List<AggregatedAssignment>, filters: AggregateAssignmentFilters, now: Long): List<AggregatedAssignment> {
-    val until = filters.until
     val visible = items.filter { filters.forSource(it.source).matches(it.courseId) && (!filters.hideSubmitted || !it.submitted) &&
-        deadlineInScope(it.dueTime, now, filters.hideExpired, until) }
+        deadlineInScope(it.dueTime, now, filters.hideExpired, filters.untilEpoch) }
     return sortAggregateAssignments(visible, filters.sortOrder)
 }
 

@@ -8,11 +8,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlinx.datetime.LocalDate
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
-import team.bjtuss.bjtuselfservice.shared.domain.homework.parseUntilDate
+import team.bjtuss.bjtuselfservice.shared.domain.homework.legacyUntilDateToEpoch
 
 /** Only preferences are persisted; visible tasks are recomputed from the current snapshot and time. */
 @Serializable
@@ -21,13 +20,16 @@ data class AssignmentFilters(
     val hideExpired: Boolean = false,
     val hideSubmitted: Boolean = false,
     val sortOrder: Int = 1,
-    /** “截止日期”选了指定日期时的那一天（含当天），见 [DeadlineScope]。 */
+    /** “截止日期”选了指定日期时的截止点（Unix 秒），见 [DeadlineScope]。 */
+    val untilEpoch: Long? = null,
+    /** 上一版按北京时间日期存的“截至某天（含）”，只为读取旧设置保留，加载时转成 [untilEpoch]。 */
     val untilDate: String? = null,
 ) {
-    val until: LocalDate? get() = parseUntilDate(untilDate)
-    val active: Boolean get() = courses.isNotEmpty() || hideExpired || hideSubmitted || until != null
-    fun withDeadlineScope(hideExpired: Boolean, until: LocalDate?) =
-        copy(hideExpired = hideExpired || until != null, untilDate = until?.toString())
+    val active: Boolean get() = courses.isNotEmpty() || hideExpired || hideSubmitted || untilEpoch != null
+    fun withDeadlineScope(hideExpired: Boolean, untilEpoch: Long?) =
+        copy(hideExpired = hideExpired || untilEpoch != null, untilEpoch = untilEpoch, untilDate = null)
+    fun migrated(): AssignmentFilters =
+        if (untilDate == null) this else copy(untilEpoch = untilEpoch ?: legacyUntilDateToEpoch(untilDate), untilDate = null)
 }
 
 class AssignmentFilterStore(private val cache: CacheStore, private val account: String, source: String) {
@@ -35,7 +37,7 @@ class AssignmentFilterStore(private val cache: CacheStore, private val account: 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     fun load(): AssignmentFilters = runCatching {
         json.decodeFromString<AssignmentFilters>(cache.metadata(account, key).orEmpty())
-    }.getOrDefault(AssignmentFilters()).let { it.copy(sortOrder = it.sortOrder.takeIf { value -> value in 0..2 } ?: 1) }
+    }.getOrDefault(AssignmentFilters()).migrated().let { it.copy(sortOrder = it.sortOrder.takeIf { value -> value in 0..2 } ?: 1) }
     fun save(filters: AssignmentFilters) { cache.putMetadata(account, key, json.encodeToString(filters)) }
 }
 
@@ -60,7 +62,7 @@ internal fun AssignmentFilterSheet(courses: List<Pair<Int, String>>, filters: As
                 }
             }
         }
-        AssignmentDeadlineFilter(filters.hideExpired, filters.until) { hideExpired, until ->
+        AssignmentDeadlineFilter(filters.hideExpired, filters.untilEpoch) { hideExpired, until ->
             onChange(filters.withDeadlineScope(hideExpired, until))
         }
         AssignmentSubmissionFilter(filters.hideSubmitted, ignoredCount) { onChange(filters.copy(hideSubmitted = it)) }
