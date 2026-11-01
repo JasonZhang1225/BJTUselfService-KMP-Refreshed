@@ -1,5 +1,6 @@
 package team.bjtuss.bjtuselfservice.shared.domain.homework
 
+import kotlin.time.Instant
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone
@@ -174,10 +175,11 @@ fun filterHomework(
     hideSubmitted: Boolean = false,
     untilEpoch: Long? = null,
     timeZone: TimeZone = displayTimeZone(),
+    nowInstant: Instant = now.toInstant(timeZone),
 ): List<Homework> = homework.filter { item ->
     // 截止时间是北京时间文本，换成时刻后和手机时区的“现在”比较。
     val due = parseSchoolLocalDateTime(item.endTime)?.schoolEpochSeconds()
-    val dateMatches = deadlineInScope(due, now.toInstant(timeZone).epochSeconds, hideExpired, untilEpoch)
+    val dateMatches = deadlineInScope(due, nowInstant.epochSeconds, hideExpired, untilEpoch)
     val courseMatches = selectedCourses.isEmpty() || item.courseName in selectedCourses
     val submittedMatches = !hideSubmitted || !isHomeworkSubmitted(item)
     dateMatches && courseMatches && submittedMatches
@@ -232,16 +234,18 @@ fun isHomeworkDueSoon(
     homework: Homework,
     now: LocalDateTime,
     timeZone: TimeZone,
+    nowInstant: Instant = now.toInstant(timeZone),
 ): Boolean {
     if (isHomeworkSubmitted(homework)) return false
     val deadline = parseSchoolLocalDateTime(homework.endTime) ?: return false
-    // 截止时间按北京时间换成时刻；[now] 是 [timeZone] 的墙钟。
-    val hours = (deadline.toInstant(SchoolTimeZone) - now.toInstant(timeZone)).inWholeHours
-    return hours in 0..48
+    // 直接比较真实时刻，不能把回拨期间的重复钟面时间重新推断为较早的偏移。
+    val remaining = deadline.toInstant(SchoolTimeZone) - nowInstant
+    return !remaining.isNegative() && remaining.inWholeHours in 0..48
 }
 
 fun dueSoonHomeworkCount(
     homework: List<Homework>,
     now: LocalDateTime,
     timeZone: TimeZone,
-): Int = homework.count { isHomeworkDueSoon(it, now, timeZone) }
+    nowInstant: Instant = now.toInstant(timeZone),
+): Int = homework.count { isHomeworkDueSoon(it, now, timeZone, nowInstant) }

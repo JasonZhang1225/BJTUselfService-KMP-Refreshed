@@ -216,6 +216,15 @@ enum CourseWidgetCalendar {
         return marker + String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
     }
 
+    /// 共享周轴只能展示所有列都一致的时刻（含跨日标记）。
+    static func clocksAreUniform(minutes: [Int], dates: [Date], zone: TimeZone = .current) -> Bool {
+        guard let first = dates.first else { return true }
+        let reference = minutes.map { displayClock(minute: $0, on: first, zone: zone) }
+        return dates.dropFirst().allSatisfy { date in
+            minutes.map { displayClock(minute: $0, on: date, zone: zone) } == reference
+        }
+    }
+
     static func dayKey(_ date: Date) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)

@@ -3,6 +3,11 @@ package team.bjtuss.bjtuselfservice.shared.feature.home
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import kotlinx.datetime.toLocalDateTime
+import kotlinx.datetime.toInstant
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -30,6 +35,21 @@ class HomeDiscountRemindersUiTest {
     private val f = HomeDiscountAgendaFixture()
     private val output = File(System.getenv("BJTU_HOME_DISCOUNT_UI_OUTPUT")
         ?: "../.artifacts/home-discount-reminders/ui")
+
+    @Test fun repeatedWallClockStillRecomputesRemindersWhenTheActualInstantAdvances() = SwingUtilities.invokeAndWait {
+        val first = kotlin.time.Instant.parse("2026-11-01T05:30:00Z")
+        val second = kotlin.time.Instant.parse("2026-11-01T06:30:00Z")
+        val events = f.events.filter { it.id in listOf("citel-discount-20", "citel-due-21") }
+            .map { it.copy(dayTimestamp = second.epochSeconds - 900) }
+        val fixture = Fixture(events, 440, 1f, false, initialInstant = first, zone = kotlinx.datetime.TimeZone.of("America/New_York"))
+        try {
+            fixture.pump()
+            fixture.assertCategories(true, true)
+            fixture.instant = second
+            fixture.pump()
+            fixture.assertCategories(false, false)
+        } finally { fixture.close() }
+    }
 
     @Test fun actualHomeShowsDiscountAboveDeadlineAndOmitsEmptyCategoriesAcrossLayouts() = SwingUtilities.invokeAndWait {
         for (dark in listOf(false, true)) for ((width, scale) in listOf(360 to 1f, 1000 to 1f, 360 to 1.6f, 1000 to 1.6f)) {
@@ -111,7 +131,10 @@ class HomeDiscountRemindersUiTest {
 
     private data class TextNode(val text: String, val node: SemanticsNode)
 
-    private inner class Fixture(events: List<PhyVlabEvent>, val width: Int, scale: Float, dark: Boolean, mode: String = "normal") {
+    private inner class Fixture(events: List<PhyVlabEvent>, val width: Int, scale: Float, dark: Boolean, mode: String = "normal",
+        initialInstant: kotlin.time.Instant? = null, zone: kotlinx.datetime.TimeZone? = null) {
+        var instant by mutableStateOf(initialInstant)
+        private val displayZone = zone ?: f.zone
         var opened = 0
         private val model = HomeScreenModel(object : HomeStatusRepository {
             override fun load(): HomeStatus? = null
@@ -127,7 +150,8 @@ class HomeDiscountRemindersUiTest {
                     Surface(Modifier.fillMaxSize()) {
                         HomeWorkspace(model, PlatformInfo(PlatformFamily.MacOS, "fixture", isWindows = true),
                             expanded = width >= 800, homework = emptyList(), exams = emptyList(),
-                            phyVlabEvents = events, currentWeek = 1, now = f.now, timeZone = f.zone,
+                            phyVlabEvents = events, currentWeek = 1, now = instant?.toLocalDateTime(displayZone) ?: f.now, timeZone = displayZone,
+                            nowInstant = instant ?: f.now.toInstant(f.zone),
                             isAgendaLoading = mode == "loading", onOpenMailbox = {}, onOpenHomework = { opened++ },
                             onOpenExams = {}, changes = emptyList(), onClearAllChanges = {}, onClearChangeDomain = {},
                             onOpenChangeDomain = {}, holdNetwork = true)

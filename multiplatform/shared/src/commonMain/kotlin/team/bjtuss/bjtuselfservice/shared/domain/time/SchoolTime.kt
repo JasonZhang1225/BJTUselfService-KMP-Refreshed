@@ -80,3 +80,16 @@ fun displaySchoolClockText(
 /** 课表等页面顶部的说明：手机不在东八区时提示时刻已换算。东八区返回 null。 */
 fun schoolTimeConversionNote(zone: TimeZone = displayTimeZone()): String? =
     if (zone == SchoolTimeZone) null else "时间已换算为当地时间（${zone.id}）；课表格子仍按北京时间的星期和节次排列。"
+
+/** 同一周轴只有在各日期的时刻和跨日标记完全一致时才能共用当地时间标签。 */
+fun schoolClockTextsAreUniform(
+    texts: List<String>,
+    schoolDates: List<LocalDate>,
+    zone: TimeZone = displayTimeZone(),
+): Boolean {
+    val first = schoolDates.firstOrNull() ?: return true
+    val reference = texts.map { displaySchoolClockText(it, first, zone) }
+    return schoolDates.drop(1).all { date ->
+        texts.map { displaySchoolClockText(it, date, zone) } == reference
+    }
+}

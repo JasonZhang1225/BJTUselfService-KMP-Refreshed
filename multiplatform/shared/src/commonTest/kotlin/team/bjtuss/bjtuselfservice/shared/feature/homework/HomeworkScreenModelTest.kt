@@ -415,6 +415,35 @@ class HomeworkScreenModelTest {
         assertEquals(1, model.state.value.dueSoonCount)
     }
 
+    @Test
+    fun repeatedLocalHourRetainsTheOriginalInstantForFiltersAndHomeReminders() = runBlocking {
+        var instant = kotlin.time.Instant.parse("2026-11-01T05:30:00Z")
+        val clock = object : kotlin.time.Clock { override fun now() = instant }
+        val zone = TimeZone.of("America/New_York")
+        val snapshot = HomeworkSnapshot(listOf(
+            homework(1, "课程", "2026-11-01 14:15"),
+            homework(2, "课程", "2026-11-01 14:45"),
+        ))
+        val model = HomeworkScreenModel(FakeRepository(snapshot, snapshot), timeZone = zone, clock = clock)
+        model.initialize(refreshFromNetwork = false)
+        model.setHideExpired(true)
+        assertEquals(listOf(1, 2), model.state.value.visibleHomework.map(Homework::id))
+        val firstWallClock = model.state.value.now
+        assertEquals(2, model.state.value.dueSoonCount)
+
+        instant = kotlin.time.Instant.parse("2026-11-01T06:30:00Z")
+        model.updateTime()
+        val state = model.state.value
+        assertEquals(firstWallClock, state.now) // 两次 01:30，却是不同的真实时刻。
+        assertEquals(instant, state.nowInstant)
+        assertEquals(listOf(2), state.visibleHomework.map(Homework::id))
+        assertEquals(1, state.dueSoonCount)
+        val agenda = team.bjtuss.bjtuselfservice.shared.domain.home.buildHomeAgenda(
+            snapshot.homework, emptyList(), state.now.date, state.now, zone, nowInstant = state.nowInstant,
+        )
+        assertEquals(listOf(2), agenda.dueSoonHomework.map(Homework::id))
+    }
+
     private class MemoryFilterStore(
         var saved: HomeworkFilterPreferences = HomeworkFilterPreferences(),
     ) : HomeworkFilterPreferencesStore {

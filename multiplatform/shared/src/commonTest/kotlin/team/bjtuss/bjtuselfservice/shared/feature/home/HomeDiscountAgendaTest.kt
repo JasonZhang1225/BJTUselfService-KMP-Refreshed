@@ -31,6 +31,27 @@ internal class HomeDiscountAgendaFixture {
 class HomeDiscountAgendaTest {
     private val f = HomeDiscountAgendaFixture()
 
+    @Test fun repeatedHourDoesNotResurrectPastDeadlineOrDiscountReminders() {
+        val zone = TimeZone.of("America/New_York")
+        val first = kotlin.time.Instant.parse("2026-11-01T05:30:00Z")
+        val second = kotlin.time.Instant.parse("2026-11-01T06:30:00Z")
+        val wallClock = first.toLocalDateTime(zone)
+        assertEquals(wallClock, second.toLocalDateTime(zone))
+        val sample = f.events.single { it.id == "citel-discount-20" }
+        val events = listOf(
+            sample.copy(id = "citel-discount-past", dayTimestamp = second.epochSeconds - 900),
+            sample.copy(id = "citel-discount-future", dayTimestamp = second.epochSeconds + 900),
+            sample.copy(id = "activity-deadline-past", kind = PhyVlabEventKind.DEADLINE, dayTimestamp = second.epochSeconds - 900),
+            sample.copy(id = "activity-deadline-future", kind = PhyVlabEventKind.DEADLINE, dayTimestamp = second.epochSeconds + 900),
+        )
+        val before = buildHomeAgenda(emptyList(), emptyList(), wallClock.date, wallClock, zone, events, nowInstant = first)
+        val after = buildHomeAgenda(emptyList(), emptyList(), wallClock.date, wallClock, zone, events, nowInstant = second)
+        assertEquals(2, before.dueSoonEvents.size)
+        assertEquals(2, before.dueSoonDiscountEvents.size)
+        assertEquals(listOf("activity-deadline-future"), after.dueSoonEvents.map { it.id })
+        assertEquals(listOf("citel-discount-future"), after.dueSoonDiscountEvents.map { it.id })
+    }
+
     @Test fun upcomingDiscountsAreSortedSeparatelyFromExistingDeadlines() {
         val later = f.discountTask.copy(id = 22, title = "较晚折扣", discountTime = f.seconds + 47 * 3600)
         val tasks = listOf(later, f.deadlineTask, f.discountTask)

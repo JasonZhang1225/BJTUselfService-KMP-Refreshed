@@ -615,6 +615,10 @@ internal class CourseWidgetRenderer(private val context: Context) {
                 setTextViewText(R.id.slot_start, widgetClock(range.first, layout.days.firstOrNull()?.date ?: model.now.date, markerSeparator = "\n"))
                 setTextViewText(R.id.slot_end, widgetClock(range.last, layout.days.firstOrNull()?.date ?: model.now.date, markerSeparator = "\n"))
                 if (rowHeight < 34) setViewVisibility(R.id.slot_end, View.GONE)
+                if (layout.showOccurrenceTimes) {
+                    setViewVisibility(R.id.slot_start, View.GONE)
+                    setViewVisibility(R.id.slot_end, View.GONE)
+                }
             })
         }
         gridViews.addView(R.id.week_grid, axis)
@@ -632,7 +636,7 @@ internal class CourseWidgetRenderer(private val context: Context) {
                 }
             }
             val blocks = layout.blocks.filter { it.column == column }
-            weekSegments(blocks.map { WeekSegment(it.firstRow, it.lastRow, it) }, 0, rowCount - 1, model, rowHeight, columnWidth)
+            weekSegments(blocks.map { WeekSegment(it.firstRow, it.lastRow, it, layout.showOccurrenceTimes) }, 0, rowCount - 1, model, rowHeight, columnWidth)
                 .forEach { columnViews.addView(R.id.week_column_body, it) }
             gridViews.addView(R.id.week_grid, columnViews)
         }
@@ -648,6 +652,7 @@ internal class CourseWidgetRenderer(private val context: Context) {
         val first: Int,
         val last: Int,
         val block: team.bjtuss.bjtuselfservice.shared.feature.widget.WidgetWeekBlock,
+        val showClock: Boolean,
     )
 
     /**
@@ -716,14 +721,19 @@ internal class CourseWidgetRenderer(private val context: Context) {
             setTextViewText(R.id.week_block_name, occurrence.session.name)
             setTextViewText(R.id.week_block_place, occurrence.session.place)
             val narrow = segment.block.laneCount > 1
-            val nameSize = if (narrow) 9f else 10.5f
+            val nameSize = if (segment.showClock) 8f else if (narrow) 9f else 10.5f
             val placeSize = if (narrow) 8f else 9f
             setTextViewTextSize(R.id.week_block_name, TypedValue.COMPLEX_UNIT_DIP, nameSize)
             setTextViewTextSize(R.id.week_block_place, TypedValue.COMPLEX_UNIT_DIP, placeSize)
             // RemoteViews 里文字超高会被拦腰裁掉（iOS 会按整行截断）：按色块高度和列宽算出能放几行，
             // 先给课名，剩下的给地点；放不下一整行的地点干脆不显示。
             val shift = if (occurrence.session.isStaggered) minOf(rowHeight * 0.125f, 6f) else 0f
-            val inner = span * rowHeight + (span - 1) * 3f - 3f - shift - 8f
+            val clock = widgetClock(occurrence.session.startMinute, occurrence.date, markerSeparator = "\n")
+            val clockHeight = if (segment.showClock) clock.lines().size * 7f * 1.18f + 2f else 0f
+            setTextViewText(R.id.week_block_time, clock)
+            setViewVisibility(R.id.week_block_time, if (segment.showClock) View.VISIBLE else View.GONE)
+            setNightAwareTextColor(this, R.id.week_block_time, kindContentColor(kind))
+            val inner = span * rowHeight + (span - 1) * 3f - 3f - shift - 8f - clockHeight
             val textWidth = columnWidth - 3f - 6f
             val nameLineHeight = nameSize * 1.18f
             val placeLineHeight = placeSize * 1.18f
