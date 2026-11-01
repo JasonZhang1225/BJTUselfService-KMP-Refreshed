@@ -29,6 +29,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -82,9 +83,14 @@ private fun ChangelogVersionPicker(release: ChangelogRelease, entries: List<Chan
             shape = RoundedCornerShape(16.dp),
             color = colors.primaryContainer.copy(alpha = 0.55f),
             border = BorderStroke(1.dp, colors.primary.copy(alpha = 0.35f)),
+            // 子文字合成一句朗读；清除子语义后要补回点击动作，读屏和键盘才能打开菜单。
             modifier = Modifier.fillMaxWidth().clearAndSetSemantics {
                 role = Role.Button
                 contentDescription = "当前版本 ${release.label}，点按切换版本"
+                onClick(label = "切换版本") {
+                    expanded = true
+                    true
+                }
             },
         ) {
             Row(
