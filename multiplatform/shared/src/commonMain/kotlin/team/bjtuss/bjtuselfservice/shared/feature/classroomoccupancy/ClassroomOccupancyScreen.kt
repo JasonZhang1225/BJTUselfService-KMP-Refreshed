@@ -90,6 +90,8 @@ import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyBui
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyKind
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.SLOT_TIME_RANGES
+import team.bjtuss.bjtuselfservice.shared.domain.time.displaySchoolClockText
+import team.bjtuss.bjtuselfservice.shared.domain.time.schoolNow
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.currentFreeRoomNames
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.currentFreeSummary
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.currentOccupancyPeriod
@@ -944,7 +946,7 @@ private fun SlotTimeRangesLegend() {
     ) {
         SLOT_TIME_RANGES.forEachIndexed { index, range ->
             Text(
-                "第${index + 1}节 $range",
+                "第${index + 1}节 ${displaySchoolClockText(range)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1102,7 +1104,7 @@ private fun OccupancyCell(
     modifier: Modifier,
 ) {
     val (background, content) = occupancyCellColors(kind)
-    val startTime = SLOT_TIME_RANGES.getOrNull(period - 1)?.substringBefore('-') ?: ""
+    val startTime = SLOT_TIME_RANGES.getOrNull(period - 1)?.substringBefore('-')?.let { displaySchoolClockText(it) } ?: ""
     Surface(
         color = background,
         contentColor = content,
@@ -1182,15 +1184,16 @@ private fun vividGlowColor(base: Color, neutral: Boolean = false): Color {
     }
 }
 
+/** 北京时间的“现在”：当前节次按北京时间的节次表判断。 */
 @Composable
 private fun rememberOccupancyNow(): LocalDateTime {
     var now by remember {
-        mutableStateOf(Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()))
+        mutableStateOf(schoolNow())
     }
     LaunchedEffect(Unit) {
         while (true) {
             delay(30_000)
-            now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+            now = schoolNow()
         }
     }
     return now

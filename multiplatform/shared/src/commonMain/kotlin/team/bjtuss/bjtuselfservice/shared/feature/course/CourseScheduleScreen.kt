@@ -98,6 +98,8 @@ import team.bjtuss.bjtuselfservice.shared.domain.course.coursesForWeek
 import team.bjtuss.bjtuselfservice.shared.domain.course.displayCoursePlace
 import team.bjtuss.bjtuselfservice.shared.domain.course.parseCourseWeeks
 import team.bjtuss.bjtuselfservice.shared.domain.course.classTimeRange
+import team.bjtuss.bjtuselfservice.shared.domain.time.displaySchoolClockText
+import team.bjtuss.bjtuselfservice.shared.domain.time.schoolTimeConversionNote
 import team.bjtuss.bjtuselfservice.shared.domain.course.isStaggered
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.Dp
@@ -156,7 +158,16 @@ private fun Modifier.courseBlockPlacement(course: Course, cellHeight: Dp, stagge
 
 /** "10:30-12:20" → "10:30–12:20"，与节次标签的排版一致。 */
 private fun Course.displayClassTime(staggered: Boolean): String? =
-    classTimeRange(staggered)?.replace('-', '–')
+    classTimeRange(staggered)?.replace('-', '–')?.let { displaySchoolClockText(it) }
+
+/** 节次标签里的北京时间换成手机时区；东八区原样。 */
+private fun slotLabel(slot: Int): String = displaySchoolClockText(slotLabels[slot])
+
+/** 有具体日期的事件（实验、考试）按它自己的北京日期换算时刻。 */
+private fun Course.displayEventTime(): String? = scheduleEventTime?.let { time ->
+    val date = (scheduleEventDates.firstOrNull() ?: scheduleEventDate)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    if (date != null) displaySchoolClockText(time, date) else displaySchoolClockText(time)
+}
 
 @OptIn(
     ExperimentalLayoutApi::class,
@@ -491,10 +502,29 @@ fun CourseScheduleWorkspace(
     }
 }
 
+/** 手机不在东八区时，在课表标题下说明时刻已换算、格子仍按北京时间排。 */
 @Composable
 private fun CourseSummary(
     state: CourseScheduleUiState,
     compact: Boolean = false,
+    onOpenPicker: () -> Unit,
+    onOpenDatePicker: () -> Unit,
+) {
+    val note = schoolTimeConversionNote()
+    if (note == null) {
+        CourseSummaryBody(state, compact, onOpenPicker, onOpenDatePicker)
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        CourseSummaryBody(state, compact, onOpenPicker, onOpenDatePicker)
+        Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun CourseSummaryBody(
+    state: CourseScheduleUiState,
+    compact: Boolean,
     onOpenPicker: () -> Unit,
     onOpenDatePicker: () -> Unit,
 ) {
@@ -875,7 +905,7 @@ private fun WeekGrid(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            slotLabels[slot],
+                            slotLabel(slot),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1333,7 +1363,7 @@ private fun CompactDayPager(
             items((0 until 7).toList(), key = { "day-$day-slot-$it" }) { slot ->
                 val location = slot * 8 + day + 1
                 DayScheduleSlotRow(
-                    slotLabel = slotLabels[slot],
+                    slotLabel = slotLabel(slot),
                     slotCourses = byLocation[location].orEmpty(),
                     courseTypesByCode = courseTypesByCode,
                     onOpen = onOpen,
@@ -1644,7 +1674,7 @@ private fun CompactWeekGrid(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            compactSlotLabels[slot],
+                            displaySchoolClockText(compactSlotLabels[slot]),
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
@@ -1733,7 +1763,7 @@ private fun CompactCourseColorBlock(
         Surface(
             onClick = { onOpen(course.id) },
             modifier = Modifier.fillMaxWidth().courseBlockPlacement(course, maxHeight, staggered).semantics {
-                val time = course.scheduleEventTime
+                val time = course.displayEventTime()
                     ?: listOfNotNull(course.displayClassTime(staggered).takeIf { course.isStaggered(staggered) }, course.courseTime).joinToString(" ")
                 contentDescription = "${displayScheduleCourseName(course.courseName)}，${course.eventDatesLabel()} $time，${displayCoursePlace(course.coursePlace)}，点按查看详情"
             },
@@ -1817,7 +1847,7 @@ private fun CourseListCard(
                 color = colors.onContainer.accessibleAlpha(0.78f),
             )
             Text(
-                course.scheduleEventTime?.let { "${course.eventDatesLabel()} · $it" }
+                course.displayEventTime()?.let { "${course.eventDatesLabel()} · $it" }
                     ?: course.displayClassTime(staggered)?.takeIf { showStaggeredTime && course.isStaggered(staggered) }
                         ?.let { "$it · ${course.courseTime}" }
                     ?: course.courseTime,
@@ -1866,7 +1896,7 @@ internal fun CourseDetailContent(course: Course, staggeredClassTimes: Boolean, m
         val day = course.courseLocationIndex % 8 - 1
         if (course.scheduleEventTime != null) {
             CourseDetailLine("日期", course.eventDates.joinToString("\n"))
-            CourseDetailLine("时间", course.scheduleEventTime)
+            CourseDetailLine("时间", course.displayEventTime().orEmpty())
         } else {
             val slotName = slotLabels.getOrNull(slot)?.substringBefore('\n') ?: "未知"
             val time = course.displayClassTime(staggeredClassTimes).orEmpty()

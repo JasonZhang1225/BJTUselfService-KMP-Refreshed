@@ -102,6 +102,7 @@ import kotlinx.datetime.toLocalDateTime
 import team.bjtuss.bjtuselfservice.shared.domain.homework.parseSchoolLocalDateTime
 import team.bjtuss.bjtuselfservice.shared.domain.home.phyVlabEventHasInstant
 import team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone
+import team.bjtuss.bjtuselfservice.shared.domain.time.displaySchoolClockText
 import team.bjtuss.bjtuselfservice.shared.domain.time.displayTimeZone
 import team.bjtuss.bjtuselfservice.shared.domain.time.schoolEpochSeconds
 import kotlinx.coroutines.flow.collect
@@ -264,7 +265,8 @@ fun HomeWorkspace(
                 }
             }
             item(key = "home-now") {
-                HomeNowSection(timeZone = timeZone)
+                // 正在上/下一节按北京时间的课表算，显示的时刻再换成手机时区。
+                HomeNowSection(timeZone = SchoolTimeZone)
             }
             // 正在进行、48 小时内折扣与截止之后先看数据变动，再看日程窗格。
             // 提醒和变动为空时不建列表项，避免空项在日程上方多出一份间距。
@@ -1503,7 +1505,7 @@ private fun AgendaDayDetails(
                 AgendaEventRow(
                     type = "实验",
                     title = lab.copy(courseName = lab.courseName.removeSuffix("（实验）")).displayTitleWithTeacher(),
-                    detail = listOf(lab.scheduleEventTime.orEmpty(), team.bjtuss.bjtuselfservice.shared.domain.course.displayCoursePlace(lab.coursePlace))
+                    detail = listOf(lab.scheduleEventTime.orEmpty().let { displaySchoolClockText(it, day.date) }, team.bjtuss.bjtuselfservice.shared.domain.course.displayCoursePlace(lab.coursePlace))
                         .filter(String::isNotBlank).joinToString(" · "),
                     onClick = { selectedCourse = lab },
                     canNavigate = canNavigate,
@@ -1513,7 +1515,7 @@ private fun AgendaDayDetails(
         if (day.courses.isNotEmpty()) {
             Text("当天课表", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
             day.courses.forEach { course ->
-                val time = course.classTimeRange(staggered)?.replace('-', '–').orEmpty()
+                val time = course.classTimeRange(staggered)?.replace('-', '–')?.let { displaySchoolClockText(it, day.date) }.orEmpty()
                 AgendaEventRow(
                     type = "课程",
                     markColor = team.bjtuss.bjtuselfservice.shared.feature.course.courseCategoryAccent(

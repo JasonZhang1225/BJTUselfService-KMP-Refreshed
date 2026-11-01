@@ -45,6 +45,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.home.statusText
 import team.bjtuss.bjtuselfservice.shared.feature.widget.readAndroidCourseWidgetSnapshot
 import team.bjtuss.bjtuselfservice.shared.feature.widget.widgetClock
 import team.bjtuss.bjtuselfservice.shared.feature.widget.widgetRemainingText
+import team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone
 
 /**
  * 日程实时动态（Android 16 Live Updates）的唯一所有者，对应 iOS `CourseLiveActivityCoordinator`：
@@ -267,7 +268,7 @@ object CourseLiveUpdates : AndroidLiveActivityHost {
         next: LiveActivityTarget?,
         now: LocalDateTime,
     ): Notification {
-        val zone = TimeZone.currentSystemDefault()
+        val zone = SchoolTimeZone
         val accent = (0xFF000000 or target.color).toInt()
         val phase = target.phase(now)
         val endAt = LocalDateTime(target.date.year, target.date.month, target.date.day, target.endMinute / 60, target.endMinute % 60)
@@ -383,7 +384,7 @@ object CourseLiveUpdates : AndroidLiveActivityHost {
      * 进程还在时另用主线程定时器按时对齐。
      */
     private fun scheduleNext(context: Context, today: List<LiveActivityTarget>, now: LocalDateTime, lead: Int, showing: Boolean) {
-        val zone = TimeZone.currentSystemDefault()
+        val zone = SchoolTimeZone
         val boundary = liveActivityNextBoundary(today, now, lead).toInstant(zone).toEpochMilliseconds()
         val nowMillis = Clock.System.now().toEpochMilliseconds()
         val nextMinute = (nowMillis / 60_000L + 1) * 60_000L
@@ -459,7 +460,8 @@ object CourseLiveUpdates : AndroidLiveActivityHost {
     private fun dismissedIds(context: Context): Set<String> =
         prefs(context).getStringSet(KEY_DISMISSED, null)?.toSet().orEmpty()
 
-    private fun now() = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+    // 课程的日期和分钟都是北京时间；“现在”、通知的截止时刻都按北京时间算，显示的时刻由 widgetClock 换成手机时区。
+    private fun now() = Clock.System.now().toLocalDateTime(SchoolTimeZone)
 }
 
 /** 定时刷新、通知上的“关闭”、用户划掉通知。 */

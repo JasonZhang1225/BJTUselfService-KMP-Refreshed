@@ -222,11 +222,12 @@ private struct SlotLabel: View {
         VStack(spacing: 0) {
             Text("\(index + 1)")
                 .font(.system(size: 13, weight: .semibold).monospacedDigit())
-            Text(String(format: "%02d:%02d", range.lowerBound / 60, range.lowerBound % 60))
+            // 格子按北京时间的节次排，标签上的时刻换成手机时区。
+            Text(CourseWidgetCalendar.displayClock(minute: range.lowerBound))
                 .font(.system(size: 8).monospacedDigit())
                 .foregroundStyle(.secondary)
             if !compact {
-                Text(String(format: "%02d:%02d", range.upperBound / 60, range.upperBound % 60))
+                Text(CourseWidgetCalendar.displayClock(minute: range.upperBound))
                     .font(.system(size: 8).monospacedDigit())
                     .foregroundStyle(.tertiary)
             }

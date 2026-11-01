@@ -262,8 +262,9 @@ class CourseScheduleScreenModel(
     private val repository: CourseScheduleRepository,
     private val changeRecorder: DataChangeRecorder<Course>? = null,
     private val calendarRepository: ClassroomOccupancyRepository? = null,
+    // 课表格子按北京时间排，“今天”和当前教学周也按北京时间定。
     private val todayProvider: () -> LocalDate = {
-        Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+        Clock.System.now().toLocalDateTime(team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone).date
     },
     /** 拿到当前学期校历后回调，供离线读取方（AI Agent 命令行）换算日期；写入方自行去重。 */
     private val onCurrentAcademicWeeks: ((List<OccupancyWeekDate>) -> Unit)? = null,
