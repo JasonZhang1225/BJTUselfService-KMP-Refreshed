@@ -36,6 +36,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
+import kotlinx.coroutines.delay
 import team.bjtuss.bjtuselfservice.shared.LocalReduceMotion
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.currentPlatform
@@ -44,6 +45,11 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.deadlineScope
 import team.bjtuss.bjtuselfservice.shared.feature.course.IosCompactDatePicker
 
 private const val MILLIS_PER_DAY = 86_400_000L
+
+/** 面板打开期间重新读取当前日期的间隔。 */
+private const val TODAY_REFRESH_MILLIS = 60_000L
+
+private fun currentLocalDate(): LocalDate = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
 
 /** 切到“指定日期”且之前没选过日期时，默认看一周内。 */
 private const val DEFAULT_UNTIL_DAYS = 7
@@ -58,7 +64,13 @@ internal fun AssignmentDeadlineFilter(
     untilDate: LocalDate?,
     onChange: (hideExpired: Boolean, untilDate: LocalDate?) -> Unit,
 ) {
-    val today = remember { Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date }
+    // 面板开着跨过零点时“今天”也要跟着变，否则日期下限和过期提示停在前一天。
+    val today by produceState(currentLocalDate()) {
+        while (true) {
+            delay(TODAY_REFRESH_MILLIS)
+            value = currentLocalDate()
+        }
+    }
     val scope = deadlineScope(hideExpired, untilDate)
     // 切走再切回“指定日期”时沿用上次的日期，而不是每次重置。
     var lastUntil by remember { mutableStateOf(untilDate ?: today.plus(DEFAULT_UNTIL_DAYS, DateTimeUnit.DAY)) }

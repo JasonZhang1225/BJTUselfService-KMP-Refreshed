@@ -110,6 +110,15 @@ class DeadlineDateFilterTest {
         assertNull(Json { ignoreUnknownKeys = true }.decodeFromString<AssignmentFilters>("""{"hideExpired":true}""").until)
     }
 
+    @Test fun coursePlatformDeadlineUsesBeijingTimeRegardlessOfDeviceZone() {
+        // 学校给的是北京时间文本；默认换算不看手机时区，和日期筛选的归日口径一致。
+        val item = aggregateAssignments(listOf(completionFixtureHomework().copy(endTime = "2026-10-30 00:00")),
+            emptyList(), emptyList()).single()
+        assertEquals(Instant.parse("2026-10-29T16:00:00Z").epochSeconds, item.dueTime)
+        val filters = AggregateAssignmentFilters().withDeadlineScope(true, LocalDate(2026, 10, 29))
+        assertEquals(1, filterAggregateAssignments(listOf(item), filters, item.dueTime!! - 60).size)
+    }
+
     @Test fun discountMidnightMovesButStartDoesNot() {
         val event = PhyVlabEvent("discount", "Task", "", Instant.parse("2026-10-29T16:00:00Z").epochSeconds,
             "", kind = PhyVlabEventKind.DISCOUNT)

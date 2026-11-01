@@ -23,7 +23,8 @@ data class AggregatedAssignment(
 )
 
 fun aggregateAssignments(homework: List<Homework>, physical: List<PhyVlabActivity>, citel: List<CitelTask>,
-    timeZone: TimeZone = TimeZone.currentSystemDefault()): List<AggregatedAssignment> =
+    // 课程平台的截止时间是北京时间文本；按手机时区换算会让截止时刻和日期筛选错开（手机不在东八区时）。
+    timeZone: TimeZone = SchoolTimeZone): List<AggregatedAssignment> =
     homework.map { AggregatedAssignment(AssignmentSource.COURSE_PLATFORM, "course:${it.stableKey()}", it.courseId, it.courseName,
         parseSchoolLocalDateTime(it.endTime)?.toInstant(timeZone)?.epochSeconds, isHomeworkSubmitted(it), homework = it) } +
     physical.map { AggregatedAssignment(AssignmentSource.PHYVLAB, "phy:${it.courseId}:${it.id}", it.courseId, it.courseName,
