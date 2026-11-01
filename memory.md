@@ -1,3 +1,13 @@
+# 进行中：PR #88 第三轮考试结束时间 review 修复（2026-11-02）
+
+> 工作树 `/workspace/BJTUselfService-KMP-Refreshed`，本地分支 `fix/pr88-timezone-review`，基于第二轮修复 `b8d39704`；沿用用户已授权的 PR 提交推送范围，目标为 `feat/device-timezone`，不强推、不合并、不发布。
+
+- Codex 新增 1 条 P2：`displayExamTimeAndPlace` 复用了日历导出解析结果；学校仅给开始时刻时，将默认两小时的推测结束时刻错误显示成正式安排。
+- 修复：`ParsedExamCalendarTime` 新增 `hasExplicitEndTime`，解析时保留结束时刻是否确由原文给出；考试列表、详情、首页共用格式化函数只在原文提供结束时间时显示区间。日历导出仍保留原来的两小时默认时长，无持久化/schema 变动。
+- 回归：开始时间缺失结束时刻（北京/UTC/洛杉矶跨日与中文日期）、明确提供两小时区间、原文结束时刻标记，以及真实 ICS 默认结束时间；正常区间和首页按当地日期归日继续覆盖。
+- 最终验证：`./gradlew :shared:desktopTest :windowsApp:compileKotlinWindows :desktopApp:compileKotlin --init-script /tmp/pr88-test.init.gradle --no-daemon --no-configuration-cache --console=plain -Porg.gradle.java.installations.paths=/workspace/jdk-pr88 -Porg.gradle.java.installations.auto-detect=false` 返回 BUILD SUCCESSFUL（5m10s），1350 项中 1349 通过、1 跳过，零失败；两个桌面宿主编译成功。日历导出 13 项、考试时区 5 项、考试 HTML 解析 2 项全部通过。`git diff --check` 和更新日志同步检查通过。构建环境沿用下节仓库外 JDK、代理、缓存与测试目录设置；日志 `.artifacts/pr88-review/round3-validation.log`。
+- 验证边界：本环境没有 Android SDK/签名与 Xcode，本轮 Android/iOS 共享代码编译由新提交的 PR CI 验证，未进行设备操作或真实服务器验证。上一轮 `b8d39704` 的 CI run `41326145031` 已全部成功，不能替代本轮验证。
+
 # 进行中：PR #88 第二轮 Codex / Copilot 审查（2026-11-02）
 
 > 工作树 `/workspace/BJTUselfService-KMP-Refreshed`，本地分支 `fix/pr88-timezone-review`，基于首轮修复 `315e9f3b`，推送目标为 PR 的 `feat/device-timezone`。沿用用户此前将修复提交推送至 PR #88 的授权，向该功能分支追加提交；不强推、不合并、不发布。

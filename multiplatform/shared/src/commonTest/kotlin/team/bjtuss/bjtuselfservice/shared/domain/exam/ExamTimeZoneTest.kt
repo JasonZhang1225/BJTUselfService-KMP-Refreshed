@@ -29,4 +29,20 @@ class ExamTimeZoneTest {
     @Test fun unparsableTextIsShownAsIs() {
         assertEquals("第18周 教室", displayExamTimeAndPlace("第18周 教室", TimeZone.UTC))
     }
+
+    @Test fun startOnlyExamDoesNotDisplayTheDefaultCalendarEndTime() {
+        val startOnly = "2026-01-10 08:00 思源101"
+        assertEquals(startOnly, displayExamTimeAndPlace(startOnly, SchoolTimeZone))
+        assertEquals("2026-01-10 00:00 周六 思源101", displayExamTimeAndPlace(startOnly, TimeZone.UTC))
+        assertEquals("2026-01-09 16:00 周五 思源101",
+            displayExamTimeAndPlace(startOnly, TimeZone.of("America/Los_Angeles")))
+        assertEquals(LocalDate(2026, 1, 9), examDisplayDate(startOnly, TimeZone.of("America/Los_Angeles")))
+        assertEquals("2026-01-12 06:30 周一 第一教学楼",
+            displayExamTimeAndPlace("2026年1月12日（周一） 14:30 第一教学楼", TimeZone.UTC))
+    }
+
+    @Test fun explicitEndTimeIsStillDisplayedEvenWhenItMatchesTheDefaultDuration() {
+        val explicit = "2026-01-10 08:00-10:00 思源101"
+        assertEquals("2026-01-10 00:00-02:00 周六 思源101", displayExamTimeAndPlace(explicit, TimeZone.UTC))
+    }
 }

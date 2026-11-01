@@ -63,11 +63,13 @@ class AcademicCalendarExportTest {
         assertEquals(8, numeric.startHour)
         assertEquals(10, numeric.endHour)
         assertEquals("思源101", numeric.location)
+        assertTrue(numeric.hasExplicitEndTime)
 
         val chinese = assertNotNull(parseExamCalendarTime("2026年1月12日（周一） 14:30 至 16:10 第一教学楼"))
         assertEquals("第一教学楼", chinese.location)
         assertEquals(16, chinese.endHour)
         assertEquals(10, chinese.endMinute)
+        assertTrue(chinese.hasExplicitEndTime)
     }
 
     @Test
@@ -75,8 +77,23 @@ class AcademicCalendarExportTest {
         val parsed = assertNotNull(parseExamCalendarTime("2026/1/10 08:30 思源楼"))
         assertEquals(10, parsed.endHour)
         assertEquals(30, parsed.endMinute)
+        assertFalse(parsed.hasExplicitEndTime)
         assertNull(parseExamCalendarTime("时间地点另行通知"))
         assertNull(parseExamCalendarTime("2026-02-30 08:00 思源楼"))
+    }
+
+    @Test
+    fun startOnlyExamStillExportsWithTheDefaultCalendarDuration() {
+        val result = generateAcademicCalendarIcs(
+            courses = emptyList(),
+            exams = listOf(exam("2026-01-10 08:00 思源101")),
+            academicWeeks = emptyList(),
+            weekRange = 1..1,
+            generatedAt = Instant.parse("2026-01-01T00:00:00Z"),
+        )
+        assertEquals("2026-01-10T08:00:00", result.events.single().startLocal)
+        assertEquals("2026-01-10T10:00:00", result.events.single().endLocal)
+        assertTrue("DTEND;TZID=Asia/Shanghai:20260110T100000" in result.ics)
     }
 
     @Test
