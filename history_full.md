@@ -1201,3 +1201,11 @@
 - 验证：PR CI `41176398106` 四项 + windows-cli 全绿；合入后触发 KMP package `41178525742`。
 - 未验证：其他芯片/DMG；Bugbot 所述失败注入与移动端残留任务 UI。
 
+## 2026-11-03 原生下拉选单统一与课件/回放/邮箱玻璃顶栏（PR #95，合并提交 `f6296b0e`）
+
+- 改动：新增 `AppleMenuPickerCard` / `AppleMenuAnchor`（`feature/shell/AppleMenuPicker.kt`，iOS 实现 `AppleMenuPicker.ios.kt`）：iOS 用透明 `UIButton` 弹系统 `UIMenu`（单选打勾、副标题、菜单内滚动），Android/桌面回退 Material `DropdownMenu`，iOS 读屏用逐项自定义操作。更新日志选版本、课件下载与课程回放选课、邮箱选文件夹改用它；课件/回放删掉“点击此处选择课程”按钮与选课 sheet，回放默认选第一门课。课件、课程回放、回放播放与下载、邮箱开启 `scrollUnderTopBar`，紧凑端改为单一 `TopScrollLazyColumn`/`TopScrollColumn`，宽屏只补顶部净空；邮箱数量行改为“共 N 封”。2.0.0 发布说明与内置更新日志（由 `scripts/sync-bundled-changelog.py` 生成）加一条优化。
+- 回放修复：课节请求原在页面 `rememberCoroutineScope`，离开页面被取消后 `lessonsLoading` 残留，再进同一门课一直显示“正在读取课节”（`a65ce187`）。CodeRabbit 复审后（`05bdc4c6`）改为 `PlaybackScreenModel.selectCourse` 在模型作用域加载，换课或强制重试取消旧请求，未缓存课程排队等锁时也显示加载中，只有最新一次请求能复位加载标记。
+- 文档：`DESIGN.md` 新增 6.1 下拉选单，并同步第 3 节例外表、控件表、禁止清单、自查清单与参考索引；从备份恢复 `docs/plans/design-legacy-cleanup.md`，更新 P1-1/P1-2（随 PR #92 合入）与 P2-1（邮箱、回放播放与下载、课件/回放列表已改）状态。
+- 原因/决策：用户要求三处选择统一为更新日志样式、点击弹出 iOS 原生菜单、全平台默认第一门课并接玻璃顶栏，随后扩展到邮箱与回放二级页。用户授权管理员合并 PR #95 并触发 KMP 打包；本条日志按用户要求直接推送 main（普通推送，非强推）。
+- 验证：`JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home ./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64 --offline --no-configuration-cache --console=plain --continue` BUILD SUCCESSFUL（3m1s），共享测试 1367 项 0 失败 1 跳过；`PlaybackScreenModelTest` 4 项（取消后重进、换课替换旧请求、排队显示加载、真实 `PlaybackScreen` 默认选课跨 effect 重启）。签名模拟器构建，iPhone 17 Pro / iOS 27 深色实看四处原生菜单、选择切换、玻璃顶栏、回放详情穿栏、从卡片起拖可滚动、回放“进入 1 秒内返回再进入”可加载课节。PR CI 合并时 Android、Windows、更新日志一致性成功；CodeRabbit 首轮与对 `a65ce187` 的意见已处理，Codex 对 `1df89505` 无发现。合入后触发 KMP package run `41482057048`。
+- 未验证：合并时 iOS compile/macOS security 检查仍在运行，CodeRabbit 对 `05bdc4c6` 的复审未出结论；浅色、大字号、Android/桌面实机、宽屏三栏回归、VoiceOver 自定义操作；回放“下载任务”视图未接玻璃顶栏。截图与日志在本机 `.artifacts/native-dropdown/`。
