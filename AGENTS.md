@@ -9,13 +9,15 @@
 | `AGENTS.md`       | 原则         | 人工维护               | 协作方式、仓库事实、架构边界、平台能力、安全红线、设计、测试、交付规则 | 进度、版本状态、验证结果、日期性事件   |
 | `memory.md`       | 实时工作记忆 | 每次任务结束时更新     | 顶部摘要、进行中的事项、当前痛点、接下来要做的事                       | 已经合入/发布的完成细节（移入日志）    |
 | `history_full.md` | 工作日志     | 一项工作合入或发版时追加 | 按日期追加的条目：做了什么、为什么、验证命令与结果、实机现象、未验证边界、决策 | 待办与计划                             |
+| `DESIGN.md`       | 设计规范     | 人工维护（AI 仅在用户要求时修改） | 外观与交互规则：液态玻璃顶栏、按钮放置与样式、弹层、颜色、动效、状态、自查清单 | 进度、验证结果                         |
 
 **读写顺序**：
 
 - 任务开始前：读 `AGENTS.md` → `memory.md`；`history_full.md` 不通读，只用 `rg` 查同类问题、同一功能的既往结论与证据。
 - 任务进行中：未合入的改动只记在 `memory.md`“进行中”。
 - 一项工作合入 `main`（PR 合并）或发出版本后：把对应内容从 `memory.md` 移出，在 `history_full.md` **末尾**追加一条日志；不改写旧条目（事实错误时追加更正条目）。
-- `AGENTS.md` 由人工维护；AI 只在用户要求时修改，改动前后向用户说明。
+- 任何涉及界面外观或交互的任务（新页面、新按钮、弹层、配色、动效），开始前必须读完 `DESIGN.md`，按其规则实现，并在 PR 描述里回答它第 14 节的自查清单。
+- `AGENTS.md`、`DESIGN.md` 由人工维护；AI 只在用户要求时修改，改动前后向用户说明。
 - `docs/migration/`、`docs/security/` 等是当时的专题报告，可作参考，但不代表当前状态。
 
 **日志条目格式**（`history_full.md`）：
@@ -33,7 +35,7 @@
 
 ## 开始任何任务前
 
-1. 按上表读 `AGENTS.md`、`memory.md`，按需检索 `history_full.md`。
+1. 按上表读 `AGENTS.md`、`memory.md`，按需检索 `history_full.md`；涉及界面时再读 `DESIGN.md`。
 2. 运行 `git status --short` 和 `git branch --show-current`，识别并保护用户已有改动；需要最新代码时先 `git pull --ff-only`。
 3. 阅读即将修改文件的调用链和对应测试，不只阅读目标函数。
 4. 明确本次涉及哪些平台、验收命令是什么。
@@ -150,6 +152,17 @@
 - 学校接口只能以不安全方式工作时，先报告阻塞和风险，由用户决定，不静默降低安全性。用户已于 2026-07-31 授权 macOS、并于 2026-08-01 授权 iOS 智慧教学会话使用旧 HTTP；该授权只覆盖 `123.121.147.7:88/ve/` 和教学日历 `123.121.147.7:1936/kk/rp/`，必须保持端点/路径白名单、内存会话脱敏和不可关闭的 UI 风险提示，不得扩大到 Android、MIS、AA、邮箱或其他 HTTP。
 
 ## Compose Multiplatform UI 规则
+
+### 必须遵循 `DESIGN.md`
+
+完整的外观与交互规范在仓库根目录 `DESIGN.md`，本节只列最常被忽略、返工最多的硬性要求。不确定时以 `DESIGN.md` 为准；`DESIGN.md` 没写到的新情况先问用户，不要自行发挥。
+
+- **新功能页面必须接入 iOS 液态玻璃顶栏**：`nativeRouteTitle()` 返回标题；`DestinationPage(scrollUnderTopBar = true)`；主滚动容器用 `TopScrollLazyColumn` / `TopScrollColumn`；顶/底留白取 `LocalTopBarClearance` / `LocalBottomBarClearance`，加在 `contentPadding` 上，不加在布局上。内容从屏幕顶开始画、滚动时穿到栏后，玻璃随滚动出现；顶栏下出现纯色白条即不合格。
+- **顶栏按钮只用声明式参数**（`refreshable`、`idleStatusText`/`onStatusClick`、`topBarActionLabel`/`onTopBarActionClick`、`search`），由 iOS 宿主画成系统圆形液态玻璃按钮（`UIBarButtonItem` + SF Symbol）；禁止传 `topBarAction = { Composable }`，它会让整条顶栏退回 Compose 自绘、丢掉玻璃。每页至多一个页面级动作；新动作要在 `ContentView.swift` 的 `symbolName(for:kind:)` 配图标。Android/桌面回退顶栏复用 `CompactAppTopBar` 的 32.dp 圆形按钮。
+- **不在 Compose 里仿造系统外观**：不画顶栏渐变/模糊/分隔线，不仿玻璃按钮，不在玻璃按钮里套胶囊，不设 `sharesBackground = false`；页面不再画自己的标题行和返回箭头。
+- **弹层只用 `AppleSheet` / `AppleSheetOrAlert`**，标题与确认/取消/关闭放原生 sheet 标题栏，正文不画外壳、不再套 `verticalScroll`；短内容 `fitContentHeight`，长表单与筛选 `needsFullHeight`。
+- **不用下拉刷新**（刷新是顶栏圆形按钮）；批量/持续操作用浮动胶囊操作条，不用铺满底部的实心底栏；页头作为列表首项随内容滚动，不做固定头部。
+- 界面改动的 PR 必须回答 `DESIGN.md` 第 14 节的自查清单，并在 iOS 模拟器上实际看过顶栏玻璃（顶部透明、上滑出现、短页回弹也出现）。
 
 ### 共享而不强求相同
 

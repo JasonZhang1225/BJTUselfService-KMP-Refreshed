@@ -52,14 +52,12 @@
 
 # BJTUselfService 实时工作记忆
 
-> 2026-11-02：进行中 `chore/ci-slim`（基于 main `13b41b41`，未提交）——精简 CI，详见下节。`feat/device-timezone` 本地分支保持原样。
+> 2026-11-02：CI 精简（PR #91，合并提交 `68339b94`）已合入 main，本地与远端 `chore/ci-slim` 已删除，日志条目待补。设计规范文档已直接推送 main（见下节）。`feat/device-timezone` 本地分支保持原样。
 
-## 进行中：CI 精简（`chore/ci-slim`，2026-11-02）
+## 接下来：按 DESIGN.md 整改遗留界面写法（2026-11-02）
 
-- `kmp-security-check.yml`：去掉 push main/audit（main 只经 PR 合入）；PR 只在 opened/synchronize/reopened/ready_for_review 触发，草稿 PR 不跑；同一 PR 新推送取消旧轮（concurrency）。新增 `changes` 任务按改动文件分流：androidApp→Android，iosApp/desktopApp→macOS 任务，windowsApp→Windows，shared/Gradle 配置→三端，remote-site-template→Node 测试，src 以外的 .md 与 docs/releases 只跑更新日志检查；手动运行全跑。macOS 任务两次 Gradle 测试合成一次（`--continue`）。
-- `agent-cli-windows.yml` 删除，测试与冒烟步骤并入 Windows 任务，只在 windowsApp、shared 的 agent/、commonMain 的 sync/ 改动时执行；Windows 包改用 ASCII 名 `BJTUselfServiceKMP`。
-- `kmp-package.yml`：去掉被 `v*` 覆盖的标签模式和已失效的 `pull_request` 条件，行为不变。
-- `SecurityReleaseConfigTest` 改为断言新触发方式与冒烟已并入。验证：两个配置测试 16 项通过；分类脚本用 11 种模拟改动核对；actionlint 1.7.12：`kmp-security-check.yml`、`gitee-release-mirror.yml` 无告警；`kmp-package.yml` 的 4 条（`xcode-27` 自定义标签、2 条 shellcheck）main 上原样存在，非本次引入。实际运行效果待 PR CI。
+- 根目录 `DESIGN.md` 已入库（液态玻璃顶栏接入清单、顶栏按钮与系统圆形玻璃样式、`AppleSheet` 弹层、控件、版面/颜色/动效/状态/无障碍、禁止清单与 PR 自查清单）；`AGENTS.md` 要求界面任务先读并回答自查清单。
+- 遗留不合规写法待分批整改：5 处直连 `AlertDialog`；成绩页 `GradeTypeColors.kt` 复制了课程性质色且限选色（琥珀）与 `CourseCategoryPalette`（粉）不一致；邮箱一级页与回放详情未接玻璃顶栏；页面散落的语义色；非档位的圆角与间距。限选色取舍、“取消目录导出”交互、极小元素圆角是否单设一档，需用户决定。
 
 > 2026-10-31：当前工作树 `/workspace/changelog-app`，分支 `feat/changelog-app`，基于最新 main `d3e84f78`；更新日志应用与发布说明整理已推送 PR #86（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/86），未合入，不改版本号、不发版。
 
