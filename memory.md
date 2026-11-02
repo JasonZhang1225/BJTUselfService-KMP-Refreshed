@@ -1,6 +1,7 @@
 ## 进行中：作业列表回到顶部按钮（2026-11-02）
 
 - 分支 `feat/assignment-scroll-to-top` 从 `main` 的 `d8d3d6a34ff6761df1fede61c25f795656b7123c` 创建；用户已授权提交、推送并创建目标为 main 的 PR，不直接推送 main、不合并、不发版。独立工作树 `.artifacts/tree/codex/assignment-scroll-to-top/`；原无 Git 源码副本保留。
+- 交付：应用源码提交 `f883d6f3e47aff3fa412f37e47e2d89aa7c6ffcd` 已推送至该功能分支，PR #94（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/94）目标为 main，已开放、未合并；CI 与审批以 PR 页面为准。后续记录提交仅同步本项 PR 链接，不改应用源码。
 - 聚合“作业”、独立课程平台作业（含宽屏列表窗格）、物理在线、CITEL 均复用 `AssignmentListWithScrollToTop`：超过约一屏后出现圆形“↑”，回到一屏内隐藏，点击回到列表首项。用户确认的最终尺寸为视觉 44.dp / 点击区域 48.dp；位置保持确认版，避开底栏、撤销提示，并给列表末尾留白。支持主题色、读屏标签、键盘点击和减少动态效果；既有筛选、排序、搜索、详情和平台导航保持原样。
 - 修改限于 5 个生产 Kotlin 文件、2 个新增桌面 UI 测试和本记录；只迁移本项补丁，保留最新主干的其他改动。新增测试覆盖一屏阈值、窗口尺寸变化、回顶点击、原生滚动委托、宽屏列表边界、空/短列表、撤销避让，以及浅/深色、大字号、横屏矮窗口。
 - 本分支验证：在 `multiplatform/`、JDK 21 下执行 `gradlew.bat :shared:desktopTest :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :androidApp:assembleDebug --offline --no-daemon --no-configuration-cache --console=plain --continue -Pkotlin.compiler.execution.strategy=in-process`；4m25s，1362 项中 1356 通过、5 失败、1 跳过，联合命令退出 1。失败仅为既有 Windows 环境的 DesktopAgentIntegrationTest 3 项、MacUninstallCleanerTest 2 项；回顶两个测试类共 5 项全部通过，无测试源码排除配置。Android assembleDebug、桌面 JVM 宿主 compileKotlin、Windows compileKotlinWindows 均成功，使用本机既有 debug.keystore，未安装 App。证据在原源码副本忽略目录 `.artifacts/assignment-scroll-top-pr/{branch-validation.log,branch-test-summary.json,TEST-*AssignmentScrollToTopTest.xml}`；分支工作树生成 20 张离屏图，已目视抽查代表布局。
