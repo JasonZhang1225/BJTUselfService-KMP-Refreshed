@@ -1,6 +1,6 @@
 # 进行中：物理实验 IP 备用路径（2026-11-02）
 
-> 当前工作树 `/Users/zjg/BJTUselfService/.artifacts/tree/codex/physics-ip-backup`，分支 `fix/physics-ip-backup`，从最新 main 创建。用户已授权提交、推送并创建到 main 的 PR；正在交付，不改版本号。
+> 当前工作树 `/Users/zjg/BJTUselfService/.artifacts/tree/codex/physics-ip-backup`，分支 `fix/physics-ip-backup`，从最新 main 创建。已提交并推送，PR #93（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/93）目标 main；实现提交 `5b672c66`，未合并、未发布，不改版本号。
 
 - 保留域名主路径，登录页获取/表单检查失败或 6 秒超时后改用老师公布的 `http://59.64.5.228/`；POST 与结果读取始终固定在选定端点，密码只提交一次，取消不回退。
 - 账号设置保留域名并新增 IP 备用链接、校园网/HTTP 明文说明；Android 明文与 iOS ATS 仅增该 IP，沿用物理实验隔离 Cookie 通道与精确路径白名单。端点登记见 `docs/security/physics-lab-ip-backup.md`。
