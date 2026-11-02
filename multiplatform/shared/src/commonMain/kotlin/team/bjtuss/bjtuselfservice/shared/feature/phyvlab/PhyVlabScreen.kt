@@ -210,56 +210,57 @@ fun PhyVlabWorkspace(
                 maxWidth < 840.dp -> 12.dp
                 else -> 0.dp
             }
-            TopScrollLazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .desktopTouchScroll(listState),
-                contentPadding = PaddingValues(
-                    // 首项靠内部顶边距让开原生栏：12.dp 还原起笔位置（外层已不再占位）。
-                    start = horizontalInset,
-                    top = 12.dp + topClearance,
-                    end = horizontalInset,
-                    bottom = 12.dp + LocalBottomBarClearance.current,
-                ),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                // underlap 时失败横幅收进列表首项（外层已去掉），平时不占位。
-                if (topClearance > 0.dp) {
-                    failureForBanner?.let { failure ->
-                        item(key = "phyvlab-failure") {
-                            PhyVlabFailureBanner(
-                                failure = failure,
-                                hasCachedContent = state.contentSource == PhyVlabContentSource.CACHE,
-                                cachedAtEpochMillis = state.cachedAtEpochMillis,
-                                onRetry = refresh,
+            AssignmentListWithScrollToTop(listState, Modifier.fillMaxSize()) { scrollModifier ->
+                TopScrollLazyColumn(
+                    state = listState,
+                    modifier = scrollModifier
+                        .desktopTouchScroll(listState),
+                    contentPadding = PaddingValues(
+                        // 首项靠内部顶边距让开原生栏：12.dp 还原起笔位置（外层已不再占位）。
+                        start = horizontalInset,
+                        top = 12.dp + topClearance,
+                        end = horizontalInset,
+                        bottom = 12.dp + 48.dp + LocalBottomBarClearance.current,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    // underlap 时失败横幅收进列表首项（外层已去掉），平时不占位。
+                    if (topClearance > 0.dp) {
+                        failureForBanner?.let { failure ->
+                            item(key = "phyvlab-failure") {
+                                PhyVlabFailureBanner(
+                                    failure = failure,
+                                    hasCachedContent = state.contentSource == PhyVlabContentSource.CACHE,
+                                    cachedAtEpochMillis = state.cachedAtEpochMillis,
+                                    onRetry = refresh,
+                                )
+                            }
+                        }
+                    }
+                    item(key = "summary") {
+                        HomeworkSummaryBanner(displayedActivities.size, subtitle, onOpenFilter = { showFilters = true })
+                    }
+                    if (displayedActivities.isEmpty()) item {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(assignmentEmptyTitle(allActivities.isNotEmpty(), ignoredActivities.isNotEmpty(), filters.active),
+                                style = MaterialTheme.typography.titleMedium)
+                            if (filters.active) TextButton(onClick = { showFilters = true }) { Text("调整筛选") }
+                        }
+                    }
+                    items(displayedActivities, key = { "activity-${it.id}" }) { activity ->
+                        Box(Modifier.animateItem()) {
+                            PhyVlabActivityRow(
+                                activity = activity,
+                                nowEpochSeconds = nowEpochSeconds,
+                                onOpen = { onOpenActivityDetail(activity) },
                             )
                         }
                     }
-                }
-                item(key = "summary") {
-                    HomeworkSummaryBanner(displayedActivities.size, subtitle, onOpenFilter = { showFilters = true })
-                }
-                if (displayedActivities.isEmpty()) item {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(assignmentEmptyTitle(allActivities.isNotEmpty(), ignoredActivities.isNotEmpty(), filters.active),
-                            style = MaterialTheme.typography.titleMedium)
-                        if (filters.active) TextButton(onClick = { showFilters = true }) { Text("调整筛选") }
+                    ignoredAssignmentsSection(ignoredActivities, ignoredExpanded, { ignoredExpanded = !ignoredExpanded },
+                        { "activity-${it.id}" }) { activity ->
+                        PhyVlabActivityRow(activity = activity, nowEpochSeconds = nowEpochSeconds, onOpen = { onOpenActivityDetail(activity) })
                     }
-                }
-                items(displayedActivities, key = { "activity-${it.id}" }) { activity ->
-                    Box(Modifier.animateItem()) {
-                        PhyVlabActivityRow(
-                            activity = activity,
-                            nowEpochSeconds = nowEpochSeconds,
-                            onOpen = { onOpenActivityDetail(activity) },
-                        )
-                    }
-                }
-                ignoredAssignmentsSection(ignoredActivities, ignoredExpanded, { ignoredExpanded = !ignoredExpanded },
-                    { "activity-${it.id}" }) { activity ->
-                    PhyVlabActivityRow(activity = activity, nowEpochSeconds = nowEpochSeconds, onOpen = { onOpenActivityDetail(activity) })
                 }
             }
         }
