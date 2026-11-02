@@ -20,6 +20,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadShe
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.mergePickedFiles
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.pickFeedback
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.assignmentCompletionState
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentListWithScrollToTop
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCompletionFeedback
 import androidx.compose.runtime.CompositionLocalProvider
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.LocalAssignmentSwipeToIgnore
@@ -852,82 +853,84 @@ private fun HomeworkScrollableContent(
     LaunchedEffect(state.sortOrder, state.hideExpired, state.hideSubmitted, state.selectedCourses, searchActive, query) {
         listState.scrollToItem(0)
     }
-    TopScrollLazyColumn(
-        state = listState,
-        modifier = modifier.desktopTouchScroll(listState),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(
-            // 首项靠内部顶边距让开原生栏（外层已不再占位，见 Workspace）：8.dp 还原原来的
-            // 列表起笔位置，clearance 让内容从栏底开始、滚起来穿进栏后供原生 blur 采样。
-            top = 8.dp + topClearance,
-            bottom = 18.dp + LocalBottomBarClearance.current,
-        ),
-    ) {
-        if (searchActive) {
-            // 搜索层：只有结果，没有失败横幅、迁移提示和筛选 banner。
-            if (displayed.isEmpty()) {
-                item(key = "homework-search-empty") {
-                    PageSearchEmptyState(query, hint = "搜索课程名或作业标题", modifier = Modifier.animateItem())
+    AssignmentListWithScrollToTop(listState, modifier) { scrollModifier, overlayClearance ->
+        TopScrollLazyColumn(
+            state = listState,
+            modifier = scrollModifier.desktopTouchScroll(listState),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(
+                // 首项靠内部顶边距让开原生栏（外层已不再占位，见 Workspace）：8.dp 还原原来的
+                // 列表起笔位置，clearance 让内容从栏底开始、滚起来穿进栏后供原生 blur 采样。
+                top = 8.dp + topClearance,
+                bottom = 18.dp + overlayClearance + LocalBottomBarClearance.current,
+            ),
+        ) {
+            if (searchActive) {
+                // 搜索层：只有结果，没有失败横幅、迁移提示和筛选 banner。
+                if (displayed.isEmpty()) {
+                    item(key = "homework-search-empty") {
+                        PageSearchEmptyState(query, hint = "搜索课程名或作业标题", modifier = Modifier.animateItem())
+                    }
                 }
-            }
-        } else {
-            // underlap 时失败横幅也收进列表（外层已跳过），平时保持外层旧布局，见 Workspace。
-            if (topClearance > 0.dp) {
-                state.failure?.let { failure ->
-                    item(key = "homework-failure") {
-                        Box(Modifier.animateItem()) {
-                            HomeworkFailureBanner(
-                                failure = failure,
-                                hasContent = state.homework.isNotEmpty(),
-                                onRetry = onRetry,
-                                onDismiss = onDismissFailure,
-                            )
+            } else {
+                // underlap 时失败横幅也收进列表（外层已跳过），平时保持外层旧布局，见 Workspace。
+                if (topClearance > 0.dp) {
+                    state.failure?.let { failure ->
+                        item(key = "homework-failure") {
+                            Box(Modifier.animateItem()) {
+                                HomeworkFailureBanner(
+                                    failure = failure,
+                                    hasContent = state.homework.isNotEmpty(),
+                                    onRetry = onRetry,
+                                    onDismiss = onDismissFailure,
+                                )
+                            }
+                        }
+                    }
+                }
+                if (legacyWarningVisible) {
+                    item(key = "homework-legacy-warning") {
+                        Box(Modifier.animateItem()) { LegacySmartTransportWarning(onDismiss = onDismissLegacyWarning) }
+                    }
+                }
+                item(key = "homework-summary") {
+                    Box(Modifier.animateItem()) { HomeworkSummary(state = state, visible = displayed, onOpenFilter = onOpenFilter) }
+                }
+                if (displayed.isEmpty()) {
+                    item(key = "homework-empty") {
+                        Column(
+                            modifier = Modifier
+                                .animateItem()
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            val filtered = state.selectedCourses.isNotEmpty() || state.hideExpired || state.hideSubmitted
+                            Text(assignmentEmptyTitle(true, ignored.isNotEmpty(), filtered), style = MaterialTheme.typography.titleMedium)
+                            if (filtered) TextButton(onClick = onOpenFilter) { Text("调整筛选") }
                         }
                     }
                 }
             }
-            if (legacyWarningVisible) {
-                item(key = "homework-legacy-warning") {
-                    Box(Modifier.animateItem()) { LegacySmartTransportWarning(onDismiss = onDismissLegacyWarning) }
-                }
-            }
-            item(key = "homework-summary") {
-                Box(Modifier.animateItem()) { HomeworkSummary(state = state, visible = displayed, onOpenFilter = onOpenFilter) }
-            }
-            if (displayed.isEmpty()) {
-                item(key = "homework-empty") {
-                    Column(
-                        modifier = Modifier
-                            .animateItem()
-                            .fillMaxWidth()
-                            .padding(vertical = 48.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        val filtered = state.selectedCourses.isNotEmpty() || state.hideExpired || state.hideSubmitted
-                        Text(assignmentEmptyTitle(true, ignored.isNotEmpty(), filtered), style = MaterialTheme.typography.titleMedium)
-                        if (filtered) TextButton(onClick = onOpenFilter) { Text("调整筛选") }
+            // 列表与搜索结果沿用同一 key：打开搜索、输入关键字时匹配的卡片留在原地，其余淡出。
+            items(displayed, key = Homework::stableKey) { item ->
+                Box(Modifier.animateItem()) {
+                    CompositionLocalProvider(LocalAssignmentSwipeToIgnore provides !searchActive) {
+                        HomeworkCard(
+                            item = item,
+                            // 紧凑端详情是独立二级页（原生 push），返回时没有可靠的 pop 回调可清选中；
+                            // 选中高亮只在宽屏双栏有意义，这里一律不渲染，避免返回后旧选中颜色残留。
+                            selected = false,
+                            onOpen = onOpen,
+                        )
                     }
                 }
             }
-        }
-        // 列表与搜索结果沿用同一 key：打开搜索、输入关键字时匹配的卡片留在原地，其余淡出。
-        items(displayed, key = Homework::stableKey) { item ->
-            Box(Modifier.animateItem()) {
-                CompositionLocalProvider(LocalAssignmentSwipeToIgnore provides !searchActive) {
-                    HomeworkCard(
-                        item = item,
-                        // 紧凑端详情是独立二级页（原生 push），返回时没有可靠的 pop 回调可清选中；
-                        // 选中高亮只在宽屏双栏有意义，这里一律不渲染，避免返回后旧选中颜色残留。
-                        selected = false,
-                        onOpen = onOpen,
-                    )
+            if (!searchActive) {
+                ignoredAssignmentsSection(ignored, ignoredExpanded, { ignoredExpanded = !ignoredExpanded }, Homework::stableKey) { item ->
+                    HomeworkCard(item = item, selected = false, onOpen = onOpen)
                 }
-            }
-        }
-        if (!searchActive) {
-            ignoredAssignmentsSection(ignored, ignoredExpanded, { ignoredExpanded = !ignoredExpanded }, Homework::stableKey) { item ->
-                HomeworkCard(item = item, selected = false, onOpen = onOpen)
             }
         }
     }
@@ -977,23 +980,25 @@ private fun HomeworkList(
     LaunchedEffect(sortOrder) {
         listState.scrollToItem(0)
     }
-    LazyColumn(
-        state = listState,
-        modifier = modifier.desktopTouchScroll(listState),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(bottom = 18.dp + LocalBottomBarClearance.current),
-    ) {
-        items(homework, key = Homework::stableKey) { item ->
-            Box(Modifier.animateItem()) {
-                HomeworkCard(
-                    item = item,
-                    selected = item.stableKey() == selectedKey,
-                    onOpen = onOpen,
-                )
+    AssignmentListWithScrollToTop(listState, modifier) { scrollModifier, overlayClearance ->
+        LazyColumn(
+            state = listState,
+            modifier = scrollModifier.desktopTouchScroll(listState),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(bottom = 18.dp + overlayClearance + LocalBottomBarClearance.current),
+        ) {
+            items(homework, key = Homework::stableKey) { item ->
+                Box(Modifier.animateItem()) {
+                    HomeworkCard(
+                        item = item,
+                        selected = item.stableKey() == selectedKey,
+                        onOpen = onOpen,
+                    )
+                }
             }
-        }
-        ignoredAssignmentsSection(ignored, ignoredExpanded, { ignoredExpanded = !ignoredExpanded }, Homework::stableKey) { item ->
-            HomeworkCard(item = item, selected = item.stableKey() == selectedKey, onOpen = onOpen)
+            ignoredAssignmentsSection(ignored, ignoredExpanded, { ignoredExpanded = !ignoredExpanded }, Homework::stableKey) { item ->
+                HomeworkCard(item = item, selected = item.stableKey() == selectedKey, onOpen = onOpen)
+            }
         }
     }
 }

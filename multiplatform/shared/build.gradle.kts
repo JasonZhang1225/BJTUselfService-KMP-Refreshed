@@ -167,6 +167,9 @@ compose.resources {
 // 需要验证其他时区的测试显式传入时区。
 tasks.withType<Test>().configureEach {
     systemProperty("user.timezone", "Asia/Shanghai")
+    providers.systemProperty("assignmentScrollTop.artifactDir").orNull?.let { directory ->
+        systemProperty("assignmentScrollTop.artifactDir", directory)
+    }
 }
 // iOS 模拟器测试同理：SIMCTL_CHILD_ 前缀的变量会传给模拟器里的测试进程。
 tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {

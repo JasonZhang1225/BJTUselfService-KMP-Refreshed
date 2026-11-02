@@ -62,8 +62,9 @@ internal fun AggregatedAssignmentWorkspace(
     val top = LocalTopBarClearance.current
     val bottom = LocalBottomBarClearance.current
     val renderList: @Composable (Modifier) -> Unit = { listModifier ->
-        TopScrollLazyColumn(state = list, modifier = listModifier.desktopTouchScroll(list),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp + top, bottom = 24.dp + bottom),
+        AssignmentListWithScrollToTop(list, listModifier) { scrollModifier, overlayClearance ->
+        TopScrollLazyColumn(state = list, modifier = scrollModifier.desktopTouchScroll(list),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp + top, bottom = 24.dp + overlayClearance + bottom),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (completion.failure != null) item("completion-error") { AssignmentCompletionFeedback() }
             if (searchActive) {
@@ -106,6 +107,7 @@ internal fun AggregatedAssignmentWorkspace(
                 key = { it.key }) { item ->
                 AggregatedAssignmentCard(item, now, expanded && item.key == selectedKey) { open(item) }
             }
+        }
         }
     }
     if (expanded) {
