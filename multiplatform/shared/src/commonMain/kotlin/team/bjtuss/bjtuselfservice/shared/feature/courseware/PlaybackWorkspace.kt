@@ -94,21 +94,18 @@ fun PlaybackScreen(
     modifier: Modifier,
     onOpenDetail: (() -> Unit)? = null,
 ) {
-    val scope = rememberCoroutineScope()
     val state by model.state.collectAsState()
     var showTasks by remember { mutableStateOf(false) }
     val tasks by model.taskManager.tasks.collectAsState()
     val courses = coursewareState.courses
     val course = courses.firstOrNull { it.id == state.courseId }
     LaunchedEffect(coursewareModel) { coursewareModel.initialize() }
-    val selectCourse: (CoursewareCourse) -> Unit = { picked -> scope.launch { model.showCourse(picked) } }
-    val onRetry: () -> Unit = { scope.launch { model.showCourse(course, force = true) } }
+    val selectCourse: (CoursewareCourse) -> Unit = { picked -> model.selectCourse(picked) }
+    val onRetry: () -> Unit = { model.selectCourse(course, force = true) }
     // 与课件下载一致：没有选过或原课程已不在列表里时，默认选第一门课。
-    // showCourse 会先改 courseId 再拉课节；放在页面 scope 里，避免 courseId 变化重启本 effect 时把请求一起取消。
+    // 课节请求交给模型作用域：courseId 变化重启本 effect、或离开页面，都不会把请求取消在半路。
     LaunchedEffect(courses.map { it.id }, state.courseId) {
-        if (courses.isNotEmpty() && courses.none { it.id == state.courseId }) {
-            scope.launch { model.showCourse(courses.first()) }
-        }
+        if (courses.isNotEmpty() && courses.none { it.id == state.courseId }) model.selectCourse(courses.first())
     }
     // 移动端关闭新下载后，升级遗留任务仍可能在 TaskManager 里；必须保留任务页以便取消/移除。
     val tasksVisible = playbackRecordingTasksUiVisible(playbackRecordingDownloadAvailable, tasks)

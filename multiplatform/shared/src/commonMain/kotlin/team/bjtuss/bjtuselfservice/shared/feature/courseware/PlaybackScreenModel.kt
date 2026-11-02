@@ -54,6 +54,14 @@ class PlaybackScreenModel(
     private var detailJob: Job? = null
     private val lessonCache = mutableMapOf<Int, List<PlaybackLesson>>()
 
+    /**
+     * 界面选课/默认选课/重试的入口：在模型自己的作用域里加载课节。
+     * 不能放在页面的 rememberCoroutineScope 里：离开页面会取消请求，模型却还停在“正在读取课节”。
+     */
+    fun selectCourse(course: CoursewareCourse?, force: Boolean = false) {
+        scope.launch { showCourse(course, force) }
+    }
+
     /** 进入回放页或切换课程时调用；同一门课已加载过就直接复用（[force] 时重新拉取）。 */
     suspend fun showCourse(course: CoursewareCourse?, force: Boolean = false) {
         if (course == null) {
@@ -67,6 +75,8 @@ class PlaybackScreenModel(
             mutableState.value = current.copy(
                 courseId = course.id,
                 lessons = lessonCache[course.id].orEmpty(),
+                // 上一门课的加载标记不能带到这门课；真正开始请求时会在锁内重新置 true。
+                lessonsLoading = false,
                 lessonsFailure = null,
                 selectedLessonKey = null,
                 detail = null,
@@ -78,7 +88,14 @@ class PlaybackScreenModel(
         loadMutex.withLock {
             if (mutableState.value.courseId != course.id) return
             mutableState.value = mutableState.value.copy(lessonsLoading = true, lessonsFailure = null)
-            val result = withRecovery { repository.loadPlaybackLessons(course) }
+            val result = try {
+                withRecovery { repository.loadPlaybackLessons(course) }
+            } finally {
+                // 被取消（或异常）时复位，否则下次进入同一门课会因 lessonsLoading 直接返回，一直转圈。
+                if (mutableState.value.courseId == course.id && mutableState.value.lessonsLoading) {
+                    mutableState.value = mutableState.value.copy(lessonsLoading = false)
+                }
+            }
             if (mutableState.value.courseId != course.id) return
             mutableState.value = when (result) {
                 is CoursewareOperationResult.Success -> {

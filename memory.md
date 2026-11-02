@@ -1,11 +1,12 @@
 # 进行中：原生下拉选单与课件/回放/邮箱玻璃顶栏（2026-11-02）
 
-> 工作树 `/Users/zjg/BJTUselfService/.artifacts/tree/claude/native-dropdown`，分支 `feat/native-dropdown-menu`，从 `origin/main` `d8d3d6a3` 创建。未提交、未推送、未开 PR，不改版本号。
+> 工作树 `/Users/zjg/BJTUselfService/.artifacts/tree/claude/native-dropdown`，分支 `feat/native-dropdown-menu`，从 `origin/main` `d8d3d6a3` 创建。首个提交 `1df89505` 已推送并开 PR #95（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/95），未合并、不改版本号。回放卡“正在读取课节”的修复已在本地提交、按用户要求暂不推送，等 PR 在线审查结束后再推。
 
 - 新增 `AppleMenuPickerCard` / `AppleMenuAnchor`（`feature/shell/AppleMenuPicker.kt`，iOS 实现 `iosMain/.../feature/shell/AppleMenuPicker.ios.kt`）：iOS 透明 `UIButton` + 系统 `UIMenu`（单选打勾、副标题、菜单内滚动），Android/桌面回退 Material `DropdownMenu`；iOS 读屏用自定义操作逐项选择。
 - 更新日志版本选择、课件下载与课程回放选课、邮箱文件夹改用它；课件/回放删掉“点击此处选择课程”按钮与选课 sheet，回放默认选第一门课（在页面 scope 启动，避免 effect 自我取消）。课件、回放、回放播放与下载、邮箱开 `scrollUnderTopBar`，紧凑端改为单一 `TopScrollLazyColumn`/`TopScrollColumn`；宽屏布局只补顶部净空。
 - 文档：`DESIGN.md` 新增 6.1 下拉选单并同步表格、禁止清单、自查清单、参考索引；从备份恢复 `docs/plans/design-legacy-cleanup.md` 并更新 P1/P2-1 状态。
 - 验证：`:shared:compileKotlinDesktop :shared:compileKotlinIosSimulatorArm64` 通过；签名模拟器构建 `BUILD SUCCEEDED`，iPhone 17 Pro / iOS 27 深色实看：三页与邮箱的原生菜单、选中切换、玻璃顶栏、回放详情穿栏、从卡片起拖可滚动。日志 `/Users/zjg/BJTUselfService/.artifacts/native-dropdown/`。`JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home ./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 --offline --no-configuration-cache --console=plain --continue` BUILD SUCCESSFUL（4m29s），共享测试 1357 项 0 失败 1 跳过（之后仅改邮箱数量文案“共 N 封”，已重新签名构建并实看）。
+- 回放卡住修复（本地提交，未推送）：课节请求原在页面 `rememberCoroutineScope`，离开页面被取消后 `lessonsLoading` 残留为 true，再进同一门课直接返回一直转圈。改为 `PlaybackScreenModel.selectCourse` 在模型作用域加载，`showCourse` 在 finally 中复位、切课时清掉上一门的加载标记；新增 `PlaybackScreenModelTest` 2 项通过；模拟器复现“进入后 1 秒内返回再进入”已能加载 13 节。
 - 未验证：浅色、大字号、Android/桌面实机、宽屏三栏回归、VoiceOver 自定义操作。
 
 # 进行中：物理实验 IP 备用路径（2026-11-02）
