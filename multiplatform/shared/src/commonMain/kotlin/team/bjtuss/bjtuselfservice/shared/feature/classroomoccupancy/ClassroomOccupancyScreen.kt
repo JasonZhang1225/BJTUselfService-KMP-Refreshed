@@ -101,6 +101,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
+import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetBodyScroll
 
 private val weekdayLabels = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
@@ -577,8 +578,7 @@ private fun OccupancyWeekPickerSheet(
         val pickerScrollState = rememberScrollState()
         Column(
             modifier = Modifier.fillMaxWidth()
-                .verticalScroll(pickerScrollState)
-                .desktopTouchScroll(pickerScrollState)
+                .sheetBodyScroll(pickerScrollState)
                 .padding(horizontal = 20.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {

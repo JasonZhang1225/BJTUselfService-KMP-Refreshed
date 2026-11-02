@@ -52,12 +52,16 @@
 
 # BJTUselfService 实时工作记忆
 
-> 2026-11-02：CI 精简（PR #91，合并提交 `68339b94`）已合入 main，本地与远端 `chore/ci-slim` 已删除，日志条目待补。设计规范文档已直接推送 main（见下节）。`feat/device-timezone` 本地分支保持原样。
+> 2026-11-02：CI 精简（PR #91，合并提交 `68339b94`）已合入 main，本地与远端 `chore/ci-slim` 已删除，日志条目待补。设计规范文档已直接推送 main；警告框与 sheet 测高整改见下节。`feat/device-timezone` 本地分支保持原样。
 
-## 接下来：按 DESIGN.md 整改遗留界面写法（2026-11-02）
+## 进行中：系统警告框 AppleAlert、iOS sheet 测高与底部不截断（分支 `feat/apple-alert`，PR 到 main，2026-11-02）
 
-- 根目录 `DESIGN.md` 已入库（液态玻璃顶栏接入清单、顶栏按钮与系统圆形玻璃样式、`AppleSheet` 弹层、控件、版面/颜色/动效/状态/无障碍、禁止清单与 PR 自查清单）；`AGENTS.md` 要求界面任务先读并回答自查清单。
-- 遗留不合规写法待分批整改：5 处直连 `AlertDialog`；成绩页 `GradeTypeColors.kt` 复制了课程性质色且限选色（琥珀）与 `CourseCategoryPalette`（粉）不一致；邮箱一级页与回放详情未接玻璃顶栏；页面散落的语义色；非档位的圆角与间距。限选色取舍、“取消目录导出”交互、极小元素圆角是否单设一档，需用户决定。
+- 新增 `AppleAlert`（`feature/shell/AppleAlert.kt`）：iOS 走宿主 `UIAlertController`（`iosMain/.../IosNativeAlertPresentation.kt`，从最上层呈现者弹出，转场冲突时重试），Android/桌面回退 `AlertDialog`。确认/警告/结果类弹窗（设置清缓存等 Destructive、更新检查结果、确认续借、确认发送、自动登录失败、登录信息未保存、部分同步失败、CITEL 同步状态、清除独立账号、取消目录导出、实时动态权限说明）改用它；物理在线最终提交与启动版本说明改为原生 sheet（后者 `dismissible = false`）。
+- iOS sheet 一律按正文测高：`scrollableBody = false` 即测高，正文滚动用新 `Modifier.sheetBodyScroll`；只有懒加载列表/整页工作区保留全高。滚动视口到底边，安全区作为滚动内容末尾留白（全高 sheet 经 `LocalBottomBarClearance` 提供），物理作业详情去掉 680dp 限高截断。`AppleSheetOrAlert` 回退对话框尊重 `confirmEnabled` / `dismissEnabled`。
+- P1-2：成绩页 `courseTypeColors()` 转调 `courseCategoryColors()`，限选统一为玫红。
+- 文档：`DESIGN.md` 第 5 节（警告框与 sheet 选型、测高、底部不截断）、第 3 节页面底部规则、禁止清单与自查清单；`AGENTS.md` Compose UI 要点同步（用户已确认）。
+- 验证：`./gradlew :shared:desktopTest :shared:compileKotlinIosSimulatorArm64 :shared:compileKotlinIosArm64 :androidApp:compileDebugKotlin :desktopApp:compileKotlin :windowsApp:compileKotlinWindows --continue` 成功，共享测试 1353 项 0 失败 1 跳过；签名模拟器构建成功，iPhone 17 Pro / iOS 27 实看：清缓存警告框（深色、红色破坏性按钮、可重复打开）、已是最新版本（浅色）、课程详情按内容定高、作业变动长列表封顶后滑到底无截断、短变动按内容定高。截图在本地 `.artifacts/apple-alert/`。
+- 未验证：其余警告框与 sheet 未逐个在模拟器打开；Android/桌面回退未实机看；成绩页限选色未目视；PR CI 与手动 KMP 打包结果待看。
 
 > 2026-10-31：当前工作树 `/workspace/changelog-app`，分支 `feat/changelog-app`，基于最新 main `d3e84f78`；更新日志应用与发布说明整理已推送 PR #86（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/86），未合入，不改版本号、不发版。
 

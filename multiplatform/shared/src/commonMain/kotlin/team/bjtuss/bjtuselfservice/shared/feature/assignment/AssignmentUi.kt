@@ -23,6 +23,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetScrollContentPadding
 import team.bjtuss.bjtuselfservice.shared.files.*
+import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetBodyScroll
 
 data class AssignmentPresentation(
     val title: String, val course: String, val source: String, val status: String,
@@ -69,11 +70,10 @@ fun AssignmentUploadSheet(
         dismissLabel = "取消",
         dismissEnabled = !busy,
         needsFullHeight = true,
-        scrollableBody = true,
     ) {
         val scroll = rememberScrollState()
         Column(
-            Modifier.fillMaxWidth().verticalScroll(scroll).desktopTouchScroll(scroll).sheetScrollContentPadding(),
+            Modifier.fillMaxWidth().sheetBodyScroll(scroll).sheetScrollContentPadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             content = content,
         )

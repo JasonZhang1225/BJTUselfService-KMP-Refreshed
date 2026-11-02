@@ -38,6 +38,21 @@ interface NativeSheetPresenter {
     fun setFittedContentHeight(heightDp: Float) {}
 
     fun dismiss()
+
+    /** 宿主能弹系统警告框时返回一个独立的呈现；null 表示走 Compose 对话框回退。 */
+    fun createAlert(): NativeAlertPresentation? = null
+
+    /** 弹层不允许下滑/点外部关闭（如必须读完的版本说明）。 */
+    fun setInteractiveDismissDisabled(disabled: Boolean) {}
+}
+
+/** 一个 [AppleAlert] 的宿主呈现：iOS 上是 `UIAlertController`，按钮回调随重组更新。 */
+interface NativeAlertPresentation {
+    fun update(title: String, message: String?, actions: List<AppleAlertAction>)
+
+    fun present()
+
+    fun dismiss()
 }
 
 val LocalNativeSheetPresenter = compositionLocalOf<NativeSheetPresenter?> { null }

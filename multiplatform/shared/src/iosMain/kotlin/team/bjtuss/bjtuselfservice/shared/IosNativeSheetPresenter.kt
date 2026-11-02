@@ -19,12 +19,14 @@ import platform.UIKit.UIRectEdgeBottom
 import platform.UIKit.UIRectEdgeNone
 import platform.UIKit.addChildViewController
 import platform.UIKit.didMoveToParentViewController
+import platform.UIKit.modalInPresentation
 import platform.darwin.NSObject
 import platform.darwin.DISPATCH_TIME_NOW
 import platform.darwin.dispatch_after
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_time
 import platform.darwin.dispatch_get_main_queue
+import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeAlertPresentation
 import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeSheetPresenter
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalNativeSheetContentBoundsHandled
 
@@ -43,6 +45,16 @@ class IosNativeSheetPresenter(
     private val owner: () -> UIViewController,
 ) : NativeSheetPresenter {
     override fun createPresentation(): NativeSheetPresenter = IosNativeSheetPresenter(owner)
+
+    override fun createAlert(): NativeAlertPresentation = IosNativeAlertPresentation(owner)
+
+    private var interactiveDismissDisabled = false
+
+    override fun setInteractiveDismissDisabled(disabled: Boolean) {
+        if (interactiveDismissDisabled == disabled) return
+        interactiveDismissDisabled = disabled
+        sheetController?.modalInPresentation = disabled
+    }
 
     private var scrollableBody = false
 
@@ -164,6 +176,7 @@ class IosNativeSheetPresenter(
             dismissTarget = dismissTarget,
         ) ?: error("Unable to create native sheet controller")
         applyContentLayout(sheet)
+        sheet.modalInPresentation = interactiveDismissDisabled
         BJTUInstallNativeSheetMaterial(sheet)
         BJTUConfigureSheetPresentation(sheet, needsFullHeight)
         fittedContentHeight?.let { BJTUSetSheetFittedHeight(sheet, it.toDouble()) }

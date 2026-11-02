@@ -189,6 +189,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.grade.scoreForSorting
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeKind
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeDomain
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeChangeRecord
+import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetBodyScroll
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -304,7 +305,6 @@ internal fun GradeWorkspace(
                         AppleSheet(
                             onDismissRequest = model::dismissGradeDetails,
                             title = "成绩详情",
-                            scrollableBody = true,
                         ) {
                             val detailScrollState = rememberScrollState()
                             GradeDetailSheetBody(
@@ -312,8 +312,7 @@ internal fun GradeWorkspace(
                                 showTitle = false,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .verticalScroll(detailScrollState)
-                                    .desktopTouchScroll(detailScrollState)
+                                    .sheetBodyScroll(detailScrollState)
                                     .padding(horizontal = 24.dp)
                                     .padding(bottom = 28.dp),
                             )

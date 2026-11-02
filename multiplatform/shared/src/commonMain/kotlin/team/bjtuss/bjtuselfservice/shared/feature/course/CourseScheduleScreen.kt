@@ -113,6 +113,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetBodyScroll
 
 /** 详情/网格等完整日名。 */
 private val dayLabels = listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
@@ -368,7 +369,6 @@ fun CourseScheduleWorkspace(
                         AppleSheet(
                             onDismissRequest = model::dismissCourseDetails,
                             title = "课程详情",
-                            scrollableBody = true,
                         ) {
                             val detailScrollState = rememberScrollState()
                             CourseDetailContent(
@@ -376,8 +376,7 @@ fun CourseScheduleWorkspace(
                                 schoolDate = course.dateInWeek(state.selectedNonTeachingWeekStart ?: state.weekDate()?.startDate),
                                 staggeredClassTimes = staggered,
                                 modifier = Modifier.fillMaxWidth()
-                                    .verticalScroll(detailScrollState)
-                                    .desktopTouchScroll(detailScrollState)
+                                    .sheetBodyScroll(detailScrollState)
                                     .padding(horizontal = 24.dp, vertical = 8.dp)
                                     .padding(bottom = 20.dp),
                             )

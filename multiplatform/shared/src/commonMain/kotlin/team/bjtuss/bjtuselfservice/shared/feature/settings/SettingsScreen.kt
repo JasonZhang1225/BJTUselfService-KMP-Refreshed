@@ -66,6 +66,9 @@ import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlert
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertAction
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertRole
 
 @Composable
 internal fun AssignmentAggregationCard(
@@ -186,45 +189,49 @@ fun SettingsWorkspace(
     // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
 
     if (confirmClear) {
-        AppleSheetOrAlert(
-            onDismissRequest = { confirmClear = false },
+        AppleAlert(
             title = "清除当前账号离线缓存？",
-            confirmLabel = "清除缓存",
-            onConfirm = {
-                confirmClear = false
-                scope.launch { model.clearOfflineCache() }
-            },
-            dismissLabel = "取消",
-        ) {
-            Text("成绩、课表、考试和作业的离线副本会被删除；不会退出账号。之后可从学校系统重新下载。")
-        }
+            message = "成绩、课表、考试和作业的离线副本会被删除；不会退出账号。之后可从学校系统重新下载。",
+            actions = listOf(
+                AppleAlertAction("取消", AppleAlertRole.Cancel) { confirmClear = false },
+                AppleAlertAction("清除缓存", AppleAlertRole.Destructive) {
+                    confirmClear = false
+                    scope.launch { model.clearOfflineCache() }
+                },
+            ),
+            onDismissRequest = { confirmClear = false },
+        )
     }
 
     if (confirmWipe) {
-        AppleSheetOrAlert(
-            onDismissRequest = { confirmWipe = false },
+        AppleAlert(
             title = "清除全部本地数据？",
-            confirmLabel = "全部清除",
-            onConfirm = {
-                confirmWipe = false
-                scope.launch { model.clearAllLocalData() }
-            },
-            dismissLabel = "取消",
-        ) {
-            Text(
-                "所有账号的离线缓存、应用设置和系统安全存储中的登录信息都会被删除，" +
-                    "清理成功后将立即退出登录。适合卸载应用前彻底清理本机数据。"
-            )
-        }
+            message = "所有账号的离线缓存、应用设置和系统安全存储中的登录信息都会被删除，" +
+                "清理成功后将立即退出登录。适合卸载应用前彻底清理本机数据。",
+            actions = listOf(
+                AppleAlertAction("取消", AppleAlertRole.Cancel) { confirmWipe = false },
+                AppleAlertAction("全部清除", AppleAlertRole.Destructive) {
+                    confirmWipe = false
+                    scope.launch { model.clearAllLocalData() }
+                },
+            ),
+            onDismissRequest = { confirmWipe = false },
+        )
     }
 
-    if (confirmUninstall) AppleSheetOrAlert(
-        onDismissRequest = { confirmUninstall = false }, title = "卸载前清理？", confirmLabel = "清理并退出登录",
-        onConfirm = { confirmUninstall = false; scope.launch { model.prepareForUninstall() } }, dismissLabel = "取消",
-    ) {
-        Text("删除所有账号的离线数据、应用设置和登录信息，并移除本 App 安装的 AI 助手。成功后退出登录。" +
-            "App 正在运行时保留空数据库和加密密钥；退出 App 后可通过 agent uninstall-app --yes 删除剩余文件和密钥，并将 App 移到废纸篓。")
-    }
+    if (confirmUninstall) AppleAlert(
+        title = "卸载前清理？",
+        message = "删除所有账号的离线数据、应用设置和登录信息，并移除本 App 安装的 AI 助手。成功后退出登录。" +
+            "App 正在运行时保留空数据库和加密密钥；退出 App 后可通过 agent uninstall-app --yes 删除剩余文件和密钥，并将 App 移到废纸篓。",
+        actions = listOf(
+            AppleAlertAction("取消", AppleAlertRole.Cancel) { confirmUninstall = false },
+            AppleAlertAction("清理并退出登录", AppleAlertRole.Destructive) {
+                confirmUninstall = false
+                scope.launch { model.prepareForUninstall() }
+            },
+        ),
+        onDismissRequest = { confirmUninstall = false },
+    )
 
     // 检查结果弹窗提到 SettingsWorkspace 外层渲染：「前往下载」属于应用壳层导航动作，
     // 挂在页面里时用户不在设置页就永远看不到自动检测出的新版本提示。
@@ -418,7 +425,9 @@ fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit, onPost
                                 .then(if (currentPlatform().family == PlatformFamily.IOS) Modifier.weight(1f) else Modifier.heightIn(max = 560.dp))
                                 .verticalScroll(releaseNotesScrollState)
                                 .desktopTouchScroll(releaseNotesScrollState)
-                                .padding(horizontal = 20.dp, vertical = 16.dp),
+                                .padding(horizontal = 20.dp, vertical = 16.dp)
+                                // iOS 全高 sheet 的底部安全区放在滚动内容末尾，视口仍到底边。
+                                .padding(bottom = LocalBottomBarClearance.current),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Text(check.release.tagName, style = MaterialTheme.typography.titleMedium)
@@ -435,25 +444,21 @@ fun AppUpdateResultDialog(check: UpdateCheckState, onDismiss: () -> Unit, onPost
                         }
                 }
             } else {
-                AppleSheetOrAlert(
-                    onDismissRequest = onDismiss,
+                AppleAlert(
                     title = "已是最新版本",
-                    confirmLabel = "好",
-                    onConfirm = onDismiss,
-                ) {
-                    Text("当前 v${AppUpdateChecker.CURRENT_VERSION} 无需更新。${check.release.source.label} 当前可用版本为 ${check.release.tagName}。")
-                }
+                    message = "当前 v${AppUpdateChecker.CURRENT_VERSION} 无需更新。${check.release.source.label} 当前可用版本为 ${check.release.tagName}。",
+                    actions = listOf(AppleAlertAction("好", onClick = onDismiss)),
+                    onDismissRequest = onDismiss,
+                )
             }
         }
         UpdateCheckState.Failed -> {
-            AppleSheetOrAlert(
-                onDismissRequest = onDismiss,
+            AppleAlert(
                 title = "检查更新失败",
-                confirmLabel = "好",
-                onConfirm = onDismiss,
-            ) {
-                Text("无法获取所选更新源的完整发行版，请检查网络、稍后重试或切换更新源。")
-            }
+                message = "无法获取所选更新源的完整发行版，请检查网络、稍后重试或切换更新源。",
+                actions = listOf(AppleAlertAction("好", onClick = onDismiss)),
+                onDismissRequest = onDismiss,
+            )
         }
         UpdateCheckState.Idle, UpdateCheckState.Checking -> Unit
     }

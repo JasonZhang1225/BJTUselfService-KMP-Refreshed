@@ -53,6 +53,7 @@ import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePreviewResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
 /** 邮箱工作区向详情页提供的附件能力；独立预览/测试时为 null，附件只显示元数据。 */
 internal class MailAttachmentActions(
@@ -353,7 +354,9 @@ private fun ColumnScope.TextPreview(bytes: ByteArray) {
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .horizontalScroll(rememberScrollState())
-                .padding(16.dp),
+                .padding(16.dp)
+                // iOS 全高 sheet 的底部安全区放在滚动内容末尾，视口仍到底边。
+                .padding(bottom = LocalBottomBarClearance.current),
         )
     }
 }

@@ -139,6 +139,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.course.courseWeekScrollNavigat
 import team.bjtuss.bjtuselfservice.shared.domain.home.HOME_MAX_TEACHING_WEEK
 import team.bjtuss.bjtuselfservice.shared.domain.home.resolveHomeAgendaWeekStart
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
+import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetBodyScroll
 
 @Composable
 fun HomeWorkspace(
@@ -213,12 +214,12 @@ fun HomeWorkspace(
         )
     }
     selectedChangeCourse?.let { course ->
-        AppleSheet(onDismissRequest = { selectedChangeCourse = null }, title = "课程详情", scrollableBody = true) {
+        AppleSheet(onDismissRequest = { selectedChangeCourse = null }, title = "课程详情") {
             val detailScroll = rememberScrollState()
             CourseDetailContent(
                 course,
                 homeSchedule.staggeredClassTimes,
-                Modifier.fillMaxWidth().verticalScroll(detailScroll).desktopTouchScroll(detailScroll)
+                Modifier.fillMaxWidth().sheetBodyScroll(detailScroll)
                     .padding(horizontal = 24.dp, vertical = 8.dp).padding(bottom = 20.dp),
             )
         }
@@ -1547,12 +1548,12 @@ private fun AgendaDayDetails(
 
     }
     selectedCourse?.let { (course, schoolDate) ->
-        AppleSheet(onDismissRequest = { selectedCourse = null }, title = "课程详情", scrollableBody = true) {
+        AppleSheet(onDismissRequest = { selectedCourse = null }, title = "课程详情") {
             val detailScroll = rememberScrollState()
             CourseDetailContent(
                 course,
                 staggered,
-                Modifier.fillMaxWidth().verticalScroll(detailScroll).desktopTouchScroll(detailScroll)
+                Modifier.fillMaxWidth().sheetBodyScroll(detailScroll)
                     .padding(horizontal = 24.dp, vertical = 8.dp).padding(bottom = 20.dp),
                 schoolDate = schoolDate,
             )
@@ -1716,19 +1717,14 @@ internal fun ChangeRecordsSheet(
         confirmLabel = if (isIos) actionLabel else null,
         onConfirm = if (isIos) onAction else null,
         dismissLabel = if (isIos) null else "关闭",
-        needsFullHeight = false,
-        scrollableBody = true,
     ) {
         if (isIos) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    // 留白放在滚动区外：iOS 26 标题栏的玻璃按钮比栏底更低，
-                    // 内容滚上去时在按钮下方被裁掉，不再钻到按钮底下。
+                    // iOS 26 标题栏的玻璃按钮比栏底更低，正文顶部让开它。
                     .padding(top = IosChangeSheetHeaderClearance)
-                    .verticalScroll(changeScrollState)
-                    .desktopTouchScroll(changeScrollState)
+                    .sheetBodyScroll(changeScrollState)
                     .sheetScrollContentPadding(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {

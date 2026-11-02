@@ -2,12 +2,9 @@ package team.bjtuss.bjtuselfservice.shared.feature.shell
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -16,8 +13,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
+import team.bjtuss.bjtuselfservice.shared.PlatformFamily
+import team.bjtuss.bjtuselfservice.shared.currentPlatform
 
 private const val GUIDE_WAIT_SECONDS = 3
 
@@ -36,27 +34,27 @@ internal fun TimedGuideDialog(
             remaining -= 1
         }
     }
-    AlertDialog(
+    // 多段说明 + 倒计时确认，属于内容型弹层；读完前不能下滑或点外部关闭。
+    AppleSheetOrAlert(
         onDismissRequest = {},
-        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-        title = { Text(title) },
-        text = {
-            Column(
-                Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(body)
-                if (saveFailed) {
-                    Text("确认保存失败，请重试。", color = MaterialTheme.colorScheme.error)
-                }
+        title = title,
+        confirmLabel = if (remaining > 0) "确认（$remaining）" else "确认",
+        confirmEnabled = remaining == 0,
+        onConfirm = onConfirm,
+        showDismissButton = false,
+        fitContentHeight = true,
+        dismissible = false,
+    ) {
+        Column(
+            Modifier.padding(horizontal = if (currentPlatform().family == PlatformFamily.IOS) 20.dp else 0.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(body)
+            if (saveFailed) {
+                Text("确认保存失败，请重试。", color = MaterialTheme.colorScheme.error)
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm, enabled = remaining == 0) {
-                Text(if (remaining > 0) "确认（$remaining）" else "确认")
-            }
-        },
-    )
+        }
+    }
 }
 
 /**

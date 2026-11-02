@@ -150,6 +150,8 @@ import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.security.CredentialRestoreResult
 import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
 import team.bjtuss.bjtuselfservice.shared.webview.clearSchoolWebViewData
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlert
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertAction
 
 @Composable
 fun LoginRoute(
@@ -546,27 +548,17 @@ fun LoginRoute(
             silentAutoLogin = false
             state = LoginState.SignedOut
         }
-        AppleSheetOrAlert(
-            onDismissRequest = ::returnToLoginAfterAutomaticFailure,
+        AppleAlert(
             title = "自动登录失败",
-            confirmLabel = "返回登录页",
-            onConfirm = ::returnToLoginAfterAutomaticFailure,
-        ) {
-            if (failureAttempts > 0) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "自动登录未完成，可能需要验证码、检查账号密码或恢复网络。" +
-                            "为避免重复提交密码，已停止自动登录。请返回登录页处理。",
-                    )
-                    Text(
-                        "请确认账号密码及网络状态，再主动登录。",
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
+            message = if (failureAttempts > 0) {
+                "自动登录未完成，可能需要验证码、检查账号密码或恢复网络。" +
+                    "为避免重复提交密码，已停止自动登录。\n\n请确认账号密码及网络状态，再到登录页主动登录。"
             } else {
-                Text("自动登录时网络连接失败。请回到登录页检查网络后重新登录。")
-            }
-        }
+                "自动登录时网络连接失败。请回到登录页检查网络后重新登录。"
+            },
+            actions = listOf(AppleAlertAction("返回登录页", onClick = ::returnToLoginAfterAutomaticFailure)),
+            onDismissRequest = ::returnToLoginAfterAutomaticFailure,
+        )
     }
 
     val signedIn = state as? LoginState.SignedIn
@@ -622,14 +614,12 @@ fun LoginRoute(
             )
         }
         postLoginStorageFailure?.let { message ->
-            AppleSheetOrAlert(
-                onDismissRequest = { postLoginStorageFailure = null },
+            AppleAlert(
                 title = "登录信息未保存",
-                confirmLabel = "知道了",
-                onConfirm = { postLoginStorageFailure = null },
-            ) {
-                Text(message)
-            }
+                message = message,
+                actions = listOf(AppleAlertAction("知道了") { postLoginStorageFailure = null }),
+                onDismissRequest = { postLoginStorageFailure = null },
+            )
         }
         return
     }

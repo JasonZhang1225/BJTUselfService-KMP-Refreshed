@@ -72,6 +72,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetBodyScroll
 
 /**
  * “课程回放”独立入口：选课程 → 选课节 → 选画面（带预览）→ 播放；
@@ -215,15 +216,13 @@ fun PlaybackScreen(
                 onDismissRequest = model::clearSelection,
                 title = "课程回放",
                 needsFullHeight = true,
-                scrollableBody = true,
             ) {
                 val sheetScroll = rememberScrollState()
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(if (currentPlatform().family == PlatformFamily.IOS) Modifier.weight(1f) else Modifier.heightIn(max = 720.dp))
-                        .verticalScroll(sheetScroll)
-                        .desktopTouchScroll(sheetScroll)
+                        .then(if (currentPlatform().family == PlatformFamily.IOS) Modifier else Modifier.heightIn(max = 720.dp))
+                        .sheetBodyScroll(sheetScroll)
                         .padding(horizontal = 20.dp)
                         .padding(bottom = 28.dp),
                 ) {
