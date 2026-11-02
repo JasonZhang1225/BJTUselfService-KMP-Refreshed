@@ -150,6 +150,7 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 
 - iOS 上弹层是真正的 `UISheetPresentationController`：圆角外壳、grabber、detent、玻璃背景、下滑关闭全由系统提供。Compose 只提供正文；**禁止**在正文里再画标题行、关闭按钮、确认按钮或外层圆角卡片（“框里套框”）。
 - **标题与按钮放在弹层的原生导航栏里：** 标题居中；确认动作（`confirmLabel`）在左侧，用 Done 样式；“取消”或文字关闭在右侧最靠边；没有 `dismissLabel` 时右侧是系统圆形关闭按钮（X）；“今天”紧挨在“取消”左边。只有确实有事可做时才给确认按钮（例如同步面板有失败项才显示“重试”），不要在系统 X 旁边再放一个“关闭”。
+- **`showDismissButton = false` 会去掉标题栏右侧的全部关闭入口**，包括 `dismissLabel` 给的文字按钮（iOS 只有在它为 true 时才创建取消按钮）。只在确实不该有取消/关闭的弹层上用（如必须确认的启动版本说明）；要显示“取消”“返回检查”这类按钮时保持默认 true，提交中需要禁用就用 `dismissEnabled`，不要拿 `showDismissButton` 来控制。曾因同时传 `dismissLabel` 和 `showDismissButton = false`，物理在线最终提交的“返回检查”在 iOS 上消失。
 - **高度：iOS 一律按正文测高**，不直接开成半屏或全屏。`AppleSheet` 在 iOS 上默认量出正文高度作为 detent，内容超过屏幕时停在系统允许的最大高度并在 sheet 内滚动。
   - 正文需要滚动时用 `Modifier.sheetBodyScroll(state)`，**禁止**直接写 `verticalScroll`：测高时 sheet 统一负责滚动，正文再套一层会在测量时崩溃；Android/桌面上它照常滚动。
   - 正文里不要用纵向 `weight(1f)`、`fillMaxHeight()` 去“撑满”sheet，测高时它们没有意义。
@@ -263,6 +264,7 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 | 业务页直接用 `ModalBottomSheet` / `AlertDialog` | iOS 上背景与文字分层错位、全高顶状态栏、无法下滑关闭 |
 | 确认、警告、结果提示用 sheet；或把勾选、输入、列表塞进警告框 | 确认框能被下滑“取消”、不符合系统习惯；警告框里放内容则排版失控 |
 | sheet 正文里画标题、关闭按钮、外层圆角卡片 | 与系统 sheet 外壳重复，变成框中框 |
+| 同时传 `dismissLabel` 和 `showDismissButton = false` | iOS 不创建取消按钮，声明的“取消/返回”不显示，只能下滑关闭；禁用请用 `dismissEnabled` |
 | sheet 正文直接写 `verticalScroll`（应改用 `sheetBodyScroll`） | iOS 测高时嵌套滚动崩溃，或高度测量错误、sheet 越长越高 |
 | iOS sheet 直接开成半屏/全屏（正文不是懒加载列表却传 `scrollableBody = true`） | 内容少时下面一大片空，内容多时半屏截断 |
 | 滚动视口在底部安全区/底栏上方截止（视口外加底部 padding、`heightIn(max)` 限高） | 滑动时内容在离底边一条处被硬切掉，下面空一条 |
