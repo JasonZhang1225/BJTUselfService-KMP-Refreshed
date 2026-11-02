@@ -61,7 +61,8 @@
 - P1-2：成绩页 `courseTypeColors()` 转调 `courseCategoryColors()`，限选统一为玫红。
 - 文档：`DESIGN.md` 第 5 节（警告框与 sheet 选型、测高、底部不截断）、第 3 节页面底部规则、禁止清单与自查清单；`AGENTS.md` Compose UI 要点同步（用户已确认）。
 - 验证：`./gradlew :shared:desktopTest :shared:compileKotlinIosSimulatorArm64 :shared:compileKotlinIosArm64 :androidApp:compileDebugKotlin :desktopApp:compileKotlin :windowsApp:compileKotlinWindows --continue` 成功，共享测试 1353 项 0 失败 1 跳过；签名模拟器构建成功，iPhone 17 Pro / iOS 27 实看：清缓存警告框（深色、红色破坏性按钮、可重复打开）、已是最新版本（浅色）、课程详情按内容定高、作业变动长列表封顶后滑到底无截断、短变动按内容定高。截图在本地 `.artifacts/apple-alert/`。
-- 未验证：其余警告框与 sheet 未逐个在模拟器打开；Android/桌面回退未实机看；成绩页限选色未目视；PR CI 与手动 KMP 打包结果待看。
+- Codex review（PR #92）：物理在线最终提交核对 sheet 同时传了 `dismissLabel` 与 `showDismissButton = false`，iOS 不创建“返回检查”。已改回默认 true、提交中用 `dismissEnabled` 禁用（`581cf02a`），并写入 `DESIGN.md` 5.3 与禁止清单；其他调用点无同类写法。仅编译验证，未在模拟器打开该弹层。
+- 未验证：其余警告框与 sheet 未逐个在模拟器打开；Android/桌面回退未实机看；成绩页限选色未目视。首次手动 KMP 打包（run 41424371851，`ec7fa81b`）成功但不含上述修复。
 
 > 2026-10-31：当前工作树 `/workspace/changelog-app`，分支 `feat/changelog-app`，基于最新 main `d3e84f78`；更新日志应用与发布说明整理已推送 PR #86（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/86），未合入，不改版本号、不发版。
 
