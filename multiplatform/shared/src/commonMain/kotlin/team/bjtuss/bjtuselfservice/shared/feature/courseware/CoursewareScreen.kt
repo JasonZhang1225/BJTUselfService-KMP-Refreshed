@@ -67,6 +67,10 @@ import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleMenuPickerCard
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleMenuOption
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LegacySmartTransportWarning
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
@@ -90,7 +94,6 @@ fun CoursewareWorkspace(
     modifier: Modifier,
 ) {
     val scope = rememberCoroutineScope()
-    var showCoursePicker by remember { mutableStateOf(false) }
     var fileFeedback by remember { mutableStateOf<String?>(null) }
     var directoryJob by remember { mutableStateOf<Job?>(null) }
     var isCancellingDirectory by remember { mutableStateOf(false) }
@@ -218,17 +221,10 @@ fun CoursewareWorkspace(
         )
     }
 
-    Box(
-        modifier = if (expanded) {
-            modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-        } else {
-            modifier.padding(horizontal = 16.dp).padding(top = 8.dp)
-        },
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+    val hasBanners = legacyWarningVisible || state.directoryDownloadTotal > 0 ||
+        state.streamProgress != null || state.directoryCurrentName != null || directoryJob != null ||
+        state.failure != null || state.fileFailure != null || fileFeedback != null
+    val banners: @Composable () -> Unit = {
         // 同步态在 DestinationPage 顶栏；此处不再放页内「同步课件」。
 
         // 明文通道提示：仅在 shell/session 判定「本登录态尚未关闭」时显示一条可关闭横幅。
@@ -335,66 +331,43 @@ fun CoursewareWorkspace(
             }
         }
 
-        when {
-            state.isLoading && state.courses.isEmpty() -> CoursewareLoadingState()
-            state.courses.isEmpty() -> CoursewareEmptyState(onRefresh)
-            expanded -> CoursewareExpandedWorkspace(
-                state = state,
-                model = model,
-                fileGatewayAvailable = fileGateway.isAvailable,
-                directoryGatewayAvailable = directoryGateway.isDirectoryExportAvailable,
-                onDownload = ::saveResource,
-                onExportDirectory = ::saveDirectory,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-            )
-            else -> CoursewareCompactWorkspace(
-                state = state,
-                model = model,
-                fileGatewayAvailable = fileGateway.isAvailable,
-                directoryGatewayAvailable = directoryGateway.isDirectoryExportAvailable,
-                onChooseCourse = { showCoursePicker = true },
-                onDownload = ::saveResource,
-                onExportDirectory = ::saveDirectory,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-            )
-        }
-        }
-        if (state.isSelectedCourseLoading && !state.isRefreshing) {
-            LinearProgressIndicator(
-                modifier = Modifier.align(Alignment.TopStart).fillMaxWidth(),
-            )
-        }
     }
 
-    // 打开选课列表时补拉「数量未同步」的课程顶层目录。
-    LaunchedEffect(showCoursePicker, state.courses.map { it.id to it.childrenLoaded }) {
-        if (showCoursePicker && state.courses.any { !it.childrenLoaded }) {
-            model.ensureCourseRootsLoaded()
+    if (expanded) {
+        Box(modifier.padding(top = LocalTopBarClearance.current).padding(horizontal = 8.dp, vertical = 4.dp)) {
+            Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                banners()
+                when {
+                    state.isLoading && state.courses.isEmpty() -> CoursewareLoadingState()
+                    state.courses.isEmpty() -> CoursewareEmptyState(onRefresh)
+                    else -> CoursewareExpandedWorkspace(
+                        state = state,
+                        model = model,
+                        fileGatewayAvailable = fileGateway.isAvailable,
+                        directoryGatewayAvailable = directoryGateway.isDirectoryExportAvailable,
+                        onDownload = ::saveResource,
+                        onExportDirectory = ::saveDirectory,
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                    )
+                }
+            }
+            if (state.isSelectedCourseLoading && !state.isRefreshing) {
+                LinearProgressIndicator(modifier = Modifier.align(Alignment.TopStart).fillMaxWidth())
+            }
         }
-    }
-
-    if (showCoursePicker) {
-        // 课程列表可以很长，半屏放不下：needsFullHeight 让 iOS 卡片直接开到全屏。
-        AppleSheet(
-            onDismissRequest = { showCoursePicker = false },
-            title = "选择课程",
-            needsFullHeight = true,
-            scrollableBody = true,
-        ) {
-            CoursewareCoursePickerList(
-                courses = state.courses,
-                selectedCourseId = state.selectedCourseId,
-                loadingCourseIds = state.loadingCourseIds,
-                onSelect = { course ->
-                    scope.launch { model.selectCourse(course.id) }
-                    showCoursePicker = false
-                },
-                modifier = Modifier.fillMaxWidth().then(
-                    if (team.bjtuss.bjtuselfservice.shared.currentPlatform().family == team.bjtuss.bjtuselfservice.shared.PlatformFamily.IOS)
-                        Modifier.weight(1f) else Modifier.heightIn(max = 560.dp),
-                ),
-            )
-        }
+    } else {
+        // 与更新日志同一层级：选择卡片、目录标题和课件都在同一个滚动列表里，内容穿到玻璃顶栏后。
+        CoursewareCompactWorkspace(
+            state = state,
+            model = model,
+            fileGatewayAvailable = fileGateway.isAvailable,
+            directoryGatewayAvailable = directoryGateway.isDirectoryExportAvailable,
+            banners = banners.takeIf { hasBanners },
+            onRefresh = onRefresh,
+            onDownload = ::saveResource,
+            onExportDirectory = ::saveDirectory,
+            modifier = modifier,
+        )
     }
 }
 
@@ -552,124 +525,136 @@ private fun CoursewareCompactWorkspace(
     model: CoursewareScreenModel,
     fileGatewayAvailable: Boolean,
     directoryGatewayAvailable: Boolean,
-    onChooseCourse: () -> Unit,
+    banners: (@Composable () -> Unit)?,
+    onRefresh: () -> Unit,
     onDownload: (CoursewareNode) -> Unit,
     onExportDirectory: (String?, String) -> Unit,
     modifier: Modifier,
 ) {
     val scope = rememberCoroutineScope()
     val compactListState = rememberLazyListState()
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        // 左：引导文案；右：选课胶囊（「点击此处选择课程」）。
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "浏览课件",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    if (state.courses.isEmpty()) {
-                        "同步后选择一门课程"
-                    } else {
-                        "共 ${state.courses.size} 门课，点右侧切换"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+    TopScrollLazyColumn(
+        state = compactListState,
+        modifier = modifier.desktopTouchScroll(compactListState),
+        contentPadding = PaddingValues(
+            start = 16.dp, end = 16.dp,
+            top = 16.dp + LocalTopBarClearance.current,
+            bottom = 18.dp + LocalBottomBarClearance.current,
+        ),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        banners?.let { content ->
+            item(key = "banners") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
             }
-            FilledTonalButton(
-                onClick = onChooseCourse,
-                modifier = Modifier.weight(1f),
+        }
+        if (state.courses.isEmpty()) {
+            item(key = "state") {
+                Box(Modifier.fillMaxWidth().fillParentMaxHeight(0.7f)) {
+                    if (state.isLoading) CoursewareLoadingState() else CoursewareEmptyState(onRefresh)
+                }
+            }
+            return@TopScrollLazyColumn
+        }
+        item(key = "picker") {
+            AppleMenuPickerCard(
+                label = "课程 · 共 ${state.courses.size} 门",
+                value = state.selectedCourse?.name ?: "未选择课程",
+                options = state.courses.map { course ->
+                    AppleMenuOption(
+                        key = course.id.toString(),
+                        title = course.name,
+                        subtitle = when {
+                            course.id in state.loadingCourseIds -> "正在加载…"
+                            !course.childrenLoaded -> null
+                            else -> "${course.children.size} 个顶层项目"
+                        },
+                    )
+                },
+                selectedKey = state.selectedCourseId?.toString(),
+                onSelect = { key -> key.toIntOrNull()?.let { id -> scope.launch { model.selectCourse(id) } } },
+                accessibilityName = "课程",
+                // 打开菜单时补拉“数量未同步”的课程顶层目录。
+                onOpen = {
+                    if (state.courses.any { !it.childrenLoaded }) scope.launch { model.ensureCourseRootsLoaded() }
+                },
+            )
+        }
+        if (state.isSelectedCourseLoading && !state.isRefreshing) {
+            item(key = "loading") { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+        }
+        // 当前目录 + 导出 + 数量；进入文件夹后左侧出现“返回”。
+        item(key = "folder-header") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (state.compactFolderPath.isNotEmpty()) {
+                    TextButton(onClick = { model.navigateCompactBack() }) { Text("返回") }
+                }
                 Text(
-                    "点击此处选择课程",
+                    if (state.compactFolderPath.isEmpty()) "全部课件" else state.compactPathNames.joinToString(" / "),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-            }
-        }
-        // 当前课程标题 + 导出本课程全部课件 + 数量。
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (state.compactFolderPath.isNotEmpty()) {
-                TextButton(onClick = { model.navigateCompactBack() }) { Text("返回") }
-            }
-            Text(
-                compactPathTitle(state).ifBlank { "未选择课程" },
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (state.compactFolderPath.isEmpty()) {
-                OutlinedButton(
-                    onClick = { state.selectedCourse?.let { onExportDirectory(null, it.name) } },
-                    enabled = directoryGatewayAvailable && !state.isDownloading &&
-                        state.selectedCourse?.childrenLoaded == true &&
-                        state.selectedCourse?.children?.isNotEmpty() == true,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                ) {
-                    Text(
-                        "导出本课程全部课件",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
+                if (state.compactFolderPath.isEmpty()) {
+                    OutlinedButton(
+                        onClick = { state.selectedCourse?.let { onExportDirectory(null, it.name) } },
+                        enabled = directoryGatewayAvailable && !state.isDownloading &&
+                            state.selectedCourse?.childrenLoaded == true &&
+                            state.selectedCourse?.children?.isNotEmpty() == true,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        Text(
+                            "导出本课程全部课件",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                } else {
+                    state.compactFolderPath.lastOrNull()?.let { folderKey ->
+                        TextButton(
+                            onClick = {
+                                onExportDirectory(
+                                    folderKey,
+                                    state.compactPathNames.lastOrNull().orEmpty().ifBlank { "课件" },
+                                )
+                            },
+                            enabled = directoryGatewayAvailable && !state.isDownloading,
+                        ) { Text("导出") }
+                    }
                 }
-            } else {
-                state.compactFolderPath.lastOrNull()?.let { folderKey ->
-                    TextButton(
-                        onClick = {
-                            onExportDirectory(
-                                folderKey,
-                                state.compactPathNames.lastOrNull().orEmpty().ifBlank { "课件" },
-                            )
-                        },
-                        enabled = directoryGatewayAvailable && !state.isDownloading,
-                    ) { Text("导出") }
-                }
-            }
-            Text(
-                "${state.compactNodes.size} 项",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (state.compactNodes.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    when {
-                        state.isSelectedCourseLoading -> "正在加载这门课程的课件…"
-                        state.selectedCourse?.childrenLoaded == false -> "正在准备课程目录…"
-                        else -> "当前文件夹暂无课件"
-                    },
+                    "${state.compactNodes.size} 项",
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        } else {
-            LazyColumn(
-                state = compactListState,
-                modifier = Modifier.weight(1f).fillMaxWidth().desktopTouchScroll(compactListState),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(bottom = 18.dp + LocalBottomBarClearance.current),
-            ) {
-                items(state.compactNodes, key = CoursewareNode::stableKey) { node ->
-                    CoursewareCompactNodeRow(
-                        node = node,
-                        loading = node.stableKey in state.loadingFolderKeys,
-                        onClick = { scope.launch { model.openCompactNode(node.stableKey) } },
+        }
+        if (state.compactNodes.isEmpty()) {
+            item(key = "empty") {
+                Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                    Text(
+                        when {
+                            state.isSelectedCourseLoading -> "正在加载这门课程的课件…"
+                            state.selectedCourse?.childrenLoaded == false -> "正在准备课程目录…"
+                            else -> "当前文件夹暂无课件"
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+        } else {
+            items(state.compactNodes, key = CoursewareNode::stableKey) { node ->
+                CoursewareCompactNodeRow(
+                    node = node,
+                    loading = node.stableKey in state.loadingFolderKeys,
+                    onClick = { scope.launch { model.openCompactNode(node.stableKey) } },
+                )
             }
         }
     }
@@ -1057,11 +1042,6 @@ private fun CoursewareEmptyState(onRefresh: () -> Unit) = WorkspaceEmptyState(
     description = "本地没有缓存，智慧教学平台也没有返回可显示的课程资源。",
     onRefresh = onRefresh,
 )
-
-private fun compactPathTitle(state: CoursewareUiState): String = buildString {
-    append(state.selectedCourse?.name.orEmpty())
-    state.compactPathNames.forEach { name -> append(" / ").append(name) }
-}
 
 /** 只统计已加载的子树；未展开的子文件夹在导出前才会加载。 */
 private fun CoursewareNode.restrictedResourceCount(): Int =

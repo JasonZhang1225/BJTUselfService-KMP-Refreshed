@@ -75,7 +75,7 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 
 | 情况 | 用法 | 现有例子 |
 | --- | --- | --- |
-| 固定头挡在列表上方，内容永远到不了栏后 | `staticTopBar = true`（栏保持顶部样子，不做透明→玻璃过渡） | 课表、课件、教室详情、占用详情 |
+| 固定头挡在列表上方，内容永远到不了栏后 | `staticTopBar = true`（栏保持顶部样子，不做透明→玻璃过渡） | 课表、教室详情、占用详情 |
 | 不可纵向滚动的全览表格 | `keepsTopBarInset = true`（整块停在栏下 + 8.dp 呼吸） | 课程表色块概览 |
 | 需要把标题栏压矮 | `denseTopBar = true` | 教室查询详情 |
 
@@ -178,6 +178,7 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 | 内容区次操作 | `FilledTonalButton` 或 `OutlinedButton` | 同上 |
 | 低强调、内联链接式操作 | `TextButton` | 同上 |
 | 筛选、类别、多选标签 | `FilterChip`；类别色只来自 `CourseCategoryPalette` | 胶囊 |
+| 从一组选项里切换当前项（版本、课程、邮箱文件夹） | **下拉选单** `AppleMenuPickerCard`，见 6.1 | 卡片 16.dp |
 | 二到三选一 | 分段控件（参考设置页更新源“Gitee｜自动选择｜GitHub”滑块、成绩单中/英分段） | 胶囊 |
 | 开关型设置 | `Switch` | — |
 | 选中项需要持续操作（批量续借、批量导出） | **浮动胶囊操作条**：浮在列表上方，内容在它后面继续滚动 | `RoundedCornerShape(percent = 50)` |
@@ -189,6 +190,16 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 - 点击区域不小于 44pt / 48.dp。视觉上 32.dp 的圆形按钮，周围要留出足够的可点区域。
 - 按下立即有反馈（Material ripple / 系统高亮），不要等请求返回才变化。耗时动作在按钮内显示进行中（转圈 + “正在续借…”）并禁用重复点击。
 - 破坏性、不可撤销的动作（删除、清除离线数据）先用 `AppleAlert` 确认（`Destructive` + `Cancel`），按钮文字写明后果；需要核对内容的（如最终提交作业）用 sheet 列出内容并以勾选控制 `confirmEnabled`。可撤销的动作（标记完成、忽略）不弹确认，给撤销条（参考 `AssignmentIgnoreUndoBar`）。
+
+### 6.1 下拉选单
+
+页面内“当前是哪一个、点一下换一个”的选择（更新日志选版本、课件下载与课程回放选课程、邮箱选文件夹）**必须**用 `AppleMenuPickerCard`（`feature/shell/AppleMenuPicker.kt`），不要再做“点按钮 → 弹 sheet 列表”。
+
+- **外观**：一张整块可点的卡片（`primaryContainer` 55% 底色、1.dp 主色描边、16.dp 圆角、最小高 64.dp）：上行小标签（“课程 · 共 15 门”），下行当前值（`titleLarge` 加粗，最多两行），右侧“切换”加下拉箭头。卡片是页面主滚动列表的**首项**（在横幅之后），随内容滚动、穿到玻璃顶栏后，不钉在列表上方。
+- **iOS**：点按弹出系统 `UIMenu`——透明 `UIButton`（`showsMenuAsPrimaryAction`）叠在卡片上，触摸直接交给 UIKit。菜单是系统液态玻璃，从卡片处展开；当前项左侧打勾（`UIMenuOptionsSingleSelection`）；选项多时菜单内上下滑动；副标题（如“8 个顶层项目”）显示在选项下方。效果与 Safari 网页 `<select>` 一致。**禁止**用 Compose 自绘菜单或 sheet 仿造。原生菜单读屏够不到，卡片为每个选项提供无障碍自定义操作。
+- **Android / 桌面**：Material `DropdownMenu`，锚在卡片下方，当前项加粗并用主色；读屏双击卡片打开。
+- **默认值**：进入页面时已经选中一项（课程类默认第一门），下面直接显示该项内容；不要出现“先选择一门课程”的空页。
+- **何时不用**：二到三选一用分段控件；选项需要搜索、多选或带大段说明时用 sheet；宽屏有侧栏列表的布局（课件、回放、邮箱三栏）保持侧栏。
 
 ---
 
@@ -268,6 +279,7 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 | sheet 正文直接写 `verticalScroll`（应改用 `sheetBodyScroll`） | iOS 测高时嵌套滚动崩溃，或高度测量错误、sheet 越长越高 |
 | iOS sheet 直接开成半屏/全屏（正文不是懒加载列表却传 `scrollableBody = true`） | 内容少时下面一大片空，内容多时半屏截断 |
 | 滚动视口在底部安全区/底栏上方截止（视口外加底部 padding、`heightIn(max)` 限高） | 滑动时内容在离底边一条处被硬切掉，下面空一条 |
+| 切换当前项（版本、课程）时弹 sheet 列表，或在 iOS 用 Compose 自绘下拉菜单 | 多一层弹层、要多点一次才能关；不是系统菜单，没有玻璃、打勾和菜单内滚动；改用 `AppleMenuPickerCard`（6.1） |
 | 铺满底部的实心操作栏 | 底部安全区出现黑/白带；改用浮动胶囊 |
 | 固定在列表上方的页头 | 内容进不了栏后；横屏视口被挤窄 |
 | 页面里自己画大标题或返回箭头（原生栏已接管时） | 标题和返回重复出现 |
@@ -283,6 +295,7 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 - [ ] 新页面：`nativeRouteTitle` 有标题；`DestinationPage(scrollUnderTopBar = true)`；主滚动容器是 `TopScrollLazyColumn` / `TopScrollColumn`；顶/底留白来自 `LocalTopBarClearance` / `LocalBottomBarClearance` 并加在 `contentPadding` 上。
 - [ ] 顶栏只用声明式动作；新增页面动作已在 `ContentView.swift` 的 `symbolName(for:kind:)` 配好 SF Symbol 和左右位置。
 - [ ] 弹层按 5.1 选对类型：一句话确认/警告/结果用 `AppleAlert`，有内容的用 `AppleSheet` / `AppleSheetOrAlert`；iOS sheet 按正文测高（正文滚动用 `sheetBodyScroll`），只有懒加载列表/整页工作区才 `scrollableBody = true`。
+- [ ] 切换当前项用 `AppleMenuPickerCard`（6.1）：卡片是列表首项，iOS 点开是系统 `UIMenu`，进入页面已有默认选中项。
 - [ ] 页面和 sheet 的滚动视口都到底边，底部安全区/底栏净空只作为滚动内容末尾留白；在 iOS 上滑到底确认没有被截成一条的空带。
 - [ ] 没有新增硬编码颜色、图标库、下拉刷新、实心底栏、Compose 仿玻璃。
 - [ ] iOS 模拟器实际打开过页面：顶部时栏透明；内容上滑后出现玻璃；内容不满一屏上拉回弹时也有玻璃；栏内按钮是系统圆形玻璃。
@@ -303,6 +316,7 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 | 顶/底净空 | `.../feature/shell/TopBarClearance.kt`、`BottomBarClearance.kt` |
 | Compose 回退顶栏与圆形按钮 | `.../feature/shell/CompactAppTopBar.kt` |
 | 弹层 | `.../feature/shell/AppleSheet.kt`、`shared/src/iosMain/cinterop/UIKitSheetBridge.h` |
+| 下拉选单 | `.../feature/shell/AppleMenuPicker.kt`（iOS：`shared/src/iosMain/.../feature/shell/AppleMenuPicker.ios.kt`） |
 | 警告框 | `.../feature/shell/AppleAlert.kt`、`shared/src/iosMain/.../IosNativeAlertPresentation.kt` |
 | 页内搜索 | `.../feature/shell/PageSearch.kt` |
 | iOS 宿主：栏内按钮、SF Symbol 映射、顶栏玻璃、原生滚动 | `multiplatform/iosApp/iosApp/ContentView.swift` |
