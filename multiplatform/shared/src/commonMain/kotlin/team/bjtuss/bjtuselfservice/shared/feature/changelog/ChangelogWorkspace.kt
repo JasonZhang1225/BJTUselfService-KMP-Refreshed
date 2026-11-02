@@ -1,7 +1,5 @@
 package team.bjtuss.bjtuselfservice.shared.feature.changelog
 
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,7 +8,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,15 +19,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -38,6 +28,8 @@ import team.bjtuss.bjtuselfservice.shared.update.BundledChangelog
 import team.bjtuss.bjtuselfservice.shared.update.ChangelogItem
 import team.bjtuss.bjtuselfservice.shared.update.ChangelogRelease
 import team.bjtuss.bjtuselfservice.shared.update.ChangelogSection
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleMenuOption
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleMenuPickerCard
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
@@ -63,75 +55,19 @@ internal fun ChangelogWorkspace(modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item(key = "picker") {
-                ChangelogVersionPicker(release, BundledChangelog.entries) { selectedTag = it }
+                AppleMenuPickerCard(
+                    label = "版本 · 共 ${BundledChangelog.entries.size} 个",
+                    value = release.label,
+                    options = BundledChangelog.entries.map { AppleMenuOption(it.tag, it.label) },
+                    selectedKey = release.tag,
+                    onSelect = { selectedTag = it },
+                    accessibilityName = "版本",
+                )
             }
             release.sections.forEach { section ->
                 item(key = section.title) { ChangelogSectionCard(section) }
             }
         }
-    }
-}
-
-/** 版本选择：整块可点的卡片，右侧“切换”和下拉箭头表明这里能选。 */
-@Composable
-private fun ChangelogVersionPicker(release: ChangelogRelease, entries: List<ChangelogRelease>, onSelect: (String) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    val colors = MaterialTheme.colorScheme
-    Box {
-        Surface(
-            onClick = { expanded = true },
-            shape = RoundedCornerShape(16.dp),
-            color = colors.primaryContainer.copy(alpha = 0.55f),
-            border = BorderStroke(1.dp, colors.primary.copy(alpha = 0.35f)),
-            // 子文字合成一句朗读；清除子语义后要补回点击动作，读屏和键盘才能打开菜单。
-            modifier = Modifier.fillMaxWidth().clearAndSetSemantics {
-                role = Role.Button
-                contentDescription = "当前版本 ${release.label}，点按切换版本"
-                onClick(label = "切换版本") {
-                    expanded = true
-                    true
-                }
-            },
-        ) {
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("版本 · 共 ${entries.size} 个", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
-                    Text(release.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = colors.onSurface)
-                }
-                Text("切换", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = colors.primary)
-                Spacer(Modifier.width(6.dp))
-                ChevronDown(colors.primary)
-            }
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            entries.forEach { entry ->
-                val current = entry.tag == release.tag
-                DropdownMenuItem(
-                    text = {
-                        Text(entry.label, fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (current) colors.primary else colors.onSurface)
-                    },
-                    onClick = {
-                        onSelect(entry.tag)
-                        expanded = false
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChevronDown(tint: Color) {
-    Canvas(Modifier.size(14.dp)) {
-        val stroke = 2.dp.toPx()
-        val y0 = size.height * 0.35f
-        val y1 = size.height * 0.68f
-        drawLine(tint, Offset(size.width * 0.15f, y0), Offset(size.width / 2, y1), stroke, StrokeCap.Round)
-        drawLine(tint, Offset(size.width / 2, y1), Offset(size.width * 0.85f, y0), stroke, StrokeCap.Round)
     }
 }
 

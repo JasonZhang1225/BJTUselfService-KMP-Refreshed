@@ -70,6 +70,11 @@ import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceLoadingState
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleMenuPickerCard
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleMenuOption
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetBodyScroll
@@ -89,27 +94,45 @@ fun PlaybackScreen(
     modifier: Modifier,
     onOpenDetail: (() -> Unit)? = null,
 ) {
-    val scope = rememberCoroutineScope()
     val state by model.state.collectAsState()
-    var showCoursePicker by remember { mutableStateOf(false) }
     var showTasks by remember { mutableStateOf(false) }
     val tasks by model.taskManager.tasks.collectAsState()
     val courses = coursewareState.courses
     val course = courses.firstOrNull { it.id == state.courseId }
     LaunchedEffect(coursewareModel) { coursewareModel.initialize() }
-    val selectCourse: (CoursewareCourse) -> Unit = { picked -> scope.launch { model.showCourse(picked) } }
-    val onRetry: () -> Unit = { scope.launch { model.showCourse(course, force = true) } }
+    val selectCourse: (CoursewareCourse) -> Unit = { picked -> model.selectCourse(picked) }
+    val onRetry: () -> Unit = { model.selectCourse(course, force = true) }
+    // 与课件下载一致：没有选过或原课程已不在列表里时，默认选第一门课。
+    // 课节请求交给模型作用域：courseId 变化重启本 effect、或离开页面，都不会把请求取消在半路。
+    LaunchedEffect(courses.map { it.id }, state.courseId) {
+        if (courses.isNotEmpty() && courses.none { it.id == state.courseId }) model.selectCourse(courses.first())
+    }
+    // 移动端关闭新下载后，升级遗留任务仍可能在 TaskManager 里；必须保留任务页以便取消/移除。
+    val tasksVisible = playbackRecordingTasksUiVisible(playbackRecordingDownloadAvailable, tasks)
 
-    Column(
+    if (!expanded && !(tasksVisible && showTasks)) {
+        PlaybackCompactList(
+            coursewareState = coursewareState,
+            state = state,
+            course = course,
+            tasks = tasks.takeIf { tasksVisible },
+            onShowTasks = { showTasks = true },
+            onDismissDownloadMessage = model::dismissDownloadMessage,
+            onSelectCourse = selectCourse,
+            onRetry = onRetry,
+            onRefresh = onRefresh,
+            onSelectLesson = { lesson -> course?.let { model.selectLesson(it, lesson.stableKey); onOpenDetail?.invoke() } },
+            modifier = modifier,
+        )
+    } else Column(
         modifier = if (expanded) {
-            modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            modifier.padding(top = LocalTopBarClearance.current).padding(horizontal = 8.dp, vertical = 4.dp)
         } else {
-            modifier.padding(horizontal = 16.dp).padding(top = 8.dp)
+            modifier.padding(top = LocalTopBarClearance.current).padding(horizontal = 16.dp).padding(top = 8.dp)
         },
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        // 移动端关闭新下载后，升级遗留任务仍可能在 TaskManager 里；必须保留任务页以便取消/移除。
-        if (playbackRecordingTasksUiVisible(playbackRecordingDownloadAvailable, tasks)) {
+        if (tasksVisible) {
             PlaybackModeTabs(showTasks = showTasks, activeCount = tasks.count { it.isActive }, onShowTasks = { showTasks = it })
             state.downloadMessage?.let { message ->
                 AppErrorBanner(message = message, onDismiss = model::dismissDownloadMessage)
@@ -172,41 +195,8 @@ fun PlaybackScreen(
                     }
                 }
             }
-            else -> Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            course?.name ?: "未选择课程",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            when {
-                                state.lessonsLoading -> "正在读取课节…"
-                                course == null -> "先选择一门课程"
-                                else -> "${state.lessons.size} 节课"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    FilledTonalButton(onClick = { showCoursePicker = true }, modifier = Modifier.weight(1f)) {
-                        Text("点击此处选择课程", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                PlaybackLessonList(
-                    state = state,
-                    onRetry = onRetry,
-                    onSelect = { lesson -> course?.let { model.selectLesson(it, lesson.stableKey); onOpenDetail?.invoke() } },
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
-            }
+            // 紧凑布局只在任务页走到这里（上面已 return），课程列表见 PlaybackCompactList。
+            else -> Unit
         }
     }
 
@@ -232,24 +222,105 @@ fun PlaybackScreen(
                 }
             }
         }
-        if (showCoursePicker) {
-            AppleSheet(
-                onDismissRequest = { showCoursePicker = false },
-                title = "选择课程",
-                needsFullHeight = true,
-                scrollableBody = true,
-            ) {
-                PlaybackCourseList(
-                    courses = courses,
-                    selectedCourseId = state.courseId,
-                    onSelect = { picked ->
-                        selectCourse(picked)
-                        showCoursePicker = false
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).then(
-                        if (currentPlatform().family == PlatformFamily.IOS) Modifier.weight(1f) else Modifier.heightIn(max = 560.dp),
-                    ),
-                )
+    }
+}
+
+/** 紧凑端课程回放：与课件下载同一层级，选择卡片和课节都在同一个滚动列表里，内容穿到玻璃顶栏后。 */
+@Composable
+private fun PlaybackCompactList(
+    coursewareState: CoursewareUiState,
+    state: PlaybackUiState,
+    course: CoursewareCourse?,
+    tasks: List<PlaybackTask>?,
+    onShowTasks: () -> Unit,
+    onDismissDownloadMessage: () -> Unit,
+    onSelectCourse: (CoursewareCourse) -> Unit,
+    onRetry: () -> Unit,
+    onRefresh: () -> Unit,
+    onSelectLesson: (PlaybackLesson) -> Unit,
+    modifier: Modifier,
+) {
+    val courses = coursewareState.courses
+    val listState = rememberLazyListState()
+    TopScrollLazyColumn(
+        state = listState,
+        modifier = modifier.desktopTouchScroll(listState),
+        contentPadding = PaddingValues(
+            start = 16.dp, end = 16.dp,
+            top = 16.dp + LocalTopBarClearance.current,
+            bottom = 18.dp + LocalBottomBarClearance.current,
+        ),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (tasks != null) {
+            item(key = "tasks") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PlaybackModeTabs(showTasks = false, activeCount = tasks.count { it.isActive }) { if (it) onShowTasks() }
+                    state.downloadMessage?.let { message ->
+                        AppErrorBanner(message = message, onDismiss = onDismissDownloadMessage)
+                    }
+                    PlaybackActiveTaskBanner(tasks, onShowTasks)
+                }
+            }
+        }
+        coursewareState.failure?.takeIf { courses.isEmpty() }?.let {
+            item(key = "courses-failure") {
+                AppErrorBanner(message = playbackFailureMessage(it, "课程列表"), onRetry = onRefresh)
+            }
+        }
+        if (courses.isEmpty()) {
+            item(key = "state") {
+                Box(Modifier.fillMaxWidth().fillParentMaxHeight(0.7f)) {
+                    if (coursewareState.isLoading) {
+                        WorkspaceLoadingState("正在读取课程并连接智慧教学平台…")
+                    } else {
+                        WorkspaceEmptyState(
+                            title = "暂无课程",
+                            description = "智慧教学平台没有返回本学期的课程。",
+                            onRefresh = onRefresh,
+                        )
+                    }
+                }
+            }
+            return@TopScrollLazyColumn
+        }
+        item(key = "picker") {
+            AppleMenuPickerCard(
+                label = "课程 · 共 ${courses.size} 门",
+                value = course?.name ?: "未选择课程",
+                options = courses.map { AppleMenuOption(it.id.toString(), it.name) },
+                selectedKey = state.courseId?.toString(),
+                onSelect = { key -> courses.firstOrNull { it.id.toString() == key }?.let(onSelectCourse) },
+                accessibilityName = "课程",
+            )
+        }
+        item(key = "lesson-header") {
+            Text(
+                when {
+                    state.lessonsLoading -> "正在读取课节…"
+                    course == null -> "先选择一门课程"
+                    else -> "全部课节 · ${state.lessons.size} 节"
+                },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        state.lessonsFailure?.let { failure ->
+            item(key = "lessons-failure") {
+                AppErrorBanner(message = playbackFailureMessage(failure, "课节列表"), onRetry = onRetry)
+            }
+        }
+        when {
+            state.courseId == null -> item(key = "placeholder") { PlaybackPlaceholder("选择课程后显示这门课的上课录像") }
+            state.lessonsLoading && state.lessons.isEmpty() -> item(key = "lessons-loading") {
+                Box(Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+            state.lessons.isEmpty() && state.lessonsFailure == null ->
+                item(key = "placeholder") { PlaybackPlaceholder("这门课还没有录播课节") }
+            else -> items(state.lessons, key = PlaybackLesson::stableKey) { lesson ->
+                PlaybackLessonRow(lesson, selected = lesson.stableKey == state.selectedLessonKey) { onSelectLesson(lesson) }
             }
         }
     }
@@ -268,13 +339,20 @@ fun PlaybackDetailWorkspace(
     var showTasks by remember { mutableStateOf(false) }
     DisposableEffect(model) { onDispose { model.clearSelection() } }
     if (showTasks) {
-        PlaybackTasksPage(tasks, model.taskManager, modifier.padding(16.dp))
+        PlaybackTasksPage(tasks, model.taskManager, modifier.padding(top = LocalTopBarClearance.current).padding(16.dp))
         return
     }
     val lesson = state.selectedLesson ?: return
     val course = courses.firstOrNull { it.id == state.courseId }
     val scroll = rememberScrollState()
-    Column(modifier.verticalScroll(scroll).desktopTouchScroll(scroll).padding(16.dp)) {
+    // 内容从屏幕顶画起、靠顶边距让开，滚动时穿到玻璃顶栏后。
+    TopScrollColumn(
+        state = scroll,
+        modifier = modifier.desktopTouchScroll(scroll),
+        contentModifier = Modifier
+            .padding(16.dp)
+            .padding(top = LocalTopBarClearance.current, bottom = LocalBottomBarClearance.current),
+    ) {
         PlaybackDetailBody(state, lesson, course, model, fileGateway,
             onOpenTasks = { showTasks = true }) {
             course?.let { model.selectLesson(it, lesson.stableKey) }

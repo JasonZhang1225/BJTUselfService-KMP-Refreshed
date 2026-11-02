@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -78,6 +79,9 @@ import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailMessage
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailSummary
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
+import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleMenuPickerCard
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleMenuOption
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.util.SchoolRichTextBlock
 import team.bjtuss.bjtuselfservice.shared.util.schoolRichTextToBlocks
@@ -363,7 +367,7 @@ private fun composeRecipients(value: String): List<String> = value
 
 @Composable
 private fun MailboxLoadingState(modifier: Modifier) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(modifier.fillMaxSize().padding(top = LocalTopBarClearance.current), contentAlignment = Alignment.Center) {
         CircularProgressIndicator()
     }
 }
@@ -376,7 +380,7 @@ private fun MailboxSessionUnavailable(
     modifier: Modifier,
 ) {
     Column(
-        modifier = modifier.fillMaxSize().padding(24.dp),
+        modifier = modifier.fillMaxSize().padding(top = LocalTopBarClearance.current).padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -458,7 +462,7 @@ private fun MailboxReadyWorkspace(
         if (!nativeDetail && composeActive) {
             MailboxComposeScreen(
                 model = model,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(top = LocalTopBarClearance.current),
             )
         } else if (nativeDetail) {
                 MailboxDetailPane(
@@ -481,7 +485,9 @@ private fun MailboxReadyWorkspace(
             val minListWidth = 300.dp
             val maxListWidth = (maxWidth - sidebarWidth - 390.dp).coerceAtLeast(minListWidth)
             Row(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxSize()
+                    .padding(top = LocalTopBarClearance.current)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 MailboxFolderPane(
@@ -745,170 +751,100 @@ private fun MailboxListPane(
 ) {
     val listState = rememberLazyListState()
     val selectedFolder = state.folders.firstOrNull { it.id == state.selectedFolderId }
-    Column(
-        modifier = modifier.padding(horizontal = 16.dp),
-    ) {
+    val content: LazyListScope.() -> Unit = {
         if (showFolderPicker) {
-            MailboxCompactHeader(
-                folders = state.folders,
-                selectedFolderId = state.selectedFolderId,
-                totalCount = state.totalCount,
-                onSelectFolder = onSelectFolder,
-            )
-        } else {
+            item(key = "folder-picker") {
+                AppleMenuPickerCard(
+                    label = "文件夹 · 共 ${state.folders.size} 个",
+                    value = selectedFolder?.name ?: "收件箱",
+                    options = state.folders.map { folder ->
+                        AppleMenuOption(
+                            key = folder.id.toString(),
+                            title = folder.name,
+                            subtitle = folder.unreadCount?.takeIf { it > 0 }?.let { "$it 封未读" },
+                        )
+                    },
+                    selectedKey = state.selectedFolderId.toString(),
+                    onSelect = { key ->
+                        key.toIntOrNull()?.takeIf { it != state.selectedFolderId }?.let(onSelectFolder)
+                    },
+                    accessibilityName = "文件夹",
+                    modifier = Modifier.padding(bottom = 6.dp),
+                )
+            }
+        }
+        item(key = "list-header") {
             MailboxListHeader(
                 title = selectedFolder?.name ?: "邮件",
                 totalCount = state.totalCount,
+                compact = showFolderPicker,
             )
         }
-
         state.failure?.let { failure ->
-            MailboxFailureBanner(
-                failure = failure,
-                onRetry = onRefresh,
-                onRetrySession = onRetrySession,
-                isRetrying = isSessionRetrying,
-            )
+            item(key = "failure") {
+                MailboxFailureBanner(
+                    failure = failure,
+                    onRetry = onRefresh,
+                    onRetrySession = onRetrySession,
+                    isRetrying = isSessionRetrying,
+                )
+            }
         }
-
         if (state.isListLoading && state.messages.isEmpty()) {
-            Box(
-                Modifier.weight(1f).fillMaxWidth(),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator()
+            item(key = "loading") {
+                Box(
+                    Modifier.fillMaxWidth().fillParentMaxHeight(0.5f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
             }
         } else if (state.messages.isEmpty()) {
-            MailboxEmptyState(Modifier.weight(1f).fillMaxWidth())
+            item(key = "empty") {
+                MailboxEmptyState(Modifier.fillMaxWidth().fillParentMaxHeight(0.5f))
+            }
         } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .desktopTouchScroll(listState),
-                contentPadding = PaddingValues(top = 7.dp, bottom = 22.dp + LocalBottomBarClearance.current),
-            ) {
-                items(state.messages, key = { it.id }) { message ->
-                    MailboxMessageRow(
-                        message = message,
-                        folderKind = selectedFolder?.kind,
-                        selected = message.id == selectedMessageId,
-                        onClick = {
-                            onOpenMessage(message)
-                            onOpenNativeDetail?.invoke()
-                        },
+            items(state.messages, key = { it.id }) { message ->
+                MailboxMessageRow(
+                    message = message,
+                    folderKind = selectedFolder?.kind,
+                    selected = message.id == selectedMessageId,
+                    onClick = {
+                        onOpenMessage(message)
+                        onOpenNativeDetail?.invoke()
+                    },
+                )
+            }
+            if (state.hasMoreMessages) {
+                item(key = "load-more") {
+                    MailboxLoadMoreRow(
+                        isLoading = state.isLoadingMore,
+                        onClick = onLoadMore,
                     )
-                }
-                if (state.hasMoreMessages) {
-                    item(key = "load-more") {
-                        MailboxLoadMoreRow(
-                            isLoading = state.isLoadingMore,
-                            onClick = onLoadMore,
-                        )
-                    }
                 }
             }
         }
     }
-}
-
-@Composable
-private fun MailboxCompactHeader(
-    folders: List<MailboxFolderUi>,
-    selectedFolderId: Int,
-    totalCount: Int,
-    onSelectFolder: (Int) -> Unit,
-) {
-    val selectedFolder = folders.firstOrNull { it.id == selectedFolderId }
-    var menuExpanded by remember { mutableStateOf(false) }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 10.dp, bottom = 8.dp),
-    ) {
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                MailboxFolderGlyph(
-                    kind = selectedFolder?.kind ?: MailboxFolderKind.INBOX,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
-                )
-                Column(modifier = Modifier.weight(1f).padding(start = 9.dp)) {
-                    Text(
-                        selectedFolder?.name ?: "收件箱",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        if (totalCount > 0) "全部邮件 · $totalCount 封" else "暂无邮件",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
-                Box {
-                    TextButton(
-                        onClick = { menuExpanded = true },
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                        modifier = Modifier.semantics { contentDescription = "切换邮箱文件夹" },
-                    ) {
-                        Text("切换")
-                    }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false },
-                        modifier = Modifier.widthIn(min = 220.dp, max = 320.dp),
-                    ) {
-                        folders.forEach { folder ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        folder.name,
-                                        fontWeight = if (folder.id == selectedFolderId) {
-                                            FontWeight.SemiBold
-                                        } else {
-                                            FontWeight.Normal
-                                        },
-                                    )
-                                },
-                                leadingIcon = {
-                                    MailboxFolderGlyph(
-                                        kind = folder.kind,
-                                        tint = if (folder.id == selectedFolderId) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                },
-                                trailingIcon = if (folder.id == selectedFolderId) {
-                                    { Text("当前", style = MaterialTheme.typography.labelSmall) }
-                                } else {
-                                    null
-                                },
-                                onClick = {
-                                    menuExpanded = false
-                                    if (folder.id != selectedFolderId) onSelectFolder(folder.id)
-                                },
-                            )
-                        }
-                    }
-                }
-            }
-        }
+    if (showFolderPicker) {
+        // 紧凑端与课件下载同一层级：文件夹选单、数量、邮件都在同一个滚动列表里，内容穿到玻璃顶栏后。
+        TopScrollLazyColumn(
+            state = listState,
+            modifier = modifier.desktopTouchScroll(listState),
+            contentPadding = PaddingValues(
+                start = 16.dp, end = 16.dp,
+                top = 16.dp + LocalTopBarClearance.current,
+                bottom = 22.dp + LocalBottomBarClearance.current,
+            ),
+            content = content,
+        )
+    } else {
+        // 宽屏三栏的中栏：标题随列表滚动，不参与顶栏玻璃。
+        LazyColumn(
+            state = listState,
+            modifier = modifier.desktopTouchScroll(listState),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 22.dp + LocalBottomBarClearance.current),
+            content = content,
+        )
     }
 }
 
@@ -944,23 +880,26 @@ private fun MailboxLoadMoreRow(
 private fun MailboxListHeader(
     title: String,
     totalCount: Int,
+    compact: Boolean = false,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = if (compact) 4.dp else 14.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                if (totalCount > 0) "全部邮件 · $totalCount 封" else "暂无邮件",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+            val countText = if (totalCount > 0) "共 $totalCount 封" else "暂无邮件"
+            if (compact) {
+                // 文件夹名已在上方选单里，这里只留数量一行。
+                Text(countText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            } else {
+                Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    countText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
         }
     }
 }

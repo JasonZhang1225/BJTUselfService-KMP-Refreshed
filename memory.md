@@ -1,3 +1,15 @@
+# 进行中：原生下拉选单与课件/回放/邮箱玻璃顶栏（2026-11-02）
+
+> 工作树 `/Users/zjg/BJTUselfService/.artifacts/tree/claude/native-dropdown`，分支 `feat/native-dropdown-menu`，从 `origin/main` `d8d3d6a3` 创建。已推送并开 PR #95（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/95），含 `1df89505`（功能）与 `a65ce187`（回放卡住修复）；已合入最新 main（作业回顶 PR #94 的记录一并保留）。未合并、不改版本号。
+
+- 新增 `AppleMenuPickerCard` / `AppleMenuAnchor`（`feature/shell/AppleMenuPicker.kt`，iOS 实现 `iosMain/.../feature/shell/AppleMenuPicker.ios.kt`）：iOS 透明 `UIButton` + 系统 `UIMenu`（单选打勾、副标题、菜单内滚动），Android/桌面回退 Material `DropdownMenu`；iOS 读屏用自定义操作逐项选择。
+- 更新日志版本选择、课件下载与课程回放选课、邮箱文件夹改用它；课件/回放删掉“点击此处选择课程”按钮与选课 sheet，回放默认选第一门课（在页面 scope 启动，避免 effect 自我取消）。课件、回放、回放播放与下载、邮箱开 `scrollUnderTopBar`，紧凑端改为单一 `TopScrollLazyColumn`/`TopScrollColumn`；宽屏布局只补顶部净空。
+- 文档：`DESIGN.md` 新增 6.1 下拉选单并同步表格、禁止清单、自查清单、参考索引；从备份恢复 `docs/plans/design-legacy-cleanup.md` 并更新 P1/P2-1 状态。
+- 验证：`:shared:compileKotlinDesktop :shared:compileKotlinIosSimulatorArm64` 通过；签名模拟器构建 `BUILD SUCCEEDED`，iPhone 17 Pro / iOS 27 深色实看：三页与邮箱的原生菜单、选中切换、玻璃顶栏、回放详情穿栏、从卡片起拖可滚动。日志 `/Users/zjg/BJTUselfService/.artifacts/native-dropdown/`。`JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home ./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 --offline --no-configuration-cache --console=plain --continue` BUILD SUCCESSFUL（4m29s），共享测试 1357 项 0 失败 1 跳过（之后仅改邮箱数量文案“共 N 封”，已重新签名构建并实看）。
+- 回放卡住修复（`a65ce187`，已随 PR 推送）：课节请求原在页面 `rememberCoroutineScope`，离开页面被取消后 `lessonsLoading` 残留为 true，再进同一门课直接返回一直转圈。改为 `PlaybackScreenModel.selectCourse` 在模型作用域加载，`showCourse` 在 finally 中复位、切课时清掉上一门的加载标记；新增 `PlaybackScreenModelTest` 2 项通过；模拟器复现“进入后 1 秒内返回再进入”已能加载 13 节。
+- CodeRabbit 第二轮（`a65ce187`）：已合入最新 main 并解决 `memory.md` 冲突；`selectCourse` 换课或强制重试时取消旧请求、非强制重选同一门课沿用进行中的请求；未缓存课程排队等请求锁时也显示加载中；只有最新一次请求能复位加载标记。`PlaybackScreenModelTest` 扩到 4 项（取消后重进、换课替换旧请求、排队显示加载、真实 `PlaybackScreen` 默认选课跨 effect 重启）。全量 `:shared:desktopTest` + Android/桌面/Windows/iOS arm64 与模拟器编译 BUILD SUCCESSFUL（3m1s），1367 项 0 失败 1 跳过，日志 `.artifacts/native-dropdown/gradle-review.log`。用户已授权：CodeRabbit 复审无问题后以管理员身份合并 PR #95，并触发 KMP 打包。
+- 未验证：浅色、大字号、Android/桌面实机、宽屏三栏回归、VoiceOver 自定义操作。
+
 ## 进行中：作业列表回到顶部按钮（2026-11-02）
 
 - 分支 `feat/assignment-scroll-to-top` 从 `main` 的 `d8d3d6a34ff6761df1fede61c25f795656b7123c` 创建；用户已授权提交、推送并创建目标为 main 的 PR，不直接推送 main、不合并、不发版。独立工作树 `.artifacts/tree/codex/assignment-scroll-to-top/`；原无 Git 源码副本保留。

@@ -1866,9 +1866,8 @@ fun AuthenticatedAppShell(
                 isRefreshing = coursewareState.isRefreshing,
                 showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
-                // 顶栏 underlap 暂不启用：引导行与课程标题行固定在列表上方，视口到不了栏后。
-                // 且关闭滚动过渡：栏后永远是纯色，过渡只会凭空闪一下。
-                staticTopBar = true,
+                // 课程选择卡片与目录标题都是列表项，内容穿到玻璃顶栏后。
+                scrollUnderTopBar = true,
                 // 与成绩/作业一致：右上角「已同步」+ sync 同一胶囊，勿只留孤图标。
                 idleStatusText = when {
                     coursewareState.failure != null -> "同步失败"
@@ -1892,7 +1891,7 @@ fun AuthenticatedAppShell(
             }
             PlaybackDetailRoute -> DestinationPage(
                 title = "回放播放与下载", expanded = expanded, refreshable = false,
-                isRefreshing = false, showBack = true, modifier = modifier,
+                isRefreshing = false, showBack = true, modifier = modifier, scrollUnderTopBar = true,
             ) {
                 session.playbackModel?.let { model ->
                     team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackDetailWorkspace(
@@ -1906,7 +1905,7 @@ fun AuthenticatedAppShell(
                 isRefreshing = coursewareState.isRefreshing,
                 showBack = isPushedHostDestination || route !in compactBottomNavSections,
                 modifier = modifier,
-                staticTopBar = true,
+                scrollUnderTopBar = true,
                 idleStatusText = when {
                     coursewareState.failure != null -> "同步失败"
                     coursewareState.source != null -> "已同步"
@@ -2162,6 +2161,8 @@ fun AuthenticatedAppShell(
                 topBarActionLabel = if (mailboxReadyState != null) "写信" else null,
                 onTopBarActionClick = startMailboxComposeFromTopBar,
                 modifier = modifier,
+                // 文件夹选单与邮件同在一个列表里，内容穿到玻璃顶栏后。
+                scrollUnderTopBar = true,
             ) {
                 MailboxWorkspace(
                     model = mailboxModel,

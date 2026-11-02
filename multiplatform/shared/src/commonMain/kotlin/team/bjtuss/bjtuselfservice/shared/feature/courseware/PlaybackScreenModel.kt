@@ -53,6 +53,24 @@ class PlaybackScreenModel(
     private val loadMutex = Mutex()
     private var detailJob: Job? = null
     private val lessonCache = mutableMapOf<Int, List<PlaybackLesson>>()
+    private var lessonsJob: Job? = null
+    private var lessonsJobCourseId: Int? = null
+    /** 每次课节请求一个编号；只有最新一次能清掉加载标记，旧请求收尾不会改动新选择的状态。 */
+    private var lessonsRequest = 0
+
+    /**
+     * 界面选课/默认选课/重试的入口：在模型自己的作用域里加载课节。
+     * 不能放在页面的 rememberCoroutineScope 里：离开页面会取消请求，模型却还停在“正在读取课节”。
+     * 换课或强制重试时取消上一门仍在进行的请求，免得新课排在旧请求后面等到超时；
+     * 非强制地再选同一门课则沿用正在进行的请求。
+     */
+    fun selectCourse(course: CoursewareCourse?, force: Boolean = false) {
+        val running = lessonsJob?.takeIf { it.isActive }
+        if (running != null && !force && lessonsJobCourseId == course?.id) return
+        running?.cancel()
+        lessonsJobCourseId = course?.id
+        lessonsJob = scope.launch { showCourse(course, force) }
+    }
 
     /** 进入回放页或切换课程时调用；同一门课已加载过就直接复用（[force] 时重新拉取）。 */
     suspend fun showCourse(course: CoursewareCourse?, force: Boolean = false) {
@@ -67,6 +85,8 @@ class PlaybackScreenModel(
             mutableState.value = current.copy(
                 courseId = course.id,
                 lessons = lessonCache[course.id].orEmpty(),
+                // 没有缓存就马上显示加载中（包括排队等请求锁的时候），不误报“没有录播课节”。
+                lessonsLoading = !lessonCache.containsKey(course.id) || force,
                 lessonsFailure = null,
                 selectedLessonKey = null,
                 detail = null,
@@ -75,18 +95,26 @@ class PlaybackScreenModel(
             )
         }
         if (!force && lessonCache.containsKey(course.id)) return
-        loadMutex.withLock {
-            if (mutableState.value.courseId != course.id) return
-            mutableState.value = mutableState.value.copy(lessonsLoading = true, lessonsFailure = null)
-            val result = withRecovery { repository.loadPlaybackLessons(course) }
-            if (mutableState.value.courseId != course.id) return
-            mutableState.value = when (result) {
-                is CoursewareOperationResult.Success -> {
-                    lessonCache[course.id] = result.value
-                    mutableState.value.copy(lessons = result.value, lessonsLoading = false)
+        val request = ++lessonsRequest
+        mutableState.value = mutableState.value.copy(lessonsLoading = true, lessonsFailure = null)
+        try {
+            loadMutex.withLock {
+                if (mutableState.value.courseId != course.id) return
+                val result = withRecovery { repository.loadPlaybackLessons(course) }
+                if (mutableState.value.courseId != course.id) return
+                mutableState.value = when (result) {
+                    is CoursewareOperationResult.Success -> {
+                        lessonCache[course.id] = result.value
+                        mutableState.value.copy(lessons = result.value, lessonsLoading = false)
+                    }
+                    is CoursewareOperationResult.Failure ->
+                        mutableState.value.copy(lessonsLoading = false, lessonsFailure = result.reason)
                 }
-                is CoursewareOperationResult.Failure ->
-                    mutableState.value.copy(lessonsLoading = false, lessonsFailure = result.reason)
+            }
+        } finally {
+            // 被取消、出错或中途换了课都会走到这里：只由最新一次请求复位，否则再进同一门课会一直转圈。
+            if (request == lessonsRequest && mutableState.value.lessonsLoading) {
+                mutableState.value = mutableState.value.copy(lessonsLoading = false)
             }
         }
     }
