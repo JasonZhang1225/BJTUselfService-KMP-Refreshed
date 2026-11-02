@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import team.bjtuss.bjtuselfservice.shared.LocalReduceMotion
@@ -39,7 +40,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 internal fun AssignmentListWithScrollToTop(
     state: LazyListState,
     modifier: Modifier = Modifier,
-    content: @Composable (Modifier) -> Unit,
+    content: @Composable (Modifier, Dp) -> Unit,
 ) {
     val visible by remember(state) {
         derivedStateOf {
@@ -59,7 +60,9 @@ internal fun AssignmentListWithScrollToTop(
     val undoClearance = if (undo != null) 64.dp * maxOf(1f, LocalDensity.current.fontScale) else 0.dp
 
     Box(modifier) {
-        content(Modifier.fillMaxSize())
+        // Reserve space at the end of the content, keeping the scrolling viewport
+        // full height so it continues behind the system bars.
+        content(Modifier.fillMaxSize(), 48.dp + undoClearance)
         AnimatedVisibility(
             visible = visible,
             modifier = Modifier.align(Alignment.BottomEnd)

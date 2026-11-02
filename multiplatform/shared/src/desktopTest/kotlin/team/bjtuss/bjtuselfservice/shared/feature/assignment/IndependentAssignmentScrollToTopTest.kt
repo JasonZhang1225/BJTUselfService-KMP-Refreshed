@@ -163,7 +163,8 @@ class IndependentAssignmentScrollToTopTest {
             (it.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)?.value?.invoke() ?: 0f) > 0f
         }
         fun capture(name: String) {
-            val file = File("../../.artifacts/assignment-scroll-top-all/ui/$name.png").apply { parentFile.mkdirs() }
+            val directory = System.getProperty("assignmentScrollTop.artifactDir") ?: return
+            val file = File(directory, "$name.png").apply { parentFile.mkdirs() }
             scene.render(++frame * 16_000_000L).use { image ->
                 image.encodeToData(EncodedImageFormat.PNG)!!.use { file.writeBytes(it.bytes) }
             }

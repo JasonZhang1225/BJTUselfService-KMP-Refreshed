@@ -210,7 +210,7 @@ fun PhyVlabWorkspace(
                 maxWidth < 840.dp -> 12.dp
                 else -> 0.dp
             }
-            AssignmentListWithScrollToTop(listState, Modifier.fillMaxSize()) { scrollModifier ->
+            AssignmentListWithScrollToTop(listState, Modifier.fillMaxSize()) { scrollModifier, overlayClearance ->
                 TopScrollLazyColumn(
                     state = listState,
                     modifier = scrollModifier
@@ -220,7 +220,7 @@ fun PhyVlabWorkspace(
                         start = horizontalInset,
                         top = 12.dp + topClearance,
                         end = horizontalInset,
-                        bottom = 12.dp + 48.dp + LocalBottomBarClearance.current,
+                        bottom = 12.dp + overlayClearance + LocalBottomBarClearance.current,
                     ),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {

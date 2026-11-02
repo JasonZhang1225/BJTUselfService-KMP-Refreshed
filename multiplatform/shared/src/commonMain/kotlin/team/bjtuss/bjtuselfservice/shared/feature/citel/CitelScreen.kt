@@ -73,10 +73,10 @@ fun CitelWorkspace(model: CitelModel, holdNetwork: Boolean, onOpen: (String) -> 
     val subtitle = (if (dueSoon > 0) "未来 48 小时内有 $dueSoon 项未提交" else "未来 48 小时内暂无临近截止项") +
         if (filters.active) " · 已筛选" else ""
     LaunchedEffect(filters) { scroll.scrollToItem(0) }
-    AssignmentListWithScrollToTop(scroll, modifier.fillMaxSize()) { scrollModifier ->
+    AssignmentListWithScrollToTop(scroll, modifier.fillMaxSize()) { scrollModifier, overlayClearance ->
         TopScrollLazyColumn(state = scroll, modifier = scrollModifier.desktopTouchScroll(scroll),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp + topClearance,
-                bottom = 24.dp + 48.dp + bottomClearance), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                bottom = 24.dp + overlayClearance + bottomClearance), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (completion.failure != null) item("completion-error") { AssignmentCompletionFeedback() }
             state.message?.takeIf { state.failed }?.let { message ->
                 item { AppErrorBanner(message, onRetry = { scope.launch { model.refresh() } }) }
