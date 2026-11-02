@@ -731,9 +731,9 @@ internal fun PhyVlabFinalizationDialog(title: String, fileNames: List<String>, s
         confirmEnabled = !isSubmitting && fileNames.isNotEmpty() && filesChecked &&
             (statement == null || statementAccepted),
         onConfirm = onConfirm,
+        // iOS 原生标题栏的“返回检查”由 dismissLabel 生成（showDismissButton 必须保持 true），提交中禁用。
         dismissLabel = "返回检查",
         dismissEnabled = !isSubmitting,
-        showDismissButton = false,
         fitContentHeight = true,
         dismissible = !isSubmitting,
     ) {
