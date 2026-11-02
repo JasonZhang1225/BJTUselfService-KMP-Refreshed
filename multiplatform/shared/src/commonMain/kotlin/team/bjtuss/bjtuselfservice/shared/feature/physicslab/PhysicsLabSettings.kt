@@ -48,7 +48,7 @@ fun PhysicsLabSettings(model: PhysicsLabModel, modifier: Modifier = Modifier, sh
                     if (success) onAccountSaved()
                 }
             }, message = if (state.failed) state.message else if (saved) "账号已保存" else state.message?.takeIf { !state.configured },
-            failed = state.failed, modifier = modifier, websiteUrl = "$PHYSICS_LAB_ORIGIN/", canClear = state.configured,
+            failed = state.failed, modifier = modifier, websiteUrl = "$PHYSICS_LAB_ORIGIN/", backupWebsiteUrl = "$PHYSICS_LAB_BACKUP_ORIGIN/", canClear = state.configured,
             onClear = {
                 scope.launch {
                     if (!model.clearConfiguration()) return@launch

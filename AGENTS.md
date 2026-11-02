@@ -55,6 +55,7 @@
 - 技术栈：Kotlin Multiplatform + Compose Multiplatform/Material 3；Ktor；Ksoup 解析 HTML；`kotlinx.serialization`；SQLDelight 缓存；凭据走 Android Keystore / Apple Keychain / macOS `MacOsSecretBag` / Windows DPAPI；各端都不再内置验证码识别模型（统一用 `UnavailableCaptchaRecognizer`），需要验证码时显示图片、由用户手动输入。MIS 统一认证默认免验证码，旧的数字算式验证码已不再出现，新的字母验证码原有模型识别不了；Android ONNX（`BJTUCaptcha.onnx`）与 iOS/macOS Core ML（`BJTUCaptcha.mlpackage`）模型已于 1.8.6（PR #45）移除，同样可从存档标签 `archive/legacy-android-and-captcha-model` 取回。
 - Android 签名：本机（Windows）的上传密钥在 `C:\Users\zjg\.android\bjtu-kmp-upload.keystore`；`androidApp/build.gradle.kts` 默认也找 `~/.android/bjtu-kmp-upload.keystore`，可用环境变量 `BJTU_ANDROID_KEYSTORE` 覆盖。密钥口令不写进仓库：放环境变量 `BJTU_ANDROID_STORE_PASSWORD` / `BJTU_ANDROID_KEY_ALIAS` / `BJTU_ANDROID_KEY_PASSWORD`，或 `~/.gradle/gradle.properties` 的 `bjtuAndroidStorePassword` / `bjtuAndroidKeyAlias` / `bjtuAndroidKeyPassword`（CI 用同名 GitHub Secrets）。没有口令就编不了 Android 包；只在模拟器上验证时可以临时用 `~/.android/debug.keystore`（口令 `android`、别名 `androiddebugkey`），但那包不能覆盖安装正式版。
 - 本机验证产物（截图、导出、诊断日志）放忽略目录 `.artifacts/`，不进 Git。
+- 需要新建工作树时，统一放在仓库根目录 `.artifacts/tree/<app名称>/` 下，例如 Codex 使用 `.artifacts/tree/codex/`，Claude、WorkBuddy 分别使用 `.artifacts/tree/claude/`、`.artifacts/tree/workbuddy/`；每项任务再建独立子目录。
 
 ## 工作方式
 

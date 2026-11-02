@@ -111,10 +111,12 @@ class KtorSchoolHttpTransport(
     }
 
     override suspend fun executeWithoutRedirects(request: SchoolHttpRequest): SchoolHttpResponse =
-        if (Url(request.url).host == "wlsy.bjtu.edu.cn") {
+        if (Url(request.url).host in setOf("wlsy.bjtu.edu.cn", "59.64.5.228")) {
             require(request.url in setOf(
                 "http://wlsy.bjtu.edu.cn/", "http://wlsy.bjtu.edu.cn/Student/Teach/Course/CourseResult.aspx",
+                "http://59.64.5.228/", "http://59.64.5.228/Student/Teach/Course/CourseResult.aspx",
             ))
+            require(request.method == SchoolHttpMethod.GET || request.url.endsWith("/"))
             executeTimed(request, "physics-lab", physicsLabRequests) { physicsLabClient }
         } else if (Url(request.url).host == "physpace.bjtu.edu.cn") {
             require(request.url in setOf("https://physpace.bjtu.edu.cn:8089/phydemo/login", "https://physpace.bjtu.edu.cn:8089/phydemo/appointment/"))

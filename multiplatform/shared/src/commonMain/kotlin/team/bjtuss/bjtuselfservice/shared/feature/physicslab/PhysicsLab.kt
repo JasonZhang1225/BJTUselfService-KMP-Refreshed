@@ -7,6 +7,8 @@ import kotlinx.serialization.Serializable
 
 // 校园网旧系统。仅允许登录、读取选课结果，不包含选课/退课操作。
 internal const val PHYSICS_LAB_ORIGIN = "http://wlsy.bjtu.edu.cn"
+internal const val PHYSICS_LAB_BACKUP_ORIGIN = "http://59.64.5.228"
+internal val physicsLabOrigins = listOf(PHYSICS_LAB_ORIGIN, PHYSICS_LAB_BACKUP_ORIGIN)
 internal const val PHYSICS_LAB_RESULTS = "$PHYSICS_LAB_ORIGIN/Student/Teach/Course/CourseResult.aspx"
 
 /** 2026-10-05 校园网登录后 /Info/TimeInfo.aspx 的六个时段。 */

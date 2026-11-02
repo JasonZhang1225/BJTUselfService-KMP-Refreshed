@@ -1,3 +1,14 @@
+# 进行中：物理实验 IP 备用路径（2026-11-02）
+
+> 当前工作树 `/Users/zjg/BJTUselfService/.artifacts/tree/codex/physics-ip-backup`，分支 `fix/physics-ip-backup`，从最新 main 创建。用户已授权提交、推送并创建到 main 的 PR；正在交付，不改版本号。
+
+- 保留域名主路径，登录页获取/表单检查失败或 6 秒超时后改用老师公布的 `http://59.64.5.228/`；POST 与结果读取始终固定在选定端点，密码只提交一次，取消不回退。
+- 账号设置保留域名并新增 IP 备用链接、校园网/HTTP 明文说明；Android 明文与 iOS ATS 仅增该 IP，沿用物理实验隔离 Cookie 通道与精确路径白名单。端点登记见 `docs/security/physics-lab-ip-backup.md`。
+- 按用户要求修改 AGENTS.md：新工作树位于仓库 `.artifacts/tree/<app名称>/<任务>/`。Codex 工具创建后已用 Git 移到上述目录；桌面应用 attach 因自定义目录不在其管理范围失败，不影响 Git 工作树。
+- 匿名实际 GET：域名 HTTP 404、IP HTTP 200；IP 登录页字段匹配原 ASP.NET 协议。未使用真实凭据，未提交选课等外部操作。
+- 验证：`JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home ./gradlew :shared:desktopTest :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :androidApp:assembleDebug :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64 --offline --no-configuration-cache --console=plain --continue` 返回 BUILD SUCCESSFUL（7m32s）；共享测试 1354 项，0 失败、0 错误、1 跳过。日志 `.artifacts/physics-ip/gradle.log`。XML/ATS 范围检查及 plist 语法检查通过。
+- 用户要求停止后续验证、直接提交 PR，未再运行测试或预览；未目视验证、未进行真实登录、未安装或替换 App。回退范围仅本项文件；原工作区的 `multiplatform/.artifacts/` 保持原样。
+
 > 2026-11-01：当前工作树 `/Users/zjg/.codex/worktrees/phyvlab-upload-time/BJTUselfService`，分支 `fix/phyvlab-upload-time`，从 `feat/device-timezone`（`f492eef1`）新建；本轮只调整物理在线详情时间标签，用户已授权提交、推送并创建 PR，正在准备。基线 PR #88 尚未合并，本 PR 先以 `feat/device-timezone` 为目标，避免重复包含时区改动；版本仍为 2.0.0-Alpha / Build45，未合并或发布。原工作树的 `multiplatform/.artifacts/` 未跟踪文件保留。
 
 ## 进行中：物理在线草稿时间标为上传

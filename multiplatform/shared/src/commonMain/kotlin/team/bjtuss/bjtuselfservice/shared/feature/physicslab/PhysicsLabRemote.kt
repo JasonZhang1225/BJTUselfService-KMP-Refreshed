@@ -1,6 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.physicslab
 
 import com.fleeksoft.ksoup.Ksoup
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.LocalDate
 import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
@@ -42,15 +44,15 @@ fun parsePhysicsLabs(html: String): List<PhysicsLab> {
 
 class PhysicsLabRemote(private val transport: SchoolHttpTransport) {
     suspend fun fetch(credentials: Credentials): List<PhysicsLab> {
-        suspend fun request(method: SchoolHttpMethod, url: String, fields: Map<String, String> = emptyMap()): String {
+        suspend fun request(origin: String, method: SchoolHttpMethod, url: String, fields: Map<String, String> = emptyMap()): String {
             // 禁止自动跟随重定向，以免凭据或 Cookie 被发给其他系统。
             val response = transport.executeWithoutRedirects(SchoolHttpRequest(method, url,
-                headers = mapOf("Cache-Control" to "no-cache", "Pragma" to "no-cache", "Referer" to "$PHYSICS_LAB_ORIGIN/"),
+                headers = mapOf("Cache-Control" to "no-cache", "Pragma" to "no-cache", "Referer" to "$origin/"),
                 formFields = fields))
             if (response.statusCode in 300..399) {
                 val location = response.header("Location").orEmpty()
                 if (method != SchoolHttpMethod.POST ||
-                    !(location.startsWith("/") && !location.startsWith("//") || location.startsWith("$PHYSICS_LAB_ORIGIN/"))) {
+                    !(location.startsWith("/") && !location.startsWith("//") || location.startsWith("$origin/"))) {
                     throw PhysicsLabFailure("实验系统登录失效或跳转地址异常。")
                 }
                 // 登录 POST 的同域跳转无需访问；随后 GET 受保护选课结果验证登录。
@@ -59,8 +61,32 @@ class PhysicsLabRemote(private val transport: SchoolHttpTransport) {
             if (response.statusCode !in 200..299) throw PhysicsLabFailure("实验系统暂时不可用，请稍后重试。")
             return response.bodyText()
         }
-        val doc = Ksoup.parse(request(SchoolHttpMethod.GET, "$PHYSICS_LAB_ORIGIN/"))
-        val form = doc.selectFirst("form") ?: throw PhysicsLabFailure("未找到实验系统登录表单。")
+        // 只在发送密码前选择端点；主域名超时不能耗尽整个同步的 25 秒预算。
+        var selectedOrigin: String? = null
+        var loginFields: Map<String, String>? = null
+        var lastFailure: Exception? = null
+        for (origin in physicsLabOrigins) {
+            try {
+                val prepared = withTimeoutOrNull(6_000) {
+                    val doc = Ksoup.parse(request(origin, SchoolHttpMethod.GET, "$origin/"))
+                    val form = doc.selectFirst("form") ?: throw PhysicsLabFailure("未找到实验系统登录表单。")
+                    prepareLoginFields(form, credentials)
+                }
+                if (prepared != null) {
+                    selectedOrigin = origin
+                    loginFields = prepared
+                    break
+                }
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) { lastFailure = e }
+        }
+        val origin = selectedOrigin ?: throw (lastFailure ?: PhysicsLabFailure("连接超时，请连接校园网后重试。"))
+        // POST 及结果验证不在回退循环中，任何失败都不会向另一个端点重放密码。
+        request(origin, SchoolHttpMethod.POST, "$origin/", loginFields!!)
+        return parsePhysicsLabs(request(origin, SchoolHttpMethod.GET, "$origin/Student/Teach/Course/CourseResult.aspx"))
+    }
+
+    private fun prepareLoginFields(form: com.fleeksoft.ksoup.nodes.Element, credentials: Credentials): Map<String, String> {
         val fields = mutableMapOf<String, String>()
         form.select("input[name]").forEach { input ->
             val type = input.attr("type").lowercase()
@@ -80,7 +106,6 @@ class PhysicsLabRemote(private val transport: SchoolHttpTransport) {
         val submit = form.selectFirst("input[type=submit][name$=btnLogin]")
             ?: throw PhysicsLabFailure("未找到登录按钮。")
         fields[submit.attr("name")] = submit.attr("value").ifBlank { "登录" }
-        request(SchoolHttpMethod.POST, "$PHYSICS_LAB_ORIGIN/", fields)
-        return parsePhysicsLabs(request(SchoolHttpMethod.GET, PHYSICS_LAB_RESULTS))
+        return fields
     }
 }
