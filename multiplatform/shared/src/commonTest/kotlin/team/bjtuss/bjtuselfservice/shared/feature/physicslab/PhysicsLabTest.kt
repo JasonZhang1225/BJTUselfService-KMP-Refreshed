@@ -35,6 +35,8 @@ class PhysicsLabTest {
         val transport = FakeTransport(listOf(loginForm, "", results("超声专题")))
         val labs = PhysicsLabRemote(transport).fetch(Credentials("fixture-user", "fixture-password"))
         assertEquals(1, labs.size)
+        assertEquals(3, transport.requests.size)
+        assertTrue(transport.requests.all { it.url.startsWith(PHYSICS_LAB_ORIGIN) })
         val post = transport.requests[1]
         assertEquals("opaque", post.formFields["__VIEWSTATE"])
         assertEquals("fixture-user", post.formFields["a_tbUserId"])
@@ -60,6 +62,87 @@ class PhysicsLabTest {
         assertFailsWith<PhysicsLabFailure> { PhysicsLabRemote(transport).fetch(Credentials("fixture", "fixture")) }
         Unit
     }
+    @Test fun unavailablePrimaryUsesIpForEntireLoginAndResults() = runBlocking {
+        for (failure in listOf("network", "404", "maintenance", "form")) {
+            val requests = mutableListOf<SchoolHttpRequest>()
+            val transport = object : SchoolHttpTransport {
+                override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse {
+                    requests += request
+                    if (request.url.startsWith(PHYSICS_LAB_ORIGIN)) {
+                        if (failure == "network") throw SchoolNetworkException("fixture unavailable")
+                        return SchoolHttpResponse(if (failure == "404") 404 else 200, request.url,
+                            body = (if (failure == "form") "<form><input name='invalid'></form>" else "<h1>maintenance</h1>").encodeToByteArray())
+                    }
+                    if (request.method == SchoolHttpMethod.POST) return SchoolHttpResponse(302, request.url,
+                        mapOf("Location" to listOf("$PHYSICS_LAB_BACKUP_ORIGIN/Student/Teach/Course/CourseResult.aspx")))
+                    val body = if (request.url.endsWith("CourseResult.aspx")) results("超声专题") else loginForm
+                    return SchoolHttpResponse(200, request.url, body = body.encodeToByteArray())
+                }
+                override fun clearSession() {}
+            }
+            assertEquals(1, PhysicsLabRemote(transport).fetch(Credentials("fixture", "fixture")).size)
+            assertEquals(listOf("$PHYSICS_LAB_ORIGIN/", "$PHYSICS_LAB_BACKUP_ORIGIN/",
+                "$PHYSICS_LAB_BACKUP_ORIGIN/", "$PHYSICS_LAB_BACKUP_ORIGIN/Student/Teach/Course/CourseResult.aspx"), requests.map { it.url })
+            assertEquals(1, requests.count { it.method == SchoolHttpMethod.POST })
+            assertTrue(requests.drop(1).all { it.headers["Referer"] == "$PHYSICS_LAB_BACKUP_ORIGIN/" })
+        }
+    }
+
+    @Test fun postAndProtectedPageFailuresNeverReplayPasswordOnBackup() = runBlocking {
+        for (failure in listOf("post-network", "post-rejected", "post-redirect", "expired", "results-error")) {
+            val requests = mutableListOf<SchoolHttpRequest>()
+            val transport = object : SchoolHttpTransport {
+                override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse {
+                    requests += request
+                    if (request.method == SchoolHttpMethod.POST) {
+                        if (failure == "post-network") throw SchoolNetworkException("fixture unavailable")
+                        if (failure == "post-rejected") return SchoolHttpResponse(403, request.url)
+                        if (failure == "post-redirect") return SchoolHttpResponse(302, request.url,
+                            mapOf("Location" to listOf("$PHYSICS_LAB_BACKUP_ORIGIN/")))
+                    }
+                    val body = if (request.url == PHYSICS_LAB_RESULTS && failure == "results-error") "service error" else loginForm
+                    return SchoolHttpResponse(200, request.url, body = body.encodeToByteArray())
+                }
+                override fun clearSession() {}
+            }
+            assertFails { PhysicsLabRemote(transport).fetch(Credentials("fixture", "fixture")) }
+            assertEquals(1, requests.count { it.method == SchoolHttpMethod.POST })
+            assertTrue(requests.all { it.url.startsWith(PHYSICS_LAB_ORIGIN) })
+        }
+    }
+
+    @Test fun stalledPrimaryTimesOutBeforeTryingIp() = runBlocking {
+        val requests = mutableListOf<SchoolHttpRequest>()
+        val transport = object : SchoolHttpTransport {
+            override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse {
+                requests += request
+                if (request.url.startsWith(PHYSICS_LAB_ORIGIN)) kotlinx.coroutines.delay(60_000)
+                val body = if (request.url.endsWith("CourseResult.aspx")) results("超声专题") else loginForm
+                return SchoolHttpResponse(200, request.url, body = body.encodeToByteArray())
+            }
+            override fun clearSession() {}
+        }
+        kotlinx.coroutines.withTimeout(10_000) {
+            assertEquals(1, PhysicsLabRemote(transport).fetch(Credentials("fixture", "fixture")).size)
+        }
+        assertEquals(4, requests.size)
+        assertEquals(1, requests.count { it.method == SchoolHttpMethod.POST })
+        assertEquals("$PHYSICS_LAB_BACKUP_ORIGIN/", requests[2].url)
+    }
+
+    @Test fun cancellationDoesNotStartBackup() = runBlocking {
+        var calls = 0
+        val transport = object : SchoolHttpTransport {
+            override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse {
+                calls++
+                throw kotlinx.coroutines.CancellationException("fixture cancel")
+            }
+            override fun clearSession() {}
+        }
+        assertFailsWith<kotlinx.coroutines.CancellationException> { PhysicsLabRemote(transport).fetch(Credentials("fixture", "fixture")) }
+        assertEquals(1, calls)
+    }
+
     @Test fun exactOverlapFragmentsKeepCourseExamAndLabAndExcludeOtherSemester() {
         val weeks = weeks()
         val labs = parsePhysicsLabs(results("超声专题"))

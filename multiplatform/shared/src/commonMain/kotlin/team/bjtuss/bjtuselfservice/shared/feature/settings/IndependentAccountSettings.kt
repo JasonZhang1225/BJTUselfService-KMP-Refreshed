@@ -29,6 +29,7 @@ internal fun IndependentAccountSettings(
     message: String?, failed: Boolean = false, modifier: Modifier = Modifier,
     websiteUrl: String? = null,
     websiteRedirectUrl: String? = null,
+    backupWebsiteUrl: String? = null,
     onClear: (() -> Unit)? = null,
     canClear: Boolean = hasSavedPassword,
 ) {
@@ -54,6 +55,14 @@ internal fun IndependentAccountSettings(
                         Text(websiteRedirectUrl)
                     }
                     Text("）", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+        backupWebsiteUrl?.let { url ->
+            Column {
+                Text("主网站无法访问时，可使用备用入口（需要校园网）。同步会自动尝试备用路径。HTTP 明文传输账号、密码和实验数据，请仅在可信校园网使用。", style = MaterialTheme.typography.bodyMedium)
+                TextButton(onClick = { uriHandler.openUri(url) }, contentPadding = PaddingValues(0.dp)) {
+                    Text("备用入口：$url")
                 }
             }
         }

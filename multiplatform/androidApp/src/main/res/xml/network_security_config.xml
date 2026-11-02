@@ -9,5 +9,7 @@
         <domain includeSubdomains="false">123.121.147.7</domain>
         <domain includeSubdomains="false">yaya.csoci.com</domain>
         <domain includeSubdomains="false">wlsy.bjtu.edu.cn</domain>
+        <!-- 老师公布的物理实验备用 IP，用户授权 2026-11-02。 -->
+        <domain includeSubdomains="false">59.64.5.228</domain>
     </domain-config>
 </network-security-config>
