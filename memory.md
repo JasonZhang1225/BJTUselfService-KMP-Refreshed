@@ -7,6 +7,7 @@
 - 文档：`DESIGN.md` 新增 6.1 下拉选单并同步表格、禁止清单、自查清单、参考索引；从备份恢复 `docs/plans/design-legacy-cleanup.md` 并更新 P1/P2-1 状态。
 - 验证：`:shared:compileKotlinDesktop :shared:compileKotlinIosSimulatorArm64` 通过；签名模拟器构建 `BUILD SUCCEEDED`，iPhone 17 Pro / iOS 27 深色实看：三页与邮箱的原生菜单、选中切换、玻璃顶栏、回放详情穿栏、从卡片起拖可滚动。日志 `/Users/zjg/BJTUselfService/.artifacts/native-dropdown/`。`JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home ./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 --offline --no-configuration-cache --console=plain --continue` BUILD SUCCESSFUL（4m29s），共享测试 1357 项 0 失败 1 跳过（之后仅改邮箱数量文案“共 N 封”，已重新签名构建并实看）。
 - 回放卡住修复（`a65ce187`，已随 PR 推送）：课节请求原在页面 `rememberCoroutineScope`，离开页面被取消后 `lessonsLoading` 残留为 true，再进同一门课直接返回一直转圈。改为 `PlaybackScreenModel.selectCourse` 在模型作用域加载，`showCourse` 在 finally 中复位、切课时清掉上一门的加载标记；新增 `PlaybackScreenModelTest` 2 项通过；模拟器复现“进入后 1 秒内返回再进入”已能加载 13 节。
+- CodeRabbit 第二轮（`a65ce187`）：已合入最新 main 并解决 `memory.md` 冲突；`selectCourse` 换课或强制重试时取消旧请求、非强制重选同一门课沿用进行中的请求；未缓存课程排队等请求锁时也显示加载中；只有最新一次请求能复位加载标记。`PlaybackScreenModelTest` 扩到 4 项（取消后重进、换课替换旧请求、排队显示加载、真实 `PlaybackScreen` 默认选课跨 effect 重启）。全量 `:shared:desktopTest` + Android/桌面/Windows/iOS arm64 与模拟器编译 BUILD SUCCESSFUL（3m1s），1367 项 0 失败 1 跳过，日志 `.artifacts/native-dropdown/gradle-review.log`。用户已授权：CodeRabbit 复审无问题后以管理员身份合并 PR #95，并触发 KMP 打包。
 - 未验证：浅色、大字号、Android/桌面实机、宽屏三栏回归、VoiceOver 自定义操作。
 
 ## 进行中：作业列表回到顶部按钮（2026-11-02）
