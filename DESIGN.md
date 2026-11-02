@@ -29,7 +29,7 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 | iOS 26+（iPhone / iPad 紧凑） | 原生 `UINavigationBar`，系统液态玻璃；滚动后出现 `UIGlassEffect(.regular)` 顶栏材质 | 原生 `UITabBar`（玻璃底栏） | 原生 `UISheetPresentationController`，玻璃背景 | SF Symbols |
 | iOS 18–25 | 同一套原生控件，宿主自动回退 `UIBlurEffect(.systemMaterial)` | 同上 | 同上 | SF Symbols |
 | iPad 宽窗口 / 横屏宽屏 | 侧栏 + 列表—详情；宽窗口详情不走原生 push，可能由 Compose 自绘顶栏（苹果样式搜索头） | `AppSidebar` | 同 iOS | SF Symbols / 自绘 |
-| Android | Compose `CompactAppTopBar`（与页面背景同色，不仿玻璃）；二级页由 `NativeDetailActivity` 承载 | `CompactBottomNavigation` | `AppleSheet` 回退为 Material `ModalBottomSheet`，`AppleSheetOrAlert` 回退为 `AlertDialog` | Compose `Canvas` 自绘 |
+| Android | Compose `CompactAppTopBar`（与页面背景同色，不仿玻璃）；二级页由 `NativeDetailActivity` 承载 | `CompactBottomNavigation` | `AppleSheet` 回退为 Material `ModalBottomSheet`，`AppleSheetOrAlert` 与 `AppleAlert` 回退为 `AlertDialog` | Compose `Canvas` 自绘 |
 | macOS / Windows | Compose 自绘顶栏，支持悬停、右键、键盘 | 宽屏侧栏 | Material 回退 | Compose `Canvas` 自绘 |
 
 页面代码**不判断 iOS 版本、不判断是否有玻璃**：只要按第 3 节接入统一骨架，平台差异由壳层和宿主处理。
@@ -65,6 +65,7 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 
    - **禁止** `Modifier.padding(top = …)`、`Spacer(height = 状态栏高度)`、`statusBarsPadding()` 之类把视口顶边压到栏下面的写法。那样栏后只剩一片纯色，玻璃没有内容可折射——这就是“顶部白条”返工。
    - **禁止**在页面里再加 `navigationBarsPadding()` 或固定底部留白；底部净空只用 `LocalBottomBarClearance`。
+   - 底部同理：滚动视口一直到屏幕底边（iOS 在底栏下面），净空只作为滚动内容末尾的留白。**禁止**用 `padding(bottom = …)`、`Spacer` 或 `heightIn(max = …)` 让视口在底栏/安全区上方截止——那样滑动时内容会在离底边一条处被硬切掉，下面空一条。
 5. **页头（账户卡、分段、筛选条）作为列表首项随内容滚动**，不要钉在列表上方的固定头部里。固定头部会挡住内容进入栏后，横屏矮视口还会被挤成一条缝。
 6. **顶栏动作只用声明式参数**（`refreshable`、`idleStatusText`、`onStatusClick`、`topBarActionLabel` + `onTopBarActionClick`、`search`），**禁止**传 `topBarAction = { … }` 这种 Composable lambda。宿主画不了 Compose lambda，只要传了它，整条顶栏就会退回 Compose 自绘，iOS 液态玻璃顶栏随之消失。
 7. **页面不画自己的标题行和返回箭头。** 原生栏已经显示居中标题和系统玻璃返回按钮；页内再写一遍大标题或返回箭头属于重复。
@@ -124,15 +125,41 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 
 ---
 
-## 5. 弹层（sheet / 确认框）
+## 5. 弹层：警告框（Alert）与 sheet
 
-- **必须**用 `AppleSheet`（内容型弹层）或 `AppleSheetOrAlert`（确认、提示、短表单），位置 `feature/shell/AppleSheet.kt`。**禁止**在业务页直接用 `ModalBottomSheet`、`AlertDialog`、`Dialog` 或自绘弹层。少数旧页面仍直接调用 `AlertDialog`，那是历史遗留，不要照抄，后续统一整改。
+### 5.1 先选对类型
+
+| 类型 | 组件 | iOS 呈现 | 什么时候用 |
+| --- | --- | --- | --- |
+| 警告框 | `AppleAlert`（`feature/shell/AppleAlert.kt`） | 系统 `UIAlertController`，屏幕中央的液态玻璃卡片，不能下滑或点外部关闭 | 一句话的**确认、警告、结果**，配 1–3 个按钮：清除/删除前确认、发送前确认、“已是最新版本”“检查更新失败”“自动登录失败”、部分同步失败重试 |
+| 内容型弹层 | `AppleSheet` / `AppleSheetOrAlert`（`feature/shell/AppleSheet.kt`） | 系统 `UISheetPresentationController`，从底部升起，可下滑关闭 | 有**内容要看、要填、要选**：详情、筛选、列表、二维码、日期选择、验证码输入、带勾选项的提交核对、较长的版本说明 |
+
+判断方法：正文能不能写成一句（或几行纯文字）？用户唯一要做的是不是点一个按钮？两个都是“是”就用 `AppleAlert`；正文里有列表样式、彩色分组、勾选框、输入框、图片或需要滚动阅读，就用 sheet。**禁止**把确认框做成 sheet（会被误以为“下滑就是取消”），也**禁止**把勾选、输入、二维码塞进警告框。
+
+**禁止**在业务页直接用 `ModalBottomSheet`、`AlertDialog`、`Dialog` 或自绘弹层；`AppleSheet.kt`、`AppleAlert.kt` 内部的 Material 回退是唯一例外。
+
+### 5.2 警告框
+
+- 按钮用 `AppleAlertAction` 声明，角色决定样式和位置：`Cancel`（取消/关闭，最多一个）、`Default`、`Destructive`（清除、删除、舍弃，红色）。破坏性确认必须同时有 `Cancel` 和 `Destructive` 两个按钮。
+- 按钮文字写清后果（“清除缓存”“舍弃全部文件”），不用“确定”。只有一个普通动作配一个取消时，iOS 自动把普通动作加粗为首选。
+- 系统会在按钮被点后自己关闭警告框，`onClick` 里只需清掉显示状态并执行动作。
+- 三个选项的取舍（如“取消目录导出”：保留文件 / 舍弃全部 / 继续下载）也用警告框，按钮竖排；不要为此另做 sheet。
+- `message` 只放纯文字，可以用 `\n` 分行列出少量条目（≤5 条左右），更多内容改用 sheet。
+
+### 5.3 内容型弹层（sheet）
+
 - iOS 上弹层是真正的 `UISheetPresentationController`：圆角外壳、grabber、detent、玻璃背景、下滑关闭全由系统提供。Compose 只提供正文；**禁止**在正文里再画标题行、关闭按钮、确认按钮或外层圆角卡片（“框里套框”）。
 - **标题与按钮放在弹层的原生导航栏里：** 标题居中；确认动作（`confirmLabel`）在左侧，用 Done 样式；“取消”或文字关闭在右侧最靠边；没有 `dismissLabel` 时右侧是系统圆形关闭按钮（X）；“今天”紧挨在“取消”左边。只有确实有事可做时才给确认按钮（例如同步面板有失败项才显示“重试”），不要在系统 X 旁边再放一个“关闭”。
-- **高度：**
-  - 正文较短、按内容定高的（详情、二维码、确认、同步状态、添加到日历）：`fitContentHeight = true`。
-  - 筛选器、周数选择、选课列表、带提交/上传的长表单：`needsFullHeight = true`。
-  - 两种模式下**禁止**在 content 里再套 `verticalScroll`，滚动和底部安全区由 sheet 负责。
+- **高度：iOS 一律按正文测高**，不直接开成半屏或全屏。`AppleSheet` 在 iOS 上默认量出正文高度作为 detent，内容超过屏幕时停在系统允许的最大高度并在 sheet 内滚动。
+  - 正文需要滚动时用 `Modifier.sheetBodyScroll(state)`，**禁止**直接写 `verticalScroll`：测高时 sheet 统一负责滚动，正文再套一层会在测量时崩溃；Android/桌面上它照常滚动。
+  - 正文里不要用纵向 `weight(1f)`、`fillMaxHeight()` 去“撑满”sheet，测高时它们没有意义。
+  - 唯一例外是正文**自己就是**懒加载列表或整页工作区（选课列表、回放列表、附件预览、CITEL/物理在线作业详情工作区、更新说明）：传 `scrollableBody = true`，iOS 用全高 detent。
+  - `needsFullHeight` 只影响 Android/桌面的底部 sheet 是否铺满；`fitContentHeight` 只影响 `AppleSheetOrAlert` 回退对话框是否可滚动。iOS 上两者都不改变“测高”。
+- **底部安全区放在滚动内容末尾，滚动视口一直到 sheet 底边。** 内容可以滑到 home indicator 下面，滑到底时末尾留出安全区那么高的空白——这是允许的；**禁止**的是视口在安全区上方截止，滑动时内容在离底边一条处被硬切掉、下面空一条。
+  - 测高的 sheet 由 `AppleSheet` 自动处理，正文不要再加 `navigationBarsPadding()` / `windowInsetsPadding(...bottom...)`，也不要给滚动容器加 `heightIn(max = …)` 之类的限高。
+  - 全高 sheet（`scrollableBody = true`）里，`LocalBottomBarClearance` 就是底部安全区：正文的滚动容器把它加在 `contentPadding.bottom` / 末尾 padding 上（与页面一致，复用的页面组件自动生效）。
+- 必须读完才能关的内容（如启动版本说明）传 `dismissible = false`：iOS 不能下滑关闭，回退对话框不响应点外部与返回键。
+- `AppleSheetOrAlert` 在 Android/桌面回退为对话框，`confirmEnabled` / `dismissEnabled` 两端都生效，用它们表达“勾选后才能提交”。
 - 弹层是独立的 Compose 根：主题已由 `AppleSheet` 继承，**不要**在正文里重新包 `MaterialTheme` 或写死颜色。
 - 发起网络请求的弹层：用页面（宿主）级 scope 启动请求，再关闭弹层。弹层内 `rememberCoroutineScope()` 启动的协程会随弹层销毁被取消，曾导致“一直同步中”。
 
@@ -160,7 +187,7 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 
 - 点击区域不小于 44pt / 48.dp。视觉上 32.dp 的圆形按钮，周围要留出足够的可点区域。
 - 按下立即有反馈（Material ripple / 系统高亮），不要等请求返回才变化。耗时动作在按钮内显示进行中（转圈 + “正在续借…”）并禁用重复点击。
-- 破坏性、不可撤销的动作（删除、清除离线数据、提交作业）先用 `AppleSheetOrAlert` 确认，按钮文字写明后果。可撤销的动作（标记完成、忽略）不弹确认，给撤销条（参考 `AssignmentIgnoreUndoBar`）。
+- 破坏性、不可撤销的动作（删除、清除离线数据）先用 `AppleAlert` 确认（`Destructive` + `Cancel`），按钮文字写明后果；需要核对内容的（如最终提交作业）用 sheet 列出内容并以勾选控制 `confirmEnabled`。可撤销的动作（标记完成、忽略）不弹确认，给撤销条（参考 `AssignmentIgnoreUndoBar`）。
 
 ---
 
@@ -186,7 +213,7 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 ## 9. 颜色
 
 - 只用 `MaterialTheme.colorScheme`。品牌色在各端 `ThemePlatform.*.kt`（iOS/macOS 固定品牌蓝，Android 可选 Material You 动态取色）。**禁止**在页面里写 `Color(0xFF…)` 表达通用语义。
-- 课程类别色（必修/限选/任选/体育/未知/实验/考试）**只**来自 `feature/course/CourseCategoryPalette.kt`，课表、成绩、首页、小组件共用。成绩页 `GradeTypeColors.kt` 目前还有一份重复色值、限选色也与调色板不一致，属遗留；页面里散落的语义色同样待收拢。新代码不要再复制色值。
+- 课程类别色（必修/限选/任选/体育/未知/实验/考试）**只**来自 `feature/course/CourseCategoryPalette.kt`，课表、成绩、首页、小组件共用。成绩页 `courseTypeColors()` 也只是转调它。页面里散落的其他语义色属遗留，待收拢；新代码不要再复制色值。
 - 有利变化标绿（截止或折扣时间延后、成绩变好），使用首页变动弹层已有的那组绿色；新增“利好”语义时复用 `HomeChangeField.isFavorableChange()` 的判断与配色，不另起颜色。错误用 `colorScheme.error`。
 - 浅色、深色都要看。半透明底色一律经过 `accessibleAlpha()`，“减少透明度”打开时自动变成实色。
 - 文字在玻璃或半透明表面上时，用高对比的 `onSurface`，不要用浅灰小字。
@@ -234,8 +261,11 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 | 栏内按钮 `sharesBackground = false`，或玻璃按钮里再套胶囊 | 栏背景整个消失 / 玻璃套玻璃 |
 | 下拉刷新（Material PTR、`UIRefreshControl`） | 与系统过滚抢手势、误触，已整体移除；刷新用顶栏圆形按钮 |
 | 业务页直接用 `ModalBottomSheet` / `AlertDialog` | iOS 上背景与文字分层错位、全高顶状态栏、无法下滑关闭 |
+| 确认、警告、结果提示用 sheet；或把勾选、输入、列表塞进警告框 | 确认框能被下滑“取消”、不符合系统习惯；警告框里放内容则排版失控 |
 | sheet 正文里画标题、关闭按钮、外层圆角卡片 | 与系统 sheet 外壳重复，变成框中框 |
-| sheet 正文再套 `verticalScroll` | 高度测量错误，sheet 越长越高 |
+| sheet 正文直接写 `verticalScroll`（应改用 `sheetBodyScroll`） | iOS 测高时嵌套滚动崩溃，或高度测量错误、sheet 越长越高 |
+| iOS sheet 直接开成半屏/全屏（正文不是懒加载列表却传 `scrollableBody = true`） | 内容少时下面一大片空，内容多时半屏截断 |
+| 滚动视口在底部安全区/底栏上方截止（视口外加底部 padding、`heightIn(max)` 限高） | 滑动时内容在离底边一条处被硬切掉，下面空一条 |
 | 铺满底部的实心操作栏 | 底部安全区出现黑/白带；改用浮动胶囊 |
 | 固定在列表上方的页头 | 内容进不了栏后；横屏视口被挤窄 |
 | 页面里自己画大标题或返回箭头（原生栏已接管时） | 标题和返回重复出现 |
@@ -250,7 +280,8 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 
 - [ ] 新页面：`nativeRouteTitle` 有标题；`DestinationPage(scrollUnderTopBar = true)`；主滚动容器是 `TopScrollLazyColumn` / `TopScrollColumn`；顶/底留白来自 `LocalTopBarClearance` / `LocalBottomBarClearance` 并加在 `contentPadding` 上。
 - [ ] 顶栏只用声明式动作；新增页面动作已在 `ContentView.swift` 的 `symbolName(for:kind:)` 配好 SF Symbol 和左右位置。
-- [ ] 弹层全部走 `AppleSheet` / `AppleSheetOrAlert`，并选对了 `fitContentHeight` / `needsFullHeight`。
+- [ ] 弹层按 5.1 选对类型：一句话确认/警告/结果用 `AppleAlert`，有内容的用 `AppleSheet` / `AppleSheetOrAlert`；iOS sheet 按正文测高（正文滚动用 `sheetBodyScroll`），只有懒加载列表/整页工作区才 `scrollableBody = true`。
+- [ ] 页面和 sheet 的滚动视口都到底边，底部安全区/底栏净空只作为滚动内容末尾留白；在 iOS 上滑到底确认没有被截成一条的空带。
 - [ ] 没有新增硬编码颜色、图标库、下拉刷新、实心底栏、Compose 仿玻璃。
 - [ ] iOS 模拟器实际打开过页面：顶部时栏透明；内容上滑后出现玻璃；内容不满一屏上拉回弹时也有玻璃；栏内按钮是系统圆形玻璃。
 - [ ] 浅色 / 深色、加载 / 空 / 错误 / 正常、文字放大都看过；Android 与 macOS 至少各看一次窄窗口和宽窗口。
@@ -270,6 +301,7 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 | 顶/底净空 | `.../feature/shell/TopBarClearance.kt`、`BottomBarClearance.kt` |
 | Compose 回退顶栏与圆形按钮 | `.../feature/shell/CompactAppTopBar.kt` |
 | 弹层 | `.../feature/shell/AppleSheet.kt`、`shared/src/iosMain/cinterop/UIKitSheetBridge.h` |
+| 警告框 | `.../feature/shell/AppleAlert.kt`、`shared/src/iosMain/.../IosNativeAlertPresentation.kt` |
 | 页内搜索 | `.../feature/shell/PageSearch.kt` |
 | iOS 宿主：栏内按钮、SF Symbol 映射、顶栏玻璃、原生滚动 | `multiplatform/iosApp/iosApp/ContentView.swift` |
 | 无障碍开关与减弱动效 | `.../shared/AccessibilityPresentation.kt` |

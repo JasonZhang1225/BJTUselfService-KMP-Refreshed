@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -31,7 +30,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LocalContentColor
@@ -85,6 +83,8 @@ import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.deadlineInScope
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.PlatformFamily
+import team.bjtuss.bjtuselfservice.shared.currentPlatform
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -271,11 +271,12 @@ fun PhyVlabWorkspace(
     }
 
     if (showDetailSheet) state.selectedActivity?.let { activity ->
-        // 实验详情含提交区与上传动作，半屏放不下：iOS 卡片直接开到全屏。
+        // 正文是整页工作区（自带滚动），不测高：全高 sheet，滚动视口到底边。
         AppleSheet(
             onDismissRequest = model::dismissActivityDetails,
             title = "物理作业详情",
             needsFullHeight = true,
+            scrollableBody = true,
         ) {
             PhyVlabAssignmentDetailContent(
                 activity = activity,
@@ -560,14 +561,16 @@ private fun PhyVlabAssignmentDetailContent(
         state = scrollState,
         enabled = fullScreen,
         modifier = modifier
-            .then(if (fullScreen) Modifier.fillMaxSize() else Modifier.fillMaxWidth().heightIn(max = 680.dp))
+            // iOS sheet 里视口铺满到底边，内容可滑到 home indicator 下；其他端的底部 sheet 限高。
+            .then(if (fullScreen || currentPlatform().family == PlatformFamily.IOS) Modifier.fillMaxSize() else Modifier.fillMaxWidth().heightIn(max = 680.dp))
             .desktopTouchScroll(scrollState),
         contentModifier = Modifier
             .padding(horizontal = 24.dp, vertical = 12.dp)
             // 原生栏 underlap 时视口顶边贴屏幕顶，首项靠这份顶边距让开。
             // 只在全屏路由页生效：sheet 里的复用不受影响（且 sheet 路径本就没有 clearance）。
             .padding(top = if (fullScreen) LocalTopBarClearance.current else 0.dp)
-            .padding(bottom = if (fullScreen) LocalBottomBarClearance.current else 0.dp),
+            // 全屏页与 iOS 全高 sheet 都经它把底部净空放进滚动内容末尾。
+            .padding(bottom = LocalBottomBarClearance.current),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         headerContent?.invoke()
@@ -720,34 +723,41 @@ internal fun PhyVlabFinalizationDialog(title: String, fileNames: List<String>, s
     isSubmitting: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
     var filesChecked by remember(title, fileNames) { mutableStateOf(false) }
     var statementAccepted by remember(title, statement) { mutableStateOf(false) }
-    AlertDialog(
+    // 正文有文件清单和勾选项，属于内容型弹层：iOS 原生 sheet，其他端对话框。
+    AppleSheetOrAlert(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
-        title = { Text("检查文件并最终提交？") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("最终提交后不能修改、替换或删除文件。取消后仍可返回修改草稿。")
-                Text(title, fontWeight = FontWeight.SemiBold)
-                Text("将最终提交以下 ${fileNames.size} 个文件：")
-                fileNames.forEach { Text("• $it") }
+        title = "检查文件并最终提交？",
+        confirmLabel = "确认最终提交",
+        confirmEnabled = !isSubmitting && fileNames.isNotEmpty() && filesChecked &&
+            (statement == null || statementAccepted),
+        onConfirm = onConfirm,
+        dismissLabel = "返回检查",
+        dismissEnabled = !isSubmitting,
+        showDismissButton = false,
+        fitContentHeight = true,
+        dismissible = !isSubmitting,
+    ) {
+        Column(
+            Modifier.padding(horizontal = if (currentPlatform().family == PlatformFamily.IOS) 20.dp else 0.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("最终提交后不能修改、替换或删除文件。取消后仍可返回修改草稿。")
+            Text(title, fontWeight = FontWeight.SemiBold)
+            Text("将最终提交以下 ${fileNames.size} 个文件：")
+            fileNames.forEach { Text("• $it") }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Checkbox(filesChecked, { filesChecked = it }, enabled = !isSubmitting)
+                Text("我已核对全部文件，确认提交后不能再修改")
+            }
+            statement?.let {
+                Text(it)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.Checkbox(filesChecked, { filesChecked = it }, enabled = !isSubmitting)
-                    Text("我已核对全部文件，确认提交后不能再修改")
-                }
-                statement?.let {
-                    Text(it)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.Checkbox(statementAccepted, { statementAccepted = it }, enabled = !isSubmitting)
-                        Text("我已阅读并同意上述声明")
-                    }
+                    androidx.compose.material3.Checkbox(statementAccepted, { statementAccepted = it }, enabled = !isSubmitting)
+                    Text("我已阅读并同意上述声明")
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm, enabled = !isSubmitting && fileNames.isNotEmpty() && filesChecked &&
-                (statement == null || statementAccepted)) { Text("确认最终提交") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !isSubmitting) { Text("返回检查") } },
-    )
+        }
+    }
 }
 
 @Composable

@@ -67,6 +67,9 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlert
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertAction
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertRole
 
 /** 续借确认弹窗的待确认内容；[syncSelection] 为 true 时表示单本续借，确认后再把选择同步成这一本。 */
 private data class PendingRenew(
@@ -631,42 +634,23 @@ private fun RenewConfirmDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    AppleSheetOrAlert(
-        onDismissRequest = onDismiss,
+    AppleAlert(
         title = "确认续借",
-        confirmLabel = "续借",
-        onConfirm = onConfirm,
-        dismissLabel = "取消",
-        showDismissButton = false,
-        fitContentHeight = true,
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = "将续借以下 ${pending.loans.size} 本图书：",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            pending.loans.take(5).forEach { loan ->
-                Text(
-                    text = "· ${loan.title.ifBlank { "未命名图书" }}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (pending.loans.size > 5) {
-                Text(
-                    text = "等 ${pending.loans.size} 本",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Text(
-                text = "续借结果以图书馆返回的应还日期为准。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+        message = renewConfirmMessage(pending.loans.map { it.title }),
+        actions = listOf(
+            AppleAlertAction("取消", AppleAlertRole.Cancel, onClick = onDismiss),
+            AppleAlertAction("续借", onClick = onConfirm),
+        ),
+        onDismissRequest = onDismiss,
+    )
+}
+
+/** 续借确认文案：最多列 5 本书名，其余只计数。 */
+internal fun renewConfirmMessage(titles: List<String>): String = buildString {
+    append("将续借以下 ${titles.size} 本图书：")
+    titles.take(5).forEach { append("\n· ").append(it.ifBlank { "未命名图书" }) }
+    if (titles.size > 5) append("\n等 ${titles.size} 本")
+    append("\n\n续借结果以图书馆返回的应还日期为准。")
 }
 
 @Composable

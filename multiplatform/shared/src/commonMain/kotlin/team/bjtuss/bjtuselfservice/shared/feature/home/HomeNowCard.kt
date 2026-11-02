@@ -46,6 +46,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.course.courseCategoryAccent
 import team.bjtuss.bjtuselfservice.shared.feature.course.courseColorCategory
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
+import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetBodyScroll
 
 @Composable
 internal fun HomeNowSection(
@@ -89,12 +90,12 @@ internal fun HomeNowSection(
         }
     }
     selected?.let { course ->
-        AppleSheet(onDismissRequest = { selected = null }, title = "课程详情", scrollableBody = true) {
+        AppleSheet(onDismissRequest = { selected = null }, title = "课程详情") {
             val detailScroll = rememberScrollState()
             CourseDetailContent(
                 course,
                 schedule.staggeredClassTimes,
-                Modifier.fillMaxWidth().verticalScroll(detailScroll).desktopTouchScroll(detailScroll)
+                Modifier.fillMaxWidth().sheetBodyScroll(detailScroll)
                     .padding(horizontal = 24.dp, vertical = 8.dp).padding(bottom = 20.dp),
             )
         }

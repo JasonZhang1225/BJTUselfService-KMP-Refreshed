@@ -466,23 +466,15 @@ internal fun PartialSyncFailureDialog(
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AppleSheetOrAlert(
-        onDismissRequest = onDismiss,
+    AppleAlert(
         title = "部分同步失败",
-        confirmLabel = "重试",
-        onConfirm = onRetry,
-        dismissLabel = "关闭",
-    ) {
-        Column(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-        ) {
-            Text("以下内容本轮同步失败。可以稍后手动重试：")
-            failedItems.forEach { item ->
-                Text("• $item", style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
+        message = "以下内容本轮同步失败，可以稍后手动重试：\n" + failedItems.joinToString("\n") { "· $it" },
+        actions = listOf(
+            AppleAlertAction("关闭", AppleAlertRole.Cancel, onClick = onDismiss),
+            AppleAlertAction("重试", onClick = onRetry),
+        ),
+        onDismissRequest = onDismiss,
+    )
 }
 
 @Composable

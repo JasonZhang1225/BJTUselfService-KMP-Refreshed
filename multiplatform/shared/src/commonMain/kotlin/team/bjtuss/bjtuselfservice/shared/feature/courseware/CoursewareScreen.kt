@@ -27,7 +27,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -71,6 +70,10 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LegacySmartTransportWarning
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlert
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertAction
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertRole
+import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetBodyScroll
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -203,17 +206,15 @@ fun CoursewareWorkspace(
     LaunchedEffect(model) { model.initialize() }
 
     if (showCancelDirectoryDialog && directoryJob?.isActive == true) {
-        AlertDialog(
+        AppleAlert(
+            title = "取消目录导出？",
+            message = "可以保留已完成下载的文件，或舍弃本次导出的整个目录。当前未完成的文件会清理。",
+            actions = listOf(
+                AppleAlertAction("保留已完成文件") { cancelDirectoryExport(true) },
+                AppleAlertAction("舍弃全部文件", AppleAlertRole.Destructive) { cancelDirectoryExport(false) },
+                AppleAlertAction("继续下载", AppleAlertRole.Cancel) { showCancelDirectoryDialog = false },
+            ),
             onDismissRequest = { showCancelDirectoryDialog = false },
-            title = { Text("取消目录导出？") },
-            text = { Text("可以保留已完成下载的文件，或舍弃本次导出的整个目录。当前未完成的文件会清理。") },
-            confirmButton = {
-                Column {
-                    TextButton(onClick = { cancelDirectoryExport(true) }) { Text("取消导出，保留已完成文件") }
-                    TextButton(onClick = { cancelDirectoryExport(false) }) { Text("取消导出，舍弃全部文件") }
-                }
-            },
-            dismissButton = { TextButton(onClick = { showCancelDirectoryDialog = false }) { Text("继续下载") } },
         )
     }
 
@@ -681,7 +682,6 @@ private fun CoursewareCompactWorkspace(
             // underlying Courseware navigation title out of the sheet chrome
             // and gives the final save button a real viewport to scroll in.
             needsFullHeight = true,
-            scrollableBody = true,
         ) {
             val detailScrollState = rememberScrollState()
             CoursewareDetailSheetBody(
@@ -696,9 +696,8 @@ private fun CoursewareCompactWorkspace(
                 onExportDirectory = onExportDirectory,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .then(if (team.bjtuss.bjtuselfservice.shared.currentPlatform().family == team.bjtuss.bjtuselfservice.shared.PlatformFamily.IOS) Modifier.weight(1f) else Modifier.heightIn(max = 560.dp))
-                    .verticalScroll(detailScrollState)
-                    .desktopTouchScroll(detailScrollState)
+                    .then(if (team.bjtuss.bjtuselfservice.shared.currentPlatform().family == team.bjtuss.bjtuselfservice.shared.PlatformFamily.IOS) Modifier else Modifier.heightIn(max = 560.dp))
+                    .sheetBodyScroll(detailScrollState)
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 28.dp),
             )

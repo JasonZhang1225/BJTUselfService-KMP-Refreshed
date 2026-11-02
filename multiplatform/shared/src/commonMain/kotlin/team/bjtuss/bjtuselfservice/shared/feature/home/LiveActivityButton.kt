@@ -5,11 +5,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +27,9 @@ import team.bjtuss.bjtuselfservice.shared.domain.home.HomeNowSession
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseColorCategory
 import team.bjtuss.bjtuselfservice.shared.feature.course.tones
 import team.bjtuss.bjtuselfservice.shared.feature.widget.compactWidgetPlace
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlert
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertAction
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertRole
 
 /**
  * 首页“正在上/下一节”卡片对应的一项日程，交给系统实时活动（iOS 灵动岛、Android 实时动态）显示。
@@ -90,17 +91,15 @@ internal class LiveActivityPermissionIntro(val onAllow: () -> Unit, val onLater:
 
 @Composable
 internal fun LiveActivityPermissionIntroDialog(intro: LiveActivityPermissionIntro) {
-    AlertDialog(
+    AppleAlert(
+        title = "允许通知，显示课程实时动态",
+        message = "上课前，交大自由行会在状态栏和通知栏顶部显示下一节课的倒计时，上课时显示距下课还有多久。\n\n" +
+            "这需要通知权限，只用于实时动态，不会推送其他消息。之后也可以在首页课程卡片的 Live 菜单里开启或关闭。",
+        actions = listOf(
+            AppleAlertAction("暂不", AppleAlertRole.Cancel, onClick = intro.onLater),
+            AppleAlertAction("允许", onClick = intro.onAllow),
+        ),
         onDismissRequest = intro.onLater,
-        title = { Text("允许通知，显示课程实时动态") },
-        text = {
-            Text(
-                "上课前，交大自由行会在状态栏和通知栏顶部显示下一节课的倒计时，上课时显示距下课还有多久。\n\n" +
-                    "这需要通知权限，只用于实时动态，不会推送其他消息。之后也可以在首页课程卡片的 Live 菜单里开启或关闭。",
-            )
-        },
-        confirmButton = { TextButton(onClick = intro.onAllow) { Text("允许") } },
-        dismissButton = { TextButton(onClick = intro.onLater) { Text("暂不") } },
     )
 }
 

@@ -76,13 +76,15 @@ import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailComposeDraft
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailMessage
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailSummary
-import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.util.SchoolRichTextBlock
 import team.bjtuss.bjtuselfservice.shared.util.schoolRichTextToBlocks
 import team.bjtuss.bjtuselfservice.shared.util.schoolRichTextToPlainMultiline
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlert
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertAction
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertRole
 
 private val mailboxSplitMinWidth = 980.dp
 
@@ -337,22 +339,20 @@ internal fun MailboxComposeScreen(
     }
 
     if (showSendConfirmation) {
-        AppleSheetOrAlert(
-            onDismissRequest = { showSendConfirmation = false },
+        AppleAlert(
             title = "确认发送",
-            confirmLabel = "发送",
-            onConfirm = {
-                showSendConfirmation = false
-                scope.launch {
-                    if (model.sendCompose()) onSent()
-                }
-            },
-            dismissLabel = "取消",
-        ) {
-                Text(
-                    "将发送给 ${composeRecipients(draft.to).joinToString(", ")}\n主题：${draft.subject.ifBlank { "无主题" }}",
-                )
-        }
+            message = "将发送给 ${composeRecipients(draft.to).joinToString(", ")}\n主题：${draft.subject.ifBlank { "无主题" }}",
+            actions = listOf(
+                AppleAlertAction("取消", AppleAlertRole.Cancel) { showSendConfirmation = false },
+                AppleAlertAction("发送") {
+                    showSendConfirmation = false
+                    scope.launch {
+                        if (model.sendCompose()) onSent()
+                    }
+                },
+            ),
+            onDismissRequest = { showSendConfirmation = false },
+        )
     }
 }
 

@@ -40,7 +40,7 @@ internal data class CourseCategoryTones(
 internal val CourseColorCategory.tones: CourseCategoryTones
     get() = when (this) {
         CourseColorCategory.REQUIRED -> CourseCategoryTones(0xF6D2D0, 0x7D1F1A, 0x4A1F1D, 0xF2B9B4, 0xD9574E)
-        // 课程表里限选用玫红，和必修的砖红分开；成绩页的限选仍用琥珀（见 GradeTypeColors）。
+        // 限选用玫红，和必修的砖红分开；成绩页也用这一份。
         CourseColorCategory.LIMITED -> CourseCategoryTones(0xF4D7E6, 0x9C3F70, 0x48243A, 0xF0B2D2, 0xC9558A)
         CourseColorCategory.ELECTIVE -> CourseCategoryTones(0xDCE4FC, 0x2F4DB5, 0x223065, 0xC3CDFA, 0x4F6FD8)
         // 体育用青绿：深浅两套都由 accent 0x16A4A4 推出。

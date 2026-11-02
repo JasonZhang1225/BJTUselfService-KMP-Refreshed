@@ -934,11 +934,18 @@ fun AuthenticatedAppShell(
         }
     }
 
-    if (citelSyncDialogVisible) AppleSheetOrAlert(onDismissRequest = { citelSyncDialogVisible = false },
-        title = "CITEL 同步状态", confirmLabel = "刷新", dismissLabel = "关闭",
-        onConfirm = { citelSyncDialogVisible = false; scope.launch { session.citelModel?.refresh() } }) {
-        Text(citelState.message ?: if (citelState.fromCache) "本轮尚未同步，当前显示上次同步的缓存。" else "尚未同步 CITEL 作业。")
-    }
+    if (citelSyncDialogVisible) AppleAlert(
+        title = "CITEL 同步状态",
+        message = citelState.message ?: if (citelState.fromCache) "本轮尚未同步，当前显示上次同步的缓存。" else "尚未同步 CITEL 作业。",
+        actions = listOf(
+            AppleAlertAction("关闭", AppleAlertRole.Cancel) { citelSyncDialogVisible = false },
+            AppleAlertAction("刷新") {
+                citelSyncDialogVisible = false
+                scope.launch { session.citelModel?.refresh() }
+            },
+        ),
+        onDismissRequest = { citelSyncDialogVisible = false },
+    )
     LaunchedEffect(appCommandBus) {
         appCommandBus?.commands?.collect { command ->
             when (command) {
