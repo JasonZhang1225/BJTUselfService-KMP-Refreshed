@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.unit.Density
@@ -40,7 +41,7 @@ class AssignmentScrollToTopTest {
                     LocalNativeScrollControllerReporter provides { controller = it },
                 ) {
                     val list = rememberLazyListState().also { state = it }
-                    AssignmentListWithScrollToTop(list, Modifier.height(height.value)) { modifier ->
+                    AssignmentListWithScrollToTop(list, Modifier.height(height.value)) { modifier, _ ->
                         TopScrollLazyColumn(list, modifier) { items(40) { Box(Modifier.height(100.dp)) } }
                     }
                 }
@@ -147,7 +148,7 @@ class AssignmentScrollToTopTest {
             PlatformAppTheme(false, false) {
                 CompositionLocalProvider(LocalAssignmentCompletionStore provides store, LocalBottomBarClearance provides 84.dp) {
                     val list = rememberLazyListState().also { state = it }
-                    AssignmentListWithScrollToTop(list, Modifier.fillMaxSize()) { modifier ->
+                    AssignmentListWithScrollToTop(list, Modifier.fillMaxSize()) { modifier, _ ->
                         TopScrollLazyColumn(list, modifier) { items(count.value) { Box(Modifier.height(100.dp)) } }
                     }
                 }
@@ -169,6 +170,54 @@ class AssignmentScrollToTopTest {
         } finally { scene.close() }
     }
 
+    @Test fun undoLeavesLastProductionCardClearWithoutShrinkingTheViewport() = SwingUtilities.invokeAndWait {
+        for (scale in listOf(1f, 1.6f)) {
+            val store = AssignmentCompletionStore(object : AssignmentCompletionPersistence {
+                override fun load() = emptySet<AssignmentCompletionKey>()
+                override fun save(keys: Set<AssignmentCompletionKey>) = Unit
+            })
+            val assignments = aggregateAssignments((1..40).map {
+                completionFixtureHomework().copy(upId = it, title = "尾项回归 $it")
+            }, emptyList(), emptyList())
+            var controller: NativeScrollController? = null
+            val density = Density(1f, scale)
+            val scene = ImageComposeScene(390, 568, density = density, coroutineContext = Dispatchers.Unconfined) {
+                PlatformAppTheme(false, false) {
+                    CompositionLocalProvider(LocalDensity provides density,
+                        LocalAssignmentCompletionStore provides store, LocalBottomBarClearance provides 84.dp,
+                        LocalNativeScrollControllerReporter provides { controller = it }) {
+                        Surface(Modifier.fillMaxSize()) {
+                            AggregatedAssignmentWorkspace(assignments, emptyList(), null, {}, {}, {}, false, {},
+                                fileGateway = UnavailableHomeworkFileGateway, markdown = { "" }, detailContent = {})
+                        }
+                    }
+                }
+            }
+            try {
+                val frames = Frames(scene)
+                frames.settle()
+                fun viewport() = nodes(scene).first { it.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange) != null }.boundsInRoot
+                val originalViewport = viewport()
+                runBlocking { store.requestSetCompleted(AssignmentCompletionKey(AssignmentSource.COURSE_PLATFORM, 10, 999),
+                    true, "示例作业")!!.join() }
+                frames.settle()
+                assertEquals(originalViewport, viewport(), "撤销提示不能缩小或移动列表视口")
+                controller!!.consumeScroll(100_000f)
+                frames.settle(60)
+                fun hasLastTitle(node: SemanticsNode): Boolean =
+                    node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == "尾项回归 40" } == true ||
+                        node.children.any(::hasLastTitle)
+                val lastCard = nodes(scene).first {
+                    it.config.getOrNull(SemanticsActions.OnClick) != null && hasLastTitle(it)
+                }
+                assertFalse(controller!!.canScrollForward)
+                assertTrue(lastCard.boundsInRoot.bottom <= assertNotNull(button(scene)).boundsInRoot.top,
+                    "滚动到底后，末项卡片必须完整位于上移的回顶按钮之上：scale=$scale")
+                frames.capture("undo-last-card-s$scale")
+            } finally { scene.close() }
+        }
+    }
+
     private fun nodes(scene: ImageComposeScene): List<SemanticsNode> {
         fun collect(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::collect)
         return scene.semanticsOwners.flatMap { collect(it.unmergedRootSemanticsNode) }
@@ -182,7 +231,8 @@ class AssignmentScrollToTopTest {
         private var frame = 0L
         fun settle(count: Int = 24) = repeat(count) { scene.render(++frame * 16_000_000L).close() }
         fun capture(name: String) {
-            val file = File("../../.artifacts/assignment-scroll-top-all/ui/aggregate-$name.png")
+            val directory = System.getProperty("assignmentScrollTop.artifactDir") ?: return
+            val file = File(directory, "aggregate-$name.png")
             file.parentFile.mkdirs()
             scene.render(++frame * 16_000_000L).use { image ->
                 image.encodeToData(EncodedImageFormat.PNG)!!.use { file.writeBytes(it.bytes) }

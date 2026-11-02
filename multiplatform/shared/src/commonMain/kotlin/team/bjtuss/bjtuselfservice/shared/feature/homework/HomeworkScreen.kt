@@ -853,7 +853,7 @@ private fun HomeworkScrollableContent(
     LaunchedEffect(state.sortOrder, state.hideExpired, state.hideSubmitted, state.selectedCourses, searchActive, query) {
         listState.scrollToItem(0)
     }
-    AssignmentListWithScrollToTop(listState, modifier) { scrollModifier ->
+    AssignmentListWithScrollToTop(listState, modifier) { scrollModifier, overlayClearance ->
         TopScrollLazyColumn(
             state = listState,
             modifier = scrollModifier.desktopTouchScroll(listState),
@@ -862,7 +862,7 @@ private fun HomeworkScrollableContent(
                 // 首项靠内部顶边距让开原生栏（外层已不再占位，见 Workspace）：8.dp 还原原来的
                 // 列表起笔位置，clearance 让内容从栏底开始、滚起来穿进栏后供原生 blur 采样。
                 top = 8.dp + topClearance,
-                bottom = 18.dp + 48.dp + LocalBottomBarClearance.current,
+                bottom = 18.dp + overlayClearance + LocalBottomBarClearance.current,
             ),
         ) {
             if (searchActive) {
@@ -980,12 +980,12 @@ private fun HomeworkList(
     LaunchedEffect(sortOrder) {
         listState.scrollToItem(0)
     }
-    AssignmentListWithScrollToTop(listState, modifier) { scrollModifier ->
+    AssignmentListWithScrollToTop(listState, modifier) { scrollModifier, overlayClearance ->
         LazyColumn(
             state = listState,
             modifier = scrollModifier.desktopTouchScroll(listState),
             verticalArrangement = Arrangement.spacedBy(10.dp),
-            contentPadding = PaddingValues(bottom = 18.dp + 48.dp + LocalBottomBarClearance.current),
+            contentPadding = PaddingValues(bottom = 18.dp + overlayClearance + LocalBottomBarClearance.current),
         ) {
             items(homework, key = Homework::stableKey) { item ->
                 Box(Modifier.animateItem()) {
