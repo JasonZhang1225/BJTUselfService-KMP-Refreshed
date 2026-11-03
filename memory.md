@@ -2,6 +2,7 @@
 
 > 当前工作树 `/workspace/BJTUselfService-KMP-Refreshed`，分支 `fix/ios-preview-scroll-overlay`。用户先前要求仅推送分支；2026-11-03 新指示授权拉取新提交、缩小 iOS 回顶箭头并推送 / 创建 PR 到 main；本轮不安装、不合并或发布，未改版本号。
 
+- 交付：箭头尺寸调整提交 `ad8756bf` 已推送；PR #96（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/96）已创建，目标 main，状态 open / 非草稿，正文标记「目视检查已通过（用户确认，2026-11-03）」。未合并、未发布。
 - 本轮同步远端新提交 `79c00d6d`（精简作业筛选说明文案），保留其全部改动；iOS 原生回顶 SF Symbol 从 22pt 缩至 18pt，44pt 玻璃圆形按钮 / 48pt 点击区域及位置保持原样。用户 2026-11-03 提供 iOS 截图并明确要求将 PR 标记为「目视检查已通过」；按用户验收记录，不声称本环境运行过 iOS。箭头微调后的效果未在本 Linux 环境再次实机查看。
 - 用户提供回放选画面黑屏截图与作业页录屏；定位 iOS `SafeAreaComposeHost` 对整个 Compose 根视图施加回弹变换，导致悬浮回顶按钮跟着移动。现在通过 `NativeScrollController.setOverscrollTranslation` 以物理像素传递 UIKit 回弹位移，只作用在 `TopScrollLazyColumn` / `TopScrollColumn` 的图层上；按钮保持现有位置、44dp 外观 / 48dp 点击区域，回顶/卸载消费者时清零位移，玻璃进度仍由原生宿主处理。
 - 回放预览原先在 `playing` 事件立即暂停，早于首帧实际呈现；改为显式静音并启动 HLS 解码、跳至第 10 分钟（短片取中点），等 `requestVideoFrameCallback` 报告目标位置画面后暂停，旧 WebKit 按播放时间推进并等待绘制后暂停。新增执行真实 HTML 脚本的 Node 回归，覆盖首帧等待、过期画面、短片及旧 WebKit 路径。学校真实 HLS / iOS 上的黑屏消除尚待真机验证。
