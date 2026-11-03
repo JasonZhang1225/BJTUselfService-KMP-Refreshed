@@ -70,35 +70,46 @@ internal fun AssignmentListWithScrollToTop(
             enter = fadeIn(tween(150)),
             exit = fadeOut(tween(150)),
         ) {
-            Box(
-                Modifier.size(48.dp).clip(CircleShape)
-                    .clickable(role = Role.Button, onClick = {
-                        scope.launch {
-                            if (reduceMotion) state.scrollToItem(0) else state.animateScrollToItem(0)
-                        }
-                    })
-                    .semantics { contentDescription = "回到顶部" },
-                contentAlignment = Alignment.Center,
-            ) {
-                Surface(
-                    modifier = Modifier.size(44.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ) {
-                    val arrowColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    Box(contentAlignment = Alignment.Center) {
-                        Canvas(Modifier.size(22.dp)) {
-                            val tip = Offset(size.width * 0.5f, size.height * 0.2f)
-                            val stroke = 2.dp.toPx()
-                            drawLine(arrowColor, Offset(size.width * 0.5f, size.height * 0.8f), tip,
-                                strokeWidth = stroke, cap = StrokeCap.Round)
-                            drawLine(arrowColor, Offset(size.width * 0.2f, size.height * 0.5f), tip,
-                                strokeWidth = stroke, cap = StrokeCap.Round)
-                            drawLine(arrowColor, Offset(size.width * 0.8f, size.height * 0.5f), tip,
-                                strokeWidth = stroke, cap = StrokeCap.Round)
-                        }
+            AssignmentScrollToTopButton(
+                modifier = Modifier.size(48.dp),
+                onClick = {
+                    scope.launch {
+                        if (reduceMotion) state.scrollToItem(0) else state.animateScrollToItem(0)
                     }
+                },
+            )
+        }
+    }
+}
+
+@Composable
+internal expect fun AssignmentScrollToTopButton(modifier: Modifier, onClick: () -> Unit)
+
+@Composable
+internal fun DefaultAssignmentScrollToTopButton(modifier: Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.size(48.dp).clip(CircleShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "回到顶部" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier.size(44.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ) {
+            val arrowColor = MaterialTheme.colorScheme.onPrimaryContainer
+            Box(contentAlignment = Alignment.Center) {
+                Canvas(Modifier.size(22.dp)) {
+                    val tip = Offset(size.width * 0.5f, size.height * 0.2f)
+                    val stroke = 2.dp.toPx()
+                    drawLine(arrowColor, Offset(size.width * 0.5f, size.height * 0.8f), tip,
+                        strokeWidth = stroke, cap = StrokeCap.Round)
+                    drawLine(arrowColor, Offset(size.width * 0.2f, size.height * 0.5f), tip,
+                        strokeWidth = stroke, cap = StrokeCap.Round)
+                    drawLine(arrowColor, Offset(size.width * 0.8f, size.height * 0.5f), tip,
+                        strokeWidth = stroke, cap = StrokeCap.Round)
                 }
             }
         }

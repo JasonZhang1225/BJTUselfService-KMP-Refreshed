@@ -257,3 +257,23 @@ static inline void BJTUAttachSheetPresentationDelegate(
 ) {
     sheet.presentationController.delegate = delegate;
 }
+
+// Keep SDK availability checks in the Objective-C bridge, as with native sheets.
+static inline void BJTUConfigureScrollToTopButton(UIButton *button) {
+    UIButtonConfiguration *config;
+    if (@available(iOS 26.0, *)) {
+        config = [UIButtonConfiguration glassButtonConfiguration];
+    } else {
+        config = [UIButtonConfiguration plainButtonConfiguration];
+        UIBackgroundConfiguration *background = [UIBackgroundConfiguration clearConfiguration];
+        background.visualEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterial];
+        background.cornerRadius = 22;
+        config.background = background;
+    }
+    config.cornerStyle = UIButtonConfigurationCornerStyleCapsule;
+    config.image = [UIImage systemImageNamed:@"arrow.up"
+        withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:18
+            weight:UIImageSymbolWeightSemibold]];
+    button.configuration = config;
+    button.accessibilityLabel = @"回到顶部";
+}
