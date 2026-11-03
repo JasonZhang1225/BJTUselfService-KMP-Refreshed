@@ -102,15 +102,13 @@ internal fun AssignmentDeadlineFilter(
             })
         }
         val stale = untilEpoch != null && untilEpoch <= nowEpoch
-        FilterFootnote(
-            when (scope) {
-                DeadlineScope.ALL -> "显示全部作业，包括已过截止时间的。"
-                DeadlineScope.UPCOMING -> "只显示还没到截止时间的作业。"
-                DeadlineScope.UNTIL_DATE -> if (stale) "所选日期已经过去，请重新选择。"
-                else "显示现在到 ${cutoff?.let { shortDateText(it.date, today) + " " + it.clock }.orEmpty()} 之间截止的作业。"
-            },
-            isError = stale,
-        )
+        if (scope == DeadlineScope.UNTIL_DATE) {
+            FilterFootnote(
+                if (stale) "所选日期已经过去，请重新选择。"
+                else "显示现在到 ${cutoff?.let { shortDateText(it.date, today) + " " + it.clock }.orEmpty()} 之间截止的作业。",
+                isError = stale,
+            )
+        }
     }
 }
 
@@ -127,13 +125,9 @@ internal fun AssignmentSubmissionFilter(hideSubmitted: Boolean, ignoredCount: In
             selectedIndex = if (hideSubmitted) 1 else 0,
             onSelect = { onChange(it == 1) },
         )
-        FilterFootnote(
-            (if (hideSubmitted) "已提交的作业不显示。" else "已提交和未提交的作业都显示。") +
-                "左滑可忽略作业，忽略后收纳在列表末尾的“已忽略”分组里。",
-        )
         if (ignoredCount > 0) {
             Text(
-                "您当前忽略了 $ignoredCount 项作业",
+                "您当前忽略了 $ignoredCount 项作业，左滑作业可将其忽略或取消忽略。忽略后收纳至最底部。",
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
