@@ -1032,6 +1032,7 @@ private final class SafeAreaComposeHost: UIViewController, UIScrollViewDelegate 
         // Today scrolling to the first item. A stale initial false snapshot does not.
         let returnedToTop = scrollController?.canScrollBackward == true &&
             controller?.canScrollBackward == false && renderedOffset > 0.5
+        if controller == nil { scrollController?.setOverscrollTranslation(translationPx: 0) }
         scrollController = controller
         if wasEnabled != hasNativeScroller {
             nativeScrollView?.isScrollEnabled = hasNativeScroller
@@ -1056,7 +1057,7 @@ private final class SafeAreaComposeHost: UIViewController, UIScrollViewDelegate 
         if returnedToTop {
             renderedOffset = 0
             nativeScrollView?.setContentOffset(.zero, animated: false)
-            content.view.transform = .identity
+            controller?.setOverscrollTranslation(translationPx: 0)
         }
         updateNativeRange()
         alignNativeOriginIfNeeded()
@@ -1086,7 +1087,7 @@ private final class SafeAreaComposeHost: UIViewController, UIScrollViewDelegate 
         // at zero. Fix only this idle origin mismatch, never a live native gesture.
         aligningToStart = true
         controller.alignToStart()
-        content.view.transform = .identity
+        controller.setOverscrollTranslation(translationPx: 0)
     }
 
     override func viewWillLayoutSubviews() {
@@ -1159,7 +1160,9 @@ private final class SafeAreaComposeHost: UIViewController, UIScrollViewDelegate 
         }
         // The displacement comes directly from UIKit's rubber band, with no app timer,
         // easing curve, accumulated gesture translation or independent animation.
-        content.view.transform = CGAffineTransform(translationX: 0, y: -(scrollView.contentOffset.y - renderedOffset))
+        // Move only the scrolling viewport. Translating the Compose root also moves
+        // fixed overlays such as the assignment scroll-to-top button.
+        controller.setOverscrollTranslation(translationPx: Float(-(scrollView.contentOffset.y - renderedOffset) * scale))
         updateTopEdgeEffect()
         updateOverscrollGlass(scrollView)
         if controller.maxOffsetPx < 0 && controller.canScrollForward && renderedOffset > nativeRange - scrollView.bounds.height {

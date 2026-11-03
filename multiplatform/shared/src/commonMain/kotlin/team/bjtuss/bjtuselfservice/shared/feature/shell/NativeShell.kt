@@ -104,8 +104,11 @@ data class NativeScrollController(
     val canScrollForward: Boolean,
     private val consume: (Float) -> Float,
     private val alignStart: () -> Unit,
+    private val overscroll: (Float) -> Unit = {},
 ) {
     fun consumeScroll(deltaPx: Float): Float = consume(deltaPx)
     /** Repair a layout/restoration anchor when UIKit is already at its origin. */
     fun alignToStart() = alignStart()
+    /** Signed visual translation in physical pixels, applied only to the scrolling viewport. */
+    fun setOverscrollTranslation(translationPx: Float) = overscroll(translationPx)
 }

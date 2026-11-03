@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -28,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.dp
@@ -42,10 +44,12 @@ internal fun TopScrollLazyColumn(
     content: LazyListScope.() -> Unit,
 ) {
     val nativeReporter = LocalNativeScrollControllerReporter.current
+    val nativeTranslation = remember(state) { mutableFloatStateOf(0f) }
+    val translateNativeScroll = remember(state) { { px: Float -> nativeTranslation.floatValue = px } }
     val consumeNativeScroll = remember(state) { { delta: Float -> state.dispatchRawDelta(delta) } }
     if (nativeReporter != null) {
         val controller = NativeScrollController(-1f, state.canScrollBackward, state.canScrollForward, consumeNativeScroll,
-            remember(state) { { state.requestScrollToItem(0) } })
+            remember(state) { { state.requestScrollToItem(0) } }, translateNativeScroll)
         SideEffect { nativeReporter(controller) }
         DisposableEffect(nativeReporter, state) { onDispose { nativeReporter(null) } }
     }
@@ -62,7 +66,7 @@ internal fun TopScrollLazyColumn(
         }
     }
     VisualTopScrollContainer(
-        modifier = modifier,
+        modifier = modifier.graphicsLayer { translationY = if (nativeReporter != null) nativeTranslation.floatValue else 0f },
         logicalOffset = {
             if (state.firstVisibleItemIndex > 0) Float.MAX_VALUE
             else state.firstVisibleItemScrollOffset.toFloat()
@@ -94,15 +98,20 @@ internal fun TopScrollColumn(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val nativeReporter = LocalNativeScrollControllerReporter.current.takeIf { enabled }
+    val nativeTranslation = remember(state) { mutableFloatStateOf(0f) }
+    val translateNativeScroll = remember(state) { { px: Float -> nativeTranslation.floatValue = px } }
     val consumeNativeScroll = remember(state) { { delta: Float -> state.dispatchRawDelta(delta) } }
     if (nativeReporter != null) {
         val range = state.maxValue.takeUnless { it == Int.MAX_VALUE }?.toFloat() ?: -1f
         val controller = NativeScrollController(range, state.canScrollBackward, state.canScrollForward, consumeNativeScroll,
-            remember(state) { { state.dispatchRawDelta(-state.value.toFloat()); Unit } })
+            remember(state) { { state.dispatchRawDelta(-state.value.toFloat()); Unit } }, translateNativeScroll)
         SideEffect { nativeReporter(controller) }
         DisposableEffect(nativeReporter, state) { onDispose { nativeReporter(null) } }
     }
-    VisualTopScrollContainer(modifier, { state.value.toFloat() }, enabled) { viewportModifier, effect ->
+    VisualTopScrollContainer(
+        modifier.graphicsLayer { translationY = if (nativeReporter != null) nativeTranslation.floatValue else 0f },
+        { state.value.toFloat() }, enabled,
+    ) { viewportModifier, effect ->
         CompositionLocalProvider(LocalNativeScrollControllerReporter provides null) {
             Column(
                 // enabled 只控制是否向壳层上报顶栏浓度；内嵌（宽屏详情窗格）时仍须响应滚轮/触控板，

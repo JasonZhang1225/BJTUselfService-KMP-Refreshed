@@ -12,6 +12,8 @@ import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -76,6 +78,46 @@ class AssignmentScrollToTopTest {
             assertEquals(0, state!!.firstVisibleItemScrollOffset)
             assertNull(button(scene))
         } finally { scene.close() }
+    }
+
+    @Test fun nativeBottomBounceMovesListButKeepsScrollToTopButtonFixed() = SwingUtilities.invokeAndWait {
+        for (scale in listOf(1f, 3f)) {
+            var controller: NativeScrollController? = null
+            var lastItemY = 0f
+            val scene = ImageComposeScene(390, 800, density = Density(scale), coroutineContext = Dispatchers.Unconfined) {
+                PlatformAppTheme(false, false) {
+                    CompositionLocalProvider(LocalNativeScrollControllerReporter provides { controller = it }) {
+                        val list = rememberLazyListState()
+                        AssignmentListWithScrollToTop(list, Modifier.fillMaxSize()) { modifier, _ ->
+                            TopScrollLazyColumn(list, modifier) {
+                                items(40) { index ->
+                                    Box(Modifier.height(100.dp).onGloballyPositioned {
+                                        if (index == 39) lastItemY = it.positionInRoot().y
+                                    })
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            try {
+                val frames = Frames(scene)
+                frames.settle()
+                controller!!.consumeScroll(100_000f)
+                frames.settle()
+                assertFalse(controller!!.canScrollForward)
+                val fixedBounds = assertNotNull(button(scene)).boundsInRoot
+                val restingY = lastItemY
+                for (translation in listOf(-72f, -24f, 0f)) {
+                    controller!!.setOverscrollTranslation(translation)
+                    frames.settle()
+                    assertEquals(fixedBounds, assertNotNull(button(scene)).boundsInRoot,
+                        "UIKit bounce must not move the fixed overlay, density=$scale")
+                    assertEquals(restingY + translation, lastItemY, 0.1f,
+                        "Only the list follows the native physical-pixel displacement")
+                }
+            } finally { scene.close() }
+        }
     }
 
     @Test fun productionAggregateKeepsButtonInsideListPaneAndAboveSafeArea() = SwingUtilities.invokeAndWait {

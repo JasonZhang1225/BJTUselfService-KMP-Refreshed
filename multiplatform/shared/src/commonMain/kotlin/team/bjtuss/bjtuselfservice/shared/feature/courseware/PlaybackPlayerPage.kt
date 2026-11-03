@@ -51,14 +51,40 @@ private val PREVIEW_TEMPLATE = """
 <video muted playsinline webkit-playsinline preload="auto"></video>
 <script>
 (function () {
-  var v = document.querySelector('video'); var done = false;
-  v.src = __URL__;
+  var v = document.querySelector('video');
+  var done = false, sought = false, target = 0;
+  // Set the properties too: WebKit's autoplay policy checks the live muted state.
+  v.muted = true; v.defaultMuted = true;
+  function play() {
+    var p = v.play(); if (p && p.catch) p.catch(function () {});
+  }
+  function finish() { if (!done) { done = true; v.pause(); } }
+  function waitForFrame() {
+    if (done || !sought) return;
+    if (v.requestVideoFrameCallback) {
+      v.requestVideoFrameCallback(function (_, frame) {
+        if (!v.seeking && Math.abs(frame.mediaTime - target) < 2) finish();
+        else waitForFrame();
+      });
+    }
+  }
   v.addEventListener('loadedmetadata', function () {
-    var d = v.duration; v.currentTime = isFinite(d) && d > 0 ? Math.min(600, d / 2) : 600;
+    var d = v.duration; target = isFinite(d) && d > 0 ? Math.min(600, d / 2) : 600;
+    v.currentTime = target;
   });
-  // iOS 不播放就不渲染帧：静音播一下，出第一帧后立刻暂停。
-  v.addEventListener('seeked', function () { if (!done) { var p = v.play(); if (p && p.catch) p.catch(function () {}); } });
-  v.addEventListener('playing', function () { done = true; v.pause(); });
+  v.addEventListener('seeked', function () {
+    sought = true; waitForFrame(); play();
+  });
+  // Older WebKit: wait for playback time to advance after the seek, then allow
+  // a paint before pausing. 'playing' alone does not mean a frame was presented.
+  v.addEventListener('timeupdate', function () {
+    if (!v.requestVideoFrameCallback && sought && !v.seeking && v.readyState >= 2 && v.currentTime > target) {
+      requestAnimationFrame(function () { requestAnimationFrame(finish); });
+    }
+  });
+  v.src = __URL__;
+  // Start loading/decoding immediately; seeking a paused HLS stream can stall on iOS.
+  play();
 })();
 </script></body></html>
 """.trimIndent()
