@@ -1,12 +1,14 @@
 ## 进行中：iOS 回放预览、回顶按钮回弹与液态玻璃（2026-11-03）
 
-> 当前工作树 `/workspace/BJTUselfService-KMP-Refreshed`，分支 `fix/ios-preview-scroll-overlay`。用户已授权提交并推送到同名远端修复分支，明确不创建 PR；本轮不安装、不合并或发布，未改版本号。
+> 当前工作树 `/workspace/BJTUselfService-KMP-Refreshed`，分支 `fix/ios-preview-scroll-overlay`。用户先前要求仅推送分支；2026-11-03 新指示授权拉取新提交、缩小 iOS 回顶箭头并推送 / 创建 PR 到 main；本轮不安装、不合并或发布，未改版本号。
 
+- 本轮同步远端新提交 `79c00d6d`（精简作业筛选说明文案），保留其全部改动；iOS 原生回顶 SF Symbol 从 22pt 缩至 18pt，44pt 玻璃圆形按钮 / 48pt 点击区域及位置保持原样。用户 2026-11-03 提供 iOS 截图并明确要求将 PR 标记为「目视检查已通过」；按用户验收记录，不声称本环境运行过 iOS。箭头微调后的效果未在本 Linux 环境再次实机查看。
 - 用户提供回放选画面黑屏截图与作业页录屏；定位 iOS `SafeAreaComposeHost` 对整个 Compose 根视图施加回弹变换，导致悬浮回顶按钮跟着移动。现在通过 `NativeScrollController.setOverscrollTranslation` 以物理像素传递 UIKit 回弹位移，只作用在 `TopScrollLazyColumn` / `TopScrollColumn` 的图层上；按钮保持现有位置、44dp 外观 / 48dp 点击区域，回顶/卸载消费者时清零位移，玻璃进度仍由原生宿主处理。
 - 回放预览原先在 `playing` 事件立即暂停，早于首帧实际呈现；改为显式静音并启动 HLS 解码、跳至第 10 分钟（短片取中点），等 `requestVideoFrameCallback` 报告目标位置画面后暂停，旧 WebKit 按播放时间推进并等待绘制后暂停。新增执行真实 HTML 脚本的 Node 回归，覆盖首帧等待、过期画面、短片及旧 WebKit 路径。学校真实 HLS / iOS 上的黑屏消除尚待真机验证。
 - 用户追加要求 iOS 回顶按钮采用液态玻璃：抽出平台按钮，iOS 用原生 `UIButtonConfiguration.glassButtonConfiguration` + SF Symbol `arrow.up`，旧系统用原生 systemMaterial 模糊；沿用 UIKitSheetBridge 做 SDK 可用性检查。原生读屏标签、触摸反馈、44pt 外观 / 48pt 点击范围保留；Android/桌面复用原 Material 绘制。
-- 验证：`node scripts/tests/test_playback_preview.mjs` 3 项通过；`./gradlew :shared:desktopTest --tests '*AssignmentScrollToTopTest*' --tests '*TopScrollContainersTest*' --offline --no-daemon --no-configuration-cache --console=plain --max-workers=4` 成功（10 项、0 失败）；新增回归确认到底后 -72/-24/0px 回弹时列表跟随、按钮边界不动，覆盖 1x / 3x 密度。`./gradlew :shared:compileAndroidMain :androidApp:compileDebugKotlin --offline --no-daemon --no-configuration-cache --console=plain --max-workers=4` 成功；使用环境已有公开编译签名 fixture，未安装 App。`git diff --check` 通过。日志在 `.artifacts/ios-preview-scroll-overlay/`。
-- 环境边界：初次沙箱内 Gradle 因本机通信端口不可用失败，获自动审查批准后在沙箱外重跑通过。联合 macOS/Windows 宿主编译尝试因离线缓存缺少 coroutines-swing、desktop-jvm-windows-x64、jna-platform 等依赖失败；共享 JVM 代码已编译通过。Linux 无 Xcode，Swift、ObjC 桥与 iOS 按钮 actual 尚未经 Apple 编译，未目视验证液态玻璃/真机回弹/实际预览，不把脚本事件模拟等同于 iOS 播放验收；后续需 Apple CI 与设备复验。
+- 本轮验证：`node scripts/tests/test_playback_preview.mjs` 3 项通过，`git diff --check` 通过；本次生产代码仅改 iOS 图标尺寸，未新增机械断言测试，Linux 无 Xcode，iOS 原生编译交 PR CI。
+- 前轮验证：`node scripts/tests/test_playback_preview.mjs` 3 项通过；`./gradlew :shared:desktopTest --tests '*AssignmentScrollToTopTest*' --tests '*TopScrollContainersTest*' --offline --no-daemon --no-configuration-cache --console=plain --max-workers=4` 成功（10 项、0 失败）；新增回归确认到底后 -72/-24/0px 回弹时列表跟随、按钮边界不动，覆盖 1x / 3x 密度。`./gradlew :shared:compileAndroidMain :androidApp:compileDebugKotlin --offline --no-daemon --no-configuration-cache --console=plain --max-workers=4` 成功；使用环境已有公开编译签名 fixture，未安装 App。`git diff --check` 通过。日志在 `.artifacts/ios-preview-scroll-overlay/`。
+- 环境边界：初次沙箱内 Gradle 因本机通信端口不可用失败，获自动审查批准后在沙箱外重跑通过。联合 macOS/Windows 宿主编译尝试因离线缓存缺少 coroutines-swing、desktop-jvm-windows-x64、jna-platform 等依赖失败；共享 JVM 代码已编译通过。此前 Linux 环境无 Xcode，未运行 Apple 原生编译；本轮用户已确认目视检查通过。新增箭头尺寸变更的 Apple 编译交 PR CI；不把此前脚本事件模拟等同于 iOS 播放验收。
 
 ## 进行中：作业列表回到顶部按钮（2026-11-02）
 

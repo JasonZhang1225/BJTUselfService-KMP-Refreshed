@@ -272,7 +272,7 @@ static inline void BJTUConfigureScrollToTopButton(UIButton *button) {
     }
     config.cornerStyle = UIButtonConfigurationCornerStyleCapsule;
     config.image = [UIImage systemImageNamed:@"arrow.up"
-        withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:22
+        withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:18
             weight:UIImageSymbolWeightSemibold]];
     button.configuration = config;
     button.accessibilityLabel = @"回到顶部";
