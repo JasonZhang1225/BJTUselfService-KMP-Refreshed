@@ -1209,3 +1209,11 @@
 - 原因/决策：用户要求三处选择统一为更新日志样式、点击弹出 iOS 原生菜单、全平台默认第一门课并接玻璃顶栏，随后扩展到邮箱与回放二级页。用户授权管理员合并 PR #95 并触发 KMP 打包；本条日志按用户要求直接推送 main（普通推送，非强推）。
 - 验证：`JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home ./gradlew :shared:desktopTest :androidApp:assembleDebug :desktopApp:compileKotlin :windowsApp:compileKotlinWindows :shared:compileKotlinIosArm64 :shared:compileKotlinIosSimulatorArm64 --offline --no-configuration-cache --console=plain --continue` BUILD SUCCESSFUL（3m1s），共享测试 1367 项 0 失败 1 跳过；`PlaybackScreenModelTest` 4 项（取消后重进、换课替换旧请求、排队显示加载、真实 `PlaybackScreen` 默认选课跨 effect 重启）。签名模拟器构建，iPhone 17 Pro / iOS 27 深色实看四处原生菜单、选择切换、玻璃顶栏、回放详情穿栏、从卡片起拖可滚动、回放“进入 1 秒内返回再进入”可加载课节。PR CI 合并时 Android、Windows、更新日志一致性成功；CodeRabbit 首轮与对 `a65ce187` 的意见已处理，Codex 对 `1df89505` 无发现。合入后触发 KMP package run `41482057048`。
 - 未验证：合并时 iOS compile/macOS security 检查仍在运行，CodeRabbit 对 `05bdc4c6` 的复审未出结论；浅色、大字号、Android/桌面实机、宽屏三栏回归、VoiceOver 自定义操作；回放“下载任务”视图未接玻璃顶栏。截图与日志在本机 `.artifacts/native-dropdown/`。
+
+## 2026-11-04 本地 macOS 打包默认使用新版 SDK（`fix/macos-sdk-default`）
+
+- 改动：本地 `:desktopApp:packageDmg` / `:desktopApp:createDistributable` 自动使用当前 Xcode 的 SDK 重编译主启动器，最低要求 SDK 27；优先选用标准路径的 Temurin 25。正式 CI 继续传入预编译启动器，Xcode 26 的安全检查显式走仅生成 App 镜像的模式。
+- 原因/决策：旧本地包未传启动器参数，主程序仍用 SDK 14.4，macOS 红绿灯呈现旧样式。最新 CI build 151.1 的主程序已用 SDK 27.0，用户确认其外观正确。本次按用户要求基于 `0f4137ab` 单提交直接推送 main。
+- 验证：`./gradlew :desktopApp:packageDmg --console=plain --max-workers=4` 无启动器参数构建成功。只读挂载 DMG，`xcrun vtool -show-build` 确认 SDK 27.0 / 最低 macOS 12.0，`codesign --verify --deep --strict` 通过。模拟 SDK 26.5 时脚本明确拒绝。安全检查任务 `:desktopApp:createDistributable -PmacosAppImageSmokeTest --dry-run` 成功且不调度重编译。
+- 目视：用户确认本地测试窗口新版红绿灯通过，DMG 主启动器的代码段与测试窗口一致。测试只使用内置数据，已结束测试进程。日志在 `.artifacts/macos-sdk-default/`。
+- 未验证：本轮未运行远端 CI，未在旧版 macOS 上运行新包。

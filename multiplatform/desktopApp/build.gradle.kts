@@ -23,12 +23,12 @@ val macDisplayName = "交大自由行 KMP"
 fun resolveDesktopPackageJavaHome(): String {
     val candidates = listOfNotNull(
         System.getenv("DESKTOP_PACKAGE_JAVA_HOME")?.trim()?.takeIf(String::isNotEmpty),
+        "/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home",
         System.getenv("JAVA_HOME")?.trim()?.takeIf(String::isNotEmpty),
         // Android Studio 的 Gradle 守护进程通常没有 JAVA_HOME（用自带 JBR），
         // 但 IDE 同步也会配置本模块；缺这一项会让整仓同步直接失败。打包时若该
         // JDK 没有 jpackage，会由 jpackage 任务自己报错。
         System.getProperty("java.home"),
-        "/Library/Java/JavaVirtualMachines/temurin-25.jdk/Contents/Home",
     )
     return candidates.firstOrNull { File(it).isDirectory }
         ?: error("Set DESKTOP_PACKAGE_JAVA_HOME or JAVA_HOME to a full JDK that contains jpackage")
@@ -130,7 +130,7 @@ abstract class CompileMacInputSourceHelper : DefaultTask() {
 
 @DisableCachingByDefault(because = "Mutates and re-signs the packaged macOS app bundle")
 abstract class FinalizeMacDistributable : DefaultTask() {
-    /** 本地验证过、由新 SDK 重编译的原始 jpackage 启动器；未指定时不替换 jpackage 输出。 */
+    /** 使用新 SDK 重编译的 jpackage 启动器，仅旧工具链的 CI 冒烟检查可省略。 */
     @get:Optional
     @get:InputFile
     abstract val sdkLauncher: RegularFileProperty
@@ -511,13 +511,15 @@ extra["desktopNativeFilter.configuration"] = "runtimeClasspath"
 extra["desktopNativeFilter.keep"] = listOf("org/sqlite/native/Mac/aarch64/", "com/sun/jna/darwin-aarch64/")
 apply(from = rootProject.file("gradle/desktop-native-filter.gradle.kts"))
 
+val desktopPackageJavaHome = resolveDesktopPackageJavaHome()
+
 compose.desktop {
     application {
         mainClass = "team.bjtuss.bjtuselfservice.desktop.MainKt"
         // jpackage 只在完整 JDK 有，Android Studio JBR 没有；运行时检测/打包单独指向系统完整 JDK，
         // 与守护进程 JDK 解耦（Kotlin 编译仍在 JBR 下跑，避免 KGP 在 JDK 25 下崩溃）。
         // 本机默认 Temurin 25；CI / 其他机器走 DESKTOP_PACKAGE_JAVA_HOME 或 JAVA_HOME。
-        javaHome = resolveDesktopPackageJavaHome()
+        javaHome = desktopPackageJavaHome
         val inputSourceHelperFile =
             layout.buildDirectory.file("generated/input-source/libBJTUInputSourceHelper.dylib")
         val calendarHelperFile = layout.buildDirectory.file("generated/calendar/BJTUCalendarHelper")
@@ -598,6 +600,21 @@ val compileMacInputSourceHelper by tasks.registering(CompileMacInputSourceHelper
 // (Contents/app/resources), not Apple's required Contents/Resources location.
 // Until formal Developer ID signing is configured, finish the local app image by
 // copying the manifest to the bundle root and renewing its existing ad-hoc seal.
+val macosAppImageSmokeTest = providers.gradleProperty("macosAppImageSmokeTest").isPresent
+val prebuiltMacSdkLauncher = providers.gradleProperty("macosSdkLauncher")
+val macSdkLauncherDirectory = layout.buildDirectory.dir("generated/macos-sdk-launcher")
+val rebuildMacSdkLauncher by tasks.registering(Exec::class) {
+    // 每次重新读取当前 Xcode 的 SDK；已校验的 OpenJDK 源码由脚本复用。
+    doNotTrackState("Uses the SDK of the currently selected Xcode")
+    val outputDirectory = macSdkLauncherDirectory.get().asFile
+    commandLine(
+        "python3",
+        rootProject.file("scripts/build-macos-sdk-launcher.py").absolutePath,
+        "--java-home", desktopPackageJavaHome,
+        "--output-dir", outputDirectory.absolutePath,
+    )
+}
+
 val finalizeMacDistributable by tasks.registering(FinalizeMacDistributable::class) {
     dependsOn(compileMacInputSourceHelper, compileMacCalendarHelper, compileMacVideoFrameHelper)
     privacyManifest.set(macPrivacyManifest)
@@ -605,8 +622,13 @@ val finalizeMacDistributable by tasks.registering(FinalizeMacDistributable::clas
     calendarHelper.set(calendarHelperFile)
     videoFrameHelper.set(videoFrameHelperFile)
     displayName.set(macDisplayName)
-    // 显式选择启动器，避免普通打包依赖本机试验产物或静默提升最低系统要求。
-    providers.gradleProperty("macosSdkLauncher").orNull?.let { sdkLauncher.set(file(it)) }
+    when {
+        prebuiltMacSdkLauncher.isPresent -> sdkLauncher.set(file(prebuiltMacSdkLauncher.get()))
+        !macosAppImageSmokeTest -> {
+            dependsOn(rebuildMacSdkLauncher)
+            sdkLauncher.set(macSdkLauncherDirectory.map { it.file("jpackageapplauncher") })
+        }
+    }
     appBundle.set(
         layout.buildDirectory.dir("compose/binaries/main/app/$desktopPackageName.app"),
     )
@@ -634,6 +656,9 @@ tasks.matching { it.name == "createDistributable" }.configureEach {
 tasks.matching { it.name == "packageDmg" }.configureEach {
     dependsOn(finalizeMacDistributable)
     finalizedBy(finalizeMacDmg)
+    if (macosAppImageSmokeTest) {
+        doFirst { error("macosAppImageSmokeTest is only for createDistributable.") }
+    }
 }
 
 tasks.matching { it.name == "run" }.configureEach {

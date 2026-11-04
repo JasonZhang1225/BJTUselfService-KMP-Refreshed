@@ -265,7 +265,8 @@ jobs:
           DESKTOP_PACKAGE_JAVA_HOME: ${{ env.JAVA_HOME }}
         run: |
           plutil -lint iosApp/iosApp.xcodeproj/project.pbxproj
-          ./gradlew :desktopApp:createDistributable --stacktrace
+          # 此任务在 Xcode 26 上只检查 app 镜像内容，DMG 由独立的 SDK 27 工作流打包。
+          ./gradlew :desktopApp:createDistributable -PmacosAppImageSmokeTest --stacktrace
           python3 - <<'PY'
           from pathlib import Path
           app = Path("desktopApp/build/compose/binaries/main/app/BJTUselfServiceKMP.app")

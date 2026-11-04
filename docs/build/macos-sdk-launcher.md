@@ -4,21 +4,17 @@ Compose 桌面窗口已有系统红绿灯。旧 JDK 的 jpackage 启动器使用
 
 ## 本地重建与打包
 
-需要 Apple Silicon Mac、带 macOS 27+ SDK 的 Xcode、Python 3（仅标准库）、完整 JDK 25。以下命令在 `multiplatform/` 下执行，`<JDK25>` 换成实际路径；Gradle 仍可使用 Android Studio JBR。
+需要 Apple Silicon Mac、带 macOS 27 或更新 SDK 的 Xcode、Python 3（仅标准库）和完整 JDK 25。在 `multiplatform/` 下运行：
 
 ```sh
-python3 scripts/build-macos-sdk-launcher.py \
-  --java-home '<JDK25>' \
-  --output-dir ../.artifacts/macos-sdk-launcher
-
-JAVA_HOME='<Android Studio JBR>' DESKTOP_PACKAGE_JAVA_HOME='<JDK25>' \
-  ./gradlew :desktopApp:packageDmg \
-  -PmacosSdkLauncher="$PWD/../.artifacts/macos-sdk-launcher/jpackageapplauncher"
+./gradlew :desktopApp:packageDmg
 ```
+
+打包会自动用当前 Xcode 的 SDK 重编译主启动器。Xcode 由 `DEVELOPER_DIR` 或系统选中的开发工具目录决定，SDK 低于 27 会直接报错。默认优先使用标准路径下的 Temurin 25，也可用 `DESKTOP_PACKAGE_JAVA_HOME` 指定其他位置的 JDK 25。Gradle 本身仍可使用 Android Studio JBR。
 
 `macos-launcher-sources.json` 将 OpenJDK `jdk-25+36` 固定到提交 `6c48f4ed707bf0b15f9b6098de30db8aae6fa40f`，逐个验证源文件和许可证文件的 SHA-256。首次重建从 OpenJDK 官方 GitHub 下载；再次运行使用通过校验的本地缓存，校验失败直接停止。源文件与许可证保留在输出目录的 `openjdk-src/`，`build-info.json` 记录 SDK、最低系统版本、上游提交和启动器校验和；对外分发时保留对应的源码及上游许可证信息。
 
-Gradle 参数只影响 macOS 镜像中的主启动器，替换发生在重新签名之前。普通本地构建默认仍走现有 JDK 启动器，不要求下载源码或安装新 SDK；需要新版外观的打包必须显式传入该参数。`kmp-package.yml` 的 macOS 任务已固定使用 `xcode-27` 镜像、JDK 25 重编译启动器并传入该参数，打包后用 `xcrun vtool -show-build` 校验主程序 SDK 为 27、`minos 12.0`，不满足即失败。为了从可选启动器切回原始 JDK 启动器，请先运行 `:desktopApp:clean`，再重新打包，避免增量镜像保留上次替换的启动器。
+本地启动器、源码缓存和构建记录位于 `desktopApp/build/generated/macos-sdk-launcher/`。替换发生在 App 重新签名之前。`kmp-package.yml` 的 macOS 任务继续在 `xcode-27` 镜像上预先重编译，通过 `-PmacosSdkLauncher` 传给 Gradle，并校验主程序 SDK 为 27、`minos 12.0`。安全检查工作流在 Xcode 26 上通过 `-PmacosAppImageSmokeTest` 只生成用于检查包内容的 App 镜像，该模式禁止生成 DMG。
 
 ## 兼容与验收
 

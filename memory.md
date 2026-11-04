@@ -1,3 +1,5 @@
+> 2026-11-04：本地分支 `fix/macos-sdk-default` 基于 `0f4137ab`，macOS 打包默认使用新版 SDK 的修复与验证见 `history_full.md` 末尾。
+
 ## 进行中：iOS 回放预览、回顶按钮回弹与液态玻璃（2026-11-03）
 
 > 当前工作树 `/workspace/BJTUselfService-KMP-Refreshed`，分支 `fix/ios-preview-scroll-overlay`。用户先前要求仅推送分支；2026-11-03 新指示授权拉取新提交、缩小 iOS 回顶箭头并推送 / 创建 PR 到 main；本轮不安装、不合并或发布，未改版本号。
