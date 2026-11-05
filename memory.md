@@ -9,6 +9,8 @@
 - 本地验证包：`~/Downloads/BJTUselfServiceKMP-2.0.0.dmg`（Build 45，SDK 27.0，最低 macOS 12.0，codesign 通过）。用户 2026-11-05 安装试用后确认“都测试通过了”，并要求更新文档与更新日志、开 draft PR。
 - 过程记录：测试截图写到未被忽略的 `multiplatform/.artifacts/`，曾随首次提交推到功能分支；用户授权后已压成单提交并强制推送，同时补 `.gitignore`。今后按文件路径 `git add`，不用 `-A`。
 - 文档：`docs/releases/v2.0.0-KMP.md` 新增两条并重新生成内置更新日志，README 与 `docs/agent/ai-agent-plan.md` 补 CLI 说明。合入后把本节移入 `history_full.md`。
+- 审查修复（Codex、CodeRabbit，2026-11-05）：提交全程进程内串行；`show` 先同步，失败不返回缓存状态；无窗口宿主拒绝经 IPC 转来的提交（BUSY，未发学校请求，可重试）；总大小上限 200 MB；拖放按顺序读取；计划文档约束与退出码同步。
+- CI：PR #97 首轮 Android、iOS 失败是下载 Gradle 读取超时。`setup-java` 的 `cache: gradle` 键含全部 Gradle 脚本，`8fca3a1d` 改脚本后未命中。已加 `gradle-dist-<OS>-<wrapper 属性哈希>` 独立缓存（`actions/cache`，2 个工作流共 7 个任务），`networkTimeout` 改 60 秒。安全检查只在 PR 上跑，`main` 缓存靠 KMP package 写入，合并后手动跑一次才能给新 PR 用。
 - 未验证：Windows 拖放实机；Windows 上的 `homework show/submit`。
 
 ## 进行中：iOS 回放预览、回顶按钮回弹与液态玻璃（2026-11-03）

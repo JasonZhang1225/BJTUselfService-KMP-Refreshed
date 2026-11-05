@@ -19,6 +19,8 @@ import java.nio.file.Files
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 
@@ -34,6 +36,8 @@ actual fun Modifier.fileDropTarget(
     val hover by rememberUpdatedState(onHoverChange)
     val drop by rememberUpdatedState(onDrop)
     val scope = rememberCoroutineScope()
+    // 连续拖放时按拖入顺序读取并应用，较慢的旧文件不能盖掉后拖入的同名文件。
+    val dropOrder = remember { Mutex() }
     val target = remember {
         object : DragAndDropTarget {
             override fun onEntered(event: DragAndDropEvent) = hover(true)
@@ -42,7 +46,7 @@ actual fun Modifier.fileDropTarget(
             override fun onDrop(event: DragAndDropEvent): Boolean {
                 hover(false)
                 val files = event.droppedFiles() ?: return false
-                scope.launch { drop(readDroppedFiles(files)) }
+                scope.launch { dropOrder.withLock { drop(readDroppedFiles(files)) } }
                 return true
             }
         }

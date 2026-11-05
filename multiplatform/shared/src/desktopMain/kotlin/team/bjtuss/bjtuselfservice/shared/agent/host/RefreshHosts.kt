@@ -16,6 +16,7 @@ import team.bjtuss.bjtuselfservice.shared.agent.AgentAppLock
 import team.bjtuss.bjtuselfservice.shared.agent.AgentHomeworkExecutor
 import team.bjtuss.bjtuselfservice.shared.agent.AgentHomeworkOutcome
 import team.bjtuss.bjtuselfservice.shared.agent.AgentHomeworkRequest
+import team.bjtuss.bjtuselfservice.shared.agent.headlessIpcHomeworkRefusal
 import team.bjtuss.bjtuselfservice.shared.agent.AgentLoginOutcome
 import team.bjtuss.bjtuselfservice.shared.agent.headlessLogin
 import team.bjtuss.bjtuselfservice.shared.auth.CaptchaRecognizer
@@ -180,6 +181,7 @@ class HeadlessRefreshHost(private val deps: HeadlessRefreshDependencies) {
         }
 
         override suspend fun homework(request: AgentHomeworkRequest, deadlineMillis: Long): AgentHomeworkOutcome {
+            headlessIpcHomeworkRefusal(request)?.let { return it }
             if (handedOff) return AgentHomeworkOutcome.Failed(RefreshIpcCode.HANDING_OFF, "正在把执行权交给 App，请稍后重试。")
             val graph = graphReady.await()
                 ?: return AgentHomeworkOutcome.Failed(RefreshIpcCode.NOT_SIGNED_IN, "命令行自动登录失败，请打开 App 登录。")

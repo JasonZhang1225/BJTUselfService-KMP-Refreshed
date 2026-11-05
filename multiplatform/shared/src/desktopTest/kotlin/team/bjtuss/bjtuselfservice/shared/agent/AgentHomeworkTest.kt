@@ -1,6 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.agent
 
 import java.io.File
+import java.io.RandomAccessFile
 import java.nio.file.Files
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -10,7 +11,11 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -272,6 +277,70 @@ class AgentHomeworkTest {
     fun missingFileAtSubmitTimeStopsBeforeUploading() = runBlocking {
         val repository = FakeRepository(listOf(homework()))
         val request = submitRequest(execute = true).let { it.copy(uploads = it.uploads.map { upload -> upload.copy(path = upload.path + ".gone") }) }
+        assertEquals(AgentHomeworkFailureCode.IO, assertIs<AgentHomeworkOutcome.Failed>(executor(repository).run(request)).code)
+        assertTrue(repository.submissions.isEmpty())
+    }
+
+    @Test
+    fun concurrentSubmitsCannotBothPassTheAlreadySubmittedCheck() = runBlocking {
+        val repository = FakeRepository(listOf(homework()))
+        val request = submitRequest(execute = true)
+        // 刷新时让出线程：没有锁时两个请求都会先读到“未提交”。
+        val results = (1..2).map {
+            async(Dispatchers.Default) { executor(repository, refresh = { yield(); true }).run(request) }
+        }.awaitAll()
+        assertEquals(1, repository.submissions.size, "后到的请求不能覆盖先到的提交")
+        assertEquals(1, results.count { it is AgentHomeworkOutcome.Done })
+        assertEquals(AgentHomeworkFailureCode.ALREADY_SUBMITTED, results.filterIsInstance<AgentHomeworkOutcome.Failed>().single().code)
+    }
+
+    @Test
+    fun showSyncsBeforeReportingSubmissionState() = runBlocking {
+        val repository = FakeRepository(listOf(homework()))
+        // 缓存还是未提交，但网页端刚交过：提交结果不明时要靠这条命令确认。
+        val result = assertIs<AgentHomeworkOutcome.Done>(executor(repository, refresh = {
+            repository.items = listOf(homework(submitted = true))
+            true
+        }).run(AgentHomeworkRequest("show", 7))).result
+        assertTrue(result.submitted)
+        assertEquals(listOf("旧文件.pdf"), result.submittedFiles)
+    }
+
+    @Test
+    fun showRefusesToReportCachedStateWhenSyncFails() = runBlocking {
+        val repository = FakeRepository(listOf(homework()))
+        val failed = assertIs<AgentHomeworkOutcome.Failed>(executor(repository, refresh = { false }).run(AgentHomeworkRequest("show", 7)))
+        assertEquals(AgentHomeworkFailureCode.NETWORK, failed.code)
+        assertTrue("不能确认" in failed.message)
+    }
+
+    @Test
+    fun headlessHostRefusesForwardedSubmitsOnly() {
+        val refused = headlessIpcHomeworkRefusal(submitRequest(execute = true))!!
+        assertEquals(RefreshIpcCode.BUSY, refused.code)
+        assertTrue("没有提交" in refused.message)
+        assertNull(headlessIpcHomeworkRefusal(submitRequest(execute = false)), "预览只读")
+        assertNull(headlessIpcHomeworkRefusal(AgentHomeworkRequest("show", 7)))
+    }
+
+    @Test
+    fun totalUploadSizeIsLimited() {
+        val big = (1..2).map { index ->
+            File(directory, "big$index.bin").apply { RandomAccessFile(this, "rw").use { it.setLength(120L * 1024 * 1024) } }
+        }
+        val message = assertFailsWith<AgentUsageException> {
+            parse("homework", "submit", "7", "--file", big[0].path, "--file", big[1].path)
+        }.message!!
+        assertTrue("总大小" in message)
+    }
+
+    @Test
+    fun totalUploadSizeIsCheckedAgainBeforeReading() = runBlocking {
+        val big = (1..2).map { index ->
+            File(directory, "grown$index.bin").apply { RandomAccessFile(this, "rw").use { it.setLength(120L * 1024 * 1024) } }
+        }
+        val repository = FakeRepository(listOf(homework()))
+        val request = AgentHomeworkRequest("submit", 7, uploads = big.map { AgentHomeworkUpload(it.path, it.name) }, execute = true)
         assertEquals(AgentHomeworkFailureCode.IO, assertIs<AgentHomeworkOutcome.Failed>(executor(repository).run(request)).code)
         assertTrue(repository.submissions.isEmpty())
     }

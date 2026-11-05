@@ -6,6 +6,8 @@ import java.nio.file.LinkOption
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -42,12 +44,17 @@ import team.bjtuss.bjtuselfservice.shared.files.safeExportFileName
  */
 private const val MAX_UPLOAD_FILES = 20
 private const val MAX_UPLOAD_BYTES = 200L * 1024 * 1024
+/** 文件要整块读进执行者进程（可能是 App）的内存，总量也要有上限。 */
+private const val MAX_TOTAL_UPLOAD_BYTES = MAX_UPLOAD_BYTES
 private const val MAX_UPLOAD_NAME_CHARS = 120
 private const val MAX_NOTE_CHARS = 2_000
 /** IPC 响应一行有长度上限；作业说明超长时截断并标记。 */
 private const val MAX_CONTENT_CHARS = 40_000
 private const val COURSE_PLATFORM_PREFIX = "course_platform:"
 private val forbiddenNameCharacters = setOf('/', '\\', ':', '*', '?', '"', '<', '>', '|')
+
+/** 同一进程里“同步、判断已交、提交”整段串行：否则两个请求都可能读到未提交，后者覆盖前者。 */
+private val submitLock = Mutex()
 
 object AgentHomeworkFailureCode {
     const val NOT_FOUND = "not_found"
@@ -136,7 +143,7 @@ class AgentHomeworkExecutor(
     suspend fun run(request: AgentHomeworkRequest): AgentHomeworkOutcome = try {
         when (request.action) {
             "show" -> show(request)
-            "submit" -> submit(request)
+            "submit" -> if (request.execute) submitLock.withLock { submit(request) } else submit(request)
             else -> AgentHomeworkOutcome.Failed(RefreshIpcCode.BAD_REQUEST, "不支持的作业操作。")
         }
     } catch (error: CancellationException) {
@@ -158,10 +165,9 @@ class AgentHomeworkExecutor(
     private fun missing(): Nothing = stop(AgentHomeworkFailureCode.NOT_FOUND, "作业列表里没有这项作业，或它不属于课程平台。")
 
     private suspend fun show(request: AgentHomeworkRequest): AgentHomeworkOutcome {
-        val homework = find(request.homeworkId) ?: run {
-            refreshHomework()
-            find(request.homeworkId)
-        } ?: missing()
+        // 这条命令也用来确认提交结果，不能把缓存里的状态当成联网结果返回。
+        if (!refreshHomework()) stop(AgentHomeworkFailureCode.NETWORK, "无法从学校同步作业状态，不能确认是否已提交。请检查网络或登录后重试。")
+        val homework = find(request.homeworkId) ?: missing()
         val detail = loadDetail(homework)
         val submitted = if (isHomeworkSubmitted(homework)) submittedNames(homework) else emptyList()
         val saved = request.outDir?.let { downloadAttachments(homework, detail, File(it)) }.orEmpty()
@@ -272,6 +278,7 @@ class AgentHomeworkExecutor(
     }
 
     private suspend fun readUploads(uploads: List<AgentHomeworkUpload>): List<HomeworkFileContent> = withContext(Dispatchers.IO) {
+        totalUploadProblem(uploads.map { File(it.path) })?.let { stop(AgentHomeworkFailureCode.IO, "$it 这次没有提交。") }
         uploads.map { upload ->
             val file = File(upload.path)
             val problem = uploadFileProblem(file)
@@ -328,6 +335,16 @@ internal fun uploadFileProblem(file: File): String? = when {
     file.length() > MAX_UPLOAD_BYTES -> "${file.name} 超过 ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB，请在 App 里提交。"
     else -> null
 }
+
+internal fun totalUploadProblem(files: List<File>): String? =
+    "文件总大小超过 ${MAX_TOTAL_UPLOAD_BYTES / (1024 * 1024)} MB，请在 App 里提交。".takeIf { files.sumOf(File::length) > MAX_TOTAL_UPLOAD_BYTES }
+
+/**
+ * 无窗口宿主的生命周期跟着它自己的命令走，收尾时会取消 IPC 协程：经 IPC 转来的提交可能停在上传之后、
+ * 提交之前。这里在发出任何学校请求前拒绝，调用方可以安全重试；只读请求被取消没有副作用，照常处理。
+ */
+internal fun headlessIpcHomeworkRefusal(request: AgentHomeworkRequest): AgentHomeworkOutcome.Failed? =
+    if (request.mutates) AgentHomeworkOutcome.Failed(RefreshIpcCode.BUSY, "后台命令行正在运行，这次没有提交。请稍后重试。") else null
 
 /** 提交时显示的文件名：只改名，不改扩展名（学校按扩展名校验，改扩展名不等于转换格式）。 */
 internal fun uploadNameProblem(name: String, source: File): String? {
@@ -411,6 +428,7 @@ internal fun parseAgentHomeworkCommand(args: List<String>): AgentHomeworkCommand
         AgentHomeworkUpload(file.path, name)
     }
     if (resolved.distinctBy { it.uploadName.lowercase() }.size != resolved.size) throw AgentUsageException("提交的文件名有重复，请用 --as 区分。")
+    totalUploadProblem(uploads.map { it.first })?.let { throw AgentUsageException(it) }
     return AgentHomeworkCommand(AgentHomeworkRequest("submit", id, uploads = resolved, note = note, execute = execute, replace = replace), json)
 }
 
