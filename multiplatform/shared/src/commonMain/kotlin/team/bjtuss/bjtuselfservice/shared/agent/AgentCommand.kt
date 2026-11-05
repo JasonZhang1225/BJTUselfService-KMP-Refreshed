@@ -32,6 +32,8 @@ object AgentExit {
     const val REFRESH_PENDING = 7
     /** cache update：命令行与运行中的 App 刷新协议版本不一致，需要更新到同一版本。 */
     const val VERSION_MISMATCH = 8
+    /** homework submit：作业已提交过，确认覆盖后才能重交（--replace）。 */
+    const val SUBMIT_BLOCKED = 9
 }
 
 /** CLI JSON 外层版本；与远程查询、数据集同为 2。 */
@@ -59,6 +61,9 @@ val AGENT_USAGE = """
       citel                        CITEL 任务元数据
       citel show <id> [--fetch] [--json]   缓存题面与用例；--fetch 才联网
       citel export <id> --out <新目录> [--fetch]
+      homework show <id> [--out <新目录>]   联网读取课程平台作业要求、老师附件和已交文件；--out 下载老师附件
+      homework submit <id> --file <路径> [--as <提交文件名>] ... [--note 说明] [--replace] [--yes]
+                                   提交课程平台作业：默认只预览，--yes 才提交；已交过的还要 --replace（仅本机）
       cache update [all|来源,...]  全量刷新（App 开着时交给 App 执行）
       install [--no-claude] | uninstall | doctor   安装/移除 Skill 与启动脚本（仅桌面端）
       uninstall-app [--yes]        Mac 卸载清理：默认预览

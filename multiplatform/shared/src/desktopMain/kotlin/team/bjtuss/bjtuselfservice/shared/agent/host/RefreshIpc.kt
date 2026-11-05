@@ -27,6 +27,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import team.bjtuss.bjtuselfservice.shared.agent.AgentHomeworkOutcome
+import team.bjtuss.bjtuselfservice.shared.agent.AgentHomeworkRequest
+import team.bjtuss.bjtuselfservice.shared.agent.AgentHomeworkResult
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshReport
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshSource
@@ -55,6 +58,8 @@ object RefreshIpcOp {
     const val PING = "ping"
     /** 再次启动 App 时请已在运行（可能隐藏在后台）的窗口进程显示出来，避免出现第二个会话。 */
     const val SHOW = "show"
+    /** 本机 CLI 读取或提交课程平台作业，由持有会话的执行者完成。 */
+    const val HOMEWORK = "homework"
 }
 
 /** 可判定的拒绝/失败码（CLI JSON 输出原样带出）。 */
@@ -87,6 +92,7 @@ internal data class RefreshIpcRequest(
     val sources: List<String> = emptyList(),
     val origin: String = RefreshOrigin.CLI.wire,
     val deadlineMillis: Long = MAX_IPC_DEADLINE_MILLIS,
+    val homework: AgentHomeworkRequest? = null,
 )
 
 @Serializable
@@ -99,6 +105,7 @@ internal data class RefreshIpcResponse(
     val code: String? = null,
     val message: String? = null,
     val report: RefreshIpcReport? = null,
+    val homework: AgentHomeworkResult? = null,
 )
 
 @Serializable
@@ -146,6 +153,9 @@ sealed interface RefreshIpcOutcome {
 /** 执行者一侧的处理：App 进程交给当前会话，无窗口宿主交给自己的组合根。 */
 interface RefreshIpcHandler {
     suspend fun refresh(sources: Set<RefreshSource>, origin: RefreshOrigin, deadlineMillis: Long): RefreshIpcOutcome
+
+    suspend fun homework(request: AgentHomeworkRequest, deadlineMillis: Long): AgentHomeworkOutcome =
+        AgentHomeworkOutcome.Failed(RefreshIpcCode.UNSUPPORTED, "当前执行者不支持作业操作。")
 
     /** 返回 true 表示同意交出执行权（随后释放进程锁）；App 进程总是拒绝。 */
     fun handoff(): Boolean = false
@@ -306,6 +316,27 @@ class RefreshIpcServer private constructor(
                     )
                 }
             }
+            RefreshIpcOp.HOMEWORK -> {
+                val homework = request.homework
+                    ?: return socket.writeLine(error(request.requestId, RefreshIpcCode.BAD_REQUEST, "缺少作业请求。"))
+                socket.writeLine(RefreshIpcResponse(REFRESH_IPC_PROTOCOL, request.requestId, "accepted", executor.wire))
+                val outcome = try {
+                    withTimeoutOrNull(request.deadlineMillis) { handler.homework(homework, request.deadlineMillis) }
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (failure: Exception) {
+                    AgentHomeworkOutcome.Failed(RefreshIpcCode.BAD_REQUEST, "执行失败（${failure::class.simpleName}）。")
+                } ?: AgentHomeworkOutcome.Failed(RefreshIpcCode.TIMEOUT, "执行超出时限，结果不明。提交可能已经完成，不要直接重试：先运行 homework show 确认已交文件。")
+                runCatching {
+                    socket.writeLine(
+                        when (outcome) {
+                            is AgentHomeworkOutcome.Done -> RefreshIpcResponse(REFRESH_IPC_PROTOCOL, request.requestId, "result",
+                                executor.wire, homework = outcome.result)
+                            is AgentHomeworkOutcome.Failed -> error(request.requestId, outcome.code, outcome.message)
+                        },
+                    )
+                }
+            }
             else -> socket.writeLine(error(request.requestId, RefreshIpcCode.UNSUPPORTED, "不支持的操作。"))
         }
     }
@@ -348,7 +379,12 @@ sealed interface RefreshIpcCallResult {
     data class Rejected(val executor: String?, val code: String, val message: String) : RefreshIpcCallResult
     /** 已受理但在等待时限内没有收到结果：底层刷新可能仍在执行，不能当作未执行。 */
     data class AcceptedWithoutResult(val executor: String?) : RefreshIpcCallResult
-    data class Completed(val executor: String?, val report: RefreshReport?, val code: String? = null) : RefreshIpcCallResult
+    data class Completed(
+        val executor: String?,
+        val report: RefreshReport?,
+        val code: String? = null,
+        val homework: AgentHomeworkResult? = null,
+    ) : RefreshIpcCallResult
 }
 
 /** CLI 一侧：把请求交给当前执行者并等待结果。 */
@@ -359,21 +395,24 @@ fun callRefreshIpc(
     origin: RefreshOrigin = RefreshOrigin.CLI,
     deadlineMillis: Long = MAX_IPC_DEADLINE_MILLIS,
     connectTimeoutMillis: Int = 2_000,
+    homework: AgentHomeworkRequest? = null,
 ): RefreshIpcCallResult {
     val endpoint = readEndpointFile(directory) ?: return RefreshIpcCallResult.NoServer
     val requestId = newRequestId()
     val socket = Socket()
+    var acceptedBy: RefreshIpcResponse? = null
     return try {
         socket.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), endpoint.port), connectTimeoutMillis)
         socket.soTimeout = REQUEST_READ_TIMEOUT_MILLIS
         val request = RefreshIpcRequest(REFRESH_IPC_PROTOCOL, endpoint.token, requestId, op,
-            RefreshSource.entries.filter { it in sources }.map { it.wire }, origin.wire, deadlineMillis.coerceIn(1, MAX_IPC_DEADLINE_MILLIS))
+            RefreshSource.entries.filter { it in sources }.map { it.wire }, origin.wire, deadlineMillis.coerceIn(1, MAX_IPC_DEADLINE_MILLIS), homework)
         socket.getOutputStream().apply {
             write((ipcJson.encodeToString(RefreshIpcRequest.serializer(), request) + "\n").toByteArray(Charsets.UTF_8))
             flush()
         }
         val first = readResponse(socket) ?: return RefreshIpcCallResult.NoServer
         if (first.type != "accepted") return first.toCallResult()
+        acceptedBy = first
         // 已受理：结果最多等到截止时间再加一点余量。
         socket.soTimeout = (deadlineMillis + 5_000).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         val second = try {
@@ -387,7 +426,8 @@ fun callRefreshIpc(
     } catch (_: SocketTimeoutException) {
         RefreshIpcCallResult.Rejected(endpoint.executor, RefreshIpcCode.TIMEOUT, "执行者没有响应。")
     } catch (_: java.io.IOException) {
-        RefreshIpcCallResult.NoServer
+        // 已受理后断线：执行者可能已经做完（比如交了作业），不能当成“没人处理”再做一遍。
+        acceptedBy?.let { RefreshIpcCallResult.AcceptedWithoutResult(it.executor) } ?: RefreshIpcCallResult.NoServer
     } finally {
         runCatching { socket.close() }
     }
@@ -399,6 +439,6 @@ private fun readResponse(socket: Socket): RefreshIpcResponse? {
 }
 
 private fun RefreshIpcResponse.toCallResult(): RefreshIpcCallResult = when (type) {
-    "result" -> RefreshIpcCallResult.Completed(executor, report?.toRefreshReport(), code)
+    "result" -> RefreshIpcCallResult.Completed(executor, report?.toRefreshReport(), code, homework)
     else -> RefreshIpcCallResult.Rejected(executor, code ?: RefreshIpcCode.BAD_REQUEST, message.orEmpty())
 }

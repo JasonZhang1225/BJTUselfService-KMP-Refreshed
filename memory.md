@@ -1,4 +1,15 @@
 > 2026-11-04：本地分支 `fix/macos-sdk-default` 基于 `0f4137ab`，macOS 打包默认使用新版 SDK 的修复与验证见 `history_full.md` 末尾。
+> 2026-11-05：工作树 `.artifacts/tree/claude/homework-submit`，分支 `feat/homework-submit-cli-drop`（基于 `8954a92e`），draft PR #97 已开（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/97），未合并。
+
+## 进行中：上传弹层拖放与 CLI 交作业（2026-11-05）
+
+- 拖放：共享 `AssignmentUploadFiles` 接入 `fileDropTarget`（expect/actual，桌面用 `dragAndDropTarget`，Android/iOS 空实现），课程平台、物理在线、CITEL 三种上传弹层共用；桌面主文案“点击选择或拖入文件”，文件夹就地提示先压缩。
+- CLI（仅本机，不进远程插件，仅课程平台）：`homework show <id> [--out <新目录>]`、`homework submit <id> --file … [--as …] [--note …] [--replace] [--yes]`。默认预览，`--yes` 才提交，已交过需 `--replace`；`--as` 不能改扩展名；提交前后各同步一次，`verified` 才算确认。App 开着时走新 IPC 操作 `homework` 用 App 会话，否则无窗口登录；提交途中拒绝 GUI 交接；已受理后断线按“结果不明”（退出码 7），不回退重交。新增退出码 9（已交过）。Skill 增“交作业”一节，作业说明不算授权。代码：`shared/src/desktopMain/.../agent/AgentHomework.kt`。
+- 拖放实机：用户 2026-11-05 在 macOS 临时验证窗口真实拖入，确认文件出现在列表里。Computer Use 模拟拖动（CGEvent）不触发，不能作为判据。
+- 本地验证包：`~/Downloads/BJTUselfServiceKMP-2.0.0.dmg`（Build 45，SDK 27.0，最低 macOS 12.0，codesign 通过）。用户 2026-11-05 安装试用后确认“都测试通过了”，并要求更新文档与更新日志、开 draft PR。
+- 过程记录：测试截图写到未被忽略的 `multiplatform/.artifacts/`，曾随首次提交推到功能分支；用户授权后已压成单提交并强制推送，同时补 `.gitignore`。今后按文件路径 `git add`，不用 `-A`。
+- 文档：`docs/releases/v2.0.0-KMP.md` 新增两条并重新生成内置更新日志，README 与 `docs/agent/ai-agent-plan.md` 补 CLI 说明。合入后把本节移入 `history_full.md`。
+- 未验证：Windows 拖放实机；Windows 上的 `homework show/submit`。
 
 ## 进行中：iOS 回放预览、回顶按钮回弹与液态玻璃（2026-11-03）
 

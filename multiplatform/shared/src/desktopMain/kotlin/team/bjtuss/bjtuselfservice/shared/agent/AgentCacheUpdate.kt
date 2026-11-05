@@ -106,19 +106,55 @@ internal fun runCacheUpdate(
 
     delegate()?.let { return it }
 
+    var handedOff = false
+    val output = runHeadless(
+        platform = platform,
+        fail = { reason, code -> fail(reason, code) },
+        // 锁和端点之间有短暂窗口（执行者刚启动或刚退出）：再试一次 IPC。
+        onLocked = {
+            delegate() ?: fail("交大自由行 App 正在运行，但没有响应刷新请求（可能是旧版本或正在启动）。请直接在 App 里刷新，或更新 App 后重试。",
+                AgentExit.APP_RUNNING)
+        },
+    ) { host ->
+        val result = host.run(sources, RefreshOrigin.CLI)
+        when {
+            result.handedOff -> {
+                handedOff = true
+                null
+            }
+            result.accountMismatch -> fail("学校返回的账号与记住的账号不一致，请在 App 里重新登录。", AgentExit.LOGIN_FAILED)
+            result.report == null -> loginFailureOutput(result.login, json)
+            else -> result.report.toCacheUpdateOutput(json, RefreshExecutor.HEADLESS.wire, result.login)
+        }
+    }
+    if (!handedOff) return output ?: fail("刷新没有产生结果。", AgentExit.PARTIAL)
+    // GUI 启动接手：锁已释放，等 App 的 IPC 就绪后把同一请求交给它（它登录后执行一次正常刷新）。
+    val deadline = System.nanoTime() + HANDOFF_REDELIVER_WAIT_MILLIS * 1_000_000
+    while (System.nanoTime() < deadline) {
+        delegate()?.let { return it }
+        Thread.sleep(500)
+    }
+    return fail("App 已启动并接手刷新，请在 App 里查看同步结果。", AgentExit.REFRESH_PENDING, RefreshIpcCode.HANDING_OFF)
+}
+
+/**
+ * 没有运行中的执行者时，在本进程无窗口执行：拿执行者锁、开缓存、读记住的账号，再把 [HeadlessRefreshHost] 交给 [block]。
+ * 只读取凭据，不新建、不清除；锁被占着时走 [onLocked]。
+ */
+internal fun runHeadless(
+    platform: AgentCliPlatform,
+    fail: (String, Int) -> AgentOutput,
+    onLocked: () -> AgentOutput,
+    block: suspend (HeadlessRefreshHost) -> AgentOutput?,
+): AgentOutput? {
     // 从没登录过（没有缓存目录或数据库）：不建目录、不拿锁，直接说明。
     if (!File(platform.cacheDirectory, "bjtuselfservice_cache.db").isFile) {
         return fail("本机还没有交大自由行的缓存。请先打开 App 登录一次。", AgentExit.NO_DATA)
     }
     val securityFactory = platform.securityStore ?: return fail("当前平台不支持命令行刷新。", AgentExit.NO_DATA)
     val captchaFactory = platform.captchaRecognizer ?: return fail("当前平台不支持命令行刷新。", AgentExit.NO_DATA)
-    val lock = AgentAppLock.tryAcquire(platform.cacheDirectory)
-        // 锁和端点之间有短暂窗口（执行者刚启动或刚退出）：再试一次 IPC。
-        ?: return delegate()
-        ?: fail("交大自由行 App 正在运行，但没有响应刷新请求（可能是旧版本或正在启动）。请直接在 App 里刷新，或更新 App 后重试。",
-            AgentExit.APP_RUNNING)
-    var handedOff = false
-    val output = lock.use {
+    val lock = AgentAppLock.tryAcquire(platform.cacheDirectory) ?: return onLocked()
+    return lock.use {
         val databaseFile = File(platform.cacheDirectory, "bjtuselfservice_cache.db")
         if (!databaseFile.isFile) return@use fail("本机还没有交大自由行的缓存。请先打开 App 登录一次。", AgentExit.NO_DATA)
         val key = try {
@@ -140,7 +176,7 @@ internal fun runCacheUpdate(
                 val security = securityFactory()
                 // 只读：未勾选“记住密码”时不登录，也不清除任何凭据（App 的 restore() 会清，这里不能用）。
                 if (!security.preferences.shouldRememberCredentials()) {
-                    return@runBlocking fail("App 没有记住密码，命令行无法自动登录。请在 App 登录时勾选“记住密码”，或直接在 App 里刷新。", AgentExit.LOGIN_FAILED)
+                    return@runBlocking fail("App 没有记住密码，命令行无法自动登录。请在 App 登录时勾选“记住密码”，或直接在 App 里操作。", AgentExit.LOGIN_FAILED)
                 }
                 val credentials = runCatching { security.credentialVault?.load() }.getOrNull()?.takeIf { it.isValid }
                     ?: return@runBlocking fail("系统安全存储里没有可用的登录信息。请在 App 里登录一次。", AgentExit.LOGIN_FAILED)
@@ -148,39 +184,24 @@ internal fun runCacheUpdate(
                 if (account != credentials.username) {
                     return@runBlocking fail("记住的账号与本机缓存的账号不一致，请在 App 里重新登录。", AgentExit.LOGIN_FAILED)
                 }
-                val result = HeadlessRefreshHost(
-                    HeadlessRefreshDependencies(
-                        cacheDirectory = platform.cacheDirectory,
-                        cache = store,
-                        credentials = credentials,
-                        securityStore = security,
-                        captchaRecognizer = captchaFactory(),
-                        transport = createSchoolHttpTransport(),
-                        platformFamily = team.bjtuss.bjtuselfservice.shared.currentPlatform().family,
+                block(
+                    HeadlessRefreshHost(
+                        HeadlessRefreshDependencies(
+                            cacheDirectory = platform.cacheDirectory,
+                            cache = store,
+                            credentials = credentials,
+                            securityStore = security,
+                            captchaRecognizer = captchaFactory(),
+                            transport = createSchoolHttpTransport(),
+                            platformFamily = team.bjtuss.bjtuselfservice.shared.currentPlatform().family,
+                        ),
                     ),
-                ).run(sources, RefreshOrigin.CLI)
-                when {
-                    result.handedOff -> {
-                        handedOff = true
-                        null
-                    }
-                    result.accountMismatch -> fail("学校返回的账号与记住的账号不一致，请在 App 里重新登录。", AgentExit.LOGIN_FAILED)
-                    result.report == null -> loginFailureOutput(result.login, json)
-                    else -> result.report.toCacheUpdateOutput(json, RefreshExecutor.HEADLESS.wire, result.login)
-                }
+                )
             }
         } finally {
             runCatching(store::close)
         }
     }
-    if (!handedOff) return output ?: fail("刷新没有产生结果。", AgentExit.PARTIAL)
-    // GUI 启动接手：锁已释放，等 App 的 IPC 就绪后把同一请求交给它（它登录后执行一次正常刷新）。
-    val deadline = System.nanoTime() + HANDOFF_REDELIVER_WAIT_MILLIS * 1_000_000
-    while (System.nanoTime() < deadline) {
-        delegate()?.let { return it }
-        Thread.sleep(500)
-    }
-    return fail("App 已启动并接手刷新，请在 App 里查看同步结果。", AgentExit.REFRESH_PENDING, RefreshIpcCode.HANDING_OFF)
 }
 
 private fun executorLabel(executor: String?) = when (executor) {
@@ -188,13 +209,15 @@ private fun executorLabel(executor: String?) = when (executor) {
     else -> "交大自由行 App"
 }
 
+internal fun loginFailureMessage(login: AgentLoginOutcome): Pair<String, String> = when (login) {
+    is AgentLoginOutcome.ManualRequired -> "manual_required" to
+        "自动登录失败（${login.reason.name.lowercase()}）：可能需要验证码、检查账号密码或恢复网络，已停止自动提交。请打开 App 手动登录。"
+    AgentLoginOutcome.Network -> "network" to "无法连接学校系统，请检查网络后重试。"
+    AgentLoginOutcome.Ok -> "ok" to "登录成功但没有执行刷新。"
+}
+
 private fun loginFailureOutput(login: AgentLoginOutcome, json: Boolean): AgentOutput {
-    val (text, reason) = when (login) {
-        is AgentLoginOutcome.ManualRequired -> "manual_required" to
-            "自动登录失败（${login.reason.name.lowercase()}）：可能需要验证码、检查账号密码或恢复网络，已停止自动提交。请打开 App 手动登录。"
-        AgentLoginOutcome.Network -> "network" to "无法连接学校系统，请检查网络后重试。"
-        AgentLoginOutcome.Ok -> "ok" to "登录成功但没有执行刷新。"
-    }
+    val (text, reason) = loginFailureMessage(login)
     val stdout = if (json) reportJson.encodeToString(JsonObject.serializer(), buildJsonObject {
         put("schemaVersion", AGENT_SCHEMA_VERSION)
         put("command", "cache update")

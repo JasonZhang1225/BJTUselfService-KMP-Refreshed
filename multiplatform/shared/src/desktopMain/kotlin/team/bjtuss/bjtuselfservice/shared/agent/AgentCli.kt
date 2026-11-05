@@ -62,6 +62,8 @@ fun runAgentCli(
         "install", "uninstall", "doctor" -> runIntegrationCommand(args, platform, integration())
         "citel" -> if (args.getOrNull(1)?.let { !it.startsWith("--") } == true) runAgentCitel(args, platform)
             else runAgentCommand(args, cacheSnapshotProvider(platform), Clock.System.now())
+        "homework" -> if (args.getOrNull(1) == "show" || args.getOrNull(1) == "submit") runAgentHomework(args, platform)
+            else runAgentCommand(args, cacheSnapshotProvider(platform), Clock.System.now())
         "cache" -> if (args.getOrNull(1) == "update") runCacheUpdate(args.drop(2), platform)
             else runAgentCommand(args, cacheSnapshotProvider(platform), Clock.System.now())
         else -> runAgentCommand(args, cacheSnapshotProvider(platform), Clock.System.now())

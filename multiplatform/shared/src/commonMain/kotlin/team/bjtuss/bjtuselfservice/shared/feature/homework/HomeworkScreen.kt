@@ -19,6 +19,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadNot
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadSheet
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.mergePickedFiles
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.pickFeedback
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.dropFeedback
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.assignmentCompletionState
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentListWithScrollToTop
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCompletionFeedback
@@ -422,6 +423,17 @@ private class HomeworkTransferState(
         }
     }
 
+    fun dropUploadFiles(result: HomeworkFilePickResult) {
+        when (result) {
+            HomeworkFilePickResult.Cancelled -> Unit
+            is HomeworkFilePickResult.Failed -> uploadFeedback = result.dropFeedback()
+            is HomeworkFilePickResult.Selected -> {
+                uploadFiles = mergePickedFiles(uploadFiles, result.files)
+                uploadFeedback = null
+            }
+        }
+    }
+
     fun removeUploadFile(index: Int) {
         uploadFiles = uploadFiles.filterIndexed { itemIndex, _ -> itemIndex != index }
     }
@@ -512,6 +524,7 @@ private fun HomeworkUploadDialog(
             pickEnabled = transfer.pickAvailable,
             onContentChange = { transfer.uploadContent = it },
             onPickFiles = transfer::pickUploadFiles,
+            onDropFiles = transfer::dropUploadFiles,
             onRemoveFile = transfer::removeUploadFile,
             onSubmit = transfer::submitUpload,
         )
@@ -1322,6 +1335,7 @@ private fun ColumnScope.UploadHomeworkContent(
     pickEnabled: Boolean,
     onContentChange: (String) -> Unit,
     onPickFiles: () -> Unit,
+    onDropFiles: (HomeworkFilePickResult) -> Unit,
     onRemoveFile: (Int) -> Unit,
     onSubmit: () -> Unit,
 ) {
@@ -1332,6 +1346,7 @@ private fun ColumnScope.UploadHomeworkContent(
         pickEnabled = pickEnabled,
         onPick = onPickFiles,
         onRemovePending = onRemoveFile,
+        onDrop = onDropFiles,
     )
     OutlinedTextField(
         value = content,
