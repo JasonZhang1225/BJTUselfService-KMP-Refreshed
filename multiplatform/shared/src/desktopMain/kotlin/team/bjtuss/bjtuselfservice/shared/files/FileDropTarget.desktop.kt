@@ -15,14 +15,9 @@ import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.awtTransferable
 import java.awt.datatransfer.DataFlavor
 import java.io.File
-import java.nio.file.Files
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 
 actual val fileDropSupported: Boolean = true
 
@@ -46,7 +41,7 @@ actual fun Modifier.fileDropTarget(
             override fun onDrop(event: DragAndDropEvent): Boolean {
                 hover(false)
                 val files = event.droppedFiles() ?: return false
-                scope.launch { dropOrder.withLock { drop(readDroppedFiles(files)) } }
+                scope.launch { dropOrder.withLock { drop(readLocalFiles(files)) } }
                 return true
             }
         }
@@ -65,25 +60,3 @@ private fun DragAndDropEvent.hasFiles(): Boolean =
 private fun DragAndDropEvent.droppedFiles(): List<File>? = runCatching {
     (awtTransferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<*>)?.filterIsInstance<File>()
 }.getOrNull()?.takeIf { it.isNotEmpty() }
-
-/** 与桌面文件选择器读文件的方式一致；文件夹不展开，避免把整个目录悄悄传上去。 */
-internal suspend fun readDroppedFiles(files: List<File>): HomeworkFilePickResult = withContext(Dispatchers.IO) {
-    if (files.any { !it.isFile }) return@withContext HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.IO)
-    try {
-        HomeworkFilePickResult.Selected(
-            files.map { file ->
-                HomeworkFileContent(
-                    fileName = file.name,
-                    contentType = Files.probeContentType(file.toPath()) ?: "application/octet-stream",
-                    bytes = file.readBytes(),
-                )
-            },
-        )
-    } catch (error: CancellationException) {
-        throw error
-    } catch (_: SecurityException) {
-        HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
-    } catch (_: Exception) {
-        HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.IO)
-    }
-}

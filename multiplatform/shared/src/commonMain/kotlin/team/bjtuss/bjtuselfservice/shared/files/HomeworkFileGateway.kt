@@ -18,6 +18,8 @@ sealed interface HomeworkFilePickResult {
     }
 
     data object Cancelled : HomeworkFilePickResult
+    /** 文件太大，整块读进内存可能撑爆 App；没有读取任何内容。 */
+    data object TooLarge : HomeworkFilePickResult
     data class Failed(val reason: HomeworkFileGatewayFailure) : HomeworkFilePickResult
 }
 

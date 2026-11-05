@@ -13,6 +13,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentDeadlineF
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentSubmissionFilter
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.ignoredAssignmentCount
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadAction
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.UPLOAD_TOO_LARGE_FEEDBACK
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadFiles
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadMessage
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadNote
@@ -414,6 +415,7 @@ private class HomeworkTransferState(
         scope.launch {
             when (val result = fileGateway.pickFiles()) {
                 HomeworkFilePickResult.Cancelled -> Unit
+                HomeworkFilePickResult.TooLarge -> uploadFeedback = UPLOAD_TOO_LARGE_FEEDBACK
                 is HomeworkFilePickResult.Failed -> uploadFeedback = result.pickFeedback()
                 is HomeworkFilePickResult.Selected -> {
                     uploadFiles = mergePickedFiles(uploadFiles, result.files)
@@ -426,6 +428,7 @@ private class HomeworkTransferState(
     fun dropUploadFiles(result: HomeworkFilePickResult) {
         when (result) {
             HomeworkFilePickResult.Cancelled -> Unit
+            HomeworkFilePickResult.TooLarge -> uploadFeedback = UPLOAD_TOO_LARGE_FEEDBACK
             is HomeworkFilePickResult.Failed -> uploadFeedback = result.dropFeedback()
             is HomeworkFilePickResult.Selected -> {
                 uploadFiles = mergePickedFiles(uploadFiles, result.files)

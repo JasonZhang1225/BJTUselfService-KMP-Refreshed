@@ -256,6 +256,8 @@ fun HomeworkFilePickResult.Failed.pickFeedback(): String = when (reason) {
     HomeworkFileGatewayFailure.IO -> "无法读取所选文件，请重新选择。"
 }
 
+const val UPLOAD_TOO_LARGE_FEEDBACK = "文件太大了：一次最多添加 200 MB，请压缩或分开添加。"
+
 /** 拖放失败的就地说明：拖入的是文件夹，或文件读不出来。 */
 fun HomeworkFilePickResult.Failed.dropFeedback(): String = when (reason) {
     HomeworkFileGatewayFailure.PERMISSION_DENIED -> "没有读取拖入文件的权限，请换一个位置的文件。"
@@ -301,6 +303,7 @@ fun AssignmentFilesEditor(
             scope.launch {
                 when (val picked = fileGateway.pickFiles()) {
                     HomeworkFilePickResult.Cancelled -> Unit
+                    HomeworkFilePickResult.TooLarge -> feedback = UPLOAD_TOO_LARGE_FEEDBACK
                     is HomeworkFilePickResult.Failed -> feedback = picked.pickFeedback()
                     is HomeworkFilePickResult.Selected -> addFiles(picked.files)
                 }
@@ -314,6 +317,7 @@ fun AssignmentFilesEditor(
         onDrop = { dropped ->
             when (dropped) {
                 HomeworkFilePickResult.Cancelled -> Unit
+                HomeworkFilePickResult.TooLarge -> feedback = UPLOAD_TOO_LARGE_FEEDBACK
                 is HomeworkFilePickResult.Failed -> feedback = dropped.dropFeedback()
                 is HomeworkFilePickResult.Selected -> addFiles(dropped.files)
             }
