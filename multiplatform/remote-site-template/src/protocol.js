@@ -24,13 +24,17 @@ export const SOURCES = Object.freeze([
 export const SOURCE_STATUSES = Object.freeze(["success", "failed", "skipped", "needs_user_action"]);
 
 /** 即时任务操作白名单；不接受任意命令、路径、脚本、URL 或 SQL。 */
-export const OPERATIONS = Object.freeze(["query", "refresh_all", "citel_problem", "mail_message"]);
+export const OPERATIONS = Object.freeze(["query", "refresh_all", "citel_problem", "mail_message", "assignment_detail"]);
 export const TASK_STATUSES = Object.freeze(["queued", "running", "succeeded", "partial", "failed", "expired", "revoked"]);
 export const RESULT_STATUSES = Object.freeze(["succeeded", "partial", "failed"]);
 export const FRESHNESS = Object.freeze(["local", "latest"]);
 
 export const LIMITS = Object.freeze({
   snapshotBytes: 1024 * 1024,
+  /** 附件：单个不超过 5 MiB，按 1 MiB 分块存（D1 单行放不下整个文件）；每台设备总量有上限。 */
+  attachmentBytes: 5 * 1024 * 1024,
+  attachmentChunkBytes: 1024 * 1024,
+  attachmentQuotaBytes: 64 * 1024 * 1024,
   resultBytes: 256 * 1024,
   requestBytes: 16 * 1024,
   pairingTtlSeconds: 10 * 60,
@@ -161,12 +165,42 @@ export function validateTaskRequest(body) {
     if (Object.keys(args).some((key) => key !== "messageId")) throw bad("bad_request", "mail_message 只接受 messageId");
     if (typeof args.messageId !== "string" || !/^[A-Za-z0-9:._-]{1,128}$/.test(args.messageId)) throw bad("bad_request", "messageId 无效");
   }
+  if (body.operation === "assignment_detail") {
+    if (Object.keys(args).some((key) => key !== "assignmentId")) throw bad("bad_request", "assignment_detail 只接受 assignmentId");
+    requireAssignmentId(args.assignmentId);
+  }
   if (body.operation === "citel_problem") {
     if (typeof args.taskId !== "string" || !/^[1-9][0-9]{0,8}$/.test(args.taskId)) throw bad("bad_request", "CITEL taskId 必须为正整数模块 ID");
     if (Object.keys(args).some((key) => !["taskId", "includeFullText"].includes(key))) throw bad("bad_request", "citel_problem 参数无效");
     if (args.includeFullText !== undefined && typeof args.includeFullText !== "boolean") throw bad("bad_request", "includeFullText 无效");
   }
   return { operation: body.operation, idempotencyKey, arguments: args };
+}
+
+const ASSIGNMENT_ID_PATTERN = /^(course_platform|phyvlab|citel):[1-9][0-9]{0,8}$/;
+const ATTACHMENT_KEY_PATTERN = /^[A-Za-z0-9_-]{8,96}$/;
+
+export function requireAssignmentId(value) {
+  if (typeof value !== "string" || !ASSIGNMENT_ID_PATTERN.test(value)) throw bad("bad_request", "assignmentId 无效");
+  return value;
+}
+
+export function requireAttachmentKey(value) {
+  if (typeof value !== "string" || !ATTACHMENT_KEY_PATTERN.test(value)) throw bad("bad_request", "附件 key 无效");
+  return value;
+}
+
+export function validateAttachmentMeta(body, key) {
+  requireObject(body, "body");
+  if (body.key !== key) throw bad("bad_request", "附件 key 与路径不一致");
+  requireAssignmentId(body.assignmentId);
+  if (typeof body.attachmentId !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(body.attachmentId)) throw bad("bad_request", "attachmentId 无效");
+  if (typeof body.name !== "string" || body.name.length === 0 || body.name.length > 255) throw bad("bad_request", "附件名无效");
+  if (typeof body.contentType !== "string" || !/^[\w.+-]+\/[\w.+-]+$/.test(body.contentType)) throw bad("bad_request", "contentType 无效");
+  const sizeBytes = requireInt(body.sizeBytes, "sizeBytes", 1, LIMITS.attachmentBytes);
+  const chunkCount = requireInt(body.chunkCount, "chunkCount", 1, Math.ceil(LIMITS.attachmentBytes / LIMITS.attachmentChunkBytes));
+  if (chunkCount !== Math.ceil(sizeBytes / LIMITS.attachmentChunkBytes)) throw bad("bad_request", "chunkCount 与大小不符");
+  return { assignmentId: body.assignmentId, attachmentId: body.attachmentId, name: body.name, contentType: body.contentType, sizeBytes, chunkCount };
 }
 
 export function validateTaskResult(body) {

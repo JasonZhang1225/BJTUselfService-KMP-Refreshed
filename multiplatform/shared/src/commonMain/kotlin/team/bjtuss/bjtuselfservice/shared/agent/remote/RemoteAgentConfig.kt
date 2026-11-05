@@ -84,6 +84,7 @@ private const val REMOTE_METADATA_SCOPE = "remote-agent"
 private const val CONFIG_KEY = "config_v1"
 private const val STATE_KEY = "state_v1"
 private const val PENDING_KEY = "pending_snapshot_v1"
+private const val BASELINE_KEY = "baseline_snapshot_v1"
 private const val RESULTS_KEY = "task_results_v1"
 
 /** 运行状态（跨重启保留）：序号、最近一次逐源报告、最近上传/连接/错误。 */
@@ -134,6 +135,13 @@ class RemoteAgentStore(private val cache: CacheStore) {
     fun savePending(snapshot: RemoteSnapshot?) =
         write(PENDING_KEY, snapshot?.let { remoteJson.encodeToString(RemoteSnapshot.serializer(), it) } ?: "")
 
+    /** 本设备上次被 Site 确认的快照，增量上传的基线；只和自己比，不涉及其他设备。 */
+    fun loadBaseline(): RemoteSnapshot? = read(BASELINE_KEY)
+        ?.let { runCatching { remoteJson.decodeFromString(RemoteSnapshot.serializer(), it) }.getOrNull() }
+
+    fun saveBaseline(snapshot: RemoteSnapshot?) =
+        write(BASELINE_KEY, snapshot?.let { remoteJson.encodeToString(RemoteSnapshot.serializer(), it) } ?: "")
+
     fun loadResults(): List<RemoteStoredResult> = read(RESULTS_KEY)
         ?.let { runCatching { remoteJson.decodeFromString(kotlinx.serialization.builtins.ListSerializer(RemoteStoredResult.serializer()), it) }.getOrNull() }
         .orEmpty()
@@ -144,6 +152,7 @@ class RemoteAgentStore(private val cache: CacheStore) {
     /** 解除绑定：清掉待传快照、任务结果和运行状态（新绑定代次从头开始）。 */
     fun resetBinding() {
         savePending(null)
+        saveBaseline(null)
         saveResults(emptyList())
         saveState(RemoteAgentPersistedState())
     }

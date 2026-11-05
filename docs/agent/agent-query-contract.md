@@ -25,6 +25,7 @@
 | `status` | `get_status`（外加 Site 设备与快照信息） | 无 |
 | `cache update` | `request_refresh_all` / `request_live_query` 的 `freshness: latest` | — |
 | `citel show <id>` | `request_citel_problem` | `taskId`、`includeFullText` |
+| `homework show <id> [--out <新目录>]` | `request_assignment_detail` + `get_assignment_attachment` | `assignmentId`；本机可下载任意大小的老师附件，Site 只存不超过 5 MB 的 |
 | — | `request_mail_message` | `messageId`（电脑读取正文，学校会标记已读） |
 
 `range` 取值：`today`、`tomorrow`、`this_week`、`next_week`、`next_7_days`；与 `date`、`from`/`to`、`week` 只能选一种。范围最多 120 天。

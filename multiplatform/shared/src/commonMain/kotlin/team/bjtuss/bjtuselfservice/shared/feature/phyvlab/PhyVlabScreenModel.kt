@@ -12,6 +12,7 @@ import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabActivitiesResult
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabAssignmentDetailResult
+import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabAttachmentResult
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabCacheSnapshot
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabCachedAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabLocalDataSource
@@ -27,6 +28,7 @@ import team.bjtuss.bjtuselfservice.shared.data.phyvlab.phyVlabDebug
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.domain.change.recordSafely
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
+import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
@@ -306,6 +308,25 @@ class PhyVlabScreenModel(
             detailFailure = null,
             submissionFeedback = null,
         )
+    }
+
+    internal fun cachedActivitiesForAgent(): List<PhyVlabActivity> = activitiesByCourse.values.flatten()
+
+    /** 本机 CLI 与远程同步读取详情：共用会话恢复，不改界面状态。读取幂等，过期时恢复后重试一次。 */
+    internal suspend fun fetchDetailForAgent(activity: PhyVlabActivity): PhyVlabAssignmentDetailResult =
+        retryAfterSessionRecovery(PhyVlabAssignmentDetailResult.Failure(PhyVlabSyncFailure.SESSION_EXPIRED),
+            { (it as? PhyVlabAssignmentDetailResult.Failure)?.reason }) { repository.fetchAssignmentDetail(activity) }
+
+    internal suspend fun downloadAttachmentForAgent(attachment: PhyVlabAttachment): PhyVlabAttachmentResult =
+        retryAfterSessionRecovery(PhyVlabAttachmentResult.Failure(PhyVlabSyncFailure.SESSION_EXPIRED),
+            { (it as? PhyVlabAttachmentResult.Failure)?.reason }) { repository.downloadAttachment(attachment) }
+
+    private suspend fun <T> retryAfterSessionRecovery(expired: T, reason: (T) -> PhyVlabSyncFailure?, read: suspend () -> T): T {
+        if (!ensureSessionForOperation()) return expired
+        val first = read()
+        if (reason(first) != PhyVlabSyncFailure.SESSION_EXPIRED) return first
+        sessionReady = false
+        return if (ensureSessionForOperation()) read() else first
     }
 
     suspend fun loadSelectedActivityDetail(force: Boolean = false) {

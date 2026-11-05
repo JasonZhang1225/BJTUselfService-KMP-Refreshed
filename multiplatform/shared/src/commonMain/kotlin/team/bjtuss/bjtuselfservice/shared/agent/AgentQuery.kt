@@ -7,6 +7,7 @@ import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -398,6 +399,7 @@ private fun homeworkBody(dataset: AgentDataset, query: AgentQuery, now: Long): B
             if (query.detail) {
                 item.content?.let { put("content", it) }
                 item.url?.let { put("url", it) }
+                item.attachments?.let { put("attachments", agentDatasetJson.encodeToJsonElement(ListSerializer(AgentAttachmentInfo.serializer()), it)) }
             }
         }
     })

@@ -1,5 +1,16 @@
 > 2026-11-04：本地分支 `fix/macos-sdk-default` 基于 `0f4137ab`，macOS 打包默认使用新版 SDK 的修复与验证见 `history_full.md` 末尾。
 > 2026-11-05：工作树 `.artifacts/tree/claude/homework-submit`，分支 `feat/homework-submit-cli-drop`（基于 `8954a92e`），draft PR #97 已开（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/97），未合并。
+> 2026-11-05：工作树 `.artifacts/tree/claude/assignment-detail`，分支 `feat/agent-assignment-detail`，基于 PR #97 的 `92146e55`，draft PR 目标分支是 `feat/homework-submit-cli-drop`。
+
+## 进行中：作业详情、附件与增量同步（2026-11-05）
+
+- 起因：ChatGPT 反馈物理在线只有名称和截止时间。核实属实：同步只拿列表，详情要在 App 打开过才有。
+- 详情：`AgentAssignmentDetailService` 统一三来源，结果缓存在账号 metadata（`agent.assignment_details.v1`），本机与快照共用。未交未截止的作业同步时补详情（24 小时新鲜期，每轮最多 15 项），已交的按需（MCP `request_assignment_detail`，需电脑在线）。CITEL 书面作业暂无详情。
+- 快照增量：`PATCH /api/v1/device/snapshot`，基线是本设备上次被确认的快照（`baseline_snapshot_v1`）；`assignments`、`mail` 按 id 增量，其余按范围整段替换。基线不符或旧模板回退全量。Site 只改本设备那一行。
+- 附件增量：不超过 5 MiB，1 MiB 分块进 D1（迁移 0003），每设备合计 64 MiB。按“作业 id + 附件 id”去重（没有内容哈希，common 没有 SHA-256 实现）。作业消失、关闭作业范围、撤销设备都会删除。
+- 物理在线老师附件：从说明里的 `pluginfile.php` 链接与图片解析，没有真实页面取证，只有虚构 fixture。
+- 需要用户做：重新部署 Site 模板并执行迁移 0003；旧模板会回退全量，附件不上传。
+- 未验证：真实学校环境、真实 Site（D1 BLOB 读写）、ChatGPT 对 MCP `resource` 内容的处理。
 
 ## 进行中：上传弹层拖放与 CLI 交作业（2026-11-05）
 

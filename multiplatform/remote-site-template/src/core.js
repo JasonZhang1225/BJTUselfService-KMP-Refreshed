@@ -2,7 +2,7 @@
 // 便于在 Sites/D1 上运行，也能在本地用 node:sqlite 适配器做真实 SQL 测试。
 
 import {
-  DEFAULT_SCOPES, LIMITS, MAX_ACTIVE_DEVICES, PROTOCOL_VERSION, ProtocolError, SCOPES, TEMPLATE_VERSION,
+  DEFAULT_SCOPES, LIMITS, requireAttachmentKey, validateAttachmentMeta, MAX_ACTIVE_DEVICES, PROTOCOL_VERSION, ProtocolError, SCOPES, TEMPLATE_VERSION,
   bad, requireId, requireInt, requireObject, requireProtocol,
   validatePairRequest, validateScopes, validateSnapshot, validateTaskRequest, validateTaskResult,
 } from "./protocol.js";
@@ -197,6 +197,95 @@ export class RemoteService {
     return { snapshotId: input.snapshotId, sequence: input.sequence, stored: true, duplicate: false };
   }
 
+  /**
+   * 增量上传：只针对这台设备自己的快照行。基线不是当前快照时回 base_mismatch，设备改传全量；
+   * 合并后按全量同样校验，不存在“差异绕过范围或大小限制”。同 snapshotId 重传幂等。
+   */
+  async patchSnapshot(device, patch, rawLength) {
+    if (rawLength > LIMITS.snapshotBytes) throw new ProtocolError(413, "too_large", "差异超过大小上限");
+    requireObject(patch, "body");
+    const row = await this.q("SELECT snapshot_id, sequence, body_json FROM snapshots WHERE device_id = ?", device.device_id).first();
+    if (row && row.snapshot_id === patch.snapshotId) {
+      if (row.sequence !== patch.sequence) throw new ProtocolError(409, "snapshot_conflict", "同一快照 ID 的序号不一致");
+      return { snapshotId: patch.snapshotId, sequence: patch.sequence, stored: false, duplicate: true };
+    }
+    if (!row || row.snapshot_id !== patch.baseSnapshotId || row.sequence !== patch.baseSequence) {
+      throw new ProtocolError(409, "base_mismatch", "差异的基线不是当前快照，请上传全量");
+    }
+    const merged = applySnapshotPatch(parseJson(row.body_json, null), patch);
+    if (!merged) throw new ProtocolError(409, "base_mismatch", "差异无法应用到当前快照，请上传全量");
+    const text = JSON.stringify(merged);
+    return this.putSnapshot(device, merged, new TextEncoder().encode(text).length);
+  }
+
+  // ---------- 附件：每台设备各管各的，不看其他设备 ----------
+
+  async listAttachments(device) {
+    const rows = (await this.q(`SELECT a.attachment_key AS key, a.size_bytes AS sizeBytes, a.chunk_count AS chunkCount,
+        (SELECT COUNT(*) FROM attachment_chunks c WHERE c.device_id = a.device_id AND c.attachment_key = a.attachment_key) AS stored
+      FROM attachments a WHERE a.device_id = ?`, device.device_id).all()).results ?? [];
+    return { items: rows.map((r) => ({ key: r.key, sizeBytes: r.sizeBytes, complete: r.stored === r.chunkCount })) };
+  }
+
+  /** 登记附件元数据；重传同一 key 会先清掉旧分块，所以中断的上传可以从头再来。 */
+  async putAttachment(device, key, body) {
+    requireAttachmentKey(key);
+    if (!parseJson(device.scopes_json, []).includes("assignments")) throw new ProtocolError(403, "scope_denied", "未授权作业上云");
+    const meta = validateAttachmentMeta(body, key);
+    const used = await this.q("SELECT COALESCE(SUM(size_bytes), 0) AS total FROM attachments WHERE device_id = ? AND attachment_key <> ?", device.device_id, key).first();
+    if (used.total + meta.sizeBytes > LIMITS.attachmentQuotaBytes) throw new ProtocolError(413, "quota_exceeded", "附件总量超过上限");
+    const now = this.now();
+    await this.db.batch([
+      this.q("DELETE FROM attachment_chunks WHERE device_id = ? AND attachment_key = ?", device.device_id, key),
+      this.q(`INSERT INTO attachments (device_id, attachment_key, assignment_id, attachment_id, name, content_type, size_bytes, chunk_count, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(device_id, attachment_key) DO UPDATE SET assignment_id = excluded.assignment_id, attachment_id = excluded.attachment_id,
+            name = excluded.name, content_type = excluded.content_type, size_bytes = excluded.size_bytes, chunk_count = excluded.chunk_count, created_at = excluded.created_at`,
+        device.device_id, key, meta.assignmentId, meta.attachmentId, meta.name, meta.contentType, meta.sizeBytes, meta.chunkCount, now),
+    ]);
+    return { key };
+  }
+
+  async putAttachmentChunk(device, key, index, bytes) {
+    requireAttachmentKey(key);
+    const meta = await this.q("SELECT chunk_count FROM attachments WHERE device_id = ? AND attachment_key = ?", device.device_id, key).first();
+    if (!meta) throw new ProtocolError(404, "not_found", "请先登记附件");
+    requireInt(index, "index", 0, meta.chunk_count - 1);
+    if (bytes.length === 0 || bytes.length > LIMITS.attachmentChunkBytes) throw new ProtocolError(413, "too_large", "分块大小无效");
+    await this.q(`INSERT INTO attachment_chunks (device_id, attachment_key, chunk_index, data) VALUES (?, ?, ?, ?)
+      ON CONFLICT(device_id, attachment_key, chunk_index) DO UPDATE SET data = excluded.data`, device.device_id, key, index, bytes).run();
+    return { key, index };
+  }
+
+  async deleteAttachment(device, key) {
+    requireAttachmentKey(key);
+    await this.q("DELETE FROM attachments WHERE device_id = ? AND attachment_key = ?", device.device_id, key).run();
+    return { key };
+  }
+
+  /** 拥有者读取：在有权的设备里取完整的那份。 */
+  async getAttachment(assignmentId, attachmentId) {
+    await this.ensureQueriesAllowed();
+    const allowed = (await this.activeDevices()).filter((d) => parseJson(d.scopes_json, []).includes("assignments"));
+    for (const device of allowed) {
+      const meta = await this.q("SELECT * FROM attachments WHERE device_id = ? AND assignment_id = ? AND attachment_id = ?", device.device_id, assignmentId, attachmentId).first();
+      if (!meta) continue;
+      const chunks = (await this.q("SELECT data FROM attachment_chunks WHERE device_id = ? AND attachment_key = ? ORDER BY chunk_index", device.device_id, meta.attachment_key).all()).results ?? [];
+      if (chunks.length !== meta.chunk_count) continue;
+      const bytes = new Uint8Array(meta.size_bytes);
+      let offset = 0;
+      for (const chunk of chunks) {
+        const part = Uint8Array.from(chunk.data);
+        if (offset + part.length > bytes.length) throw new ProtocolError(409, "attachment_corrupt", "附件数据与大小不符");
+        bytes.set(part, offset);
+        offset += part.length;
+      }
+      if (offset !== bytes.length) continue;
+      return { name: meta.name, contentType: meta.content_type, sizeBytes: meta.size_bytes, bytes };
+    }
+    throw new ProtocolError(404, "attachment_not_available", "Site 上没有这个附件。超过 5 MB 的只能在电脑上用 homework show --out 下载；其余可用 request_assignment_detail 让电脑上传。");
+  }
+
   /** 设备更新数据范围（关闭上云范围时立即生效，不必等下一次快照）。 */
   async updateScopes(device, body) {
     requireObject(body, "body");
@@ -216,6 +305,8 @@ export class RemoteService {
       if (current?.scopes_revision === revision && current.scopes_json === scopesJson) return { scopes, scopesRevision: revision };
       throw new ProtocolError(409, "scopes_changed", "数据范围请求已过期，请使用最新范围版本");
     }
+    // 关闭作业范围后立即删掉云端附件，不等下一次同步。
+    if (!scopes.includes("assignments")) await this.q("DELETE FROM attachments WHERE device_id = ?", device.device_id).run();
     return { scopes, scopesRevision: revision };
   }
 
@@ -454,13 +545,14 @@ export class RemoteService {
     await this.db.batch([
       this.q("UPDATE tasks SET status = 'revoked', completed_at = ? WHERE device_id = ? AND status IN ('queued', 'running')", now, deviceId),
       this.q("UPDATE devices SET revoked_at = COALESCE(revoked_at, ?) WHERE device_id = ?", now, deviceId),
+      this.q("DELETE FROM attachments WHERE device_id = ?", deviceId),
     ]);
     return { deviceId, revoked: true };
   }
 
-  /** 清除云端数据：快照与任务全部删除；设备绑定保留（撤销另行操作）。 */
+  /** 清除云端数据：快照、任务与附件全部删除；设备绑定保留（撤销另行操作）。 */
   async clearData() {
-    await this.db.batch([this.q("DELETE FROM snapshots"), this.q("DELETE FROM tasks")]);
+    await this.db.batch([this.q("DELETE FROM snapshots"), this.q("DELETE FROM tasks"), this.q("DELETE FROM attachments")]);
     return { cleared: true };
   }
 
@@ -490,10 +582,35 @@ export class RemoteService {
 
 export { bad };
 
+function identifiedItems(section) {
+  return Array.isArray(section?.items) && section.items.every((item) => typeof item?.id === "string") ? section.items : null;
+}
+
+/** 把差异合并回完整快照；与 KMP diffRemoteSnapshot 对应。数据对不上返回 null，由设备改传全量。 */
+export function applySnapshotPatch(base, patch) {
+  if (!base || typeof base.data !== "object") return null;
+  const data = { ...base.data };
+  for (const key of patch.remove ?? []) delete data[key];
+  for (const [key, value] of Object.entries(patch.set ?? {})) data[key] = value;
+  for (const [key, change] of Object.entries(patch.items ?? {})) {
+    const previous = identifiedItems(data[key]);
+    if (!previous || !Array.isArray(change.order) || !Array.isArray(change.upsert)) return null;
+    const byId = new Map(previous.map((item) => [item.id, item]));
+    for (const item of change.upsert) {
+      if (typeof item?.id !== "string") return null;
+      byId.set(item.id, item);
+    }
+    if (change.order.some((id) => !byId.has(id))) return null;
+    data[key] = { ...data[key], items: change.order.map((id) => byId.get(id)) };
+  }
+  const { baseSnapshotId, baseSequence, set, remove, items, ...envelope } = patch;
+  return { ...envelope, data };
+}
+
 /** 即时任务在当前授权下是否允许（与 KMP remoteTaskAllowed 一致）。 */
 function taskAllowed(operation, args, scopes) {
   if (operation === "query") return commandAllowed(args?.command, scopes);
-  if (operation === "citel_problem") return scopes.includes("assignments");
+  if (operation === "citel_problem" || operation === "assignment_detail") return scopes.includes("assignments");
   if (operation === "mail_message") return scopes.includes("mail");
   return true;
 }

@@ -2,7 +2,11 @@ package team.bjtuss.bjtuselfservice.shared.agent.remote
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import team.bjtuss.bjtuselfservice.shared.agent.AGENT_ATTACHMENT_ONLINE_LIMIT_BYTES
+import team.bjtuss.bjtuselfservice.shared.agent.AgentAssignmentDetail
+import team.bjtuss.bjtuselfservice.shared.agent.AgentAttachmentInfo
 import team.bjtuss.bjtuselfservice.shared.agent.AgentDatasetPart
+import team.bjtuss.bjtuselfservice.shared.agent.agentStableId
 import team.bjtuss.bjtuselfservice.shared.agent.AgentQuery
 import team.bjtuss.bjtuselfservice.shared.agent.AgentQueryCommand
 import team.bjtuss.bjtuselfservice.shared.agent.AgentQueryException
@@ -65,9 +69,52 @@ fun parseRemoteMailMessage(arguments: JsonObject, scopes: Set<RemoteScope>): Str
 /** 任务在当前授权下是否还允许执行（领取时与提交前各查一次）。 */
 fun remoteTaskAllowed(operation: String, arguments: JsonObject, scopes: Set<RemoteScope>): Boolean = when (operation) {
     RemoteOperation.QUERY -> runCatching { parseRemoteLiveQuery(arguments, scopes) }.isSuccess
-    RemoteOperation.CITEL_PROBLEM -> RemoteScope.ASSIGNMENTS in scopes
+    RemoteOperation.CITEL_PROBLEM, RemoteOperation.ASSIGNMENT_DETAIL -> RemoteScope.ASSIGNMENTS in scopes
     RemoteOperation.MAIL_MESSAGE -> runCatching { parseRemoteMailMessage(arguments, scopes) }.isSuccess
     else -> true
 }
 
-data class RemoteQueryOutcome(val status: String, val result: JsonObject, val error: RemoteError? = null)
+private val ASSIGNMENT_ID = Regex("^(course_platform|phyvlab|citel):[1-9][0-9]{0,8}$")
+
+/** 按需读取详情的参数：作业列表里的 id。 */
+fun parseRemoteAssignmentId(arguments: JsonObject): String {
+    if (arguments.keys.any { it != "assignmentId" }) throw IllegalArgumentException("bad_request")
+    return (arguments["assignmentId"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        ?.takeIf(ASSIGNMENT_ID::matches) ?: throw IllegalArgumentException("bad_request")
+}
+
+data class RemoteQueryOutcome(
+    val status: String,
+    val result: JsonObject,
+    val error: RemoteError? = null,
+    /** 任务完成后要传到 Site 的附件。 */
+    val uploads: List<RemoteAttachmentRef> = emptyList(),
+)
+
+/** 要同步的一个附件；[key] 在同一设备内稳定，已上传过就跳过。 */
+data class RemoteAttachmentRef(
+    val key: String,
+    val assignmentId: String,
+    val attachmentId: String,
+    val sizeBytes: Long?,
+)
+
+/** [upload]：这轮要确保在 Site 上的附件；[keep]：作业还在，不能删的附件。 */
+data class RemoteAttachmentPlan(val upload: List<RemoteAttachmentRef>, val keep: Set<String>)
+
+fun remoteAttachmentRef(assignmentId: String, attachment: AgentAttachmentInfo) = RemoteAttachmentRef(
+    "att_" + agentStableId("$assignmentId|${attachment.id}"), assignmentId, attachment.id, attachment.sizeBytes,
+)
+
+/** 只上传未交作业的小附件；已知超过上限的跳过，大小未知的下载后再判断。 */
+fun buildRemoteAttachmentPlan(
+    details: Map<String, AgentAssignmentDetail>,
+    assignmentIds: Set<String>,
+    pendingIds: Set<String>,
+): RemoteAttachmentPlan {
+    val refs = details.filterKeys { it in assignmentIds }.flatMap { (id, detail) -> detail.attachments.map { remoteAttachmentRef(id, it) } }
+    return RemoteAttachmentPlan(
+        upload = refs.filter { it.assignmentId in pendingIds && (it.sizeBytes ?: 0L) <= AGENT_ATTACHMENT_ONLINE_LIMIT_BYTES },
+        keep = refs.map { it.key }.toSet(),
+    )
+}

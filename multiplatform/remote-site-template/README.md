@@ -45,6 +45,11 @@ Windows 上的交大自由行主动连接它，上报快照、领取即时任务
 | `POST /api/v1/owner/connection` | 拥有者 | 用户登录后自行生成完整配对信息，含本站服务访问授权；搭建助手不调用 |
 | `POST /api/v1/device/pair` | 电脑/手机 | 用配对码换设备令牌；`deviceKind` 为 `desktop`（默认）或 `mobile`。0.4.0 起可同时绑定多台设备（上限 5），只撤销同名同类型的旧绑定；10 分钟内失败 10 次锁定 |
 | `PUT /api/v1/device/snapshot` | 电脑 | 上传最新完整快照（≤1 MiB）；同 `snapshotId` 重传幂等，序号不增大拒收 `stale_snapshot` |
+| `PATCH /api/v1/device/snapshot` | 电脑/手机 | 增量上传：只传相对本设备上次快照的差异，Site 合并到这台设备自己的快照行；基线不符回 `base_mismatch`，设备改传全量 |
+| `GET /api/v1/device/attachments` | 电脑/手机 | 列出本设备已传的附件及是否完整 |
+| `PUT /api/v1/device/attachments/{key}` | 电脑/手机 | 登记附件元数据（≤5 MiB，每台设备合计 ≤64 MiB）；重新登记会清掉旧分块 |
+| `PUT /api/v1/device/attachments/{key}/chunks/{n}` | 电脑/手机 | 上传一个分块（≤1 MiB，二进制） |
+| `DELETE /api/v1/device/attachments/{key}` | 电脑/手机 | 删除本设备的附件 |
 | `PUT /api/v1/device/scopes` | 电脑 | 立即更新允许上云的范围；Site 按此再次过滤已存快照 |
 | `POST /api/v1/device/poll` | 电脑 | 原子领取最早一条任务并设置 120 秒租约；无任务返回 `task: null`；心跳最多约每分钟落库一次 |
 | `POST /api/v1/device/tasks/{id}/renew` | 电脑 | 续租（总执行预算约 10 分钟） |

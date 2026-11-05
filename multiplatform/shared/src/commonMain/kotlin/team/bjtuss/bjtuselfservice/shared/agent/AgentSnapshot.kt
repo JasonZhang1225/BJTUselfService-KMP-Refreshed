@@ -38,6 +38,8 @@ data class AgentSnapshot(
     val phyVlab: PhyVlabCacheSnapshot?,
     val citelTasks: List<CitelTask>,
     val citelLastSync: String?,
+    /** 作业 id → 详情；App 打开过或同步时补过的才有。 */
+    val assignmentDetails: Map<String, AgentAssignmentDetail> = emptyMap(),
     /** null 表示约课缓存不可用（未启用/未配置）。 */
     val physicsLabs: List<PhysicsLab>?,
     val physicsDemos: List<PhysicsDemoBooking>?,
@@ -89,6 +91,7 @@ fun loadAgentSnapshot(cache: CacheStore, studentId: String, today: LocalDate): A
         } else null,
         citelTasks = if (preferences.isCitelEnabled) decodeOrNull<List<CitelTask>>(cache.metadata(studentId, "citel.tasks")).orEmpty() else emptyList(),
         citelLastSync = cache.metadata(studentId, "citel.lastSync"),
+        assignmentDetails = loadAgentAssignmentDetails(cache, studentId),
         physicsLabs = physicsLabs,
         physicsDemos = physicsDemos,
         assignmentFilters = decodeOrNull<AggregateAssignmentFilters>(cache.metadata(studentId, "assignment.aggregate.filters"))

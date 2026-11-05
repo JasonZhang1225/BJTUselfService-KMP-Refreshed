@@ -17,15 +17,22 @@ import kotlinx.coroutines.withContext
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.*
 import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
+import team.bjtuss.bjtuselfservice.shared.agent.AGENT_ATTACHMENT_ONLINE_LIMIT_BYTES
 import team.bjtuss.bjtuselfservice.shared.agent.AGENT_TIME_ZONE
+import team.bjtuss.bjtuselfservice.shared.agent.AgentAssignmentData
+import team.bjtuss.bjtuselfservice.shared.agent.AgentAssignmentDetail
+import team.bjtuss.bjtuselfservice.shared.agent.AgentDatasetPart
+import team.bjtuss.bjtuselfservice.shared.agent.AgentDetailException
 import team.bjtuss.bjtuselfservice.shared.agent.AgentSourceState
 import team.bjtuss.bjtuselfservice.shared.agent.AgentWeek
 import team.bjtuss.bjtuselfservice.shared.agent.agentMailMessageJson
+import team.bjtuss.bjtuselfservice.shared.agent.agentPendingAssignmentIds
 import team.bjtuss.bjtuselfservice.shared.agent.agentScheduleWindow
 import team.bjtuss.bjtuselfservice.shared.agent.buildAgentDataset
 import team.bjtuss.bjtuselfservice.shared.agent.loadAgentSnapshot
 import team.bjtuss.bjtuselfservice.shared.agent.runAgentQuery
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
+import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshReport
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshRequest
@@ -77,6 +84,21 @@ class AppSessionRemoteExecutor(
                     put("problem", remoteJson.encodeToJsonElement(problem.problem))
                 })
             }
+            if (task.operation == RemoteOperation.ASSIGNMENT_DETAIL) {
+                if (RemoteScope.ASSIGNMENTS !in scopes) return failure("scope_denied")
+                val id = parseRemoteAssignmentId(task.arguments)
+                val service = session.assignmentDetails ?: return failure("not_supported")
+                val detail = try {
+                    service.refresh(id)
+                } catch (error: AgentDetailException) {
+                    return failure(error.code)
+                }
+                if (currentAccountScope() != account) return failure("account_mismatch")
+                return RemoteQueryOutcome(RemoteTaskStatus.SUCCEEDED,
+                    remoteJson.encodeToJsonElement(AgentAssignmentDetail.serializer(), detail) as JsonObject,
+                    uploads = detail.attachments.map { remoteAttachmentRef(id, it) }
+                        .filter { (it.sizeBytes ?: 0L) <= AGENT_ATTACHMENT_ONLINE_LIMIT_BYTES })
+            }
             if (task.operation == RemoteOperation.MAIL_MESSAGE) {
                 val messageId = parseRemoteMailMessage(task.arguments, scopes)
                 val message = session.mailboxModel.fetchMessageForAgent(messageId)
@@ -103,6 +125,39 @@ class AppSessionRemoteExecutor(
         } catch (cancel: CancellationException) { throw cancel
         } catch (error: IllegalArgumentException) { return failure(if (error.message == "scope_denied") "scope_denied" else "bad_request")
         } catch (_: Exception) { return failure("query_failed") }
+    }
+
+    private fun assignmentData(account: String): AgentAssignmentData? {
+        val instant = now()
+        val today = instant.toLocalDateTime(AGENT_TIME_ZONE).date
+        return buildAgentDataset(loadAgentSnapshot(cache, account, today), setOf(AgentDatasetPart.ASSIGNMENTS), today, today, instant).assignments
+    }
+
+    override suspend fun prepareAssignmentDetails(scopes: Set<RemoteScope>) {
+        if (RemoteScope.ASSIGNMENTS !in scopes) return
+        val session = readySession() ?: return
+        val service = session.assignmentDetails ?: return
+        val data = withContext(Dispatchers.Default) { assignmentData(session.profile.studentId) } ?: return
+        service.retain(data.items.map { it.id }.toSet())
+        service.refreshPending(agentPendingAssignmentIds(data, now().epochSeconds))
+    }
+
+    override suspend fun attachmentPlan(scopes: Set<RemoteScope>): RemoteAttachmentPlan? {
+        val session = readySession() ?: return null
+        // 关闭作业范围后不再保留云端附件。
+        if (RemoteScope.ASSIGNMENTS !in scopes) return RemoteAttachmentPlan(emptyList(), emptySet())
+        val service = session.assignmentDetails ?: return null
+        val data = withContext(Dispatchers.Default) { assignmentData(session.profile.studentId) } ?: return null
+        return buildRemoteAttachmentPlan(service.cached(), data.items.map { it.id }.toSet(),
+            agentPendingAssignmentIds(data, now().epochSeconds).toSet())
+    }
+
+    override suspend fun readAttachment(ref: RemoteAttachmentRef): HomeworkFileContent? {
+        val service = readySession()?.assignmentDetails ?: return null
+        val file = service.attachment(ref.assignmentId, ref.attachmentId)
+        val size = file.bytes.size.toLong()
+        if (ref.sizeBytes == null) service.rememberAttachmentSize(ref.assignmentId, ref.attachmentId, size)
+        return file.takeIf { size <= AGENT_ATTACHMENT_ONLINE_LIMIT_BYTES }
     }
 
     override suspend fun snapshotContent(scopes: Set<RemoteScope>, lastStates: Map<String, RemoteSourceState>): RemoteSnapshotContent? {

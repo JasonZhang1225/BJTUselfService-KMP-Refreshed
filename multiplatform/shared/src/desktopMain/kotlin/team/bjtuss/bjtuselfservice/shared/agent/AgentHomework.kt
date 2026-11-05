@@ -73,6 +73,8 @@ data class AgentHomeworkRequest(
     /** show / submit */
     val action: String,
     val homeworkId: Int,
+    /** course_platform / phyvlab / citel；提交只支持课程平台。 */
+    val source: String = "course_platform",
     /** show：把老师附件下载到这个新目录。 */
     val outDir: String? = null,
     val uploads: List<AgentHomeworkUpload> = emptyList(),
@@ -86,7 +88,7 @@ data class AgentHomeworkRequest(
 }
 
 @Serializable
-data class AgentHomeworkAttachment(val id: Int, val name: String, val sizeBytes: Long, val savedAs: String? = null)
+data class AgentHomeworkAttachment(val id: Int, val name: String, val sizeBytes: Long, val savedAs: String? = null, val attachmentId: String? = null)
 
 @Serializable
 data class AgentHomeworkStudent(val studentId: String, val name: String)
@@ -136,13 +138,14 @@ class AgentHomeworkExecutor(
     reauthenticate: (suspend () -> Boolean)?,
     private val refreshHomework: suspend () -> Boolean,
     private val nowEpochSeconds: () -> Long = { Clock.System.now().epochSeconds },
+    private val details: AgentAssignmentDetailService? = null,
 ) {
     /** 同一请求最多恢复一次会话，与刷新批次的规则一致。 */
     private val recovery = SessionRefreshCoordinator(reauthenticate)
 
     suspend fun run(request: AgentHomeworkRequest): AgentHomeworkOutcome = try {
         when (request.action) {
-            "show" -> show(request)
+            "show" -> if (request.source == "course_platform") show(request) else showOther(request)
             "submit" -> if (request.execute) submitLock.withLock { submit(request) } else submit(request)
             else -> AgentHomeworkOutcome.Failed(RefreshIpcCode.BAD_REQUEST, "不支持的作业操作。")
         }
@@ -179,6 +182,35 @@ class AgentHomeworkExecutor(
             submittedFiles = submitted,
             student = AgentHomeworkStudent(profile.studentId, profile.name),
         ))
+    }
+
+    /** 物理在线与 CITEL：走统一详情服务，附件大小不限，`--out` 全部下载。 */
+    private suspend fun showOther(request: AgentHomeworkRequest): AgentHomeworkOutcome {
+        val service = details ?: stop(AgentHomeworkFailureCode.NOT_FOUND, "当前会话不能读取这个来源的详情。")
+        val id = "${request.source}:${request.homeworkId}"
+        try {
+            val detail = service.refresh(id)
+            val saved = request.outDir?.takeIf { detail.attachments.isNotEmpty() }?.let { out ->
+                val files = detail.attachments.map { it.id to service.attachment(id, it.id).bytes }
+                writeAttachments(File(out), uniqueAttachmentNames(detail.attachments.map { it.name }), files)
+            }.orEmpty()
+            val summary = service.summary(id)
+            return AgentHomeworkOutcome.Done(AgentHomeworkResult(
+                id = id, course = summary?.course.orEmpty().trim(), title = summary?.title.orEmpty().trim(),
+                type = if (request.source == "citel") "CITEL 作业" else "物理在线作业",
+                due = summary?.dueEpoch?.let { agentTimePoint(it, deadline = true).text },
+                overdue = summary?.dueEpoch?.let { it < nowEpochSeconds() } == true,
+                submitted = detail.submittedFiles.isNotEmpty(),
+                content = detail.content,
+                attachments = detail.attachments.map { attachment ->
+                    AgentHomeworkAttachment(0, attachment.name, attachment.sizeBytes ?: 0, saved[attachment.id], attachment.id)
+                },
+                submittedFiles = detail.submittedFiles,
+                student = AgentHomeworkStudent(profile.studentId, profile.name),
+            ))
+        } catch (error: AgentDetailException) {
+            stop(if (error.code == "not_found") AgentHomeworkFailureCode.NOT_FOUND else AgentHomeworkFailureCode.NETWORK, error.message.orEmpty())
+        }
     }
 
     private suspend fun submit(request: AgentHomeworkRequest): AgentHomeworkOutcome {
@@ -259,8 +291,11 @@ class AgentHomeworkExecutor(
                 is HomeworkOperationResult.Failure -> stop(result.reason.code(), result.reason.describe("下载老师附件"))
             }
         }
-        val names = uniqueAttachmentNames(detail.attachments.map { it.fileName })
-        return withContext(Dispatchers.IO) {
+        return writeAttachments(destination, uniqueAttachmentNames(detail.attachments.map { it.fileName }), downloads)
+    }
+
+    private suspend fun <K> writeAttachments(destination: File, names: List<String>, downloads: List<Pair<K, ByteArray>>): Map<K, String> =
+        withContext(Dispatchers.IO) {
             val target = destination.toPath()
             if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) stop(AgentHomeworkFailureCode.IO, "保存目录已存在，请指定新目录。")
             val staging = runCatching { Files.createTempDirectory(target.parent, ".homework-export-") }
@@ -275,7 +310,6 @@ class AgentHomeworkExecutor(
             }
             downloads.mapIndexed { index, (id, _) -> id to target.resolve(names[index]).toString() }.toMap()
         }
-    }
 
     private suspend fun readUploads(uploads: List<AgentHomeworkUpload>): List<HomeworkFileContent> = withContext(Dispatchers.IO) {
         totalUploadProblem(uploads.map { File(it.path) })?.let { stop(AgentHomeworkFailureCode.IO, "$it 这次没有提交。") }
@@ -368,10 +402,12 @@ internal fun parseAgentHomeworkCommand(args: List<String>): AgentHomeworkCommand
     val action = args.getOrNull(1)?.takeIf { it == "show" || it == "submit" }
         ?: throw AgentUsageException("homework 只支持 show <id> 或 submit <id> --file <路径>。")
     val rawId = args.getOrNull(2) ?: throw AgentUsageException("缺少作业 id，例如 course_platform:12345。")
-    if (rawId.startsWith("citel:") || rawId.startsWith("phyvlab:")) {
-        throw AgentUsageException("命令行目前只支持课程平台作业；物理在线和 CITEL 请在 App 里提交。")
+    val source = rawId.substringBefore(':', "course_platform")
+    if (source !in setOf("course_platform", "phyvlab", "citel")) throw AgentUsageException("作业 id 无效：未知来源 $source。")
+    if (action == "submit" && source != "course_platform") {
+        throw AgentUsageException("命令行目前只能提交课程平台作业；物理在线和 CITEL 请在 App 里提交。")
     }
-    val id = rawId.removePrefix(COURSE_PLATFORM_PREFIX).toIntOrNull()?.takeIf { it > 0 }
+    val id = rawId.substringAfter(':').toIntOrNull()?.takeIf { it > 0 }
         ?: throw AgentUsageException("作业 id 无效：应为 course_platform:<数字>。")
     fun value(option: String, next: String?): String =
         next?.takeIf { it.isNotBlank() && !it.startsWith("--") } ?: throw AgentUsageException("$option 后需要一个值。")
@@ -416,7 +452,7 @@ internal fun parseAgentHomeworkCommand(args: List<String>): AgentHomeworkCommand
         }
     }
     if (action == "show") {
-        return AgentHomeworkCommand(AgentHomeworkRequest("show", id, outDir = out?.path), json)
+        return AgentHomeworkCommand(AgentHomeworkRequest("show", id, source, outDir = out?.path), json)
     }
     if (uploads.isEmpty()) throw AgentUsageException("submit 至少需要一个 --file <路径>。")
     if (uploads.size > MAX_UPLOAD_FILES) throw AgentUsageException("一次最多提交 $MAX_UPLOAD_FILES 个文件。")

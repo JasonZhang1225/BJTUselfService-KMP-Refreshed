@@ -5,6 +5,7 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
 import kotlinx.coroutines.CancellationException
 import com.fleeksoft.ksoup.Ksoup
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
+import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
@@ -35,6 +36,8 @@ interface PhyVlabRemoteDataSource {
     suspend fun fetchEvents(monthTimestampSeconds: Long): List<PhyVlabEvent>
     suspend fun fetchAssignmentDetail(activity: PhyVlabActivity): PhyVlabAssignmentDetail
     suspend fun submitAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>)
+    suspend fun downloadAttachment(attachment: PhyVlabAttachment): HomeworkFileContent =
+        throw PhyVlabRemoteException(PhyVlabRemoteFailure.NETWORK)
     suspend fun saveAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>, removed: Set<String>) {
         if (removed.isNotEmpty()) throw PhyVlabRemoteException(PhyVlabRemoteFailure.PARSE)
         submitAssignment(activity, files)
@@ -155,6 +158,18 @@ class SchoolPhyVlabRemoteDataSource(
     override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>) {
         saveAssignment(activity, files, emptySet())
     }
+    override suspend fun downloadAttachment(attachment: PhyVlabAttachment): HomeworkFileContent {
+        if (!attachment.url.startsWith("${SchoolEndpoints.PHYVLAB_ORIGIN}/pluginfile.php/")) network()
+        val response = execute(SchoolHttpRequest(method = SchoolHttpMethod.GET, url = attachment.url,
+            headers = mapOf("Referer" to "${SchoolEndpoints.PHYVLAB_ORIGIN}/")))
+        if (response.statusCode !in 200..299) network()
+        if (!response.finalUrl.startsWith(SchoolEndpoints.PHYVLAB_ORIGIN) || "/login/index.php" in response.finalUrl) sessionExpired()
+        if (response.body.isEmpty()) parse()
+        return HomeworkFileContent(attachment.fileName,
+            response.headers.entries.firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }?.value?.firstOrNull()
+                ?.substringBefore(';')?.trim()?.ifBlank { null } ?: "application/octet-stream", response.body)
+    }
+
     private suspend fun fetchPage(url: String, referer: String): SchoolHttpResponse {
         phyVlabDebug("page GET start ${safePhyVlabEndpoint(url)}")
         val response = execute(

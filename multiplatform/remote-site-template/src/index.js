@@ -114,6 +114,23 @@ export async function handle(request, env, options = {}) {
         const { body, size } = await readBody(request, LIMITS.snapshotBytes);
         return json(200, await service.putSnapshot(device, body, size));
       }
+      if (path === "/api/v1/device/snapshot" && method === "PATCH") {
+        const { body, size } = await readBody(request, LIMITS.snapshotBytes);
+        return json(200, await service.patchSnapshot(device, body, size));
+      }
+      if (path === "/api/v1/device/attachments" && method === "GET") return json(200, await service.listAttachments(device));
+      const chunk = /^\/api\/v1\/device\/attachments\/([^/]+)\/chunks\/(\d+)$/.exec(path);
+      if (chunk && method === "PUT") {
+        const declared = Number(request.headers.get("content-length") ?? "0");
+        if (declared > LIMITS.attachmentChunkBytes) throw new ProtocolError(413, "too_large", "分块过大");
+        return json(200, await service.putAttachmentChunk(device, chunk[1], Number(chunk[2]), new Uint8Array(await request.arrayBuffer())));
+      }
+      const attachment = /^\/api\/v1\/device\/attachments\/([^/]+)$/.exec(path);
+      if (attachment && method === "PUT") {
+        const { body } = await readBody(request, LIMITS.requestBytes);
+        return json(200, await service.putAttachment(device, attachment[1], body));
+      }
+      if (attachment && method === "DELETE") return json(200, await service.deleteAttachment(device, attachment[1]));
       if (path === "/api/v1/device/scopes" && method === "PUT") {
         const { body } = await readBody(request, LIMITS.requestBytes);
         return json(200, await service.updateScopes(device, body));

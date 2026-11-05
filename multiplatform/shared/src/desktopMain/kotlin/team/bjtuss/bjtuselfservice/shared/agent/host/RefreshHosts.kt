@@ -122,7 +122,7 @@ internal class AppSessionIpcHandler(
             return AgentHomeworkOutcome.Failed(RefreshIpcCode.NOT_SIGNED_IN, "App 会话尚未就绪。")
         }
         return AgentHomeworkExecutor(repository, session.profile, session.reauthenticateSession,
-            refreshHomework = { coordinator.refreshHomework() }).run(request)
+            refreshHomework = { coordinator.refreshHomework() }, details = session.assignmentDetails).run(request)
     }
 
     private suspend fun awaitReadySession(): AuthenticatedSession {
@@ -213,7 +213,7 @@ class HeadlessRefreshHost(private val deps: HeadlessRefreshDependencies) {
     }
 
     private fun AppDataGraph.homeworkExecutor() = AgentHomeworkExecutor(homeworkRepository, profile, sessionRecovery::attempt,
-        refreshHomework = { refreshCoordinator.refreshHomework() })
+        refreshHomework = { refreshCoordinator.refreshHomework() }, details = assignmentDetails)
 
     private suspend fun execute(action: suspend (AppDataGraph) -> HeadlessRunResult): HeadlessRunResult {
         val server = RefreshIpcServer.start(deps.cacheDirectory, RefreshExecutor.HEADLESS, handler)

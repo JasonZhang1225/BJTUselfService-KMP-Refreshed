@@ -311,6 +311,24 @@ class AppDataGraph(
         securityCoordinator.citelVault(accountScope), team.bjtuss.bjtuselfservice.shared.feature.citel.CitelRemote(transport),
         changeRecorder = citelChangeRecorder(homeChangeFeed))
 
+    /** 本机 CLI 与远程同步共用的作业详情入口。 */
+    val assignmentDetails = team.bjtuss.bjtuselfservice.shared.agent.AgentAssignmentDetailService(
+        accountScope, cacheStore, homeworkRepository,
+        team.bjtuss.bjtuselfservice.shared.agent.AgentDetailBackends(
+            phyVlabActivities = phyVlabModel::cachedActivitiesForAgent,
+            phyVlabDetail = phyVlabModel::fetchDetailForAgent,
+            phyVlabDownload = phyVlabModel::downloadAttachmentForAgent,
+            citelProblem = { id, live ->
+                val task = citelModel.state.value.tasks.firstOrNull { it.id == id && it.programming }
+                task?.let { citelModel.remoteProblem(id, live)?.let { cached -> team.bjtuss.bjtuselfservice.shared.feature.citel.citelProblemMarkdown(it, cached) } }
+            },
+            citelSummary = { id ->
+                citelModel.state.value.tasks.firstOrNull { it.id == id }
+                    ?.let { team.bjtuss.bjtuselfservice.shared.agent.AgentAssignmentSummary(it.courseName, it.title, it.dueTime) }
+            },
+        ),
+    )
+
     private val refreshScope = CoroutineScope(SupervisorJob() + refreshDispatcher)
 
     /** 全局刷新的唯一执行者：App 按钮、前台恢复、CLI 与远程任务都经由它。 */

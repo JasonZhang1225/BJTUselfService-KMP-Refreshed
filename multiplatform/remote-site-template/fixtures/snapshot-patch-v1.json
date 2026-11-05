@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 2,
+  "deviceId": "dev_fixtureDevice01",
+  "accountBindingId": "bind_fixture00001",
+  "snapshotId": "snap_fixture00002",
+  "sequence": 2,
+  "baseSnapshotId": "snap_fixture00001",
+  "baseSequence": 1,
+  "generatedAt": 1792540900,
+  "uploadedAt": 1792540901,
+  "scopes": ["schedule", "assignments"],
+  "sources": { "phyvlab": { "status": "success", "fetchedAt": 1792540890 } },
+  "scopesRevision": 1,
+  "set": { "schedule": { "days": [] } },
+  "remove": [],
+  "items": {
+    "assignments": {
+      "upsert": [{ "id": "phyvlab:3", "title": "新作业" }],
+      "order": ["phyvlab:3", "phyvlab:1"]
+    }
+  }
+}

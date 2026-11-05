@@ -54,8 +54,8 @@ export function createSite() {
   const call = async (method, path, { body, token, owner = false, headers = {} } = {}) => {
     const init = { method, headers: { ...headers } };
     if (body !== undefined) {
-      init.body = typeof body === "string" ? body : JSON.stringify(body);
-      init.headers["content-type"] = "application/json";
+      init.body = typeof body === "string" || body instanceof Uint8Array ? body : JSON.stringify(body);
+      init.headers["content-type"] = body instanceof Uint8Array ? "application/octet-stream" : "application/json";
     }
     if (owner) init.headers.authorization = `Bearer ${OWNER_TOKEN}`;
     if (token) init.headers.authorization = `Bearer ${token}`;

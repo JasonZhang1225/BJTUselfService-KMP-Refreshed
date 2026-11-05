@@ -36,6 +36,8 @@ object RemoteOperation {
     const val CITEL_PROBLEM = "citel_problem"
     /** 读取单封邮件正文（需要邮箱范围；学校会标记为已读）。 */
     const val MAIL_MESSAGE = "mail_message"
+    /** 按需读取一项作业的详情，并把小于 5 MB 的附件传到 Site。 */
+    const val ASSIGNMENT_DETAIL = "assignment_detail"
 }
 
 object RemoteTaskStatus {
@@ -179,3 +181,21 @@ val remoteJson: Json = Json {
     encodeDefaults = true
     explicitNulls = true
 }
+
+/** 设备上传的附件元数据。[key] 由作业 id 与附件 id 决定，同一附件重复同步时跳过。 */
+@Serializable
+data class RemoteAttachmentMeta(
+    val key: String,
+    val assignmentId: String,
+    val attachmentId: String,
+    val name: String,
+    val contentType: String,
+    val sizeBytes: Long,
+    val chunkCount: Int,
+)
+
+@Serializable
+data class RemoteAttachmentEntry(val key: String, val sizeBytes: Long, val complete: Boolean)
+
+@Serializable
+data class RemoteAttachmentList(val items: List<RemoteAttachmentEntry> = emptyList())

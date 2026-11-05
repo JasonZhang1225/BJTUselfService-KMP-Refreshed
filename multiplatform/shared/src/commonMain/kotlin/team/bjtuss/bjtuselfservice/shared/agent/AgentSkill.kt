@@ -45,7 +45,7 @@ $cliCommand <命令> [选项] --json
 | 成绩 | `grades [--course 关键词] [--term 学期]`；默认不开放，退出码 5 时告诉用户可在 App 的“Agent 和 ChatGPT 插件”里允许 |
 | 邮件 | `mail [--unread] [--keyword 关键词] [--limit N]`：收件箱最近邮件摘要；正文请用户在 App 查看 |
 | 数据新不新、哪些数据可用 | `status` |
-| 看某项课程平台作业的完整要求、下载老师附件 | `homework show <id> [--out <新目录>]`（`id` 取自 `homework` 结果，如 `course_platform:12345`；会联网） |
+| 看某项作业的完整要求、题号、下载老师附件 | `homework show <id> [--out <新目录>]`（`id` 取自 `homework` 结果，如 `phyvlab:123`、`course_platform:12345`；课程平台、物理在线、CITEL 编程题都支持，CITEL 书面作业暂不支持；会联网） |
 | 用户明确要求提交作业 | 按下面“交作业”一节操作 |
 | CITEL 题面 | `citel show <id>`（`id` 是作业 id 的数字部分，`citel:9265` → `9265`）；`citel export <id> --out <新目录>` 导出 problem.md 和 tests/N.in、N.out |
 

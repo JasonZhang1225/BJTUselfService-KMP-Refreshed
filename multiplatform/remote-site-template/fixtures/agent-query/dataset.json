@@ -82,7 +82,8 @@
         {
           "id": "course_platform:88001", "source": "course_platform", "sourceLabel": "课程平台", "course": "高等数学 A(I)", "title": "第 6 次作业",
           "submitted": false, "due": { "date": "2026-10-30", "time": "18:00", "text": "2026-10-30（周五）18:00", "epoch": 1793354400 },
-          "type": "作业", "submittedCount": 30, "totalCount": 120, "content": "完成习题 3.2 第 1–10 题，拍照上传。"
+          "type": "作业", "submittedCount": 30, "totalCount": 120, "content": "完成习题 3.2 第 1–10 题，拍照上传。",
+          "attachments": [{"id": "501", "name": "实验模板.docx", "sizeBytes": 20480}, {"id": "3f2a9c1e7b6d4a10", "name": "示意图.png"}]
         },
         {
           "id": "citel:9300", "source": "citel", "sourceLabel": "CITEL", "course": "离散数学", "title": "书面作业 4",
