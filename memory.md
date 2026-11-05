@@ -1,6 +1,6 @@
 > 2026-11-04：本地分支 `fix/macos-sdk-default` 基于 `0f4137ab`，macOS 打包默认使用新版 SDK 的修复与验证见 `history_full.md` 末尾。
 > 2026-11-05：工作树 `.artifacts/tree/claude/homework-submit`，分支 `feat/homework-submit-cli-drop`（基于 `8954a92e`），draft PR #97 已开（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/97），未合并。
-> 2026-11-05：工作树 `.artifacts/tree/claude/assignment-detail`，分支 `feat/agent-assignment-detail`，基于 PR #97 的 `92146e55`，draft PR 目标分支是 `feat/homework-submit-cli-drop`。
+> 2026-11-05：工作树 `.artifacts/tree/claude/assignment-detail`，分支 `feat/agent-assignment-detail`，基于 PR #97 的 `92146e55`，draft PR #98（https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/pull/98）目标分支是 `feat/homework-submit-cli-drop`，#97 合并后改回 `main`。
 
 ## 进行中：作业详情、附件与增量同步（2026-11-05）
 
