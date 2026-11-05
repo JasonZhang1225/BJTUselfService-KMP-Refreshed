@@ -11,6 +11,7 @@
 - 文档：`docs/releases/v2.0.0-KMP.md` 新增两条并重新生成内置更新日志，README 与 `docs/agent/ai-agent-plan.md` 补 CLI 说明。合入后把本节移入 `history_full.md`。
 - 审查修复（Codex、CodeRabbit，2026-11-05）：提交全程进程内串行；`show` 先同步，失败不返回缓存状态；无窗口宿主拒绝经 IPC 转来的提交（BUSY，未发学校请求，可重试）；总大小上限 200 MB；拖放按顺序读取；计划文档约束与退出码同步。
 - CI：PR #97 首轮 Android、iOS 失败是下载 Gradle 读取超时。`setup-java` 的 `cache: gradle` 键含全部 Gradle 脚本，`8fca3a1d` 改脚本后未命中。已加 `gradle-dist-<OS>-<wrapper 属性哈希>` 独立缓存（`actions/cache`，2 个工作流共 7 个任务），`networkTimeout` 改 60 秒。安全检查只在 PR 上跑，`main` 缓存靠 KMP package 写入，合并后手动跑一次才能给新 PR 用。
+- 大小限制（`ae2c4005`）：macOS、Windows 的选择器和拖放共用 `readLocalFiles`，单次总量 200 MB，分多次添加不累计。审查意见已全部标记解决。那次推送遇到 GitHub 服务端错误后 PR 没跟上分支，靠下一次推送重新同步。
 - 未验证：Windows 拖放实机；Windows 上的 `homework show/submit`。
 
 ## 进行中：iOS 回放预览、回顶按钮回弹与液态玻璃（2026-11-03）
