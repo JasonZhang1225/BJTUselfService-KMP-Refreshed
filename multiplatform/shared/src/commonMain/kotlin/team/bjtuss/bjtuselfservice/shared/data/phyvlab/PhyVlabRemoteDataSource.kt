@@ -159,15 +159,40 @@ class SchoolPhyVlabRemoteDataSource(
         saveAssignment(activity, files, emptySet())
     }
     override suspend fun downloadAttachment(attachment: PhyVlabAttachment): HomeworkFileContent {
-        if (!attachment.url.startsWith("${SchoolEndpoints.PHYVLAB_ORIGIN}/pluginfile.php/")) network()
-        val response = execute(SchoolHttpRequest(method = SchoolHttpMethod.GET, url = attachment.url,
-            headers = mapOf("Referer" to "${SchoolEndpoints.PHYVLAB_ORIGIN}/")))
-        if (response.statusCode !in 200..299) network()
-        if (!response.finalUrl.startsWith(SchoolEndpoints.PHYVLAB_ORIGIN) || "/login/index.php" in response.finalUrl) sessionExpired()
-        if (response.body.isEmpty()) parse()
+        var url = attachment.url
+        var response: SchoolHttpResponse? = null
+        for (hop in 0..5) {
+            if (!isAllowedAttachmentUrl(url)) network()
+            val currentResponse = transport.executeWithoutRedirects(SchoolHttpRequest(method = SchoolHttpMethod.GET, url = url,
+                headers = mapOf("Referer" to "${SchoolEndpoints.PHYVLAB_ORIGIN}/")))
+            response = currentResponse
+            if (currentResponse.statusCode !in setOf(301, 302, 303, 307, 308)) break
+            if (hop == 5) network()
+            val location = currentResponse.header("Location") ?: network()
+            url = resolveAttachmentRedirect(url, location) ?: network()
+        }
+        val finalResponse = response ?: network()
+        if (!isAllowedAttachmentUrl(finalResponse.finalUrl)) sessionExpired()
+        if (finalResponse.statusCode !in 200..299) network()
+        if ("/login/index.php" in finalResponse.finalUrl) sessionExpired()
+        if (finalResponse.body.isEmpty()) parse()
         return HomeworkFileContent(attachment.fileName,
-            response.headers.entries.firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }?.value?.firstOrNull()
-                ?.substringBefore(';')?.trim()?.ifBlank { null } ?: "application/octet-stream", response.body)
+            finalResponse.headers.entries.firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }?.value?.firstOrNull()
+                ?.substringBefore(';')?.trim()?.ifBlank { null } ?: "application/octet-stream", finalResponse.body)
+    }
+
+    private fun isAllowedAttachmentUrl(url: String): Boolean =
+        url.substringBefore('?').startsWith("${SchoolEndpoints.PHYVLAB_ORIGIN}/pluginfile.php/") &&
+            '#' !in url && "\\" !in url
+
+    private fun resolveAttachmentRedirect(current: String, location: String): String? {
+        val candidate = when {
+            location.startsWith("https://") -> location
+            location.startsWith("/") -> "${SchoolEndpoints.PHYVLAB_ORIGIN}$location"
+            location.startsWith("?") -> current.substringBefore('?') + location
+            else -> current.substringBeforeLast('/') + "/" + location
+        }
+        return candidate.takeIf(::isAllowedAttachmentUrl)
     }
 
     private suspend fun fetchPage(url: String, referer: String): SchoolHttpResponse {

@@ -97,6 +97,9 @@ class PhyVlabScreenModel(
     private var lastRequestedMonthSeconds: Long? = null
     private var networkAutoSyncStarted = false
     private var sessionReady = false
+    private var agentBatchRecoveryUsed = false
+    private var agentBatchRecoveryBlocked = false
+    private var agentDetailBatchActive = false
     private var cacheLoaded = false
     private val cacheAccountScope = accountScope?.trim()?.takeIf { it.isNotEmpty() }
     private val activitiesByCourse = mutableMapOf<Int, List<PhyVlabActivity>>()
@@ -310,7 +313,22 @@ class PhyVlabScreenModel(
         )
     }
 
-    internal fun cachedActivitiesForAgent(): List<PhyVlabActivity> = activitiesByCourse.values.flatten()
+    internal fun cachedActivitiesForAgent(): List<PhyVlabActivity> {
+        loadCachedSnapshotIfNeeded()
+        return activitiesByCourse.values.flatten()
+    }
+
+    internal fun beginAgentDetailBatch() {
+        agentDetailBatchActive = true
+        agentBatchRecoveryUsed = false
+        agentBatchRecoveryBlocked = false
+    }
+
+    internal fun endAgentDetailBatch() {
+        agentDetailBatchActive = false
+        agentBatchRecoveryUsed = false
+        agentBatchRecoveryBlocked = false
+    }
 
     /** 本机 CLI 与远程同步读取详情：共用会话恢复，不改界面状态。读取幂等，过期时恢复后重试一次。 */
     internal suspend fun fetchDetailForAgent(activity: PhyVlabActivity): PhyVlabAssignmentDetailResult =
@@ -322,11 +340,19 @@ class PhyVlabScreenModel(
             { (it as? PhyVlabAttachmentResult.Failure)?.reason }) { repository.downloadAttachment(attachment) }
 
     private suspend fun <T> retryAfterSessionRecovery(expired: T, reason: (T) -> PhyVlabSyncFailure?, read: suspend () -> T): T {
-        if (!ensureSessionForOperation()) return expired
+        if (agentDetailBatchActive && agentBatchRecoveryBlocked) return expired
+        if (!ensureSessionForOperation()) {
+            if (agentDetailBatchActive) agentBatchRecoveryBlocked = true
+            return expired
+        }
         val first = read()
         if (reason(first) != PhyVlabSyncFailure.SESSION_EXPIRED) return first
         sessionReady = false
-        return if (ensureSessionForOperation()) read() else first
+        if (agentDetailBatchActive && (agentBatchRecoveryUsed || agentBatchRecoveryBlocked)) return first
+        agentBatchRecoveryUsed = true
+        val recovered = ensureSessionForOperation()
+        if (!recovered && agentDetailBatchActive) agentBatchRecoveryBlocked = true
+        return if (recovered) read() else first
     }
 
     suspend fun loadSelectedActivityDetail(force: Boolean = false) {

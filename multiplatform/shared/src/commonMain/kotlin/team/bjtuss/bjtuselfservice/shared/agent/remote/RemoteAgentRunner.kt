@@ -376,7 +376,13 @@ class RemoteAgentRunner(
     }
 
     private suspend fun uploadAttachment(api: RemoteSiteClient, ref: RemoteAttachmentRef): Boolean {
-        val file = executor.readAttachment(ref) ?: return false
+        val file = try {
+            executor.readAttachment(ref) ?: return false
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            return false
+        }
         val chunks = file.bytes.toList().chunked(REMOTE_ATTACHMENT_CHUNK_BYTES).map { it.toByteArray() }
         val meta = RemoteAttachmentMeta(ref.key, ref.assignmentId, ref.attachmentId, file.fileName, file.contentType, file.bytes.size.toLong(), chunks.size)
         if (api.putAttachment(meta) !is RemoteCall.Ok) return false

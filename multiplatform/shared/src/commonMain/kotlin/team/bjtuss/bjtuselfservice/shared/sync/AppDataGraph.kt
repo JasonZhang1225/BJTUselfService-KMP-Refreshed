@@ -28,6 +28,7 @@ import team.bjtuss.bjtuselfservice.shared.data.courseware.CacheStoreCoursewareLo
 import team.bjtuss.bjtuselfservice.shared.data.courseware.DefaultCoursewareRepository
 import team.bjtuss.bjtuselfservice.shared.data.courseware.SchoolCoursewareRemoteDataSource
 import team.bjtuss.bjtuselfservice.shared.data.exam.CacheStoreExamScheduleLocalDataSource
+import team.bjtuss.bjtuselfservice.shared.feature.citel.completed
 import team.bjtuss.bjtuselfservice.shared.data.exam.DefaultExamScheduleRepository
 import team.bjtuss.bjtuselfservice.shared.data.exam.SchoolExamScheduleRemoteDataSource
 import team.bjtuss.bjtuselfservice.shared.data.grade.CacheStoreGradeLocalDataSource
@@ -324,8 +325,10 @@ class AppDataGraph(
             },
             citelSummary = { id ->
                 citelModel.state.value.tasks.firstOrNull { it.id == id }
-                    ?.let { team.bjtuss.bjtuselfservice.shared.agent.AgentAssignmentSummary(it.courseName, it.title, it.dueTime) }
+                    ?.let { team.bjtuss.bjtuselfservice.shared.agent.AgentAssignmentSummary(it.courseName, it.title, it.dueTime, it.completed) }
             },
+            beginDetailBatch = phyVlabModel::beginAgentDetailBatch,
+            endDetailBatch = phyVlabModel::endAgentDetailBatch,
         ),
     )
 
@@ -368,6 +371,7 @@ class AppDataGraph(
         courseScheduleModel.initialize(refreshFromNetwork = false)
         homeworkModel.initialize(refreshFromNetwork = false)
         examScheduleModel.initialize(refreshFromNetwork = false)
+        citelModel.initialize()
     }
 
     fun close() {

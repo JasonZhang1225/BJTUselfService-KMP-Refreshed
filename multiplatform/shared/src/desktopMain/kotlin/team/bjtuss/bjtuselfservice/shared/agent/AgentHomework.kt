@@ -114,7 +114,7 @@ data class AgentHomeworkResult(
     val open: String? = null,
     val due: String? = null,
     val overdue: Boolean,
-    val submitted: Boolean,
+    val submitted: Boolean?,
     val score: String? = null,
     val content: String? = null,
     val contentTruncated: Boolean = false,
@@ -200,7 +200,7 @@ class AgentHomeworkExecutor(
                 type = if (request.source == "citel") "CITEL 作业" else "物理在线作业",
                 due = summary?.dueEpoch?.let { agentTimePoint(it, deadline = true).text },
                 overdue = summary?.dueEpoch?.let { it < nowEpochSeconds() } == true,
-                submitted = detail.submittedFiles.isNotEmpty(),
+                submitted = detail.submitted ?: summary?.submitted,
                 content = detail.content,
                 attachments = detail.attachments.map { attachment ->
                     AgentHomeworkAttachment(0, attachment.name, attachment.sizeBytes ?: 0, saved[attachment.id], attachment.id)
@@ -503,7 +503,7 @@ private fun AgentHomeworkResult.markdown(): String = buildString {
     appendLine("- 作业 id：$id")
     appendLine("- 课程：$course（$type）")
     due?.let { appendLine("- 截止：$it" + if (overdue) "（已截止）" else "") }
-    appendLine("- 状态：" + if (submitted) "已提交" else "未提交")
+    submitted?.let { appendLine("- 状态：" + if (it) "已提交" else "未提交") }
     score?.let { appendLine("- 评分：$it") }
     student?.let { appendLine("- 学生：${it.name}（${it.studentId}）") }
     if (submittedFiles.isNotEmpty()) appendLine("- 已交文件：${submittedFiles.joinToString("、")}")

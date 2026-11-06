@@ -45,6 +45,16 @@ internal fun phyVlabAssignmentDetailHasSubmission(detail: PhyVlabAssignmentDetai
         (status.contains("submitted") && !status.contains("not submitted"))
 }
 
+/** Returns null when cached detail has no reliable submission signal. */
+internal fun phyVlabAssignmentDetailSubmissionState(detail: PhyVlabAssignmentDetail): Boolean? {
+    val status = detail.submissionStatus.trim().lowercase()
+    if (detail.isDraft || detail.canFinalize || status.contains("draft") || status.contains("草稿")) return false
+    if (detail.submittedFiles.isNotEmpty() || status.contains("已提交") ||
+        (status.contains("submitted") && !status.contains("not submitted"))) return true
+    if (status.contains("未提交") || status.contains("not submitted") || status.contains("没有提交")) return false
+    return null
+}
+
 /** 详情页展示用的提交状态；批改文案（如“尚未批改”）不能冒充提交状态。 */
 internal fun phyVlabSubmissionStatusLabel(detail: PhyVlabAssignmentDetail): String {
     if (detail.isDraft || detail.canFinalize) return "草稿 · 待最终提交"

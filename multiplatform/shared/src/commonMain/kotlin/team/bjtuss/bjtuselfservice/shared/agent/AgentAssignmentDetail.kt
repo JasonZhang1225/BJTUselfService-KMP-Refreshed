@@ -25,6 +25,7 @@ private const val DETAILS_KEY = "agent.assignment_details.v1"
 private const val DETAIL_FRESH_SECONDS = 24 * 3600L
 /** 一轮同步最多补几项详情，避免一次打很多学校请求。 */
 private const val MAX_PENDING_DETAILS_PER_SYNC = 15
+private const val DETAIL_RETRY_KEY = "agent.assignment_details.retry_after.v1"
 
 @Serializable
 data class AgentAttachmentInfo(
@@ -45,6 +46,7 @@ data class AgentAssignmentDetail(
     val attachments: List<AgentAttachmentInfo> = emptyList(),
     val submittedFiles: List<String> = emptyList(),
     val fetchedAt: Long,
+    val submitted: Boolean? = null,
 )
 
 private val detailJson = Json { ignoreUnknownKeys = true; encodeDefaults = false; explicitNulls = false }
@@ -76,9 +78,11 @@ class AgentDetailBackends(
     /** 返回题面 Markdown；live=true 才联网，同步时只用缓存。 */
     val citelProblem: (suspend (Int, Boolean) -> String?)? = null,
     val citelSummary: (Int) -> AgentAssignmentSummary? = { null },
+    val beginDetailBatch: () -> Unit = {},
+    val endDetailBatch: () -> Unit = {},
 )
 
-data class AgentAssignmentSummary(val course: String, val title: String, val dueEpoch: Long?)
+data class AgentAssignmentSummary(val course: String, val title: String, val dueEpoch: Long?, val submitted: Boolean? = null)
 
 /**
  * 统一的作业详情：本机 `homework show` 和远程同步都走这里，所以两边看到的内容一致。
@@ -97,7 +101,7 @@ class AgentAssignmentDetailService(
         val (source, number) = splitId(id)
         return when (source) {
             "phyvlab" -> backends.phyVlabActivities().firstOrNull { it.id == number }
-                ?.let { AgentAssignmentSummary(it.courseName, it.title, it.dueTimestamp) }
+                ?.let { activity -> AgentAssignmentSummary(activity.courseName, activity.title, activity.dueTimestamp, cached()[id]?.submitted) }
             "citel" -> backends.citelSummary(number)
             else -> null
         }
@@ -106,7 +110,8 @@ class AgentAssignmentDetailService(
     /** 联网取一项详情并写缓存；失败抛 [AgentDetailException]，旧缓存保留。 */
     suspend fun refresh(id: String, live: Boolean = true): AgentAssignmentDetail {
         val detail = fetch(id, live)
-        save(cached() + (id to detail))
+        val existing = cached()
+        save(existing + (id to mergeKnownAttachmentSizes(existing[id], detail)))
         return detail
     }
 
@@ -114,19 +119,29 @@ class AgentAssignmentDetailService(
     suspend fun refreshPending(ids: List<String>): Int {
         val existing = cached().toMutableMap()
         val cutoff = now() - DETAIL_FRESH_SECONDS
-        val stale = ids.filter { (existing[it]?.fetchedAt ?: 0L) < cutoff }.take(MAX_PENDING_DETAILS_PER_SYNC)
+        val retryAfter = runCatching { detailJson.decodeFromString<Map<String, Long>>(cache.metadata(account, DETAIL_RETRY_KEY).orEmpty()) }.getOrDefault(emptyMap()).toMutableMap()
+        val stale = ids.filter { (existing[it]?.fetchedAt ?: 0L) < cutoff && (retryAfter[it] ?: 0L) <= now() }
+            .take(MAX_PENDING_DETAILS_PER_SYNC)
         var refreshed = 0
-        for (id in stale) {
-            try {
-                existing[id] = fetch(id, live = false)
-                refreshed++
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                continue
+        backends.beginDetailBatch()
+        try {
+            for (id in stale) {
+                try {
+                    existing[id] = mergeKnownAttachmentSizes(existing[id], fetch(id, live = false))
+                    retryAfter.remove(id)
+                    refreshed++
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    retryAfter[id] = now() + DETAIL_FRESH_SECONDS
+                    continue
+                }
             }
+        } finally {
+            backends.endDetailBatch()
         }
         if (refreshed > 0) save(existing)
+        cache.putMetadata(account, DETAIL_RETRY_KEY, detailJson.encodeToString(retryAfter))
         return refreshed
     }
 
@@ -185,7 +200,9 @@ class AgentAssignmentDetailService(
                 val detail = phyVlabDetail(number)
                 AgentAssignmentDetail(id, detail.description.take(MAX_DETAIL_CONTENT_CHARS).ifBlank { null },
                     detail.attachments.map { AgentAttachmentInfo(agentStableId(it.url), it.fileName) },
-                    detail.submittedFiles.map { it.fileName }, now())
+                    detail.submittedFiles.map { it.fileName },
+                    fetchedAt = now(),
+                    submitted = team.bjtuss.bjtuselfservice.shared.feature.phyvlab.phyVlabAssignmentDetailSubmissionState(detail))
             }
             "citel" -> {
                 val problem = backends.citelProblem ?: throw AgentDetailException("not_enabled", "CITEL 未启用。")
@@ -209,6 +226,12 @@ class AgentAssignmentDetailService(
 
     private fun save(details: Map<String, AgentAssignmentDetail>) {
         cache.putMetadata(account, DETAILS_KEY, detailJson.encodeToString(ListSerializer(AgentAssignmentDetail.serializer()), details.values.toList()))
+    }
+
+    private fun mergeKnownAttachmentSizes(old: AgentAssignmentDetail?, fresh: AgentAssignmentDetail): AgentAssignmentDetail {
+        if (old == null) return fresh
+        val knownSizes = old.attachments.associate { it.id to it.sizeBytes }
+        return fresh.copy(attachments = fresh.attachments.map { it.copy(sizeBytes = it.sizeBytes ?: knownSizes[it.id]) })
     }
 
     private fun splitId(id: String): Pair<String, Int> {

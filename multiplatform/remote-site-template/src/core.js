@@ -232,28 +232,32 @@ export class RemoteService {
     requireAttachmentKey(key);
     if (!parseJson(device.scopes_json, []).includes("assignments")) throw new ProtocolError(403, "scope_denied", "未授权作业上云");
     const meta = validateAttachmentMeta(body, key);
-    const used = await this.q("SELECT COALESCE(SUM(size_bytes), 0) AS total FROM attachments WHERE device_id = ? AND attachment_key <> ?", device.device_id, key).first();
-    if (used.total + meta.sizeBytes > LIMITS.attachmentQuotaBytes) throw new ProtocolError(413, "quota_exceeded", "附件总量超过上限");
     const now = this.now();
-    await this.db.batch([
-      this.q("DELETE FROM attachment_chunks WHERE device_id = ? AND attachment_key = ?", device.device_id, key),
-      this.q(`INSERT INTO attachments (device_id, attachment_key, assignment_id, attachment_id, name, content_type, size_bytes, chunk_count, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(device_id, attachment_key) DO UPDATE SET assignment_id = excluded.assignment_id, attachment_id = excluded.attachment_id,
-            name = excluded.name, content_type = excluded.content_type, size_bytes = excluded.size_bytes, chunk_count = excluded.chunk_count, created_at = excluded.created_at`,
-        device.device_id, key, meta.assignmentId, meta.attachmentId, meta.name, meta.contentType, meta.sizeBytes, meta.chunkCount, now),
-    ]);
+    const stored = await this.q(`INSERT INTO attachments (device_id, attachment_key, assignment_id, attachment_id, name, content_type, size_bytes, chunk_count, created_at)
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE EXISTS (SELECT 1 FROM devices WHERE device_id = ? AND scopes_revision = ? AND revoked_at IS NULL AND instr(scopes_json, 'assignments') > 0)
+          AND COALESCE((SELECT SUM(size_bytes) FROM attachments WHERE device_id = ? AND attachment_key <> ?), 0) + ? <= ?
+        ON CONFLICT(device_id, attachment_key) DO UPDATE SET assignment_id = excluded.assignment_id, attachment_id = excluded.attachment_id,
+          name = excluded.name, content_type = excluded.content_type, size_bytes = excluded.size_bytes, chunk_count = excluded.chunk_count, created_at = excluded.created_at`,
+      device.device_id, key, meta.assignmentId, meta.attachmentId, meta.name, meta.contentType, meta.sizeBytes, meta.chunkCount, now,
+      device.device_id, device.scopes_revision, device.device_id, key, meta.sizeBytes, LIMITS.attachmentQuotaBytes).run();
+    if ((stored.meta?.changes ?? 0) === 0) throw new ProtocolError(409, "authorization_or_quota_changed", "设备授权已变化或附件总量超过上限");
+    await this.q("DELETE FROM attachment_chunks WHERE device_id = ? AND attachment_key = ?", device.device_id, key).run();
     return { key };
   }
 
   async putAttachmentChunk(device, key, index, bytes) {
     requireAttachmentKey(key);
-    const meta = await this.q("SELECT chunk_count FROM attachments WHERE device_id = ? AND attachment_key = ?", device.device_id, key).first();
+    const meta = await this.q("SELECT size_bytes, chunk_count FROM attachments WHERE device_id = ? AND attachment_key = ?", device.device_id, key).first();
     if (!meta) throw new ProtocolError(404, "not_found", "请先登记附件");
     requireInt(index, "index", 0, meta.chunk_count - 1);
-    if (bytes.length === 0 || bytes.length > LIMITS.attachmentChunkBytes) throw new ProtocolError(413, "too_large", "分块大小无效");
-    await this.q(`INSERT INTO attachment_chunks (device_id, attachment_key, chunk_index, data) VALUES (?, ?, ?, ?)
-      ON CONFLICT(device_id, attachment_key, chunk_index) DO UPDATE SET data = excluded.data`, device.device_id, key, index, bytes).run();
+    const expectedLength = Math.min(LIMITS.attachmentChunkBytes, meta.size_bytes - index * LIMITS.attachmentChunkBytes);
+    if (expectedLength <= 0 || bytes.length !== expectedLength) throw new ProtocolError(413, "too_large", "分块大小与登记的附件不符");
+    const stored = await this.q(`INSERT INTO attachment_chunks (device_id, attachment_key, chunk_index, data)
+      SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM devices WHERE device_id = ? AND scopes_revision = ? AND revoked_at IS NULL AND instr(scopes_json, 'assignments') > 0)
+      ON CONFLICT(device_id, attachment_key, chunk_index) DO UPDATE SET data = excluded.data`,
+      device.device_id, key, index, bytes, device.device_id, device.scopes_revision).run();
+    if ((stored.meta?.changes ?? 0) === 0) throw new ProtocolError(409, "authorization_changed", "设备授权已变化");
     return { key, index };
   }
 
