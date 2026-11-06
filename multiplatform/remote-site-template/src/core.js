@@ -241,7 +241,16 @@ export class RemoteService {
           name = excluded.name, content_type = excluded.content_type, size_bytes = excluded.size_bytes, chunk_count = excluded.chunk_count, created_at = excluded.created_at`,
       device.device_id, key, meta.assignmentId, meta.attachmentId, meta.name, meta.contentType, meta.sizeBytes, meta.chunkCount, now,
       device.device_id, device.scopes_revision, device.device_id, key, meta.sizeBytes, LIMITS.attachmentQuotaBytes).run();
-    if ((stored.meta?.changes ?? 0) === 0) throw new ProtocolError(409, "authorization_or_quota_changed", "设备授权已变化或附件总量超过上限");
+    if ((stored.meta?.changes ?? 0) === 0) {
+      const current = await this.q("SELECT scopes_revision, scopes_json, revoked_at FROM devices WHERE device_id = ?", device.device_id).first();
+      if (!current || current.revoked_at != null || current.scopes_revision !== device.scopes_revision ||
+          !parseJson(current.scopes_json, []).includes("assignments")) {
+        throw new ProtocolError(409, "authorization_changed", "设备授权已变化");
+      }
+      const used = await this.q("SELECT COALESCE(SUM(size_bytes), 0) AS total FROM attachments WHERE device_id = ? AND attachment_key <> ?", device.device_id, key).first();
+      if (used.total + meta.sizeBytes > LIMITS.attachmentQuotaBytes) throw new ProtocolError(413, "quota_exceeded", "附件总量超过上限");
+      throw new ProtocolError(409, "attachment_conflict", "附件登记未能完成，请重试");
+    }
     await this.q("DELETE FROM attachment_chunks WHERE device_id = ? AND attachment_key = ?", device.device_id, key).run();
     return { key };
   }
