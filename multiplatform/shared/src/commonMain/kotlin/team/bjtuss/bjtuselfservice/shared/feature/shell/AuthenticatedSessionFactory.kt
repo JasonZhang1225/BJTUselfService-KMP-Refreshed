@@ -141,6 +141,7 @@ internal fun rememberAuthenticatedSession(
             },
             refreshCoordinator = graph.refreshCoordinator,
             homeworkRepository = graph.homeworkRepository,
+            assignmentDetails = graph.assignmentDetails,
             remoteAgent = mobileRemote?.controller,
         ).also { sessionHolder.session = it }
     }

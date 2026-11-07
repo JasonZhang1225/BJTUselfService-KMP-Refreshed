@@ -135,6 +135,8 @@ data class AgentAssignment(
     /** 作业说明（纯文本，截断）；只在 detail=true 时返回。 */
     val content: String? = null,
     val url: String? = null,
+    /** 老师附件；只在 detail=true 时返回。 */
+    val attachments: List<AgentAttachmentInfo>? = null,
 )
 
 @Serializable
@@ -297,12 +299,15 @@ private fun assignmentData(snapshot: AgentSnapshot, now: Instant): AgentAssignme
     // 全部来源、包括没约的物理实验都放进数据集；是否显示由查询参数决定（includeUnbooked）。
     val items = agentHomework(snapshot, AgentHomeworkOptions(includeUnbooked = true), now).map { item ->
         val a = item.assignment
+        val id = when (a.source) {
+            AssignmentSource.COURSE_PLATFORM -> "course_platform:${a.homework?.id ?: a.key}"
+            AssignmentSource.PHYVLAB -> "phyvlab:${a.physical?.id ?: a.key}"
+            AssignmentSource.CITEL -> "citel:${a.citel?.id ?: a.key}"
+        }
+        val detail = snapshot.assignmentDetails[id]
+        val pending = !a.submitted && (a.dueTime == null || a.dueTime > now.epochSeconds)
         AgentAssignment(
-            id = when (a.source) {
-                AssignmentSource.COURSE_PLATFORM -> "course_platform:${a.homework?.id ?: a.key}"
-                AssignmentSource.PHYVLAB -> "phyvlab:${a.physical?.id ?: a.key}"
-                AssignmentSource.CITEL -> "citel:${a.citel?.id ?: a.key}"
-            },
+            id = id,
             source = a.source.wire,
             sourceLabel = a.source.label,
             course = a.courseName.trim(),
@@ -326,12 +331,22 @@ private fun assignmentData(snapshot: AgentSnapshot, now: Instant): AgentAssignme
                 PhyVlabEnrollment.NOT_APPLICABLE -> null
             },
             matchedBooking = item.matchedBooking,
-            content = a.homework?.content?.let(::plainText)?.takeIf(String::isNotBlank)?.let { if (it.length > 400) it.take(400) + "…" else it },
+            content = (detail?.content ?: a.homework?.content?.let(::plainText)?.takeIf(String::isNotBlank)
+                ?: snapshot.phyVlab?.assignmentDetails?.firstOrNull { it.activityId == a.physical?.id }?.detail?.description?.takeIf(String::isNotBlank))
+                ?.let { text -> assignmentContentLimit(pending).let { if (text.length > it) text.take(it) + "…" else text } },
             url = a.citel?.url ?: a.physical?.activityUrl,
+            attachments = detail?.attachments?.takeIf(List<AgentAttachmentInfo>::isNotEmpty),
         )
     }
     return AgentAssignmentData(sources, items)
 }
+
+/** 未交作业保留完整题号与要求；其余只留摘要，快照有 1 MiB 上限。完整内容用 homework show / request_assignment_detail。 */
+internal fun assignmentContentLimit(pending: Boolean): Int = if (pending) 4_000 else 400
+
+/** 未交且未截止的作业：同步时主动补详情、上传附件。 */
+fun agentPendingAssignmentIds(data: AgentAssignmentData?, nowEpochSeconds: Long): List<String> =
+    data?.items.orEmpty().filter { !it.submitted && (it.due == null || it.due.epoch > nowEpochSeconds) }.map { it.id }
 
 /** 倍率按平台显示的值写成文字，避免两端数字格式（1 与 1.0）不一致。 */
 private fun formatDiscount(value: Double): String {

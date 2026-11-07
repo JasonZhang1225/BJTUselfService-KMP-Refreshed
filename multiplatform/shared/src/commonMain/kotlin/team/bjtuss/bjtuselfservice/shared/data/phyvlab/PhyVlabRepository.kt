@@ -3,6 +3,7 @@ package team.bjtuss.bjtuselfservice.shared.data.phyvlab
 import kotlinx.coroutines.CancellationException
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
+import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
@@ -65,6 +66,11 @@ sealed interface PhyVlabAssignmentDetailResult {
     data class Failure(val reason: PhyVlabSyncFailure) : PhyVlabAssignmentDetailResult
 }
 
+sealed interface PhyVlabAttachmentResult {
+    class Success(val file: HomeworkFileContent) : PhyVlabAttachmentResult
+    data class Failure(val reason: PhyVlabSyncFailure) : PhyVlabAttachmentResult
+}
+
 sealed interface PhyVlabSubmissionResult {
     data object Success : PhyVlabSubmissionResult
     data class Failure(val reason: PhyVlabSyncFailure) : PhyVlabSubmissionResult
@@ -75,6 +81,8 @@ interface PhyVlabRepository {
     suspend fun fetchCourseActivities(course: PhyVlabCourse): PhyVlabActivitiesResult
     suspend fun fetchEvents(monthTimestampSeconds: Long): PhyVlabEventsResult
     suspend fun fetchAssignmentDetail(activity: PhyVlabActivity): PhyVlabAssignmentDetailResult
+    suspend fun downloadAttachment(attachment: PhyVlabAttachment): PhyVlabAttachmentResult =
+        PhyVlabAttachmentResult.Failure(PhyVlabSyncFailure.NETWORK)
     suspend fun submitAssignment(
         activity: PhyVlabActivity,
         files: List<HomeworkFileContent>,
@@ -97,6 +105,16 @@ class DefaultPhyVlabRepository(
     } catch (error: CancellationException) { throw error
     } catch (error: PhyVlabRemoteException) { PhyVlabSubmissionResult.Failure(error.reason.toSyncFailure())
     } catch (_: Exception) { PhyVlabSubmissionResult.Failure(PhyVlabSyncFailure.NETWORK) }
+    override suspend fun downloadAttachment(attachment: PhyVlabAttachment): PhyVlabAttachmentResult = try {
+        PhyVlabAttachmentResult.Success(remote.downloadAttachment(attachment))
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: PhyVlabRemoteException) {
+        PhyVlabAttachmentResult.Failure(error.reason.toSyncFailure())
+    } catch (_: Exception) {
+        PhyVlabAttachmentResult.Failure(PhyVlabSyncFailure.NETWORK)
+    }
+
     override suspend fun fetchCourses(): PhyVlabCoursesResult = try {
         PhyVlabCoursesResult.Success(remote.fetchCourses())
     } catch (error: CancellationException) {

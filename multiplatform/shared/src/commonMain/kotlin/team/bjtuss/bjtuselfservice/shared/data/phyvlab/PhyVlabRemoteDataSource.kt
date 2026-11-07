@@ -5,6 +5,7 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
 import kotlinx.coroutines.CancellationException
 import com.fleeksoft.ksoup.Ksoup
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
+import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
@@ -35,6 +36,8 @@ interface PhyVlabRemoteDataSource {
     suspend fun fetchEvents(monthTimestampSeconds: Long): List<PhyVlabEvent>
     suspend fun fetchAssignmentDetail(activity: PhyVlabActivity): PhyVlabAssignmentDetail
     suspend fun submitAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>)
+    suspend fun downloadAttachment(attachment: PhyVlabAttachment): HomeworkFileContent =
+        throw PhyVlabRemoteException(PhyVlabRemoteFailure.NETWORK)
     suspend fun saveAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>, removed: Set<String>) {
         if (removed.isNotEmpty()) throw PhyVlabRemoteException(PhyVlabRemoteFailure.PARSE)
         submitAssignment(activity, files)
@@ -155,6 +158,43 @@ class SchoolPhyVlabRemoteDataSource(
     override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>) {
         saveAssignment(activity, files, emptySet())
     }
+    override suspend fun downloadAttachment(attachment: PhyVlabAttachment): HomeworkFileContent {
+        var url = attachment.url
+        var response: SchoolHttpResponse? = null
+        for (hop in 0..5) {
+            if (!isAllowedAttachmentUrl(url)) network()
+            val currentResponse = transport.executeWithoutRedirects(SchoolHttpRequest(method = SchoolHttpMethod.GET, url = url,
+                headers = mapOf("Referer" to "${SchoolEndpoints.PHYVLAB_ORIGIN}/")))
+            response = currentResponse
+            if (currentResponse.statusCode !in setOf(301, 302, 303, 307, 308)) break
+            if (hop == 5) network()
+            val location = currentResponse.header("Location") ?: network()
+            url = resolveAttachmentRedirect(url, location) ?: network()
+        }
+        val finalResponse = response ?: network()
+        if (!isAllowedAttachmentUrl(finalResponse.finalUrl)) sessionExpired()
+        if (finalResponse.statusCode !in 200..299) network()
+        if ("/login/index.php" in finalResponse.finalUrl) sessionExpired()
+        if (finalResponse.body.isEmpty()) parse()
+        return HomeworkFileContent(attachment.fileName,
+            finalResponse.headers.entries.firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }?.value?.firstOrNull()
+                ?.substringBefore(';')?.trim()?.ifBlank { null } ?: "application/octet-stream", finalResponse.body)
+    }
+
+    private fun isAllowedAttachmentUrl(url: String): Boolean =
+        url.substringBefore('?').startsWith("${SchoolEndpoints.PHYVLAB_ORIGIN}/pluginfile.php/") &&
+            '#' !in url && "\\" !in url
+
+    private fun resolveAttachmentRedirect(current: String, location: String): String? {
+        val candidate = when {
+            location.startsWith("https://") -> location
+            location.startsWith("/") -> "${SchoolEndpoints.PHYVLAB_ORIGIN}$location"
+            location.startsWith("?") -> current.substringBefore('?') + location
+            else -> current.substringBeforeLast('/') + "/" + location
+        }
+        return candidate.takeIf(::isAllowedAttachmentUrl)
+    }
+
     private suspend fun fetchPage(url: String, referer: String): SchoolHttpResponse {
         phyVlabDebug("page GET start ${safePhyVlabEndpoint(url)}")
         val response = execute(

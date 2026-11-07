@@ -321,4 +321,19 @@ class PhyVlabHtmlParserTest {
           </div>
         </div></div>
     """.trimIndent()
+
+    @Test
+    fun teacherAttachmentsComeFromDescriptionOnly() {
+        val activity = PhyVlabActivity(1, 2, "物理", "作业", "作业", "https://phyvlab.bjtu.edu.cn/mod/assign/view.php?id=1")
+        val result = assertIs<PhyVlabParseResult.Success<PhyVlabParsedAssignmentPage>>(parsePhyVlabAssignmentPage("""
+            <div id="intro"><p>完成 5.1 题</p>
+              <a href="https://phyvlab.bjtu.edu.cn/pluginfile.php/9/mod_assign/intro/%E6%A8%A1%E6%9D%BF.docx?forcedownload=1">下载</a>
+              <a href="/pluginfile.php/9/mod_assign/intro/a.pdf">a</a>
+              <a href="https://evil.example/pluginfile.php/9/x.pdf">外站</a>
+              <a href="https://phyvlab.bjtu.edu.cn/pluginfile.php/9/assignsubmission_file/submission_files/1/my.pdf">我的提交</a>
+              <img src="https://phyvlab.bjtu.edu.cn/pluginfile.php/9/mod_assign/intro/fig.png" alt="图">
+            </div>
+            <div class="submissionstatustable"><a href="https://phyvlab.bjtu.edu.cn/pluginfile.php/9/other/x.pdf">x</a></div>""", activity))
+        assertEquals(listOf("模板.docx", "a.pdf", "fig.png"), result.value.detail.attachments.map { it.fileName })
+    }
 }

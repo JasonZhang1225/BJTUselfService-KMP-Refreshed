@@ -19,10 +19,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshReport
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshStatus
 
@@ -63,6 +66,15 @@ interface RemoteRefreshExecutor {
     suspend fun snapshotContent(scopes: Set<RemoteScope>, lastStates: Map<String, RemoteSourceState>): RemoteSnapshotContent?
 
     suspend fun query(task: RemoteTask, scopes: Set<RemoteScope>): RemoteQueryOutcome? = null
+
+    /** 同步后、生成快照前补未交作业的详情；失败不影响上传。 */
+    suspend fun prepareAssignmentDetails(scopes: Set<RemoteScope>) {}
+
+    /** 这轮的附件计划；未登录或不支持时返回 null，不增不删。 */
+    suspend fun attachmentPlan(scopes: Set<RemoteScope>): RemoteAttachmentPlan? = null
+
+    /** 读取要上传的附件；超过 5 MB 返回 null。 */
+    suspend fun readAttachment(ref: RemoteAttachmentRef): HomeworkFileContent? = null
 }
 
 sealed interface RemoteUploadOutcome {
@@ -81,6 +93,10 @@ sealed interface RemoteUploadOutcome {
  *   休眠恢复后只补一次，不追补离线期间的所有周期。
  * - 任务至少一次交付：本地记录已完成结果，同一请求被重新投递时直接重传结果。
  */
+/** 与 Site 的 `LIMITS.attachmentChunkBytes` 一致：D1 单行放不下 5 MB。 */
+const val REMOTE_ATTACHMENT_CHUNK_BYTES = 1024 * 1024
+private const val MAX_ATTACHMENT_UPLOADS_PER_CYCLE = 10
+
 class RemoteAgentRunner(
     private val configFlow: StateFlow<RemoteAgentConfig>,
     private val client: () -> RemoteSiteClient?,
@@ -272,6 +288,13 @@ class RemoteAgentRunner(
                     }.lastSourceStates
                     statusState.update { it.copy(lastRefreshAt = refreshed.finishedAtEpochSeconds) }
                 }
+                try {
+                    executor.prepareAssignmentDetails(config.scopeSet)
+                } catch (cancel: CancellationException) {
+                    throw cancel
+                } catch (_: Exception) {
+                    // 详情是补充内容：读不到时照常上传快照。
+                }
                 val content = executor.snapshotContent(config.scopeSet, lastStates)
                     ?: return@withLock RemoteUploadOutcome.Skipped("cache_unavailable")
                 if (!bindingStillCurrent(config)) return@withLock RemoteUploadOutcome.Skipped("configuration_changed")
@@ -302,22 +325,69 @@ class RemoteAgentRunner(
                 is RemoteCall.Ok -> Unit
             }
             if (!bindingStillCurrent(config)) return@withLock RemoteUploadOutcome.Skipped("configuration_changed")
-            when (val result = api.putSnapshot(snapshot.copy(uploadedAt = clock()))) {
+            val outgoing = snapshot.copy(uploadedAt = clock())
+            when (val result = uploadSnapshot(api, outgoing)) {
                 is RemoteCall.Ok -> {
                     store.savePending(null)
+                    store.saveBaseline(outgoing)
                     val uploadedAt = clock()
                     updateState { it.copy(lastUploadAt = uploadedAt, lastError = null) }
                     statusState.update { it.copy(lastUploadAt = uploadedAt, lastError = null, lastSequence = snapshot.sequence) }
+                    syncAttachments(api, config.scopeSet)
                     RemoteUploadOutcome.Uploaded(snapshot.sequence, result.value.duplicate)
                 }
                 is RemoteCall.Failure -> {
                     // 旧快照永远传不上去：丢弃，下一轮生成新的。
-                    if (result.kind == RemoteFailureKind.CONFLICT) store.savePending(null)
+                    if (result.kind == RemoteFailureKind.CONFLICT) {
+                        store.savePending(null)
+                        store.saveBaseline(null)
+                    }
                     handleTerminal(result)
                     RemoteUploadOutcome.Failed(result)
                 }
             }
         }
+
+    /**
+     * 有本设备基线就只传差异；基线对不上（Site 被重置、别的版本传过全量）或模板还没有差异接口时退回全量。
+     * 基线只属于这台设备，不需要知道其他设备传了什么。
+     */
+    private suspend fun uploadSnapshot(api: RemoteSiteClient, snapshot: RemoteSnapshot): RemoteCall<RemoteSnapshotAck> {
+        val patch = store.loadBaseline()?.let { diffRemoteSnapshot(it, snapshot) } ?: return api.putSnapshot(snapshot)
+        val result = api.patchSnapshot(patch)
+        val fallBack = result is RemoteCall.Failure &&
+            (result.code in setOf("base_mismatch", "not_found", "unsupported") || result.kind == RemoteFailureKind.CLIENT_ERROR)
+        return if (fallBack) api.putSnapshot(snapshot) else result
+    }
+
+    /** 附件走增量：Site 已有的跳过，作业消失的删除。失败不影响快照，下一轮再补。 */
+    private suspend fun syncAttachments(api: RemoteSiteClient, scopes: Set<RemoteScope>) {
+        try {
+            val plan = executor.attachmentPlan(scopes) ?: return
+            val listed = (api.listAttachments() as? RemoteCall.Ok)?.value?.items ?: return
+            listed.filter { it.key !in plan.keep }.forEach { api.deleteAttachment(it.key) }
+            val complete = listed.filter { it.complete }.map { it.key }.toSet()
+            plan.upload.filter { it.key !in complete }.take(MAX_ATTACHMENT_UPLOADS_PER_CYCLE).forEach { uploadAttachment(api, it) }
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            return
+        }
+    }
+
+    private suspend fun uploadAttachment(api: RemoteSiteClient, ref: RemoteAttachmentRef): Boolean {
+        val file = try {
+            executor.readAttachment(ref) ?: return false
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Exception) {
+            return false
+        }
+        val chunks = file.bytes.toList().chunked(REMOTE_ATTACHMENT_CHUNK_BYTES).map { it.toByteArray() }
+        val meta = RemoteAttachmentMeta(ref.key, ref.assignmentId, ref.attachmentId, file.fileName, file.contentType, file.bytes.size.toLong(), chunks.size)
+        if (api.putAttachment(meta) !is RemoteCall.Ok) return false
+        return chunks.withIndex().all { (index, bytes) -> api.putAttachmentChunk(ref.key, index, bytes) is RemoteCall.Ok }
+    }
 
     /** 一次轮询；成功返回 null，失败返回原因。领到的任务在独立协程里执行，不阻塞下一次轮询。 */
     internal suspend fun pollOnce(taskScope: CoroutineScope? = null): RemoteCall.Failure? {
@@ -441,7 +511,7 @@ class RemoteAgentRunner(
                     if (uploaded == null) put("snapshotUploaded", false)
                 })
             }
-            RemoteOperation.QUERY, RemoteOperation.CITEL_PROBLEM, RemoteOperation.MAIL_MESSAGE -> withLeaseRenewal(api, task.requestId, leaseId) {
+            RemoteOperation.QUERY, RemoteOperation.CITEL_PROBLEM, RemoteOperation.MAIL_MESSAGE, RemoteOperation.ASSIGNMENT_DETAIL -> withLeaseRenewal(api, task.requestId, leaseId) {
                 val result = executor.query(task, config.scopeSet)
                     ?: return@withLeaseRenewal failed(RemoteErrorCode.UNSUPPORTED_OPERATION, "当前执行者不支持精确查询")
                 val current = configFlow.value
@@ -449,7 +519,9 @@ class RemoteAgentRunner(
                     executor.currentAccountScope() != current.accountScope || !current.scopeSet.containsAll(config.scopeSet)) {
                     return@withLeaseRenewal failed(RemoteErrorCode.SCOPE_DENIED, "查询期间绑定或数据范围已变化，请重新查询")
                 }
-                RemoteStoredResult(task.requestId, clock(), result.status, result.result, result.error)
+                val online = result.uploads.filter { uploadAttachment(api, it) }.map { it.attachmentId }
+                val body = if (result.uploads.isEmpty()) result.result else JsonObject(result.result + ("onlineAttachmentIds" to JsonArray(online.map(::JsonPrimitive))))
+                RemoteStoredResult(task.requestId, clock(), result.status, body, result.error)
             }
             else -> failed(RemoteErrorCode.UNSUPPORTED_OPERATION, "电脑端暂不支持该操作：${task.operation.take(32)}")
         }

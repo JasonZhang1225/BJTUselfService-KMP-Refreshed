@@ -8,6 +8,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
+import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.content.TextContent
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.KSerializer
@@ -45,6 +46,13 @@ interface RemoteSiteClient {
     /** 不需要设备令牌的版本探测；旧 Site 没有该接口时按失败处理。 */
     suspend fun health(): RemoteCall<RemoteHealth> = RemoteCall.Failure(RemoteFailureKind.CLIENT_ERROR, "unsupported")
     suspend fun putSnapshot(snapshot: RemoteSnapshot): RemoteCall<RemoteSnapshotAck>
+    /** 旧模板没有这个接口：返回失败，调用方改传全量。 */
+    suspend fun patchSnapshot(patch: RemoteSnapshotPatch): RemoteCall<RemoteSnapshotAck> =
+        RemoteCall.Failure(RemoteFailureKind.CLIENT_ERROR, "unsupported")
+    suspend fun listAttachments(): RemoteCall<RemoteAttachmentList> = RemoteCall.Failure(RemoteFailureKind.CLIENT_ERROR, "unsupported")
+    suspend fun putAttachment(meta: RemoteAttachmentMeta): RemoteCall<Unit> = RemoteCall.Failure(RemoteFailureKind.CLIENT_ERROR, "unsupported")
+    suspend fun putAttachmentChunk(key: String, index: Int, bytes: ByteArray): RemoteCall<Unit> = RemoteCall.Failure(RemoteFailureKind.CLIENT_ERROR, "unsupported")
+    suspend fun deleteAttachment(key: String): RemoteCall<Unit> = RemoteCall.Failure(RemoteFailureKind.CLIENT_ERROR, "unsupported")
     suspend fun putScopes(scopes: List<String>): RemoteCall<Unit>
     suspend fun putScopes(scopes: List<String>, scopesRevision: Long): RemoteCall<Unit> = putScopes(scopes)
     suspend fun poll(): RemoteCall<RemotePollResponse>
@@ -72,6 +80,26 @@ class KtorRemoteSiteClient(
 
     override suspend fun putSnapshot(snapshot: RemoteSnapshot) =
         call(HttpMethod.Put, "/api/v1/device/snapshot", snapshot, RemoteSnapshot.serializer(), RemoteSnapshotAck.serializer())
+
+    override suspend fun patchSnapshot(patch: RemoteSnapshotPatch) =
+        call(HttpMethod.Patch, "/api/v1/device/snapshot", patch, RemoteSnapshotPatch.serializer(), RemoteSnapshotAck.serializer())
+
+    override suspend fun listAttachments() =
+        call(HttpMethod.Get, "/api/v1/device/attachments", "", String.serializer(), RemoteAttachmentList.serializer(), raw = true)
+
+    override suspend fun putAttachment(meta: RemoteAttachmentMeta): RemoteCall<Unit> =
+        call(HttpMethod.Put, "/api/v1/device/attachments/${attachmentPath(meta.key)}", meta, RemoteAttachmentMeta.serializer(), null)
+
+    override suspend fun deleteAttachment(key: String): RemoteCall<Unit> =
+        call(HttpMethod.Delete, "/api/v1/device/attachments/${attachmentPath(key)}", "", String.serializer(), null, raw = true)
+
+    override suspend fun putAttachmentChunk(key: String, index: Int, bytes: ByteArray): RemoteCall<Unit> =
+        call(HttpMethod.Put, "/api/v1/device/attachments/${attachmentPath(key)}/chunks/$index", "", String.serializer(), null, raw = true, binary = bytes)
+
+    private fun attachmentPath(key: String): String {
+        require(Regex("^[A-Za-z0-9_-]{8,96}$").matches(key)) { "非法附件 ID" }
+        return key
+    }
 
     override suspend fun putScopes(scopes: List<String>): RemoteCall<Unit> =
         call(HttpMethod.Put, "/api/v1/device/scopes", RemoteScopesUpdate(scopes), RemoteScopesUpdate.serializer(), null)
@@ -104,6 +132,7 @@ class KtorRemoteSiteClient(
         responseSerializer: KSerializer<R>?,
         device: Boolean = true,
         raw: Boolean = false,
+        binary: ByteArray? = null,
     ): RemoteCall<R> {
         val token = if (device) deviceToken() ?: return RemoteCall.Failure(RemoteFailureKind.UNAUTHORIZED, "no_token", "尚未配对") else null
         val access = platformAccess()
@@ -114,7 +143,8 @@ class KtorRemoteSiteClient(
                 if (token != null) header("Authorization", "Bearer $token")
                 if (access != null) header("OAI-Sites-Authorization", remotePlatformAuthorization(access))
                 val text = if (raw) body as String else remoteJson.encodeToString(bodySerializer, body)
-                if (method != HttpMethod.Get) setBody(TextContent(text, ContentType.Application.Json))
+                if (binary != null) setBody(ByteArrayContent(binary, ContentType.Application.OctetStream))
+                else if (method != HttpMethod.Get && method != HttpMethod.Delete) setBody(TextContent(text, ContentType.Application.Json))
             }
             val status = response.status.value
             val text = response.bodyAsText()

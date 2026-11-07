@@ -16,7 +16,7 @@ test("MCP 发现、工具及普通查询十次均不入队", async () => {
   assert.equal((await rpc(site, "server/discover")).body.result.supportedVersions[0], "2026-07-28");
   const names = (await rpc(site, "tools/list")).body.result.tools.map(t => t.name);
   assert.deepEqual(names, ["get_status", "get_homework", "get_calendar", "get_exams", "get_grades", "get_mail",
-    "request_live_query", "request_refresh_all", "request_citel_problem", "request_mail_message", "get_request_result"]);
+    "request_live_query", "request_refresh_all", "request_citel_problem", "request_assignment_detail", "get_assignment_attachment", "request_mail_message", "get_request_result"]);
   for (let i = 0; i < 10; i++) {
     const read = await call(site, "get_homework", { status: "all" });
     assert.equal(read.body.result.isError, false);

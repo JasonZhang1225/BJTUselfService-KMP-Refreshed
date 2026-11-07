@@ -3,12 +3,14 @@ package team.bjtuss.bjtuselfservice.shared.data.phyvlab
 import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
 
 import com.fleeksoft.ksoup.Ksoup
+import io.ktor.http.decodeURLPart
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
+import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabSubmissionFile
 
@@ -258,6 +260,7 @@ internal fun parsePhyVlabAssignmentPage(
         .firstOrNull { it.text().isNotBlank() }
     val descriptionHtml = descriptionElement?.html()?.let { team.bjtuss.bjtuselfservice.shared.util.schoolRichTextSafeFragment(it) }.orEmpty()
     val description = team.bjtuss.bjtuselfservice.shared.util.schoolRichTextToPlainMultiline(descriptionHtml)
+    val attachments = descriptionElement?.let(::parsePhyVlabDescriptionAttachments).orEmpty()
 
     val bodyText = cleanPhyVlabText(document.body().text())
     val submissionStatus = rowValue(
@@ -394,6 +397,7 @@ internal fun parsePhyVlabAssignmentPage(
         gradeText = grade?.let(::normalizePhyVlabDatesInText),
         feedbackText = feedback?.let(::normalizePhyVlabDatesInText),
         submittedFiles = submittedFiles,
+        attachments = attachments,
         // 没有 context/client 时上传接口无法可靠定位草稿，只显示网页备用入口，
         // 不让 UI 暴露一个注定失败的原生上传按钮。
         canSubmit = context?.isUploadReady == true || document.selectFirst("input[name=action][value=editsubmission], a[href*='action=editsubmission']") != null,
@@ -633,3 +637,18 @@ fun parsePhyVlabEvents(html: String): PhyVlabParseResult<List<PhyVlabEvent>> {
         events.sortedWith(compareBy<PhyVlabEvent> { it.dayTimestamp }.thenBy { it.title }),
     )
 }
+
+/**
+ * 作业说明里的老师附件（`pluginfile.php` 链接与内嵌图片）。只接受本站地址，
+ * 下载时才带 Moodle 会话；学生自己的提交（assignsubmission）不算老师附件。
+ */
+private fun parsePhyVlabDescriptionAttachments(element: com.fleeksoft.ksoup.nodes.Element): List<PhyVlabAttachment> =
+    (element.select("a[href*='/pluginfile.php/']").map { it.attr("href") to it.text().trim() } +
+        element.select("img[src*='/pluginfile.php/']").map { it.attr("src") to it.attr("alt").trim() })
+        .mapNotNull { (rawUrl, label) ->
+            val url = rawUrl.substringBefore('#').let { if (it.startsWith("/")) SchoolEndpoints.PHYVLAB_ORIGIN + it else it }
+            if (!url.startsWith("${SchoolEndpoints.PHYVLAB_ORIGIN}/pluginfile.php/") || "assignsubmission" in url) return@mapNotNull null
+            val leaf = url.substringBefore('?').substringAfterLast('/')
+            val decoded = runCatching { leaf.decodeURLPart() }.getOrDefault(leaf)
+            PhyVlabAttachment(decoded.ifBlank { label }.ifBlank { "附件" }, url)
+        }.distinctBy(PhyVlabAttachment::url)

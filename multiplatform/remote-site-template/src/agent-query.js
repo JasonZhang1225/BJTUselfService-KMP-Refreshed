@@ -312,6 +312,7 @@ function homeworkBody(dataset, query, now) {
     if (query.detail) {
       if (item.content != null) out.content = item.content;
       if (item.url != null) out.url = item.url;
+      if (item.attachments != null) out.attachments = item.attachments;
     }
     return out;
   });

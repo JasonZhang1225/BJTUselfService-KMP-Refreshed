@@ -72,6 +72,8 @@ class AuthenticatedSession(
     val phyVlabAccountModel: team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabAccountModel? = null,
     /** 全局刷新的公共执行者（App、CLI、后台任务共用）；预览/探针会话可为 null，由应用壳临时装配。 */
     val refreshCoordinator: team.bjtuss.bjtuselfservice.shared.sync.AppRefreshCoordinator? = null,
+    /** 三个来源统一的作业详情；预览/探针会话可为 null。 */
+    val assignmentDetails: team.bjtuss.bjtuselfservice.shared.agent.AgentAssignmentDetailService? = null,
     /** 本机 CLI 经 IPC 读取、提交作业时复用当前会话；预览/探针会话可为 null。 */
     val homeworkRepository: team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkRepository? = null,
     /** 手机/平板的 ChatGPT 插件（每次刷新后上传快照）；电脑端由宿主另行提供常驻控制器，这里为 null。 */

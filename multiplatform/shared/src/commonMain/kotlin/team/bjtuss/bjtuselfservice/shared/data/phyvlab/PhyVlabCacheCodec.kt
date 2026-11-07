@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
+import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEventKind
@@ -29,6 +30,9 @@ private data class PhyVlabCachePayload(
     val events: List<EventPayload> = emptyList(),
     val assignmentDetails: List<AssignmentDetailPayload> = emptyList(),
 )
+
+@Serializable
+private data class AttachmentPayload(val fileName: String, val url: String)
 
 @Serializable
 private data class CoursePayload(
@@ -79,6 +83,7 @@ private data class AssignmentDetailPayload(
     val feedbackText: String? = null,
     val submittedFiles: List<String> = emptyList(),
     val isDraft: Boolean = false,
+    val attachments: List<AttachmentPayload> = emptyList(),
 )
 
 internal fun encodePhyVlabCache(snapshot: PhyVlabCacheSnapshot): String = json.encodeToString(
@@ -126,6 +131,7 @@ internal fun encodePhyVlabCache(snapshot: PhyVlabCacheSnapshot): String = json.e
                 description = cached.detail.description,
                 descriptionHtml = cached.detail.descriptionHtml,
                 submissionStatus = cached.detail.submissionStatus,
+                attachments = cached.detail.attachments.map { AttachmentPayload(it.fileName, it.url) },
                 submissionDateText = cached.detail.submissionDateText,
                 submissionDateTimestamp = cached.detail.submissionDateTimestamp,
                 gradingStatus = cached.detail.gradingStatus,
@@ -212,6 +218,7 @@ internal fun decodePhyVlabCache(value: String): PhyVlabCacheSnapshot? = runCatch
                 gradeText = cached.gradeText,
                 feedbackText = cached.feedbackText,
                 submittedFiles = cached.submittedFiles.map(::PhyVlabSubmissionFile),
+                attachments = cached.attachments.map { PhyVlabAttachment(it.fileName, it.url) },
                 // 上传所需的短期表单上下文从不进缓存；离线详情不能显示可提交按钮。
                 canSubmit = false,
                 isDraft = cached.isDraft || cached.submissionStatus.contains("draft", true) || cached.submissionStatus.contains("草稿"),

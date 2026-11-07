@@ -61,7 +61,7 @@ val AGENT_USAGE = """
       citel                        CITEL 任务元数据
       citel show <id> [--fetch] [--json]   缓存题面与用例；--fetch 才联网
       citel export <id> --out <新目录> [--fetch]
-      homework show <id> [--out <新目录>]   联网读取课程平台作业要求、老师附件和已交文件；--out 下载老师附件
+      homework show <id> [--out <新目录>]   联网读取作业要求、老师附件和已交文件（课程平台、物理在线、CITEL 编程题）；--out 下载全部老师附件
       homework submit <id> --file <路径> [--as <提交文件名>] ... [--note 说明] [--replace] [--yes]
                                    提交课程平台作业：默认只预览，--yes 才提交；已交过的还要 --replace（仅本机）
       cache update [all|来源,...]  全量刷新（App 开着时交给 App 执行）

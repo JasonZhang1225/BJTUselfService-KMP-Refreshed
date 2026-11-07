@@ -29,6 +29,12 @@ data class PhyVlabSubmissionFile(
     val fileName: String,
 )
 
+/** 老师放在作业说明里的附件。[url] 只在数据层下载时使用，不展示、不上云。 */
+data class PhyVlabAttachment(
+    val fileName: String,
+    val url: String,
+)
+
 /** 物理在线单项作业详情；不包含 sesskey、draft item 等短期会话参数。 */
 data class PhyVlabAssignmentDetail(
     val description: String = "",
@@ -40,6 +46,7 @@ data class PhyVlabAssignmentDetail(
     val gradeText: String? = null,
     val feedbackText: String? = null,
     val submittedFiles: List<PhyVlabSubmissionFile> = emptyList(),
+    val attachments: List<PhyVlabAttachment> = emptyList(),
     val canSubmit: Boolean = false,
     val canFinalize: Boolean = false,
     val isDraft: Boolean = false,

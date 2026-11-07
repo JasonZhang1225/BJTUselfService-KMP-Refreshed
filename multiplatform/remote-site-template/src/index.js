@@ -40,6 +40,33 @@ async function readBody(request, limit) {
   }
 }
 
+async function readBinaryBody(request, limit) {
+  const declared = Number(request.headers.get("content-length") ?? "0");
+  if (declared > limit) throw new ProtocolError(413, "too_large", "请求体过大");
+  if (!request.body) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) {
+        await reader.cancel();
+        throw new ProtocolError(413, "too_large", "请求体过大");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return bytes;
+}
+
 /**
  * 拥有者鉴权：部署时设置机密 OWNER_TOKEN，请求带 `Authorization: Bearer <OWNER_TOKEN>`。
  * 未设置时拒绝全部拥有者接口（安全默认），不会因漏配而公开数据。
@@ -114,6 +141,22 @@ export async function handle(request, env, options = {}) {
         const { body, size } = await readBody(request, LIMITS.snapshotBytes);
         return json(200, await service.putSnapshot(device, body, size));
       }
+      if (path === "/api/v1/device/snapshot" && method === "PATCH") {
+        const { body, size } = await readBody(request, LIMITS.snapshotBytes);
+        return json(200, await service.patchSnapshot(device, body, size));
+      }
+      if (path === "/api/v1/device/attachments" && method === "GET") return json(200, await service.listAttachments(device));
+      const chunk = /^\/api\/v1\/device\/attachments\/([^/]+)\/chunks\/(\d+)$/.exec(path);
+      if (chunk && method === "PUT") {
+        const bytes = await readBinaryBody(request, LIMITS.attachmentChunkBytes);
+        return json(200, await service.putAttachmentChunk(device, chunk[1], Number(chunk[2]), bytes));
+      }
+      const attachment = /^\/api\/v1\/device\/attachments\/([^/]+)$/.exec(path);
+      if (attachment && method === "PUT") {
+        const { body } = await readBody(request, LIMITS.requestBytes);
+        return json(200, await service.putAttachment(device, attachment[1], body));
+      }
+      if (attachment && method === "DELETE") return json(200, await service.deleteAttachment(device, attachment[1]));
       if (path === "/api/v1/device/scopes" && method === "PUT") {
         const { body } = await readBody(request, LIMITS.requestBytes);
         return json(200, await service.updateScopes(device, body));
