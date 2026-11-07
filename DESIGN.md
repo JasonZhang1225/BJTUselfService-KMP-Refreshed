@@ -320,7 +320,7 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 | 弹层 | `.../feature/shell/AppleSheet.kt`、`shared/src/iosMain/cinterop/UIKitSheetBridge.h` |
 | 下拉选单 | `.../feature/shell/AppleMenuPicker.kt`（iOS：`shared/src/iosMain/.../feature/shell/AppleMenuPicker.ios.kt`） |
 | 分段控件与作业筛选 | `.../feature/assignment/AssignmentFilterControls.kt`（`AppleSegmentedControl`） |
-| 列表回到顶部按钮 | `.../feature/assignment/AssignmentScrollToTop.kt`（iOS：`shared/src/iosMain/.../feature/assignment/AssignmentScrollToTop.ios.kt`） |
+| 列表回到顶部按钮 | `.../feature/assignment/AssignmentListWithScrollToTop.kt`（iOS：`shared/src/iosMain/.../feature/assignment/AssignmentScrollToTopButton.ios.kt`） |
 | 桌面文件拖放 | `.../files/FileDropTarget.kt`、`shared/src/desktopMain/.../files/LocalFileRead.kt` |
 | 警告框 | `.../feature/shell/AppleAlert.kt`、`shared/src/iosMain/.../IosNativeAlertPresentation.kt` |
 | 页内搜索 | `.../feature/shell/PageSearch.kt` |

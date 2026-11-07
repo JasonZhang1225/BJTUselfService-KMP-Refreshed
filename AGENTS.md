@@ -163,7 +163,7 @@
 - **不在 Compose 里仿造系统外观**：不画顶栏渐变/模糊/分隔线，不仿玻璃按钮，不在玻璃按钮里套胶囊，不设 `sharesBackground = false`；页面不再画自己的标题行和返回箭头。
 - **弹层先选类型**：一句话的确认/警告/结果用 `AppleAlert`（iOS 系统警告框，破坏性按钮用 `Destructive`）；有内容（详情、列表、勾选、输入、二维码）用 `AppleSheet` / `AppleSheetOrAlert`，标题与确认/取消/关闭放原生 sheet 标题栏，正文不画外壳。iOS sheet 一律按正文测高，不直接开半屏/全屏；正文滚动用 `sheetBodyScroll`（不直接写 `verticalScroll`），只有正文本身是懒加载列表或整页工作区才 `scrollableBody = true`。业务页不直接用 `AlertDialog` / `ModalBottomSheet`。
 - **底部不截断**：页面和 sheet 的滚动视口都一直到底边，底部安全区/底栏净空只作为滚动内容末尾的留白（`LocalBottomBarClearance` 加在 `contentPadding` 上）；禁止在视口外加底部 padding 或 `heightIn(max)` 限高，否则滑动时内容在离底边一条处被硬切掉。
-- **不用下拉刷新**（刷新是顶栏圆形按钮）；页面内切换当前项（版本、课程、邮箱文件夹）一律用 `AppleMenuPickerCard`（iOS 弹系统 `UIMenu`），不弹 sheet 列表；长列表回顶复用 `AssignmentListWithScrollToTop`（iOS 原生液态玻璃按钮）；批量/持续操作用浮动胶囊操作条，不用铺满底部的实心底栏；页头作为列表首项随内容滚动，不做固定头部。
+- **不用下拉刷新**（刷新是顶栏圆形按钮）；页面内切换当前项（版本、课程、邮箱文件夹）优先用 `AppleMenuPickerCard`（iOS 弹系统 `UIMenu`），遵循 `DESIGN.md` 6.1 例外（2–3 个选项用分段控件 `AppleSegmentedControl`，需要搜索才用 sheet）；长列表回顶复用 `AssignmentListWithScrollToTop`（iOS 原生液态玻璃按钮）；批量/持续操作用浮动胶囊操作条，不用铺满底部的实心底栏；页头作为列表首项随内容滚动，不做固定头部。
 - 界面改动的 PR 必须回答 `DESIGN.md` 第 14 节的自查清单，并在 iOS 模拟器上实际看过顶栏玻璃（顶部透明、上滑出现、短页回弹也出现）。
 
 ### 共享而不强求相同

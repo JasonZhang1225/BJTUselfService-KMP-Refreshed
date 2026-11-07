@@ -104,8 +104,8 @@ npm run dev # http://127.0.0.1:4173，仅虚构数据、内存数据库；重启
 源码可供本机支持的插件安装流程使用；本次没有修改用户插件配置或安装插件。
 
 MCP `POST /mcp` 支持 `server/discover`、`initialize`、`tools/list`、`tools/call`、`ping`。
-工具为 `get_status`、`get_homework`、`get_calendar`、`get_exams`、`get_grades`、`get_mail`、`get_assignment_attachment`（读云端快照/已缓存附件，与电脑
-`bjtu` 命令同参数同结构，引擎在 `src/agent-query.js`），以及 `request_live_query`、`request_refresh_all`、
+工具为 `get_status`、`get_homework`、`get_calendar`、`get_exams`、`get_grades`、`get_mail`（读云端快照，与电脑
+`bjtu` 命令同参数同结构，引擎在 `src/agent-query.js`），`get_assignment_attachment`（按 `assignmentId` 与 `attachmentId` 读取已上传附件，返回包含 Base64 `blob` 的 MCP resource，非查询引擎 JSON 结构），以及 `request_live_query`、`request_refresh_all`、
 `request_citel_problem`、`request_assignment_detail`、`request_mail_message`、`get_request_result`（创建/读取电脑任务）。
 普通查询不创建任务；即时查询参数是 `command` + 对应查询工具的参数 + `freshness` + 幂等键。
 `queued/running` 仅表示未完成，结果需再次查询。CITEL 获取全文须显式 `includeFullText=true`。

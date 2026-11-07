@@ -6,7 +6,7 @@
 
 | 目录 / 文件 | 用途 | 维护规则 |
 | --- | --- | --- |
-| [`iOS-sign-guide.md`](iOS-sign-guide.md) | 用户侧 iOS 安装与签名指南（AltStore / SideStore / Sideloadly / 爱思助手） | 随签名或包安装方式变化更新；由根 `README.md` 与发版说明引用 |
+| [`iOS-sign-guide.md`](iOS-sign-guide.md) | 用户侧 iOS 安装与签名指南（LiveContainer / SideStore） | 随签名或包安装方式变化更新；由根 `README.md` 与发版说明引用 |
 | [`images/`](images/) | README 宣传图等静态资源 | 保持路径稳定 |
 | [`releases/`](releases/) | 各版本发版说明与内嵌更新日志数据源 | **禁止重命名已有文件**：由 `scripts/sync-bundled-changelog.py`、`.github/workflows/kmp-package.yml` 与 `BundledChangelogTest` 消费 |
 | [`agent/`](agent/) | AI 助手（本机 CLI / Skill 与私人远程 Site / MCP）现行契约与搭建指南 | `agent-query-contract.md` 与 `multiplatform/remote-site-template/agent-query-contract.md` 保持一致 |
@@ -19,7 +19,7 @@
 - **AI 助手与远程 Site**
   - [`agent/agent-query-contract.md`](agent/agent-query-contract.md)：本机 `bjtu` CLI 与远程 MCP 工具共用的查询参数、返回结构与快照 schema。
   - [`agent/remote-setup.md`](agent/remote-setup.md)：Windows 本地开发预览、一句话创建私人 Site 与多设备配对说明。
-  - [`agent/ai-agent-plan.md`](agent/ai-agent-plan.md)：本机 CLI + Skill 架构与命令设计基线。
+  - [`agent/ai-agent-plan.md`](agent/ai-agent-plan.md)：本机 CLI + Skill 早期设计计划（仅供历史参考；验证码模型等早期假设已调整，现行行为以 `agent-query-contract.md` 为准）。
 - **构建与更新分发**
   - [`build/macos-sdk-launcher.md`](build/macos-sdk-launcher.md)：macOS 打包 App 的 SDK Launcher 原理与签名验证。
   - [`build/dual-update-sources.md`](build/dual-update-sources.md)：GitHub / Gitee 双更新源策略与防回退规则。

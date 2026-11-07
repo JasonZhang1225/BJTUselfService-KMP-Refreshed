@@ -1218,7 +1218,7 @@
 - 目视：用户确认本地测试窗口新版红绿灯通过，DMG 主启动器的代码段与测试窗口一致。测试只使用内置数据，已结束测试进程。日志在 `.artifacts/macos-sdk-default/`。
 - 未验证：本轮未运行远端 CI，未在旧版 macOS 上运行新包。
 
-## 2026-10-28 课程回放、课件流式保存与作业富文本（PR #68–#75，补记归档）
+## 2026-11-07 补记归档（2026-10-28）：课程回放、课件流式保存与作业富文本（PR #68–#75）
 
 - 改动：
   - 课程回放与课件备用下载（PR #68 `a636d35c`、#69 `e0e8fa9a`、#70 `6d0609b5`、#72 `bdfb3297`、#73 `ff0968b7`）：新增课程回放独立入口（学校公开 HTTPS HLS）、纯 Kotlin TS→MP4 转封装与教师/课件双路高/中/低三档合成；Windows D3D11 硬件解码/缩放/编码与 AAC 保留、第 10 分钟 BMP 缩略图预览、保存结果“打开视频/打开文件夹”入口；iOS 灵动岛展开态高度统一、CITEL 折扣时间延后标绿与考试 sheet 测高、首页数据变动卡片移至临近截止下方；KMP package 构建标识生成。
@@ -1227,12 +1227,12 @@
 - 验证：`:shared:desktopTest` 专项 138 项、`:windowsApp:windowsTest` 33 项及 RTX 4060 / Radeon 780M 整节双路合成与 5 轮硬件队列压测通过，成片 `ffmpeg -v error -xerror` 全解码退出 0；安全检查 CI 全绿。
 - 未验证：Intel GPU 真机整节合成与多小时耐久压测。
 
-## 2026-10-30 首页 CITEL 折扣提醒与完成标记会话生命周期（PR #78 `89a998a0`、PR #79 `28cf03fa`，补记归档）
+## 2026-11-07 补记归档（2026-10-30）：首页 CITEL 折扣提醒与完成标记会话生命周期（PR #78 `89a998a0`、PR #79 `28cf03fa`）
 
 - 改动：首页新增未来 48 小时内未完成 CITEL 折扣事件提醒卡片，并与本地完成/忽略状态联动（PR #78）；`AssignmentCompletionStore` 保存协程改由账号会话级作用域持有，避免页面退出取消落盘（PR #79）。
 - 验证：`:shared:desktopTest` 首页与完成标记专项测试、跨平台安全检查 CI 全绿。
 
-## 2026-10-31 回放合成 Bugbot 修复与作业“忽略”交互重做（PR #83 `3a142cc6`、PR #84 `d3e84f78`，补记归档）
+## 2026-11-07 补记归档（2026-10-31）：回放合成 Bugbot 修复与作业“忽略”交互重做（PR #83 `3a142cc6`、PR #84 `d3e84f78`）
 
 - 改动：
   - PR #83：修复 #81 合入后 Bugbot 指出的合成失败清理、完成状态与移动端升级后残留下载任务 UI 三项问题。
@@ -1240,7 +1240,7 @@
 - 验证：`:shared:desktopTest` 1305 项（除 Windows 既有环境项外全过）、五目标编译与 PR CI 全绿。
 - 未验证：宽屏课程平台独立页详情面板（`HomeworkDetailPanel`）仅靠右键菜单触发忽略。
 
-## 2026-11-01 午夜截止归日、离线更新日志、作业筛选拆分与全应用手机时区（PR #85–#89，补记归档）
+## 2026-11-07 补记归档（2026-11-01）：午夜截止归日、离线更新日志、作业筛选拆分与全应用手机时区（PR #85–#89）
 
 - 改动：
   - 午夜截止与日期筛选（PR #85 `cdd315ed`）：00:00 截止归入前一日 24:00，忽略分组遵守日期/课程/提交状态筛选。
@@ -1251,16 +1251,16 @@
 - 验证：`:shared:desktopTest` 1350 项（1349 通过、1 跳过）、五端编译、iOS 签名模拟器（含 `SIMCTL_CHILD_TZ=America/New_York`）与小米平板实装验证通过，PR CI 全绿。
 - 未验证：非东八区真机上的小组件与实时活动实机表现。
 
-## 2026-11-02 CI 按改动分流、系统警告框 `AppleAlert`、物理实验 IP 备用路径与作业回顶按钮（PR #91–#94，补记归档）
+## 2026-11-07 补记归档（2026-11-02）：CI 按改动分流、系统警告框 `AppleAlert`、物理实验 IP 备用路径与作业回顶按钮（PR #91–#94）
 
 - 改动：
   - CI 精简（PR #91 `68339b94`）：`kmp-security-check.yml` 按改动路径只跑受影响平台任务，Windows Agent CLI 冒烟并入安全检查。
   - 设计规范落地、系统警告框 `AppleAlert` 与 iOS sheet 测高（PR #92 `75bf624d`）：新增仓库根目录 `DESIGN.md`；新增 `AppleAlert`（iOS `UIAlertController`、Android/桌面 `AlertDialog`）替换全部一句话确认/警告/结果弹窗；iOS `AppleSheet` 对 `scrollableBody = false` 一律按正文测高（正文滚动用 `Modifier.sheetBodyScroll`），滚动视口到底边；修复物理在线最终提交核对 sheet 的“返回检查”按钮；成绩页 `courseTypeColors()` 统一转调 `CourseCategoryPalette`。
-  - 物理实验 IP 备用路径（PR #93 `d8d3d6a3`）：主域名 `http://wlsy.bjtu.edu.cn/` 获取登录页失败或 6 秒超时后自动回退 `http://59.64.5.228/`，密码 POST 只提交一次且固定在选定端点；登记 `docs/security/physics-lab-ip-backup.md`。
+  - 物理实验 IP 备用路径（PR #93 `d8d3d6a3`）：主域名 `http://wlsy.bjtu.edu.cn/` 获取登录页失败或 6 秒超时后自动回退 `http://59.64.5.228/`，密码 POST 只提交一次且固定在选定端点；登记 `docs/security/physics-lab-ip-backup-2026-11-02.md`。
   - 作业列表回到顶部按钮（PR #94 `d4de210c`）：四个作业列表共用 `AssignmentListWithScrollToTop`，滚过约一屏后显示 44.dp 视觉 / 48.dp 点击区域的圆形回顶按钮，动态预留撤销条净空。
 - 验证：`:shared:desktopTest` 1363 项、五端编译、iOS 17 Pro 模拟器深/浅色实看警告框与定高 sheet、匿名 GET 验证物理实验 IP 200 响应，各 PR CI 全绿。
 
-## 2026-11-03 iOS 回放预览首帧与液态玻璃回顶按钮回弹修复（PR #96，合并提交 `0f4137ab`）
+## 2026-11-07 补记归档（2026-11-03）：iOS 回放预览首帧与液态玻璃回顶按钮回弹修复（PR #96，合并提交 `0f4137ab`）
 
 - 改动：iOS `SafeAreaComposeHost` 通过 `NativeScrollController.setOverscrollTranslation` 将 UIKit 回弹位移仅作用于 `TopScrollLazyColumn` / `TopScrollColumn` 内容图层，悬浮回顶按钮不再随列表回弹移动；iOS 回顶按钮改用原生 `UIButtonConfiguration.glassButtonConfiguration` + 18pt SF Symbol `arrow.up`（旧系统回退 `systemMaterial`）；回放预览显式静音启动 HLS 解码并跳至第 10 分钟（短片取中点），等待 `requestVideoFrameCallback` 首帧绘制后再暂停。
 - 验证：`node scripts/tests/test_playback_preview.mjs` 3 项通过，`AssignmentScrollToTopTest` / `TopScrollContainersTest` 10 项全过，用户确认 iOS 实机目视检查通过，PR CI 全绿。

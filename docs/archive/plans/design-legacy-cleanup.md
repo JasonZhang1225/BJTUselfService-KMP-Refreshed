@@ -66,8 +66,8 @@ PR #92 Codex review 修正：物理在线最终提交核对 sheet 曾误传 `sho
 
 | 状态 | 页面 | 现状 | 整改 |
 | --- | --- | --- | --- |
-| [x] | 邮箱一级页 `AppSection.MAILBOX`（已完成，PR #95 合入 `main`） | 已开 `scrollUnderTopBar`。紧凑端邮件列表改为 `TopScrollLazyColumn`：文件夹下拉选单（`AppleMenuPickerCard`，副标题为未读数）、“共 N 封”、失败横幅、邮件和“加载更多”都是列表项；原“切换”文字按钮 + Material 下拉删除。宽屏三栏、加载/会话失效/内嵌写信只补顶部净空，宽屏未实机回归。 |
-| [x] | 回放播放与下载 `PlaybackDetailRoute`（已完成，PR #95 合入 `main`） | 已开 `scrollUnderTopBar`，正文改用 `TopScrollColumn` 并消费顶/底净空，画面预览滚动时穿到玻璃栏后（iOS 模拟器已看）。该页内的“下载任务”视图只补顶部净空，未接玻璃。 |
+| [x] | 邮箱一级页 `AppSection.MAILBOX`（已完成，PR #95 合入 `main`） | 原先未开 `scrollUnderTopBar`，紧凑端用“切换”文字按钮 + Material 下拉切换文件夹 | 已开 `scrollUnderTopBar`。紧凑端邮件列表改为 `TopScrollLazyColumn`：文件夹下拉选单（`AppleMenuPickerCard`，副标题为未读数）、“共 N 封”、失败横幅、邮件和“加载更多”都是列表项；原“切换”文字按钮 + Material 下拉删除。宽屏三栏、加载/会话失效/内嵌写信只补顶部净空，宽屏未实机回归。 |
+| [x] | 回放播放与下载 `PlaybackDetailRoute`（已完成，PR #95 合入 `main`） | 原先未开 `scrollUnderTopBar`，正文未用 `TopScrollColumn` | 已开 `scrollUnderTopBar`，正文改用 `TopScrollColumn` 并消费顶/底净空，画面预览滚动时穿到玻璃栏后（iOS 模拟器已看）。该页内的“下载任务”视图只补顶部净空，未接玻璃。 |
 
 以下页面现在用 `staticTopBar = true`（内容滚不进栏后）。`DESIGN.md` 要求优先把固定头改成列表首项，逐个评估能否改：
 
