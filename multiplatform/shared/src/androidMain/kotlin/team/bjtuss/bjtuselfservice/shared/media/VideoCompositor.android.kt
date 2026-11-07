@@ -13,7 +13,7 @@ actual fun defaultPlaybackBackgroundHost(): PlaybackBackgroundHost? = null
  * 声音直接拷左路 AAC（不重编码）。
  *
  * 设备没有支持 Surface 输入的 H.264 编码器时 [isAvailable] 为 false，
- * 任务自动改为分别保存各路 MP4。实现见 `docs/plans/playback-composite-android-windows.md`。
+ * 任务自动改为分别保存各路 MP4。实现见 `docs/archive/playback/playback-composite-android-windows.md`。
  */
 internal object AndroidVideoCompositor : ProgressiveVideoCompositor {
     override val isAvailable: Boolean get() = H264SurfaceEncoder.isAvailable()

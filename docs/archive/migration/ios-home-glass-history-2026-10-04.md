@@ -12,4 +12,4 @@
 - iOS 短首页处于顶部时，逻辑列表 offset 可以一直为 0，但 Cupertino overscroll 会实际移动内容。首页现在同时观察视口和内容的布局位置，使内容进入标题栏时启动模糊，并在回弹时逐帧恢复透明。
 - 用户已确认本版本同时具备预期的渐显和模糊效果，并指定为模糊效果定版。
 
-实现细节、验证范围及 unsigned IPA 校验信息见 `BJTU-KMP-Home-Elastic-Glass-2026-10-04.md`。
+实现细节、验证范围及 unsigned IPA 校验信息见 `ios-home-elastic-glass-2026-10-04.md`。

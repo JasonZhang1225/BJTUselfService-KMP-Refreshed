@@ -1217,3 +1217,60 @@
 - 验证：`./gradlew :desktopApp:packageDmg --console=plain --max-workers=4` 无启动器参数构建成功。只读挂载 DMG，`xcrun vtool -show-build` 确认 SDK 27.0 / 最低 macOS 12.0，`codesign --verify --deep --strict` 通过。模拟 SDK 26.5 时脚本明确拒绝。安全检查任务 `:desktopApp:createDistributable -PmacosAppImageSmokeTest --dry-run` 成功且不调度重编译。
 - 目视：用户确认本地测试窗口新版红绿灯通过，DMG 主启动器的代码段与测试窗口一致。测试只使用内置数据，已结束测试进程。日志在 `.artifacts/macos-sdk-default/`。
 - 未验证：本轮未运行远端 CI，未在旧版 macOS 上运行新包。
+
+## 2026-10-28 课程回放、课件流式保存与作业富文本（PR #68–#75，补记归档）
+
+- 改动：
+  - 课程回放与课件备用下载（PR #68 `a636d35c`、#69 `e0e8fa9a`、#70 `6d0609b5`、#72 `bdfb3297`、#73 `ff0968b7`）：新增课程回放独立入口（学校公开 HTTPS HLS）、纯 Kotlin TS→MP4 转封装与教师/课件双路高/中/低三档合成；Windows D3D11 硬件解码/缩放/编码与 AAC 保留、第 10 分钟 BMP 缩略图预览、保存结果“打开视频/打开文件夹”入口；iOS 灵动岛展开态高度统一、CITEL 折扣时间延后标绿与考试 sheet 测高、首页数据变动卡片移至临近截止下方；KMP package 构建标识生成。
+  - 课件大文件流式保存与取消确认（PR #74 `901cf2ff`）：单文件/批量目录流式写入、进度与标注大小展示、取消导出三选一确认、Android SAF 树 URI 构造修复、Windows `IFileDialog` 原生面板。
+  - 作业要求富文本保留换行与文字样式（PR #75 `dfc12d41`）。
+- 验证：`:shared:desktopTest` 专项 138 项、`:windowsApp:windowsTest` 33 项及 RTX 4060 / Radeon 780M 整节双路合成与 5 轮硬件队列压测通过，成片 `ffmpeg -v error -xerror` 全解码退出 0；安全检查 CI 全绿。
+- 未验证：Intel GPU 真机整节合成与多小时耐久压测。
+
+## 2026-10-30 首页 CITEL 折扣提醒与完成标记会话生命周期（PR #78 `89a998a0`、PR #79 `28cf03fa`，补记归档）
+
+- 改动：首页新增未来 48 小时内未完成 CITEL 折扣事件提醒卡片，并与本地完成/忽略状态联动（PR #78）；`AssignmentCompletionStore` 保存协程改由账号会话级作用域持有，避免页面退出取消落盘（PR #79）。
+- 验证：`:shared:desktopTest` 首页与完成标记专项测试、跨平台安全检查 CI 全绿。
+
+## 2026-10-31 回放合成 Bugbot 修复与作业“忽略”交互重做（PR #83 `3a142cc6`、PR #84 `d3e84f78`，补记归档）
+
+- 改动：
+  - PR #83：修复 #81 合入后 Bugbot 指出的合成失败清理、完成状态与移动端升级后残留下载任务 UI 三项问题。
+  - PR #84：将作业卡片常驻“已完成”复选框重做为“忽略”交互（`AssignmentIgnoreUi.kt`）：手机左滑、桌面右键/长按菜单、详情页按钮、读屏自定义动作触发；已忽略项移入列表末尾默认收起的“已忽略 N 项”分组（alpha 0.62），底栏上方提供 4 秒临界阻尼撤销条；复用 `assignment.manualCompletion.v1` 存储键无缝兼容旧数据。
+- 验证：`:shared:desktopTest` 1305 项（除 Windows 既有环境项外全过）、五目标编译与 PR CI 全绿。
+- 未验证：宽屏课程平台独立页详情面板（`HomeworkDetailPanel`）仅靠右键菜单触发忽略。
+
+## 2026-11-01 午夜截止归日、离线更新日志、作业筛选拆分与全应用手机时区（PR #85–#89，补记归档）
+
+- 改动：
+  - 午夜截止与日期筛选（PR #85 `cdd315ed`）：00:00 截止归入前一日 24:00，忽略分组遵守日期/课程/提交状态筛选。
+  - 离线更新日志应用（PR #86 `1720ca77`）：应用页新增独立“更新日志”（`ChangelogWorkspace.kt`），接入 `TopScrollLazyColumn` 与液态玻璃顶栏；统一 `docs/releases/` 全部发布说明格式，由 `scripts/sync-bundled-changelog.py` 生成 `BundledChangelog.kt` 并在 CI 校验同源。
+  - 作业筛选拆分与 2.0 更新日志重写（PR #87 `13b41b41`）：聚合、课程平台、物理在线/CITEL 筛选统一为 `AssignmentFilterControls.kt`（`AppleSegmentedControl` 拆分为“截止日期：全部/未过期/指定日期”与“提交状态：全部/未提交”，iOS 接 `UIDatePickerStyleCompact`，旧 `beforeDate` 自动迁移为 `untilDate`），底部显示当前忽略计数；重写 `v2.0.0-KMP.md` 并将条目拆为加粗小标题与正文。
+  - 全应用按设备时区显示时间（PR #88 `ae8d1a2a`）：学校时间统一按北京时间解析为 `Instant`（`SchoolTime.kt`），展示与“今天/现在”按设备时区换算；课表、教室查询、小组件、实时活动仍按北京星期与节次排格，跨天标“前日/次日”，跨夏令时切换周在格内显示各自当地时刻；考试仅在原文给出结束时间时显示区间（`hasExplicitEndTime`）。
+  - 物理在线草稿时间标签区分（PR #89 `64e4df86`）：`PhyVlabScreen.kt` 仅上传草稿未最终提交时标“上传”，最终提交后标“提交”。
+- 验证：`:shared:desktopTest` 1350 项（1349 通过、1 跳过）、五端编译、iOS 签名模拟器（含 `SIMCTL_CHILD_TZ=America/New_York`）与小米平板实装验证通过，PR CI 全绿。
+- 未验证：非东八区真机上的小组件与实时活动实机表现。
+
+## 2026-11-02 CI 按改动分流、系统警告框 `AppleAlert`、物理实验 IP 备用路径与作业回顶按钮（PR #91–#94，补记归档）
+
+- 改动：
+  - CI 精简（PR #91 `68339b94`）：`kmp-security-check.yml` 按改动路径只跑受影响平台任务，Windows Agent CLI 冒烟并入安全检查。
+  - 设计规范落地、系统警告框 `AppleAlert` 与 iOS sheet 测高（PR #92 `75bf624d`）：新增仓库根目录 `DESIGN.md`；新增 `AppleAlert`（iOS `UIAlertController`、Android/桌面 `AlertDialog`）替换全部一句话确认/警告/结果弹窗；iOS `AppleSheet` 对 `scrollableBody = false` 一律按正文测高（正文滚动用 `Modifier.sheetBodyScroll`），滚动视口到底边；修复物理在线最终提交核对 sheet 的“返回检查”按钮；成绩页 `courseTypeColors()` 统一转调 `CourseCategoryPalette`。
+  - 物理实验 IP 备用路径（PR #93 `d8d3d6a3`）：主域名 `http://wlsy.bjtu.edu.cn/` 获取登录页失败或 6 秒超时后自动回退 `http://59.64.5.228/`，密码 POST 只提交一次且固定在选定端点；登记 `docs/security/physics-lab-ip-backup.md`。
+  - 作业列表回到顶部按钮（PR #94 `d4de210c`）：四个作业列表共用 `AssignmentListWithScrollToTop`，滚过约一屏后显示 44.dp 视觉 / 48.dp 点击区域的圆形回顶按钮，动态预留撤销条净空。
+- 验证：`:shared:desktopTest` 1363 项、五端编译、iOS 17 Pro 模拟器深/浅色实看警告框与定高 sheet、匿名 GET 验证物理实验 IP 200 响应，各 PR CI 全绿。
+
+## 2026-11-03 iOS 回放预览首帧与液态玻璃回顶按钮回弹修复（PR #96，合并提交 `0f4137ab`）
+
+- 改动：iOS `SafeAreaComposeHost` 通过 `NativeScrollController.setOverscrollTranslation` 将 UIKit 回弹位移仅作用于 `TopScrollLazyColumn` / `TopScrollColumn` 内容图层，悬浮回顶按钮不再随列表回弹移动；iOS 回顶按钮改用原生 `UIButtonConfiguration.glassButtonConfiguration` + 18pt SF Symbol `arrow.up`（旧系统回退 `systemMaterial`）；回放预览显式静音启动 HLS 解码并跳至第 10 分钟（短片取中点），等待 `requestVideoFrameCallback` 首帧绘制后再暂停。
+- 验证：`node scripts/tests/test_playback_preview.mjs` 3 项通过，`AssignmentScrollToTopTest` / `TopScrollContainersTest` 10 项全过，用户确认 iOS 实机目视检查通过，PR CI 全绿。
+- 未验证：学校真实 HLS 在 iOS 真机上的首帧黑屏消除待后续使用观察。
+
+## 2026-11-07 上传弹层文件拖放、本机 CLI 交作业与统一作业详情/远程增量同步（PR #97 `23309e47`、PR #98/#99 `d7df0f1b`）
+
+- 改动：
+  - 上传弹层拖放与本机 CLI 交作业（PR #97 `23309e47`）：桌面端课程平台、物理在线、CITEL 上传弹层支持拖入文件（`Modifier.fileDropTarget`），选择器与拖放共用 `readLocalFiles` 限制单次总大小 200 MiB；本机 CLI 新增 `bjtu homework show <id> [--out <目录>]` 与 `bjtu homework submit <id> --file … [--as …] [--note …] [--replace] [--yes]`（仅本机课程平台，默认预览，`--yes` 执行提交，覆盖需 `--replace`，进程内串行执行，提交前后同步校验）；CI 新增 Gradle 发行包独立缓存并将下载超时延至 60 秒。
+  - 统一作业详情、老师附件与远程快照按设备增量上传（PR #98/#99 `d7df0f1b`）：新增 `AgentAssignmentDetailService` 统一课程平台、物理在线、CITEL 作业详情与老师附件（缓存在账号 metadata `agent.assignment_details.v1`，未交未截止作业同步时每轮最多补 15 项并带失败退避，同一批物理在线详情同步最多恢复 1 次会话；MCP 新增 `request_assignment_detail` 与 `get_assignment_attachment`）；远程快照改为 `PATCH /api/v1/device/snapshot` 按设备基线增量上传，老师附件（≤5 MiB，每设备配额 64 MiB）按 1 MiB 分块存入 D1（迁移 `0003_attachments.sql`）。
+- 原因/决策：解决 ChatGPT 远程查询物理在线只有标题和截止时间、缺少题面与附件的问题，以及桌面端快速拖放上传和本机 Agent 受控交作业需求。PR #98 合并时因目标分支未切回 `main` 先合入了 `#97` 分支，随后由同一提交 `d2e12747` 创建 PR #99 合入 `main` 并删除旧分支。
+- 验证：macOS DMG 本地安装实测文件拖放与 CLI `homework show/submit` 通过；Codex 与 CodeRabbit 在 #97、#98 上的审查问题（串行提交、无窗口缓存初始化、物理在线草稿/CITEL 提交状态判定、分块流式限流、重定向白名单校验等）全部修复并回归通过；`kmp-security-check` 6 项检查全绿。
+- 未验证：Windows 实机文件拖放；物理在线真实页面老师附件解析（受学校登录变更阻塞）；私人远程 Site 重新部署与 D1 迁移 `0003` 的线上实测。
