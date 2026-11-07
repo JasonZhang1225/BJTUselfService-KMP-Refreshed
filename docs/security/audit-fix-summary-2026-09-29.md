@@ -7,8 +7,8 @@
 
 完整条目与对照表见：
 
-- [安全复查](BJTU-KMP-Security-Audit-2026-09-29.md)
-- [代码味道复查](../refactor/BJTU-KMP-CodeShit-Audit-2026-09-29.md)
+- [安全复查](security-audit-2026-09-29.md)
+- [代码味道复查](../archive/refactor/code-quality-audit-2026-09-29.md)
 
 本文只讲「查到了什么、改了什么、没改什么」。
 
@@ -163,8 +163,8 @@
 | `CourseScheduleRemoteDataSource.kt` + Test | M4 |
 | `ClassroomRemoteDataSource.kt` + Test | M4 |
 | `SecurityReleaseConfigTest.kt` | M2 / M3 / M1 顺序 / 握手 no-follow 守卫 |
-| `docs/security/BJTU-KMP-Security-Audit-2026-09-29.md` | 只读报告 + 实施记录 |
-| `docs/refactor/BJTU-KMP-CodeShit-Audit-2026-09-29.md` | 味道报告 |
+| `docs/security/security-audit-2026-09-29.md` | 只读报告 + 实施记录 |
+| `docs/archive/refactor/code-quality-audit-2026-09-29.md` | 味道报告 |
 | `memory.md` | 工作记忆 |
 
 冻结根 `app/` **零改动**。

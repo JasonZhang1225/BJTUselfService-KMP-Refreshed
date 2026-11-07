@@ -18,7 +18,7 @@
 - 一项工作合入 `main`（PR 合并）或发出版本后：把对应内容从 `memory.md` 移出，在 `history_full.md` **末尾**追加一条日志；不改写旧条目（事实错误时追加更正条目）。
 - 任何涉及界面外观或交互的任务（新页面、新按钮、弹层、配色、动效），开始前必须读完 `DESIGN.md`，按其规则实现，并在 PR 描述里回答它第 14 节的自查清单。
 - `AGENTS.md`、`DESIGN.md` 由人工维护；AI 只在用户要求时修改，改动前后向用户说明。
-- `docs/migration/`、`docs/security/` 等是当时的专题报告，可作参考，但不代表当前状态。
+- `docs/` 目录结构与索引见 `docs/README.md`；`docs/archive/`（含 `migration/` 等）及历史安全审计报告是当时的专题记录，可作参考，但不代表当前状态。
 
 **日志条目格式**（`history_full.md`）：
 
@@ -163,7 +163,7 @@
 - **不在 Compose 里仿造系统外观**：不画顶栏渐变/模糊/分隔线，不仿玻璃按钮，不在玻璃按钮里套胶囊，不设 `sharesBackground = false`；页面不再画自己的标题行和返回箭头。
 - **弹层先选类型**：一句话的确认/警告/结果用 `AppleAlert`（iOS 系统警告框，破坏性按钮用 `Destructive`）；有内容（详情、列表、勾选、输入、二维码）用 `AppleSheet` / `AppleSheetOrAlert`，标题与确认/取消/关闭放原生 sheet 标题栏，正文不画外壳。iOS sheet 一律按正文测高，不直接开半屏/全屏；正文滚动用 `sheetBodyScroll`（不直接写 `verticalScroll`），只有正文本身是懒加载列表或整页工作区才 `scrollableBody = true`。业务页不直接用 `AlertDialog` / `ModalBottomSheet`。
 - **底部不截断**：页面和 sheet 的滚动视口都一直到底边，底部安全区/底栏净空只作为滚动内容末尾的留白（`LocalBottomBarClearance` 加在 `contentPadding` 上）；禁止在视口外加底部 padding 或 `heightIn(max)` 限高，否则滑动时内容在离底边一条处被硬切掉。
-- **不用下拉刷新**（刷新是顶栏圆形按钮）；批量/持续操作用浮动胶囊操作条，不用铺满底部的实心底栏；页头作为列表首项随内容滚动，不做固定头部。
+- **不用下拉刷新**（刷新是顶栏圆形按钮）；页面内切换当前项（版本、课程、邮箱文件夹）优先用 `AppleMenuPickerCard`（iOS 弹系统 `UIMenu`），遵循 `DESIGN.md` 6.1 例外（2–3 个选项用分段控件 `AppleSegmentedControl`，需要搜索才用 sheet）；长列表回顶复用 `AssignmentListWithScrollToTop`（iOS 原生液态玻璃按钮）；批量/持续操作用浮动胶囊操作条，不用铺满底部的实心底栏；页头作为列表首项随内容滚动，不做固定头部。
 - 界面改动的 PR 必须回答 `DESIGN.md` 第 14 节的自查清单，并在 iOS 模拟器上实际看过顶栏玻璃（顶部透明、上滑出现、短页回弹也出现）。
 
 ### 共享而不强求相同
@@ -248,21 +248,8 @@
 - 发版时单独核对版本号（见“仓库事实”中的清单）、提交范围、测试、构建矩阵和发布说明，等待用户批准。
 - 每次交付说明：完成的行为、修改文件、验证命令、未验证边界和下一步。
 
-## Cursor Cloud specific instructions
+## Android 与云端环境约定
 
-Linux Cloud Agent 使用镜像自带的 JDK 21（`/usr/lib/jvm/java-21-openjdk-amd64`）。环境安装把 Android SDK 放在 `/opt/android-sdk`，并写入已 gitignore 的 `multiplatform/local.properties`（`sdk.dir`）。`adb`、`emulator`、`sdkmanager` 链接在 `/usr/local/bin`。
-
-Android 调试包需要签名。安装脚本在 `~/.android/bjtu-kmp-upload.keystore` 生成一次性编译密钥，口令只写在 `~/.gradle/gradle.properties`。这不是发布用上传密钥，打出来的包不能覆盖安装正式版。
-
-在 `multiplatform/` 下验证：
-
-- `./gradlew :shared:desktopTest`：共享 JVM 测试。
-- `./gradlew :androidApp:assembleDebug`：默认只打 `arm64-v8a` debug APK。
-- 模拟器是 x86_64。要装进模拟器时先设置 `BJTU_ANDROID_ABIS=x86_64` 再执行 `assembleDebug`。
-- `multiplatform/remote-site-template`：`npm test`。镜像已有 Node 22，该目录没有 npm 依赖，不需要 `npm install`。
-
-模拟器系统镜像是 `system-images;android-36;google_apis;x86_64`。这台宿主上嵌套 KVM 创建 vCPU 会触发内核错误，模拟器必须加 `-accel off`（软件 CPU）。首次开机很慢，不要放进每次启动都会跑的 `start`。
-
-此 Linux 镜像不能构建 iOS（需要 Xcode）、macOS 桌面包（`desktopApp` 依赖 Apple Silicon Skiko）或 Windows MSI。不要在 Linux 上执行 `:desktopApp:run`。iOS 原生目标会被自动禁用；用户级 `~/.gradle/gradle.properties` 可设 `kotlin.native.ignoreDisabledTargets=true`，不要为此改仓库里的 `gradle.properties`。
-
-未获用户针对该次登录的明确要求时，不要在 Cloud Agent 里向学校统一认证提交账号密码。
+- **Android ABI 与模拟器打包**：`:androidApp:assembleDebug` 默认只打 `arm64-v8a`；面向 `x86_64` 模拟器构建时，先设置环境变量 `BJTU_ANDROID_ABIS=x86_64` 再执行 `assembleDebug`。
+- **Windows 本机 Android 环境**：SDK 位于 `C:\Users\zjg\Android\Sdk`（`ANDROID_HOME` 及 `multiplatform/local.properties` 的 `sdk.dir`）。本机唯一项目 AVD 为 `BJTU-API36-x86_64`（Pixel 7a，Android 36 Google APIs x86_64，位于 `C:\Users\zjg\.android\avd`）；命令行启动使用 `emulator.exe -avd BJTU-API36-x86_64 -gpu swiftshader -feature -Vulkan -no-snapshot`（无窗口加 `-no-window -no-audio`），ADB 命令显式带 `-s <序列号>`。清理构建缓存只清仓库内 `build/`，不删 `.avd` 目录。
+- **Linux Cloud Agent 环境**：使用镜像 JDK 21（`/usr/lib/jvm/java-21-openjdk-amd64`）与 `/opt/android-sdk`；`~/.android/bjtu-kmp-upload.keystore` 为环境生成的一次性编译密钥（非正式发布密钥）。模拟器需加 `-accel off`（禁用嵌套 KVM）。`multiplatform/remote-site-template` 直接运行 `npm test`（无需 `npm install`）。该 Linux 镜像不能构建 iOS、macOS 桌面包或 Windows MSI（可在 `~/.gradle/gradle.properties` 设 `kotlin.native.ignoreDisabledTargets=true`，不改仓库配置）。未获用户当次明确要求时，不在 Cloud Agent 中提交学校账号密码。

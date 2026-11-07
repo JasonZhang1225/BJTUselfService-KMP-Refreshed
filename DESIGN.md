@@ -96,7 +96,7 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 - 页面在顶部时顶栏**透明**，只有标题和按钮；内容滚进栏后，玻璃随滚动距离在 52.dp 内从 0 渐变到 1。
 - 浓度直接跟随滚动位置，不另加动画。这样不会滞后于手指、不会过冲，也天然满足“减少动态效果”。
 - iOS 顶栏玻璃是宿主的 `NativeNavigationBarGlassView`，色调向页面背景色靠（`appBackgroundUIColor` 40%），不在深色内容上显得像一条亮带。页面不需要也**禁止**自己再画一层渐变、模糊或分隔线。
-- 内容不满一屏时上拉回弹，内容也会滑进栏后；`TopScroll*` 容器已把回弹位移算进去，这是不能绕开统一容器的另一个原因。
+- 内容不满一屏时上拉回弹，内容也会滑进栏后；`TopScroll*` 容器已把回弹位移算进去，这是不能绕开统一容器的另一个原因。iOS 宿主通过 `NativeScrollController.setOverscrollTranslation` 将 UIKit 物理回弹位移只作用在滚动容器图层上，使回顶按钮、撤销条等悬浮层保持原位、不随列表回弹移动。
 
 ### 4.3 哪些按钮放顶栏
 
@@ -179,8 +179,9 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 | 低强调、内联链接式操作 | `TextButton` | 同上 |
 | 筛选、类别、多选标签 | `FilterChip`；类别色只来自 `CourseCategoryPalette` | 胶囊 |
 | 从一组选项里切换当前项（版本、课程、邮箱文件夹） | **下拉选单** `AppleMenuPickerCard`，见 6.1 | 卡片 16.dp |
-| 二到三选一 | 分段控件（参考设置页更新源“Gitee｜自动选择｜GitHub”滑块、成绩单中/英分段） | 胶囊 |
+| 二到三选一 | 分段控件 `AppleSegmentedControl`（参考作业筛选切换器、设置页更新源“Gitee｜自动选择｜GitHub”滑块、成绩单中/英分段） | 胶囊 |
 | 开关型设置 | `Switch` | — |
+| 长列表回到顶部（滚过约一屏后出现） | `AssignmentListWithScrollToTop`：视觉 44.dp / 点击 48.dp，避开底栏与撤销条；iOS 原生 `glassButtonConfiguration` + 18pt `arrow.up`，Android/桌面 Material 圆形 | 圆形 |
 | 选中项需要持续操作（批量续借、批量导出） | **浮动胶囊操作条**：浮在列表上方，内容在它后面继续滚动 | `RoundedCornerShape(percent = 50)` |
 
 浮动胶囊操作条参考 `LibraryRenewBar`：`surfaceContainerHigh` 底色、0.5.dp `outlineVariant` 发丝描边、`shadowElevation = 8.dp`、离底 10.dp 加真实底部安全区，列表末尾按胶囊实测高度让位；没有可操作项时整条隐藏。**禁止**用铺满底部的 Material `BottomAppBar` 或实心底栏，它会在底部安全区留下一条黑/白带。
@@ -189,7 +190,8 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 
 - 点击区域不小于 44pt / 48.dp。视觉上 32.dp 的圆形按钮，周围要留出足够的可点区域。
 - 按下立即有反馈（Material ripple / 系统高亮），不要等请求返回才变化。耗时动作在按钮内显示进行中（转圈 + “正在续借…”）并禁用重复点击。
-- 破坏性、不可撤销的动作（删除、清除离线数据）先用 `AppleAlert` 确认（`Destructive` + `Cancel`），按钮文字写明后果；需要核对内容的（如最终提交作业）用 sheet 列出内容并以勾选控制 `confirmEnabled`。可撤销的动作（标记完成、忽略）不弹确认，给撤销条（参考 `AssignmentIgnoreUndoBar`）。
+- 破坏性、不可撤销的动作（删除、清除离线数据）先用 `AppleAlert` 确认（`Destructive` + `Cancel`），按钮文字写明后果；需要核对内容的（如最终提交作业）用 sheet 列出内容并以勾选控制 `confirmEnabled`。可撤销的动作（忽略作业）不弹确认，给撤销条（参考 `AssignmentIgnoreUndoBar`）。
+- 桌面端文件上传区统一接入 `Modifier.fileDropTarget`（参考 `AssignmentUploadFiles`），支持点击选择或直接拖入文件，单次总大小上限 200 MiB（`readLocalFiles`），超限或拖入文件夹时就地提示。
 
 ### 6.1 下拉选单
 
@@ -317,6 +319,9 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 | Compose 回退顶栏与圆形按钮 | `.../feature/shell/CompactAppTopBar.kt` |
 | 弹层 | `.../feature/shell/AppleSheet.kt`、`shared/src/iosMain/cinterop/UIKitSheetBridge.h` |
 | 下拉选单 | `.../feature/shell/AppleMenuPicker.kt`（iOS：`shared/src/iosMain/.../feature/shell/AppleMenuPicker.ios.kt`） |
+| 分段控件与作业筛选 | `.../feature/assignment/AssignmentFilterControls.kt`（`AppleSegmentedControl`） |
+| 列表回到顶部按钮 | `.../feature/assignment/AssignmentListWithScrollToTop.kt`（iOS：`shared/src/iosMain/.../feature/assignment/AssignmentScrollToTopButton.ios.kt`） |
+| 桌面文件拖放 | `.../files/FileDropTarget.kt`、`shared/src/desktopMain/.../files/LocalFileRead.kt` |
 | 警告框 | `.../feature/shell/AppleAlert.kt`、`shared/src/iosMain/.../IosNativeAlertPresentation.kt` |
 | 页内搜索 | `.../feature/shell/PageSearch.kt` |
 | iOS 宿主：栏内按钮、SF Symbol 映射、顶栏玻璃、原生滚动 | `multiplatform/iosApp/iosApp/ContentView.swift` |
@@ -324,4 +329,4 @@ Apple 的八条设计原则（Purpose / Agency / Responsibility / Familiarity / 
 | 课程类别色 | `.../feature/course/CourseCategoryPalette.kt` |
 | 接入示例：浮动胶囊、页头随列表滚动 | `.../feature/library/LibraryScreen.kt` |
 | 接入示例：最简玻璃顶栏页 | `.../feature/changelog/ChangelogWorkspace.kt` |
-| 历史决策与实机证据 | `history_full.md`（检索“M17 Liquid”“顶栏玻璃”“下拉刷新”），`docs/migration/m17-apple-liquid-glass-shell-plan.md`（其中 2026-09-19 条目是实验记录，以 2026-09-20 更正为准） |
+| 历史决策与实机证据 | `history_full.md`（检索“M17 Liquid”“顶栏玻璃”“下拉刷新”），`docs/archive/migration/m17-apple-liquid-glass-shell-plan.md`（其中 2026-09-19 条目是实验记录，以 2026-09-20 更正为准） |

@@ -20,7 +20,7 @@ GitHub 保持既有 Releases 列表首条非 draft 逻辑（包括紧急修复 p
 
 先安装功能分支产物（旧 App 没有双源选择），在设置选“自动选择”，阻断 `api.github.com` 后手动检查，约 5 秒后应显示 Gitee 2.0 测试条目，“下载安装包”打开 Gitee 对应平台直链。再选“Gitee”验证不等待 GitHub；选“GitHub”应检查失败。下载内容须与 Actions 原始产物哈希一致。测试不能证明 SideStore 重签/真机安装、Windows 实机运行、所有运营商或未来 Gitee 匿名策略。
 
-回退：撤回本 PR；旧设置键会被旧代码忽略。Gitee 镜像配置及上传限制见 PR1 的 `docs/updates/gitee-mirror.md`。
+回退：撤回本 PR；旧设置键会被旧代码忽略。Gitee 镜像配置及上传限制见 PR1 的 `docs/build/gitee-mirror.md`。
 
 ## 本地验证
 
