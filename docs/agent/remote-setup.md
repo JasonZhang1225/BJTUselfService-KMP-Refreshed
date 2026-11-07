@@ -9,7 +9,7 @@ MCP 工具、Skill 与本机 CLI 共用的查询参数和返回结构见同目�
 所有示例均为虚构数据，数据库在内存中，重启重置。它不读取 App 的真实缓存、DPAPI 或学校账号。
 预览拥有者鉴权由回环开发服务器处理；此服务器不能用作线上部署入口。
 
-`plugin/` 为本地开发插件。使用目标宿主支持的本地插件导入流程选择该目录后，应能发现 11 个工具。
+`plugin/` 为本地开发插件。使用目标宿主支持的本地插件导入流程选择该目录后，应能发现 13 个工具。
 也可用 JSONL 向 `node plugin/server/stdio.mjs` 输入 `initialize`、`tools/list` 和 `tools/call` 验证。
 默认连接本地虚构预览；仅在需要受控远程调试时，在进程环境配置 `BJTU_REMOTE_SITE_URL`、
 `BJTU_REMOTE_OWNER_TOKEN`、`BJTU_REMOTE_PLATFORM_ACCESS`。凭据不能放入插件包或命令参数。
@@ -73,7 +73,7 @@ Windows 只留托盘、macOS 不开窗口（点程序坞图标打开）；手动
 三者是独立动作。清数据但不关电脑同步，会在下次上传重新出现。电脑离线时本地改范围不会瞬间通知云端。
 
 仓库 Agent 实现已通过 PR #50 合入 main；新 MSI 已本地生成，未替换安装版或正式发版。用户授权的维护者私人 Site 与同一插件已发布；
-Windows Ktor 对该实例的机器访问和虚构数据协议往返通过，具体身份和证据见同目录验证报告。
+Windows Ktor 对该实例的机器访问和虚构数据协议往返通过，具体身份和证据见 `../archive/agent/windows-local-verification-2026-10-21.md`。
 真实安装版配对、学校账号刷新与网页自动完成状态已验证。canonical 插件 1.0.2 的 Skill 沿用工具返回的已处理日期时间，禁止重复移日；
 用户 ChatGPT 测试仍反馈物理在线 DDL 漏项，未定位根因。iPhone 完整正确性、第二真实用户实例、连续半小时运行、
 锁屏/重启、实际托盘与开机启动、新 MSI 升级和 Apple 原生编译仍需分别验证。

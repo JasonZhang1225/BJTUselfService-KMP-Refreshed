@@ -399,7 +399,7 @@ private fun homeworkBody(dataset: AgentDataset, query: AgentQuery, now: Long): B
             if (query.detail) {
                 item.content?.let { put("content", it) }
                 item.url?.let { put("url", it) }
-                item.attachments?.let { put("attachments", agentDatasetJson.encodeToJsonElement(ListSerializer(AgentAttachmentInfo.serializer()), it)) }
+                item.attachments?.takeIf { it.isNotEmpty() }?.let { put("attachments", agentDatasetJson.encodeToJsonElement(ListSerializer(AgentAttachmentInfo.serializer()), it)) }
             }
         }
     })

@@ -2,7 +2,7 @@
 
 - **审计日期**：2026-09-29
 - **审计对象版本**：`1.8.0`（Build 21；`iosApp/iosApp/Info.plist` `CFBundleShortVersionString`；HEAD `413a47a`）
-- **审计性质**：对照 [2026-09-17](BJTU-KMP-Security-Audit-GLM-2026-09-17.md) 与 [2026-09-21](BJTU-KMP-Security-Audit-GLM-2026-09-21.md)（含 09-23 P1/P2 实施记录）的**重新扫描**。上一轮中危项声称已修，本轮核对其是否回退，并覆盖 09-21 之后合入的 Liquid / 1.7.9 / 1.8.0 改动。
+- **审计性质**：对照 [2026-09-17](security-audit-2026-09-17.md) 与 [2026-09-21](security-audit-2026-09-21.md)（含 09-23 P1/P2 实施记录）的**重新扫描**。上一轮中危项声称已修，本轮核对其是否回退，并覆盖 09-21 之后合入的 Liquid / 1.7.9 / 1.8.0 改动。
 - **审计方式**：纯只读（源码 + git 跟踪核查 + OSV.dev 按精确 Maven 坐标查询）。本轮**未**修改业务代码；本文件是审计产出。
 - **审计范围**：`multiplatform/`（活跃 KMP：Android / iOS / macOS / Windows）。冻结根 `app/` 只确认历史高危仍在、且不被当前发布流水线打出。
 
@@ -202,7 +202,7 @@ KMP 工程仍无 TrustManager / hostnameVerifier / trustAll。明文 HTTP 仍锁
 
 ## 七、audit 分支实施记录（2026-09-29）
 
-只读扫描完成后检出 `audit/1.8.0-2026-09-29`，修了 M1–M5 / L12 / L17，并追加课程日历精确范围替换。代码、相关自动化测试与平台编译证据已纳入本分支提交；设备相关行为仍待真机验收。给人看的汇总：[BJTU-KMP-Audit-Fix-Summary-2026-09-29.md](BJTU-KMP-Audit-Fix-Summary-2026-09-29.md)。
+只读扫描完成后检出 `audit/1.8.0-2026-09-29`，修了 M1–M5 / L12 / L17，并追加课程日历精确范围替换。代码、相关自动化测试与平台编译证据已纳入本分支提交；设备相关行为仍待真机验收。给人看的汇总：[audit-fix-summary-2026-09-29.md](audit-fix-summary-2026-09-29.md)。
 
 | 项 | 改动 | 验证 |
 |---|---|---|

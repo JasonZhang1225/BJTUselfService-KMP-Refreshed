@@ -3,7 +3,7 @@
 `DESIGN.md` 定稿时，现有代码里还有一批不符合规范的历史写法。它们目前能用，只是风格不统一，所以定为**遗留**：新代码不得照抄，旧代码按本清单分批整改。
 
 - 盘点基线：`main` `68339b94`（2026-11-02），用 `rg` 扫描 `multiplatform/shared/src/commonMain`。行号会随后续提交漂移，动手前先重新 `rg` 一遍确认。
-- 2026-11-02 恢复：本文原在 `docs/design-guidelines` 分支（快照 `c5bfb763`），随本地分支清理一度丢失，现从备份放回 `docs/plans/`，并按 `main` `d8d3d6a3` 与分支 `feat/native-dropdown-menu` 更新状态。P1-1、P1-2 已随 PR #92 合入 `main`；P2-1 的课件、回放列表、回放播放与下载、邮箱在 `feat/native-dropdown-menu` 处理（未合入）。
+- 2026-11-02 恢复：本文原在 `docs/design-guidelines` 分支（快照 `c5bfb763`），随本地分支清理一度丢失，现归档至 `docs/archive/plans/`，并按 `main` 更新状态。P1-1、P1-2 已随 PR #92 合入 `main`；P2-1 的课件、回放列表、回放播放与下载、邮箱已随 PR #95 合入 `main`。
 - 每一批单独开 `fix/…` 或 `chore/…` 分支和 PR，不和功能开发混在一起；一个 PR 只做一类整改，便于回归和回退。
 - 整改按 `DESIGN.md` 执行，PR 描述回答 `DESIGN.md` 第 14 节自查清单，并附浅色/深色、文字放大的前后对比截图（截图避开个人信息）。
 - 完成一项就在本文勾掉，写上 PR 号；全部完成后把本文件的结论移入 `history_full.md`。
@@ -66,15 +66,15 @@ PR #92 Codex review 修正：物理在线最终提交核对 sheet 曾误传 `sho
 
 | 状态 | 页面 | 现状 | 整改 |
 | --- | --- | --- | --- |
-| [x] | 邮箱一级页 `AppSection.MAILBOX`（分支 `feat/native-dropdown-menu`，未合入） | 已开 `scrollUnderTopBar`。紧凑端邮件列表改为 `TopScrollLazyColumn`：文件夹下拉选单（`AppleMenuPickerCard`，副标题为未读数）、“共 N 封”、失败横幅、邮件和“加载更多”都是列表项；原“切换”文字按钮 + Material 下拉删除。宽屏三栏、加载/会话失效/内嵌写信只补顶部净空，宽屏未实机回归。 |
-| [x] | 回放播放与下载 `PlaybackDetailRoute`（分支 `feat/native-dropdown-menu`，未合入） | 已开 `scrollUnderTopBar`，正文改用 `TopScrollColumn` 并消费顶/底净空，画面预览滚动时穿到玻璃栏后（iOS 模拟器已看）。该页内的“下载任务”视图只补顶部净空，未接玻璃。 |
+| [x] | 邮箱一级页 `AppSection.MAILBOX`（已完成，PR #95 合入 `main`） | 原先未开 `scrollUnderTopBar`，紧凑端用“切换”文字按钮 + Material 下拉切换文件夹 | 已开 `scrollUnderTopBar`。紧凑端邮件列表改为 `TopScrollLazyColumn`：文件夹下拉选单（`AppleMenuPickerCard`，副标题为未读数）、“共 N 封”、失败横幅、邮件和“加载更多”都是列表项；原“切换”文字按钮 + Material 下拉删除。宽屏三栏、加载/会话失效/内嵌写信只补顶部净空，宽屏未实机回归。 |
+| [x] | 回放播放与下载 `PlaybackDetailRoute`（已完成，PR #95 合入 `main`） | 原先未开 `scrollUnderTopBar`，正文未用 `TopScrollColumn` | 已开 `scrollUnderTopBar`，正文改用 `TopScrollColumn` 并消费顶/底净空，画面预览滚动时穿到玻璃栏后（iOS 模拟器已看）。该页内的“下载任务”视图只补顶部净空，未接玻璃。 |
 
 以下页面现在用 `staticTopBar = true`（内容滚不进栏后）。`DESIGN.md` 要求优先把固定头改成列表首项，逐个评估能否改：
 
 | 状态 | 页面 | 评估方向 |
 | --- | --- | --- |
 | [ ] | 课程表 `AppSection.SCHEDULE` | 色块概览是不可滚动的全览表格，保留现状；按日列表视图评估能否接入玻璃。 |
-| [x] | 课件 `AppSection.COURSEWARE`、回放列表 `AppSection.PLAYBACK`（分支 `feat/native-dropdown-menu`，未合入） | 两页改为 `scrollUnderTopBar = true`。紧凑端与更新日志同一层级：横幅、课程下拉选单（`AppleMenuPickerCard`，`DESIGN.md` 6.1）、目录/课节标题和列表都在同一个 `TopScrollLazyColumn` 里；“点击此处选择课程”按钮与选课 sheet 删除；回放默认选第一门课。宽屏仍是侧栏列表，只补了顶部净空。剩余直接 `LazyColumn`：`CoursewareScreen.kt` 3 处（未接入页面的 `CoursewareCoursePickerList` 探针、宽屏两栏）、`PlaybackWorkspace.kt` 3 处（宽屏课程/课节栏、下载任务页），都不是紧凑端主滚动。下载任务页仍不随顶栏玻璃，待评估。回放默认选课曾因 `LaunchedEffect` 以 `courseId` 为键、`showCourse` 先改 `courseId` 而取消自身请求，停在“正在读取课节…”，已改为在页面 scope 启动。 |
+| [x] | 课件 `AppSection.COURSEWARE`、回放列表 `AppSection.PLAYBACK`（已完成，PR #95 合入 `main`） | 两页改为 `scrollUnderTopBar = true`。紧凑端与更新日志同一层级：横幅、课程下拉选单（`AppleMenuPickerCard`，`DESIGN.md` 6.1）、目录/课节标题和列表都在同一个 `TopScrollLazyColumn` 里；“点击此处选择课程”按钮与选课 sheet 删除；回放默认选第一门课。宽屏仍是侧栏列表，只补了顶部净空。剩余直接 `LazyColumn`：`CoursewareScreen.kt` 3 处（未接入页面的 `CoursewareCoursePickerList` 探针、宽屏两栏）、`PlaybackWorkspace.kt` 3 处（宽屏课程/课节栏、下载任务页），都不是紧凑端主滚动。下载任务页仍不随顶栏玻璃，待评估。回放默认选课曾因 `LaunchedEffect` 以 `courseId` 为键、`showCourse` 先改 `courseId` 而取消自身请求，停在“正在读取课节…”，已改为在页面 scope 启动。 |
 | [ ] | 教室详情、教室占用详情（选中教学楼后） | 节次/日期选择头较高，改成首项后注意横屏矮视口。 |
 
 验收：iOS 模拟器确认顶部时栏透明、上滑出现玻璃、短列表回弹时也有玻璃、顶栏下没有纯色带；Android/桌面无回归。

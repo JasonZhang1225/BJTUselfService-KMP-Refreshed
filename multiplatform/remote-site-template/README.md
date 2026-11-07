@@ -14,11 +14,11 @@ Windows 上的交大自由行主动连接它，上报快照、领取即时任务
 | **owner-private Site 的机器访问（平台门槛）** | 维护者独立实例已用 Windows Ktor 实测；新实例仍须验证 `OAI-Sites-Authorization` 与应用设备授权两层边界 |
 | 拥有者身份 | Sites 身份头匹配机密 `OWNER_USER_ID`；确认 owner-private 后可显式开启首次可信身份固定；`OWNER_TOKEN` Bearer 用于受控机器调用。服务访问令牌不能固定拥有者身份 |
 | 运行时适配 | Workers ESM 入口，D1 绑定 `DB`；`npm run build` 生成 `dist/`；维护者实例已部署并完成真实 D1 协议往返 |
-| MCP 工具、Skill | 11 个工具，与电脑端 `bjtu` 命令行同参数同结构（见仓库 `docs/agent/agent-query-contract.md`）；云端优先查询 Skill、本地 stdio 开发插件；聊天宿主工具接入须单独验收 |
+| MCP 工具、Skill | 13 个工具，与电脑端 `bjtu` 命令行同参数同结构（见仓库 `docs/agent/agent-query-contract.md`）；云端优先查询 Skill、本地 stdio 开发插件；聊天宿主工具接入须单独验收 |
 
 **电脑端远程上传默认关闭**。每个新实例通过平台门槛验证后，由用户自行配对并授权来源；初次联调用虚构数据，不得为了绕过门槛把 Site 或数据 API 改成匿名公开。
 
-模板本身不携带任何部署身份。具体实例的部署与验证状态记录在仓库的 `docs/agent/windows-local-verification-2026-10-21.md`，
+模板本身不携带任何部署身份。具体实例的部署与验证状态记录在仓库的 `docs/archive/agent/windows-local-verification-2026-10-21.md`，
 不能用某个维护者实例的连通结果保证新用户实例也已连通。
 
 ## 多设备（0.4.0）
@@ -60,7 +60,7 @@ Windows 上的交大自由行主动连接它，上报快照、领取即时任务
 | `GET /api/v1/owner/tasks/{id}` | 拥有者 | 任务状态与结果；未完成时为 `queued`/`running`，不能当作已取得最新 |
 | `POST /api/v1/owner/devices/{id}/revoke` | 拥有者 | 撤销设备，未完成任务置为 `revoked` |
 | `PUT /api/v1/owner/queries` | 拥有者 | `{"paused": true}` 暂停查询（快照读取与建任务返回 423） |
-| `DELETE /api/v1/owner/data` | 拥有者 | 删除全部快照与任务（设备绑定另行撤销） |
+| `DELETE /api/v1/owner/data` | 拥有者 | 删除全部快照、附件与任务（设备绑定另行撤销） |
 
 任务状态：`queued → running → succeeded/partial/failed`；未领取 5 分钟或租约与重试（3 次）耗尽为 `expired`；撤销绑定为 `revoked`。
 网络是至少一次交付：电脑端靠租约 ID 与本地结果记录去重，传结果失败只重传结果，不重做学校刷新。
@@ -105,8 +105,8 @@ npm run dev # http://127.0.0.1:4173，仅虚构数据、内存数据库；重启
 
 MCP `POST /mcp` 支持 `server/discover`、`initialize`、`tools/list`、`tools/call`、`ping`。
 工具为 `get_status`、`get_homework`、`get_calendar`、`get_exams`、`get_grades`、`get_mail`（读云端快照，与电脑
-`bjtu` 命令同参数同结构，引擎在 `src/agent-query.js`），以及 `request_live_query`、`request_refresh_all`、
-`request_citel_problem`、`request_mail_message`、`get_request_result`（创建/读取电脑任务）。
+`bjtu` 命令同参数同结构，引擎在 `src/agent-query.js`），`get_assignment_attachment`（按 `assignmentId` 与 `attachmentId` 读取已上传附件，返回包含 Base64 `blob` 的 MCP resource，非查询引擎 JSON 结构），以及 `request_live_query`、`request_refresh_all`、
+`request_citel_problem`、`request_assignment_detail`、`request_mail_message`、`get_request_result`（创建/读取电脑任务）。
 普通查询不创建任务；即时查询参数是 `command` + 对应查询工具的参数 + `freshness` + 幂等键。
 `queued/running` 仅表示未完成，结果需再次查询。CITEL 获取全文须显式 `includeFullText=true`。
 改查询参数、字段或文案后运行 `node scripts/update-agent-query-fixture.mjs`，审阅 `fixtures/agent-query/expected.json` 的差异；

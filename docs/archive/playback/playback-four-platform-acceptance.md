@@ -1,19 +1,19 @@
 # 课程回放四平台审查标准与后续工作
 
-更新：2026-10-31。适用分支：`feat/courseware-fallback-playback`。
+更新：2026-11-07。适用分支：`main`（PR #81、#83、#95、#96 已合入）。
 
 本文以 Windows 已通过的课程回放验收为基准，统一各端结果、证据和收尾标准。统一的是用户能完成的事情与数据正确性，不强制使用相同播放器、后台机制或文件路径。
 
 **产品范围（2026-10-31）**：录像**下载与合成仅 Windows / macOS**（`playbackRecordingDownloadAvailable`）；**Android / iOS 只保留在线播放**。课件文件下载不受影响。移动端原生下载/合成代码可暂留，但不作为产品入口或结项门槛。
 
-macOS 下载+播放的分阶段任务见 [playback-macos-acceptance.md](playback-macos-acceptance.md)。Android 旧下载性能计划保留为历史参考，不再驱动移动端下载交付。
+macOS 下载+播放的分阶段任务归档在 [playback-macos-acceptance.md](playback-macos-acceptance.md)。Android 旧下载性能计划保留为历史参考，不再驱动移动端下载交付。
 
 ## 1. 当前结论与文档优先级
 
 | 平台 | 当前结论 | 下一步 |
 | --- | --- | --- |
-| Windows | **下载+播放本轮验收完成，用户已确认结项** | 代码已在功能分支；保留兼容性边界，不重开稳定性大项 |
-| macOS | P0/P1 审查证据已齐；**真·`compose-indexed` 已落地**（边下边合等效例外已撤销）；**待用户确认结项** | 确认单 `.artifacts/macos-playback-p1/ACCEPTANCE-DECISION.md`；合主干/发版另批 |
+| Windows | **下载+播放本轮验收完成，用户已确认结项**（PR #81 合入 `main`） | 保留兼容性边界，不重开稳定性大项 |
+| macOS | P0/P1 审查证据已齐；**真·`compose-indexed` 与边下边合（progressive）已落地并合入 `main`**（PR #83、#95、#96） | 已合入主干；发版另批 |
 | Android | 产品侧仅在线播放；旧整节下载证据为历史 | 验收 App 内播放/预览/错误态；下载 P0/P1 **取消作为产品交付** |
 | iOS | 产品侧仅在线播放；下载/合成/后台活动实现不进入产品结项 | 验收 WKWebView 播放/预览/返回；下载整节与 AAC 合成差距 **不再阻塞产品** |
 

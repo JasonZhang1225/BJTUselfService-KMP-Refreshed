@@ -92,18 +92,6 @@ internal object BundledChangelog {
                 ChangelogItem(null, "旧版升级后暂时关闭尚未配置独立账号的物理在线，避免持续同步失败。"),
             )),
         )),
-        ChangelogRelease("debug-1.8.5-EmergencyFix2", "1.8.5-EmergencyFix2（调试构建）", listOf(
-            ChangelogSection("新增", listOf(
-                ChangelogItem(null, "首页数据变动补齐 CITEL、物理实验与演示实验。"),
-            )),
-            ChangelogSection("优化", listOf(
-                ChangelogItem(null, "课程平台入口失败时自动尝试备用入口。"),
-            )),
-            ChangelogSection("修复", listOf(
-                ChangelogItem(null, "修复 Android 平板小窗下账号设置无法打开和输入。"),
-                ChangelogItem(null, "修复 Android 课表小组件的配色与重复刷新后透明度异常。"),
-            )),
-        )),
         ChangelogRelease("v1.8.4-KMP", "1.8.4-KMP", listOf(
             ChangelogSection("新增", listOf(
                 ChangelogItem(null, "新增物理演示实验，预约安排进入首页。"),
@@ -265,17 +253,6 @@ internal object BundledChangelog {
             ChangelogSection("修复", listOf(
                 ChangelogItem(null, "修复首页重试、进入作业页时重复同步及失败提示意外消失的问题。"),
                 ChangelogItem(null, "修正次日零点截止作业在首页的日期显示。"),
-            )),
-        )),
-        ChangelogRelease("v1.0.0-gitee-test", "1.0.0-gitee-test（更新源测试）", listOf(
-            ChangelogSection("新增", listOf(
-                ChangelogItem(null, "增加 GitHub 与 Gitee 双更新源测试，可选择更新源并下载当前平台安装包。"),
-            )),
-            ChangelogSection("优化", listOf(
-                ChangelogItem(null, "无。"),
-            )),
-            ChangelogSection("修复", listOf(
-                ChangelogItem(null, "无。"),
             )),
         )),
     )

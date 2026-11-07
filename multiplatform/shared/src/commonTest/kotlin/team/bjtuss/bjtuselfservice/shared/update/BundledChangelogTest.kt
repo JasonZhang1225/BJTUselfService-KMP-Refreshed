@@ -8,8 +8,7 @@ class BundledChangelogTest {
         assertEquals(entries.size, entries.map { it.tag }.distinct().size)
         assertEquals("v2.0.0-KMP", entries.first().tag)
         assertTrue(entries.first().label.contains("草稿"))
-        assertTrue(entries.single { it.tag == "debug-1.8.5-EmergencyFix2" }.label.contains("调试"))
-        assertTrue(entries.single { it.tag == "v1.0.0-gitee-test" }.label.contains("测试"))
+        assertTrue(entries.any { it.tag == "v1.8.6-KMP" })
         assertTrue(entries.any { it.tag == "v1.8.5-EmergencyFix2" })
     }
 
