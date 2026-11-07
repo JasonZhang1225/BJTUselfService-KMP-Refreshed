@@ -38,6 +38,8 @@
 | `bjtu cache read <courses\|homework\|exams\|grades\|citel> [过滤参数]` | 否 | 只读缓存。别名：`bjtu courses --today/--week N/--date`、`bjtu homework --pending` |
 | `bjtu calendar [--today\|--week [N]\|--from D --to D] [--ics <文件>]` | 否 | **聚合日程**：把所有带时间的东西排进同一条按时间排序的时间线（见下） |
 | `bjtu homework [--pending] [--source course\|phyvlab\|citel] [--all]` | 否 | **三个来源聚合**：课程平台、物理在线、CITEL（见下） |
+| `bjtu homework show <id> [--out <新目录>]` | 是 | 课程平台作业的完整要求、老师附件、已交文件和用于命名的学号姓名；`--out` 下载老师附件。仅本机（2026-11 新增） |
+| `bjtu homework submit <id> --file <路径> [--as <提交文件名>] … [--note 说明] [--replace] [--yes]` | 是 | 提交课程平台作业：默认只预览，`--yes` 才提交，已交过的还要 `--replace`。物理在线和 CITEL 不支持，也不进远程插件（2026-11 新增） |
 | `bjtu cache update [数据源…]` | 是 | 后台登录后同步，返回逐项成功/失败；部分失败时保留旧缓存 |
 | `bjtu citel show <任务id>` / `bjtu citel export <id\|--all> --out <目录>` | 按需 | 题面和测试用例的 Markdown（见下） |
 | `bjtu agent install\|uninstall\|doctor` | 否 | 安装/移除 Skill 与启动脚本，检查环境 |
@@ -62,9 +64,9 @@
 - Skill 里写明：问“今天/这周有什么安排”时优先用 `calendar`，只问课表时才用 `courses`。
 
 约束：
-- 不提供任何写学校数据的命令（交作业、CITEL 提交、发邮件）。Skill 里也写明这一点。
+- 写学校数据的命令只有一条例外：本机 CLI 的 `homework submit --yes`（仅课程平台，用户明确要求才用，不进远程插件）。CITEL 提交、物理在线提交、发邮件都不提供，Skill 里也写明这一点。
 - 输出里不出现密码、Cookie、令牌；不接受 `--password` 参数。
-- 退出码：0 成功；2 没有缓存或没登录过；3 登录失败；4 部分同步失败。
+- 退出码：0 成功；2 没有缓存或没登录过；3 登录失败；4 部分同步失败或提交失败；5 用户没允许读取；6 App 开着但没响应；7 已交给执行者但结果不明；8 命令行与 App 版本不一致；9 作业已提交过，需确认覆盖（`--replace`）；64 参数错误。
 - JSON 带 `schemaVersion: 1`。
 
 ### 代码结构

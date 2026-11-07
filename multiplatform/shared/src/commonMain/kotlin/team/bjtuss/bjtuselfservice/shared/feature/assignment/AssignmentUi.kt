@@ -88,6 +88,7 @@ fun AssignmentUploadNote(text: String) {
 /**
  * 待提交文件分组：远端已提交文件（可标记移除）+ 本地新选文件 + 末行“添加文件”。
  * 一个文件都没有时显示整块可点的选择区。移除只作用于选择列表，点主操作前不改动远端。
+ * 桌面端（[fileDropSupported]）这两种状态都接受从访达/资源管理器拖入的文件，经 [onDrop] 交回调用方。
  */
 @Composable
 fun AssignmentUploadFiles(
@@ -100,8 +101,18 @@ fun AssignmentUploadFiles(
     removed: Set<String> = emptySet(),
     onToggleExisting: (String) -> Unit = {},
     singleFile: Boolean = false,
+    onDrop: ((HomeworkFilePickResult) -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
+    var dropHovered by remember { mutableStateOf(false) }
+    val dropEnabled = onDrop != null && fileDropSupported && pickEnabled && !busy
+    val dropModifier = Modifier.fileDropTarget(
+        enabled = dropEnabled,
+        onHoverChange = { dropHovered = it },
+        onDrop = { result -> onDrop?.invoke(result) },
+    )
+    val areaBorder = if (dropHovered) BorderStroke(2.dp, colors.primary) else null
+    val areaColor = if (dropHovered) colors.primaryContainer.copy(alpha = 0.55f) else colors.surfaceVariant.copy(alpha = 0.45f)
     val total = existing.size - existing.count { it in removed } + pending.size
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
         Text("提交文件", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
@@ -115,9 +126,9 @@ fun AssignmentUploadFiles(
             onClick = onPick,
             enabled = pickEnabled && !busy,
             shape = RoundedCornerShape(16.dp),
-            color = colors.surfaceVariant.copy(alpha = 0.45f),
-            border = BorderStroke(1.dp, colors.outlineVariant),
-            modifier = Modifier.fillMaxWidth(),
+            color = areaColor,
+            border = areaBorder ?: BorderStroke(1.dp, colors.outlineVariant),
+            modifier = Modifier.fillMaxWidth().then(dropModifier),
         ) {
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 28.dp),
@@ -126,7 +137,12 @@ fun AssignmentUploadFiles(
             ) {
                 Text("＋", style = MaterialTheme.typography.headlineMedium,
                     color = if (pickEnabled) colors.primary else colors.onSurfaceVariant)
-                Text(if (pickEnabled) "选择文件" else "当前平台未接入文件选择器",
+                Text(when {
+                    dropHovered -> "松开以添加文件"
+                    dropEnabled -> "点击选择或拖入文件"
+                    pickEnabled -> "选择文件"
+                    else -> "当前平台未接入文件选择器"
+                },
                     style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium,
                     color = if (pickEnabled) colors.primary else colors.onSurfaceVariant)
                 if (pickEnabled) {
@@ -137,8 +153,8 @@ fun AssignmentUploadFiles(
         }
         return
     }
-    Surface(shape = RoundedCornerShape(16.dp), color = colors.surfaceVariant.copy(alpha = 0.45f),
-        modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = RoundedCornerShape(16.dp), color = areaColor, border = areaBorder,
+        modifier = Modifier.fillMaxWidth().then(dropModifier)) {
         Column {
             var first = true
             existing.forEach { name ->
@@ -171,7 +187,7 @@ fun AssignmentUploadFiles(
             if (pickEnabled) {
                 UploadRowDivider()
                 Surface(onClick = onPick, enabled = !busy, color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (singleFile) "更换文件" else "添加文件",
+                    Text(if (dropHovered) "松开以添加文件" else if (singleFile) "更换文件" else "添加文件",
                         color = if (busy) colors.onSurfaceVariant else colors.primary,
                         style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp))
@@ -240,6 +256,14 @@ fun HomeworkFilePickResult.Failed.pickFeedback(): String = when (reason) {
     HomeworkFileGatewayFailure.IO -> "无法读取所选文件，请重新选择。"
 }
 
+const val UPLOAD_TOO_LARGE_FEEDBACK = "文件太大了：一次最多添加 200 MB，请压缩或分开添加。"
+
+/** 拖放失败的就地说明：拖入的是文件夹，或文件读不出来。 */
+fun HomeworkFilePickResult.Failed.dropFeedback(): String = when (reason) {
+    HomeworkFileGatewayFailure.PERMISSION_DENIED -> "没有读取拖入文件的权限，请换一个位置的文件。"
+    else -> "无法读取拖入的内容。文件夹不能直接提交，请压缩成一个文件后再拖入。"
+}
+
 /** 同名文件以后选的为准，避免同一份作业重复上传。 */
 fun mergePickedFiles(current: List<HomeworkFileContent>, picked: List<HomeworkFileContent>): List<HomeworkFileContent> {
     val latest = picked.distinctBy { it.fileName }
@@ -266,6 +290,10 @@ fun AssignmentFilesEditor(
     var added by remember(existing, revision) { mutableStateOf<List<HomeworkFileContent>>(emptyList()) }
     var removed by remember(existing, revision) { mutableStateOf<Set<String>>(emptySet()) }
     var feedback by remember { mutableStateOf<String?>(null) }
+    fun addFiles(files: List<HomeworkFileContent>) {
+        added = if (singleFile) listOf(files.last()) else mergePickedFiles(added, files)
+        feedback = null
+    }
     AssignmentUploadNote(note)
     AssignmentUploadFiles(
         pending = added,
@@ -275,11 +303,9 @@ fun AssignmentFilesEditor(
             scope.launch {
                 when (val picked = fileGateway.pickFiles()) {
                     HomeworkFilePickResult.Cancelled -> Unit
+                    HomeworkFilePickResult.TooLarge -> feedback = UPLOAD_TOO_LARGE_FEEDBACK
                     is HomeworkFilePickResult.Failed -> feedback = picked.pickFeedback()
-                    is HomeworkFilePickResult.Selected -> {
-                        added = if (singleFile) listOf(picked.files.last()) else mergePickedFiles(added, picked.files)
-                        feedback = null
-                    }
+                    is HomeworkFilePickResult.Selected -> addFiles(picked.files)
                 }
             }
         },
@@ -288,6 +314,14 @@ fun AssignmentFilesEditor(
         removed = removed,
         onToggleExisting = { name -> removed = if (name in removed) removed - name else removed + name },
         singleFile = singleFile,
+        onDrop = { dropped ->
+            when (dropped) {
+                HomeworkFilePickResult.Cancelled -> Unit
+                HomeworkFilePickResult.TooLarge -> feedback = UPLOAD_TOO_LARGE_FEEDBACK
+                is HomeworkFilePickResult.Failed -> feedback = dropped.dropFeedback()
+                is HomeworkFilePickResult.Selected -> addFiles(dropped.files)
+            }
+        },
     )
     feedback?.let { AssignmentUploadMessage(it, isError = true) }
     AssignmentUploadAction(

@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
+import team.bjtuss.bjtuselfservice.shared.files.readLocalFiles
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePreviewResult
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
@@ -53,27 +54,7 @@ class DesktopHomeworkFileGateway(
                 return HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.IO)
             }
             if (selected.isEmpty()) return HomeworkFilePickResult.Cancelled
-            return withContext(Dispatchers.IO) {
-                val context = currentCoroutineContext()
-                try {
-                    HomeworkFilePickResult.Selected(
-                        selected.map { file ->
-                            context.ensureActive()
-                            HomeworkFileContent(
-                                fileName = file.name,
-                                contentType = Files.probeContentType(file.toPath()) ?: "application/octet-stream",
-                                bytes = file.readBytes(),
-                            )
-                        },
-                    )
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: SecurityException) {
-                    HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
-                } catch (_: Exception) {
-                    HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.IO)
-                }
-            }
+            return readLocalFiles(selected)
         } finally {
             requestMutex.unlock()
         }

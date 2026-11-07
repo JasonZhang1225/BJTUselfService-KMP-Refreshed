@@ -13,12 +13,14 @@ import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentDeadlineF
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentSubmissionFilter
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.ignoredAssignmentCount
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadAction
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.UPLOAD_TOO_LARGE_FEEDBACK
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadFiles
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadMessage
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadNote
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentUploadSheet
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.mergePickedFiles
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.pickFeedback
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.dropFeedback
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.assignmentCompletionState
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentListWithScrollToTop
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCompletionFeedback
@@ -413,11 +415,24 @@ private class HomeworkTransferState(
         scope.launch {
             when (val result = fileGateway.pickFiles()) {
                 HomeworkFilePickResult.Cancelled -> Unit
+                HomeworkFilePickResult.TooLarge -> uploadFeedback = UPLOAD_TOO_LARGE_FEEDBACK
                 is HomeworkFilePickResult.Failed -> uploadFeedback = result.pickFeedback()
                 is HomeworkFilePickResult.Selected -> {
                     uploadFiles = mergePickedFiles(uploadFiles, result.files)
                     uploadFeedback = null
                 }
+            }
+        }
+    }
+
+    fun dropUploadFiles(result: HomeworkFilePickResult) {
+        when (result) {
+            HomeworkFilePickResult.Cancelled -> Unit
+            HomeworkFilePickResult.TooLarge -> uploadFeedback = UPLOAD_TOO_LARGE_FEEDBACK
+            is HomeworkFilePickResult.Failed -> uploadFeedback = result.dropFeedback()
+            is HomeworkFilePickResult.Selected -> {
+                uploadFiles = mergePickedFiles(uploadFiles, result.files)
+                uploadFeedback = null
             }
         }
     }
@@ -512,6 +527,7 @@ private fun HomeworkUploadDialog(
             pickEnabled = transfer.pickAvailable,
             onContentChange = { transfer.uploadContent = it },
             onPickFiles = transfer::pickUploadFiles,
+            onDropFiles = transfer::dropUploadFiles,
             onRemoveFile = transfer::removeUploadFile,
             onSubmit = transfer::submitUpload,
         )
@@ -1322,6 +1338,7 @@ private fun ColumnScope.UploadHomeworkContent(
     pickEnabled: Boolean,
     onContentChange: (String) -> Unit,
     onPickFiles: () -> Unit,
+    onDropFiles: (HomeworkFilePickResult) -> Unit,
     onRemoveFile: (Int) -> Unit,
     onSubmit: () -> Unit,
 ) {
@@ -1332,6 +1349,7 @@ private fun ColumnScope.UploadHomeworkContent(
         pickEnabled = pickEnabled,
         onPick = onPickFiles,
         onRemovePending = onRemoveFile,
+        onDrop = onDropFiles,
     )
     OutlinedTextField(
         value = content,

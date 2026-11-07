@@ -1,0 +1,62 @@
+package team.bjtuss.bjtuselfservice.shared.files
+
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.draganddrop.dragAndDropTarget
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draganddrop.DragAndDropEvent
+import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.awtTransferable
+import java.awt.datatransfer.DataFlavor
+import java.io.File
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+actual val fileDropSupported: Boolean = true
+
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalFoundationApi::class)
+@Composable
+actual fun Modifier.fileDropTarget(
+    enabled: Boolean,
+    onHoverChange: (Boolean) -> Unit,
+    onDrop: (HomeworkFilePickResult) -> Unit,
+): Modifier {
+    val hover by rememberUpdatedState(onHoverChange)
+    val drop by rememberUpdatedState(onDrop)
+    val scope = rememberCoroutineScope()
+    // 连续拖放时按拖入顺序读取并应用，较慢的旧文件不能盖掉后拖入的同名文件。
+    val dropOrder = remember { Mutex() }
+    val target = remember {
+        object : DragAndDropTarget {
+            override fun onEntered(event: DragAndDropEvent) = hover(true)
+            override fun onExited(event: DragAndDropEvent) = hover(false)
+            override fun onEnded(event: DragAndDropEvent) = hover(false)
+            override fun onDrop(event: DragAndDropEvent): Boolean {
+                hover(false)
+                val files = event.droppedFiles() ?: return false
+                scope.launch { dropOrder.withLock { drop(readLocalFiles(files)) } }
+                return true
+            }
+        }
+    }
+    // 拖到一半转入忙碌状态时，目标被摘掉、收不到 onExited，要自己清掉高亮。
+    LaunchedEffect(enabled) { if (!enabled) hover(false) }
+    if (!enabled) return this
+    return dragAndDropTarget(shouldStartDragAndDrop = { it.hasFiles() }, target = target)
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+private fun DragAndDropEvent.hasFiles(): Boolean =
+    awtTransferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)
+
+@OptIn(ExperimentalComposeUiApi::class)
+private fun DragAndDropEvent.droppedFiles(): List<File>? = runCatching {
+    (awtTransferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<*>)?.filterIsInstance<File>()
+}.getOrNull()?.takeIf { it.isNotEmpty() }

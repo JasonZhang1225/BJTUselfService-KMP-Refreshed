@@ -13,6 +13,10 @@ import kotlinx.coroutines.withTimeoutOrNull
 import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.agent.AgentAppLock
+import team.bjtuss.bjtuselfservice.shared.agent.AgentHomeworkExecutor
+import team.bjtuss.bjtuselfservice.shared.agent.AgentHomeworkOutcome
+import team.bjtuss.bjtuselfservice.shared.agent.AgentHomeworkRequest
+import team.bjtuss.bjtuselfservice.shared.agent.headlessIpcHomeworkRefusal
 import team.bjtuss.bjtuselfservice.shared.agent.AgentLoginOutcome
 import team.bjtuss.bjtuselfservice.shared.agent.headlessLogin
 import team.bjtuss.bjtuselfservice.shared.auth.CaptchaRecognizer
@@ -25,10 +29,12 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityCoordinator
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.sync.AppDataGraph
+import team.bjtuss.bjtuselfservice.shared.sync.AppRefreshCoordinator
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshReport
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshRequest
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshSource
+import team.bjtuss.bjtuselfservice.shared.sync.RefreshStatus
 
 /** App 等待登录完成再执行 IPC 刷新的上限（静默自动登录通常数秒）。 */
 private const val APP_SESSION_WAIT_MILLIS = 120_000L
@@ -107,6 +113,18 @@ internal class AppSessionIpcHandler(
         return RefreshIpcOutcome.Completed(coordinator.refresh(RefreshRequest(sources = sources, origin = origin)))
     }
 
+    override suspend fun homework(request: AgentHomeworkRequest, deadlineMillis: Long): AgentHomeworkOutcome {
+        val session = withTimeoutOrNull(minOf(deadlineMillis, APP_SESSION_WAIT_MILLIS)) { awaitReadySession() }
+            ?: return AgentHomeworkOutcome.Failed(RefreshIpcCode.NOT_SIGNED_IN, "App 正在运行但尚未登录。请在 App 里完成登录后重试。")
+        val repository = session.homeworkRepository
+        val coordinator = session.refreshCoordinator
+        if (repository == null || coordinator == null) {
+            return AgentHomeworkOutcome.Failed(RefreshIpcCode.NOT_SIGNED_IN, "App 会话尚未就绪。")
+        }
+        return AgentHomeworkExecutor(repository, session.profile, session.reauthenticateSession,
+            refreshHomework = { coordinator.refreshHomework() }).run(request)
+    }
+
     private suspend fun awaitReadySession(): AuthenticatedSession {
         while (true) {
             val current = sessionProvider()
@@ -115,6 +133,10 @@ internal class AppSessionIpcHandler(
         }
     }
 }
+
+private suspend fun AppRefreshCoordinator.refreshHomework(): Boolean =
+    refresh(RefreshRequest(setOf(RefreshSource.HOMEWORK), RefreshOrigin.CLI))
+        .result(RefreshSource.HOMEWORK)?.status == RefreshStatus.SUCCESS
 
 /** 无窗口执行的依赖：均由调用方从系统安全存储与已有缓存提供，不新建、不清除凭据。 */
 class HeadlessRefreshDependencies(
@@ -134,6 +156,8 @@ data class HeadlessRunResult(
     val handedOff: Boolean,
     /** 登录返回的学号与缓存账号不一致。 */
     val accountMismatch: Boolean = false,
+    /** [HeadlessRefreshHost.runHomework] 的结果；登录失败时为 null。 */
+    val homework: AgentHomeworkOutcome? = null,
 )
 
 /**
@@ -144,6 +168,8 @@ data class HeadlessRunResult(
 class HeadlessRefreshHost(private val deps: HeadlessRefreshDependencies) {
     @Volatile private var handedOff = false
     @Volatile private var runJob: Job? = null
+    /** 提交作业途中不能被 GUI 打断：取消可能停在上传之后、提交之前。 */
+    @Volatile private var handoffBlocked = false
     private val graphReady = CompletableDeferred<AppDataGraph?>()
 
     private val handler = object : RefreshIpcHandler {
@@ -154,7 +180,16 @@ class HeadlessRefreshHost(private val deps: HeadlessRefreshDependencies) {
             return RefreshIpcOutcome.Completed(graph.refreshCoordinator.refresh(RefreshRequest(sources = sources, origin = origin)))
         }
 
+        override suspend fun homework(request: AgentHomeworkRequest, deadlineMillis: Long): AgentHomeworkOutcome {
+            headlessIpcHomeworkRefusal(request)?.let { return it }
+            if (handedOff) return AgentHomeworkOutcome.Failed(RefreshIpcCode.HANDING_OFF, "正在把执行权交给 App，请稍后重试。")
+            val graph = graphReady.await()
+                ?: return AgentHomeworkOutcome.Failed(RefreshIpcCode.NOT_SIGNED_IN, "命令行自动登录失败，请打开 App 登录。")
+            return graph.homeworkExecutor().run(request)
+        }
+
         override fun handoff(): Boolean {
+            if (handoffBlocked) return false
             handedOff = true
             runJob?.cancel(CancellationException("handoff to app"))
             graphReady.complete(null)
@@ -162,7 +197,25 @@ class HeadlessRefreshHost(private val deps: HeadlessRefreshDependencies) {
         }
     }
 
-    suspend fun run(sources: Set<RefreshSource>, origin: RefreshOrigin): HeadlessRunResult {
+    suspend fun run(sources: Set<RefreshSource>, origin: RefreshOrigin): HeadlessRunResult = execute { graph ->
+        HeadlessRunResult(AgentLoginOutcome.Ok, graph.refreshCoordinator.refresh(RefreshRequest(sources = sources, origin = origin)), handedOff = false)
+    }
+
+    suspend fun runHomework(request: AgentHomeworkRequest): HeadlessRunResult {
+        handoffBlocked = request.mutates
+        return try {
+            execute { graph ->
+                HeadlessRunResult(AgentLoginOutcome.Ok, null, handedOff = false, homework = graph.homeworkExecutor().run(request))
+            }
+        } finally {
+            handoffBlocked = false
+        }
+    }
+
+    private fun AppDataGraph.homeworkExecutor() = AgentHomeworkExecutor(homeworkRepository, profile, sessionRecovery::attempt,
+        refreshHomework = { refreshCoordinator.refreshHomework() })
+
+    private suspend fun execute(action: suspend (AppDataGraph) -> HeadlessRunResult): HeadlessRunResult {
         val server = RefreshIpcServer.start(deps.cacheDirectory, RefreshExecutor.HEADLESS, handler)
         var graph: AppDataGraph? = null
         var result = HeadlessRunResult(AgentLoginOutcome.Network, null, handedOff = false)
@@ -186,8 +239,7 @@ class HeadlessRefreshHost(private val deps: HeadlessRefreshDependencies) {
                     graph = built
                     built.loadCachedState()
                     graphReady.complete(built)
-                    val report = built.refreshCoordinator.refresh(RefreshRequest(sources = sources, origin = origin))
-                    result = HeadlessRunResult(AgentLoginOutcome.Ok, report, handedOff = false)
+                    result = action(built)
                 }
             }
         } finally {
