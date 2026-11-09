@@ -39,6 +39,7 @@ internal fun AggregatedAssignmentWorkspace(
     markdown: (AggregatedAssignment) -> String,
     detailContent: @Composable (AggregatedAssignment) -> Unit,
     search: PageSearchState? = null,
+    onEnterCaptcha: (() -> Unit)? = null,
 ) {
     var filters by remember(store) { mutableStateOf(store?.load() ?: AggregateAssignmentFilters()) }
     var showFilters by remember { mutableStateOf(false) }
@@ -75,8 +76,13 @@ internal fun AggregatedAssignmentWorkspace(
                 sync.filter { it.failed }.forEach { status ->
                     item("failure:${status.source}") {
                         Box(Modifier.animateItem()) {
-                            AppErrorBanner(title = "${status.source.label} · ${status.status}",
-                                message = status.message ?: "请检查网络或登录状态后重试。", onRetry = { onRefreshSource(status.source) })
+                            val enterCaptcha = onEnterCaptcha.takeIf { status.requiresCaptcha }
+                            AppErrorBanner(
+                                title = "${status.source.label} · ${status.status}",
+                                message = status.message ?: "请检查网络或登录状态后重试。",
+                                onRetry = enterCaptcha ?: { onRefreshSource(status.source) },
+                                retryLabel = if (enterCaptcha == null) "重试" else "输入验证码",
+                            )
                         }
                     }
                 }
@@ -130,7 +136,7 @@ internal fun AggregatedAssignmentWorkspace(
         }
     }
     if (showSyncDetails) AppleSheet(onDismissRequest = onDismissSyncDetails, title = "作业同步状态") {
-        AssignmentSyncDetails(sync, onRefreshSource)
+        AssignmentSyncDetails(sync, onRefreshSource, onEnterCaptcha)
     }
 }
 
@@ -188,7 +194,11 @@ internal fun AggregateAssignmentFilterSheet(assignments: List<AggregatedAssignme
 }
 
 @Composable
-internal fun AssignmentSyncDetails(sync: List<AssignmentSourceSync>, onRefreshSource: (AssignmentSource) -> Unit) {
+internal fun AssignmentSyncDetails(
+    sync: List<AssignmentSourceSync>,
+    onRefreshSource: (AssignmentSource) -> Unit,
+    onEnterCaptcha: (() -> Unit)? = null,
+) {
         Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             sync.forEach { status ->
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -198,7 +208,9 @@ internal fun AssignmentSyncDetails(sync: List<AssignmentSourceSync>, onRefreshSo
                             Text(status.status, color = if (status.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                         }
                         if (status.busy) CircularProgressIndicator(Modifier.size(24.dp))
-                        else TextButton(onClick = { onRefreshSource(status.source) }) { Text("刷新") }
+                        else if (status.requiresCaptcha && onEnterCaptcha != null) {
+                            TextButton(onClick = onEnterCaptcha) { Text("输入验证码") }
+                        } else TextButton(onClick = { onRefreshSource(status.source) }) { Text("刷新") }
                     }
                     if (status.failed) status.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 }

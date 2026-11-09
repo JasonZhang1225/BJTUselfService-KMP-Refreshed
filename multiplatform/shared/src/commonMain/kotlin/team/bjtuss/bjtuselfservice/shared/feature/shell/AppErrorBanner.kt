@@ -34,6 +34,7 @@ fun AppErrorBanner(
     onRetry: (() -> Unit)? = null,
     onDismiss: (() -> Unit)? = null,
     dismissLabel: String = "关闭",
+    retryLabel: String = "重试",
 ) {
     Surface(
         modifier = modifier
@@ -67,7 +68,7 @@ fun AppErrorBanner(
                 )
             }
             if (onRetry != null) {
-                TextButton(onClick = onRetry) { Text("重试") }
+                TextButton(onClick = onRetry) { Text(retryLabel) }
             }
             if (onDismiss != null) {
                 TextButton(onClick = onDismiss) { Text(dismissLabel) }

@@ -484,6 +484,7 @@ internal fun HomeSyncDetailsDialog(
     canRetry: Boolean,
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
+    onEnterCaptcha: (() -> Unit)? = null,
 ) {
     // This is a status surface, not a long-form dialog. Keeping it on the
     // shared sheet path gives Android a bottom sheet, macOS a single flat
@@ -510,7 +511,7 @@ internal fun HomeSyncDetailsDialog(
             // rounded Surface here made the macOS panel look like a frame inside
             // a frame and reduced the usable width on Android.
             items.forEachIndexed { index, item ->
-                HomeSyncDetailRow(item)
+                HomeSyncDetailRow(item, onEnterCaptcha.takeIf { item.requiresCaptcha })
                 if (index != items.lastIndex) {
                     HorizontalDivider(
                         modifier = Modifier.padding(start = 36.dp),
@@ -523,7 +524,7 @@ internal fun HomeSyncDetailsDialog(
 }
 
 @Composable
-internal fun HomeSyncDetailRow(item: HomeSyncItem) {
+internal fun HomeSyncDetailRow(item: HomeSyncItem, onEnterCaptcha: (() -> Unit)? = null) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -569,6 +570,9 @@ internal fun HomeSyncDetailRow(item: HomeSyncItem) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        if (onEnterCaptcha != null) {
+            androidx.compose.material3.TextButton(onClick = onEnterCaptcha) { Text("输入验证码") }
         }
     }
 }

@@ -231,6 +231,8 @@ internal fun buildHomeSyncItems(
     physicsDemoBusy: Boolean = false,
     physicsDemoFailed: Boolean = false,
     physicsDemoReady: Boolean = false,
+    phyVlabRequiresCaptcha: Boolean = false,
+    phyVlabFailureMessage: String? = null,
 ): List<HomeSyncItem> = buildList {
     add(
         homeSyncItem(
@@ -303,7 +305,8 @@ internal fun buildHomeSyncItems(
                 failed = phyVlabFailed,
                 ready = phyVlabReady,
                 busyDetail = "正在同步物理在线安排（需要校园网）",
-            ),
+                failureDetail = phyVlabFailureMessage ?: "本轮同步失败",
+            ).copy(requiresCaptcha = phyVlabFailed && !phyVlabBusy && phyVlabRequiresCaptcha),
         )
     }
     if (citelEnabled) {
@@ -318,6 +321,7 @@ internal fun homeSyncItem(
     failed: Boolean,
     ready: Boolean,
     busyDetail: String,
+    failureDetail: String = "本轮同步失败",
 ): HomeSyncItem {
     val state = when {
         failed -> HomeSyncItemState.FAILED
@@ -326,7 +330,7 @@ internal fun homeSyncItem(
         else -> HomeSyncItemState.WAITING
     }
     val detail = when (state) {
-        HomeSyncItemState.FAILED -> "本轮同步失败"
+        HomeSyncItemState.FAILED -> failureDetail
         HomeSyncItemState.SYNCING -> busyDetail
         HomeSyncItemState.SUCCESS -> "已完成"
         HomeSyncItemState.WAITING -> "等待同步"

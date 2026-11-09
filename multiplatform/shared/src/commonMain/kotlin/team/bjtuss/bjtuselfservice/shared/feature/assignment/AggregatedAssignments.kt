@@ -122,7 +122,9 @@ class AggregateAssignmentFilterStore(private val cache: CacheStore, private val 
 }
 
 data class AssignmentSourceSync(val source: AssignmentSource, val busy: Boolean, val failed: Boolean,
-    val ready: Boolean, val cached: Boolean = false, val message: String? = null) {
+        val ready: Boolean, val cached: Boolean = false, val message: String? = null,
+    val requiresCaptcha: Boolean = false,
+) {
     val status: String get() = when {
         busy -> "同步中"
         failed -> "同步失败" + if (cached) "·正显示缓存" else ""

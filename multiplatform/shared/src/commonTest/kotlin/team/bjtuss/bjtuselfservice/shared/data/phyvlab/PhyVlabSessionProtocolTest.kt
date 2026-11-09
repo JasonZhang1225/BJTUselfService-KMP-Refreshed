@@ -4,8 +4,12 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import team.bjtuss.bjtuselfservice.shared.auth.Credentials
+import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
+import team.bjtuss.bjtuselfservice.shared.network.PhyVlabLoginSession
+import team.bjtuss.bjtuselfservice.shared.network.SchoolSessionCookie
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
@@ -97,6 +101,110 @@ class PhyVlabSessionProtocolTest {
         assertEquals("new-user", transport.requests[4].formFields["username"])
     }
 
+    @Test
+    fun configuredAccountWithCaptchaDoesNotSendPasswordInBackground() = runBlocking {
+        val transport = ProtocolQueueTransport(page(LOGIN, captchaLoginPage()))
+        val protocol = PhyVlabSessionProtocol(transport) { Credentials("lab-user", "lab-secret") }
+
+        assertEquals(PhyVlabSessionResult.CaptchaRequired, protocol.establishSession())
+        assertEquals(listOf(SchoolHttpMethod.GET), transport.requests.map { it.method })
+    }
+
+    @Test
+    fun rejectedCaptchaDoesNotSubmitOrReplayPassword() = runBlocking {
+        val isolated = ProtocolQueueTransport(page(LOGIN, captchaLoginPage()), page(VERIFY, """{"ok":false}"""))
+        val target = ProtocolQueueTransport()
+        val login = PhyVlabSessionProtocol(target).prepareManualLogin(isolated) {}
+        val account = Credentials("lab-user", "lab-secret")
+
+        assertEquals(PhyVlabSessionResult.CaptchaRejected, login.complete(account, proof()))
+        assertEquals(PhyVlabSessionResult.CaptchaRejected, login.complete(account, proof()))
+        assertEquals(listOf(LOGIN, VERIFY), isolated.requests.map { it.url })
+        assertTrue(isolated.requests.none { "password" in it.formFields })
+        assertEquals(0, target.adoptionCount)
+    }
+
+    @Test
+    fun confirmedCaptchaSubmitsPasswordOnceAndVerifiesCoursesBeforeAdoptingSession() = runBlocking {
+        val isolated = ProtocolQueueTransport(
+            page(LOGIN, captchaLoginPage()),
+            page(VERIFY, """{"ok":true}"""),
+            page(LOGIN, authenticatedHtml()),
+        ).apply { cookies = listOf(SchoolSessionCookie("MoodleSession", "session-fixture", domain = "phyvlab.bjtu.edu.cn")) }
+        val target = ProtocolQueueTransport().apply {
+            adoptionProbe = page("https://phyvlab.bjtu.edu.cn/my/courses.php", authenticatedHtml())
+        }
+        val login = PhyVlabSessionProtocol(target).prepareManualLogin(isolated) {}
+
+        assertIs<PhyVlabSessionResult.Ready>(login.complete(Credentials("lab-user", "lab-secret"), proof()))
+        assertEquals(listOf(LOGIN, VERIFY, LOGIN), isolated.requests.map { it.url })
+        assertEquals("lab-secret", isolated.requests.last().formFields["password"])
+        assertEquals(1, target.adoptionCount)
+    }
+
+    @Test
+    fun newTransportReusesSavedSessionWithoutPasswordPost() = runBlocking {
+        val vault = SessionVault()
+        val authenticatedTransport = ProtocolQueueTransport().apply {
+            cookies = listOf(SchoolSessionCookie("MoodleSession", "session-fixture", domain = "phyvlab.bjtu.edu.cn"))
+        }
+        PhyVlabSessionProtocol(authenticatedTransport, vault).rememberCurrentSession("lab-user")
+
+        val restartedTransport = ProtocolQueueTransport(page(LOGIN, captchaLoginPage())).apply {
+            adoptionProbe = page(COURSES, authenticatedHtml())
+        }
+        val restarted = PhyVlabSessionProtocol(restartedTransport, vault) { Credentials("lab-user", "lab-secret") }
+
+        assertIs<PhyVlabSessionResult.Ready>(restarted.establishSession())
+        assertEquals(1, restartedTransport.adoptionCount)
+        assertEquals(listOf(SchoolHttpMethod.GET), restartedTransport.requests.map { it.method })
+    }
+
+    @Test
+    fun savedSessionIsClearedOnlyWhenSchoolReturnsToLogin() = runBlocking {
+        val vault = SessionVault(Credentials("lab-user", "session-fixture"))
+        val transport = ProtocolQueueTransport(page(LOGIN, captchaLoginPage()), page(LOGIN, captchaLoginPage())).apply {
+            adoptionProbe = SchoolHttpResponse(503, COURSES)
+        }
+        val protocol = PhyVlabSessionProtocol(transport, vault) { Credentials("lab-user", "lab-secret") }
+
+        assertEquals(PhyVlabRemoteFailure.NETWORK, assertIs<PhyVlabSessionResult.Failed>(protocol.establishSession()).reason)
+        assertEquals(0, vault.clearCount)
+
+        transport.adoptionProbe = redirect(COURSES, LOGIN)
+        assertEquals(PhyVlabSessionResult.CaptchaRequired, protocol.establishSession())
+        assertEquals(1, vault.clearCount)
+        assertNull(vault.entry)
+        assertTrue(transport.requests.all { it.method == SchoolHttpMethod.GET })
+    }
+
+    @Test
+    fun savedSessionForDifferentPhysicalAccountIsNeverSent() = runBlocking {
+        val vault = SessionVault(Credentials("other-user", "session-fixture"))
+        val transport = ProtocolQueueTransport(page(LOGIN, captchaLoginPage())).apply {
+            adoptionProbe = page(COURSES, authenticatedHtml())
+        }
+        val protocol = PhyVlabSessionProtocol(transport, vault) { Credentials("lab-user", "lab-secret") }
+
+        assertEquals(PhyVlabSessionResult.CaptchaRequired, protocol.establishSession())
+        assertEquals(0, transport.adoptionCount)
+    }
+
+    private class SessionVault(var entry: Credentials? = null) : CredentialVault {
+        var clearCount = 0
+        override suspend fun save(credentials: Credentials) { entry = credentials }
+        override suspend fun load() = entry
+        override suspend fun clear() { clearCount++; entry = null }
+    }
+
+    private fun proof(): PhyVlabCaptchaProof = requireNotNull(PhyVlabCaptchaProof.parse(
+        """{"lot_number":"fixture","captcha_output":"fixture","pass_token":"fixture","gen_time":"1"}""",
+    ))
+
+    private fun captchaLoginPage() = loginPageHtml()
+        .replace("</form>", "<div id='aliyun-captcha-element'></div></form>")
+        .replace("</body>", "<script>initAlicom4({captchaId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'})</script></body>")
+
     private fun page(url: String, html: String) = SchoolHttpResponse(200, url, body = html.encodeToByteArray())
 
     private fun redirect(from: String, to: String) = SchoolHttpResponse(303, from, headers = mapOf("Location" to listOf(to)))
@@ -125,9 +233,29 @@ class PhyVlabSessionProtocolTest {
         </body></html>
     """.trimIndent()
 
+    private companion object {
+        const val LOGIN = "https://phyvlab.bjtu.edu.cn/login/index.php"
+        const val VERIFY = "https://phyvlab.bjtu.edu.cn/login/captcha_verify.php"
+        const val COURSES = "https://phyvlab.bjtu.edu.cn/my/courses.php"
+    }
+
     private class ProtocolQueueTransport(vararg responses: SchoolHttpResponse) : SchoolHttpTransport {
         private val queue = responses.toMutableList()
         val requests = mutableListOf<SchoolHttpRequest>()
+        var cookies: List<SchoolSessionCookie> = emptyList()
+        var adoptionProbe: SchoolHttpResponse? = null
+        var adoptionCount = 0
+
+        override suspend fun sessionCookiesFor(url: String) = cookies
+
+        override suspend fun adoptPhyVlabSession(
+            session: PhyVlabLoginSession,
+            verify: suspend (SchoolHttpResponse) -> Boolean,
+        ): Boolean {
+            val accepted = adoptionProbe?.let { verify(it) } == true
+            if (accepted) adoptionCount++
+            return accepted
+        }
 
         override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse = executeWithoutRedirects(request)
 

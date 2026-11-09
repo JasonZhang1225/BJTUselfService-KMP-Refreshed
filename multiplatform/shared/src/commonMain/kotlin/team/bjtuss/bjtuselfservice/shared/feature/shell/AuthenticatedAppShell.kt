@@ -199,6 +199,10 @@ import team.bjtuss.bjtuselfservice.shared.feature.home.HomeWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.home.LiveActivityPermissionIntroDialog
 import team.bjtuss.bjtuselfservice.shared.feature.home.rememberLiveActivityPermissionIntro
 import team.bjtuss.bjtuselfservice.shared.feature.home.homeIdleStatusText
+import team.bjtuss.bjtuselfservice.shared.auth.Credentials
+import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PHYVLAB_ACCOUNT_REJECTED_MESSAGE
+import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PHYVLAB_CAPTCHA_REQUIRED_MESSAGE
+import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabCaptchaSheet
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeSyncItem
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeSyncItemState
 import team.bjtuss.bjtuselfservice.shared.feature.home.homeSyncDialogTitle
@@ -208,6 +212,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
 import team.bjtuss.bjtuselfservice.shared.sync.AppRefreshCoordinator
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshRequest
+import team.bjtuss.bjtuselfservice.shared.sync.RefreshSource
 import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
 import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.domain.grade.CourseType
@@ -406,6 +411,12 @@ fun AuthenticatedAppShell(
             }
         }
     }
+    val phyVlabLoginMessage = when {
+        phyVlabState.captchaRequired -> PHYVLAB_CAPTCHA_REQUIRED_MESSAGE
+        phyVlabState.accountRejected -> PHYVLAB_ACCOUNT_REJECTED_MESSAGE
+        phyVlabState.accountLoginRequired -> "请在设置中配置或检查物理在线账号。"
+        else -> null
+    }
     val assignmentSync = buildList {
         add(AssignmentSourceSync(AssignmentSource.COURSE_PLATFORM, homeworkState.isLoading || homeworkState.isRefreshing,
             homeworkState.failure != null, homeworkState.source == HomeworkContentSource.NETWORK,
@@ -414,11 +425,8 @@ fun AuthenticatedAppShell(
         if (phyVlabEnabled) add(AssignmentSourceSync(AssignmentSource.PHYVLAB, phyVlabState.isLoading,
             phyVlabState.failure != null || phyVlabState.accountLoginRequired, phyVlabState.contentSource == PhyVlabContentSource.NETWORK,
             phyVlabState.contentSource == PhyVlabContentSource.CACHE,
-            phyVlabState.failureDetail ?: when {
-                phyVlabState.accountLoginRequired -> "请在设置中配置或检查物理在线账号。"
-                phyVlabState.failure != null -> "请检查校园网或重新登录物理在线。"
-                else -> null
-            }))
+            phyVlabLoginMessage ?: "请检查校园网或重新登录物理在线。".takeIf { phyVlabState.failure != null },
+            requiresCaptcha = phyVlabState.captchaRequired))
         if (citelEnabled) add(AssignmentSourceSync(AssignmentSource.CITEL, citelState.refreshing, citelState.failed,
             citelState.lastSync != null && !citelState.fromCache, citelState.fromCache, citelState.message))
     }
@@ -471,9 +479,12 @@ fun AuthenticatedAppShell(
         citelReady = citelState.lastSync != null && !citelState.fromCache,
         phyVlabEnabled = phyVlabEnabled,
         phyVlabBusy = phyVlabEnabled && phyVlabState.isLoading,
+        phyVlabRequiresCaptcha = phyVlabState.captchaRequired,
+        phyVlabFailureMessage = phyVlabLoginMessage,
         phyVlabFailed = phyVlabEnabled && (phyVlabState.failure != null || phyVlabState.accountLoginRequired),
         phyVlabReady = phyVlabEnabled &&
-            (phyVlabState.courses.isNotEmpty() || phyVlabState.agendaEvents.isNotEmpty()),
+            (phyVlabState.contentSource == PhyVlabContentSource.NETWORK ||
+                phyVlabState.courses.isNotEmpty() || phyVlabState.agendaEvents.isNotEmpty()),
     )
     val homeSyncFailureItems = homeSyncItems
         .filter { it.state == HomeSyncItemState.FAILED }
@@ -504,6 +515,35 @@ fun AuthenticatedAppShell(
         classroomIntroBannerDismissed = true
     }
     val scope = rememberCoroutineScope()
+    val refreshPhyVlabAfterLogin = {
+        val coordinator = session.refreshCoordinator
+        if (coordinator != null) {
+            coordinator.enqueue(RefreshRequest(setOf(RefreshSource.PHYVLAB), RefreshOrigin.APP))
+        } else {
+            scope.launch { phyVlabModel.refresh() }
+        }
+        Unit
+    }
+    var phyVlabCaptchaAccount by remember(session) { mutableStateOf<Credentials?>(null) }
+    var phyVlabCaptchaFromAssignments by remember(session) { mutableStateOf(false) }
+    val openPhyVlabCaptcha: (Boolean) -> Unit = { fromAssignments ->
+        scope.launch {
+            if (phyVlabCaptchaAccount == null) {
+                session.phyVlabAccountModel?.credentials()?.let { account ->
+                    phyVlabCaptchaFromAssignments = fromAssignments
+                    phyVlabCaptchaAccount = account
+                    homeSyncDialogVisible = false
+                    aggregateSyncDialogVisible = false
+                }
+            }
+        }
+    }
+    val closePhyVlabCaptcha = {
+        phyVlabCaptchaAccount = null
+        if (phyVlabCaptchaFromAssignments) aggregateSyncDialogVisible = true
+        else homeSyncDialogVisible = true
+    }
+
     // 紧凑端底栏挂在 NavDisplay 外层（与内容解耦）：一级 tab 切换时底栏实例保持存活，
     // 避免整页销毁把 NavigationBarItem 的按压水波纹掐断。
     // 内容区预留底栏高度：Material3 NavigationBar 80.dp + navigationBars 安全区。
@@ -1157,6 +1197,21 @@ fun AuthenticatedAppShell(
                 refresh()
             },
             onDismiss = { homeSyncDialogVisible = false },
+            onEnterCaptcha = { openPhyVlabCaptcha(false) },
+        )
+    }
+    phyVlabCaptchaAccount?.let { account ->
+        PhyVlabCaptchaSheet(
+            account = account,
+            prepare = phyVlabModel::prepareManualLogin,
+            onSuccess = {
+                phyVlabModel.rememberManualSession(account.username)
+                refreshPhyVlabAfterLogin()
+                closePhyVlabCaptcha()
+                true
+            },
+            onRejected = phyVlabModel::manualCredentialsRejected,
+            onDismiss = closePhyVlabCaptcha,
         )
     }
     gradeState.pendingChangeNotice?.takeUnless { blockingGuideVisible }?.let { notice ->
@@ -1807,6 +1862,7 @@ fun AuthenticatedAppShell(
                     modifier = Modifier.fillMaxSize(), expanded = expanded, fileGateway = homeworkFileGateway,
                     markdown = { item -> aggregateAssignmentMarkdown(item, homeworkState, phyVlabState, citelState) },
                     search = assignmentSearch,
+                    onEnterCaptcha = { openPhyVlabCaptcha(true) },
                     detailContent = { item ->
                         when (item.source) {
                             AssignmentSource.COURSE_PLATFORM -> HomeworkDetailWorkspace(homeworkModel, homeworkFileGateway,
@@ -2309,10 +2365,10 @@ fun AuthenticatedAppShell(
             ) {
                 session.phyVlabAccountModel?.let {
                     team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabAccountSettingsScreen(
-                        it, Modifier.fillMaxSize(), onAccountSaved = {
+                        it, phyVlabModel::prepareManualLogin, Modifier.fillMaxSize(), onAccountSaved = {
                             settingsModel.setPhyVlabEnabled(true)
+                            refreshPhyVlabAfterLogin()
                             popBackStack()
-                            scope.launch { phyVlabModel.refresh() }
                         })
                 }
             }

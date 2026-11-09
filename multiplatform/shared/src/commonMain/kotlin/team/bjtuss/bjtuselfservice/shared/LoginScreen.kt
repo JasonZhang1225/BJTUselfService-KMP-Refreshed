@@ -518,6 +518,9 @@ fun LoginRoute(
                 val secureCleared = runCatching {
                     if (fullWipe) securityCoordinator.purge() else securityCoordinator.clear()
                 }.getOrDefault(false)
+                val phyVlabSessionCleared = accountScope.isBlank() || runCatching {
+                    securityCoordinator.phyVlabSessionVault(accountScope)?.clear()
+                }.isSuccess
                 val cacheCleared = accountScope.isBlank() || runCatching {
                     cacheStore.clearAccount(accountScope)
                 }.isSuccess
@@ -525,7 +528,7 @@ fun LoginRoute(
                 val failures = buildList {
                     if (!serverSessionCleared) add("学校服务端会话")
                     if (!webDataCleared) add("网页会话")
-                    if (!secureCleared) add("系统安全存储")
+                    if (!secureCleared || !phyVlabSessionCleared) add("系统安全存储")
                     if (!cacheCleared) add("本地缓存")
                 }
                 storageMessage = failures.takeIf(List<String>::isNotEmpty)

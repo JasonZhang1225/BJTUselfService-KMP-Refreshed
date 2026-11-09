@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -67,6 +68,27 @@ class AppRefreshCoordinatorTest {
 
     private fun request(vararg sources: RefreshSource, origin: RefreshOrigin = RefreshOrigin.APP) =
         RefreshRequest(sources = sources.toSet(), origin = origin)
+
+    @Test
+    fun refreshQueuedByClosedSettingsPageCompletesInSession() = runBlocking {
+        val gate = CompletableDeferred<Unit>()
+        val physicalOnline = FakeAdapter(RefreshSource.PHYVLAB, usesSchoolSession = false, gate = gate)
+        val coordinator = coordinator(listOf(physicalOnline))
+        try {
+            val report = async(start = CoroutineStart.UNDISPATCHED) {
+                withTimeout(5_000) { coordinator.completed.first() }
+            }
+            val settingsPage = async {
+                coordinator.enqueue(request(RefreshSource.PHYVLAB))
+            }
+            settingsPage.await()
+            waitUntil { physicalOnline.calls.get() == 1 }
+            gate.complete(Unit)
+            assertEquals(RefreshStatus.SUCCESS, report.await().result(RefreshSource.PHYVLAB)?.status)
+        } finally {
+            coordinator.close()
+        }
+    }
 
     @Test
     fun concurrentIdenticalRequestsShareOneExecution() = runBlocking {

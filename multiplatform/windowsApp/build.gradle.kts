@@ -210,7 +210,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)
             // jdk.charsets：AWT 原生菜单（托盘）在中文 Windows 上需要 GBK 编码器，缺了会显示方框。
-            modules("java.sql", "jdk.charsets", "jdk.localedata")
+            modules("java.sql", "jdk.httpserver", "jdk.charsets", "jdk.localedata")
             // 中文显示名。英文系统上 jpackage 默认选代码页 1252 的 en .wxl，WiX light 会把中文
             // 打成 `?????` 并报 311；CI 用 -Duser.language=zh 让它选代码页 936 的中文 .wxl。
             // WINDOWS_PACKAGE_NAME/… 仍可手动传 ASCII 兜底。

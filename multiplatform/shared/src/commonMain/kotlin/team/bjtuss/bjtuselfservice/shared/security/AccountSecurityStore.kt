@@ -34,6 +34,9 @@ class AccountSecurityCoordinator(
     fun physicsDemoVault(accountScope: String): CredentialVault? = store.physicsDemoVault?.invoke(accountScope)
     fun citelVault(accountScope: String): CredentialVault? = store.citelVault?.invoke(accountScope)
     fun phyVlabVault(accountScope: String): CredentialVault? = store.phyVlabVault?.invoke(accountScope)
+    /** 与独立账号密码分开清除。账号范围使用同一个平台安全存储工厂。 */
+    fun phyVlabSessionVault(accountScope: String): CredentialVault? =
+        store.phyVlabVault?.invoke("$accountScope.moodle-session")
     val remoteVault: ((String) -> CredentialVault)? get() = store.remoteVault
 
     val canStoreCredentials: Boolean get() = store.credentialVault != null

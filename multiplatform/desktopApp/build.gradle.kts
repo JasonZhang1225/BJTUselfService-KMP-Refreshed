@@ -538,7 +538,7 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg)
-            modules("java.sql")
+            modules("java.sql", "jdk.httpserver")
             packageName = desktopPackageName
             // Compose Desktop 的 packageVersion 仅允许 MAJOR.MINOR.PATCH；应用内版本 2.0.0-Alpha / Build 45。
             packageVersion = desktopPackageVersion

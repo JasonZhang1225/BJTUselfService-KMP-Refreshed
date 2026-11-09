@@ -20,6 +20,7 @@ import kotlinx.coroutines.withTimeout
 import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSessionResult
+import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabManualLogin
 import team.bjtuss.bjtuselfservice.shared.feature.settings.IndependentAccountSettings
 import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
 
@@ -40,6 +41,8 @@ class PhyVlabAccountModel(
     private val cache: CacheStore,
     private val vault: CredentialVault?,
     /** 用给定账号登录物理在线；由会话协议提供，校验成功即建立了 MoodleSession。 */
+    private val rememberSession: suspend (String) -> Unit = {},
+    private val clearSession: suspend () -> Unit = {},
     private val signIn: suspend (Credentials) -> PhyVlabSessionResult,
 ) {
     private val mutableState = MutableStateFlow(PhyVlabAccountState(username = scope))
@@ -81,52 +84,77 @@ class PhyVlabAccountModel(
         }
     }
 
-    suspend fun configure(username: String, password: String): Boolean {
+    internal suspend fun configurationCredentials(username: String, password: String): Credentials? {
         initialize()
-        return mutex.withLock {
+        return try {
+            val storage = vault ?: throw PhyVlabAccountFailure("当前平台安全存储不可用。")
+            val creds = if (password.isNotBlank()) {
+                Credentials(username.trim(), password)
+            } else {
+                storage.load()?.takeIf { it.username == username.trim() }
+            }
+            creds?.takeIf { it.isValid }
+                ?: throw PhyVlabAccountFailure("请填写物理在线的账号和密码。")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            showError((e as? PhyVlabAccountFailure)?.message ?: "无法读取物理在线账号。")
+            null
+        }
+    }
+
+    suspend fun configure(username: String, password: String): Boolean {
+        val creds = configurationCredentials(username, password) ?: return false
+        return saveConfiguration(creds) {
+            when (val result = withTimeout(40_000) { signIn(creds) }) {
+                is PhyVlabSessionResult.Ready -> Unit
+                PhyVlabSessionResult.CaptchaRequired, PhyVlabSessionResult.CaptchaRejected ->
+                    throw PhyVlabAccountFailure(PHYVLAB_CAPTCHA_REQUIRED_MESSAGE)
+                PhyVlabSessionResult.CredentialsRejected, PhyVlabSessionResult.AccountRequired ->
+                    throw PhyVlabAccountFailure("物理在线账号或密码错误。")
+                is PhyVlabSessionResult.Failed -> throw PhyVlabAccountFailure("无法连接物理在线，请稍后重试。")
+                    .also { phyVlabAccountDebug(result) }
+            }
+        }
+    }
+
+    internal suspend fun saveVerifiedConfiguration(creds: Credentials): Boolean =
+        saveConfiguration(creds) {}
+
+    internal fun showError(message: String) {
+        mutableState.value = state.value.copy(failed = true, message = message)
+    }
+
+    private suspend fun saveConfiguration(creds: Credentials, verify: suspend () -> Unit): Boolean =
+        mutex.withLock {
             mutableState.value = state.value.copy(saving = true, failed = false, message = null)
             try {
                 val storage = vault ?: throw PhyVlabAccountFailure("当前平台安全存储不可用。")
-                val creds = if (password.isNotBlank()) {
-                    Credentials(username.trim(), password)
-                } else {
-                    storage.load()?.takeIf { it.username == username.trim() }
-                }
-                if (creds?.isValid != true) throw PhyVlabAccountFailure("请填写物理在线的账号和密码。")
-                when (val result = withTimeout(40_000) { signIn(creds) }) {
-                    is PhyVlabSessionResult.Ready -> Unit
-                    PhyVlabSessionResult.CredentialsRejected,
-                    PhyVlabSessionResult.AccountRequired,
-                    -> throw PhyVlabAccountFailure("物理在线账号或密码错误。")
-                    is PhyVlabSessionResult.Failed -> throw PhyVlabAccountFailure("无法连接物理在线，请稍后重试。")
-                        .also { phyVlabAccountDebug(result) }
-                }
+                verify()
                 storage.save(creds)
                 cache.putMetadata(scope, USERNAME_KEY, creds.username)
                 cache.putMetadata(scope, CONFIGURED_KEY, "true")
+                rememberSession(creds.username)
                 mutableState.value = PhyVlabAccountState(creds.username, configured = true, message = "已登录物理在线并保存账号。")
                 true
             } catch (_: TimeoutCancellationException) {
-                mutableState.value = state.value.copy(failed = true, message = "连接物理在线超时，请稍后重试。")
+                showError("连接物理在线超时，请稍后重试。")
                 false
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                mutableState.value = state.value.copy(
-                    failed = true,
-                    message = (e as? PhyVlabAccountFailure)?.message ?: "物理在线登录或安全保存失败。",
-                )
+                showError((e as? PhyVlabAccountFailure)?.message ?: "物理在线登录或安全保存失败。")
                 false
             } finally {
                 mutableState.value = state.value.copy(saving = false)
             }
         }
-    }
 
     suspend fun clearConfiguration() {
         initialize()
         mutex.withLock {
             try {
+                clearSession()
                 vault?.clear()
                 cache.putMetadata(scope, CONFIGURED_KEY, "false")
                 mutableState.value = PhyVlabAccountState(username = state.value.username, message = "已清除物理在线密码。")
@@ -153,8 +181,9 @@ private fun phyVlabAccountDebug(result: PhyVlabSessionResult.Failed) {
 }
 
 @Composable
-fun PhyVlabAccountSettingsScreen(
+internal fun PhyVlabAccountSettingsScreen(
     model: PhyVlabAccountModel,
+    prepareManualLogin: suspend () -> PhyVlabManualLogin,
     modifier: Modifier = Modifier,
     onAccountSaved: () -> Unit = {},
 ) {
@@ -163,6 +192,7 @@ fun PhyVlabAccountSettingsScreen(
     var username by remember(model) { mutableStateOf("") }
     var password by remember(model) { mutableStateOf("") }
     var ready by remember(model) { mutableStateOf(false) }
+    var accountToVerify by remember(model) { mutableStateOf<Credentials?>(null) }
     LaunchedEffect(model) {
         model.initialize()
         username = model.state.value.username
@@ -173,15 +203,30 @@ fun PhyVlabAccountSettingsScreen(
         ready, state.saving, { username = it }, { password = it },
         onSave = {
             scope.launch {
-                if (model.configure(username, password)) {
-                    password = ""
-                    onAccountSaved()
-                }
+                accountToVerify = model.configurationCredentials(username, password)
             }
         },
         message = state.message, failed = state.failed, modifier = modifier,
         websiteUrl = "https://phyvlab.bjtu.edu.cn/",
         canClear = state.configured,
         onClear = { scope.launch { model.clearConfiguration(); password = "" } },
+        showSavingDialog = false,
     )
+    accountToVerify?.let { account ->
+        PhyVlabCaptchaSheet(
+            account = account,
+            prepare = prepareManualLogin,
+            onSuccess = {
+                if (!model.saveVerifiedConfiguration(account)) false
+                else {
+                    accountToVerify = null
+                    password = ""
+                    onAccountSaved()
+                    true
+                }
+            },
+            onRejected = { model.showError("物理在线账号或密码错误，请检查后重试。") },
+            onDismiss = { accountToVerify = null },
+        )
+    }
 }

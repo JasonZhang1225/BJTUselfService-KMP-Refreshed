@@ -88,6 +88,11 @@ class AppRefreshCoordinator(
 
     val supportedSources: Set<RefreshSource> get() = adapterBySource.keys
 
+    /** 设置页提交后会立即退出，刷新请求从会话作用域启动。 */
+    internal fun enqueue(request: RefreshRequest) {
+        scope.launch { refresh(request) }
+    }
+
     /**
      * 刷新 [request] 中的来源并等待结果。不支持的来源记为跳过。
      * 调用方取消只停止等待；共享的在途刷新继续运行，直至完成或 [close]。

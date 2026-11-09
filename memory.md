@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
-> **当前状态（2026-11-07）**
-> - **当前分支**：`main`（与 `origin/main` 同步，最新合并 PR #97 `23309e47`、PR #99 `d7df0f1b`）
+> **当前状态（2026-11-09）**
+> - **当前分支**：`fix/phyvlab-manual-captcha`，从 `origin/main` `b6e9f358`（PR #100）开独立工作树，本地已提交修复和测试，尚未推送。
 > - **源码版本**：`2.0.0-Alpha` / Build 45（最新正式 Release：`v1.8.6-KMP` / Build 44）
 > - **远端活跃分支**：`main`、`feat/mac-swift`（macOS 原生 SwiftUI 探索）；原 `feat/homework-submit-cli-drop`、`feat/agent-assignment-detail` 已合入并删除。
 > - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（课程回放、macOS/Windows 硬件合成、作业忽略与筛选拆分、全应用设备时区、离线更新日志、`DESIGN.md` / `AppleAlert` / `AppleMenuPickerCard`、物理实验 IP 备用路径、上传文件拖放、本机 CLI 交作业、统一作业详情与远程增量同步等，PR #68–#99）均已移入 `history_full.md`。
@@ -19,8 +19,14 @@
   - 统一认证走 `cas.bjtu.edu.cn/o/authorize/`。首轮与第二轮（2026-11-06）Chrome CDP 实测发现两层问题：
     1. **回调参数拆分**：原始回调带授权码时，`state` 内嵌的 `sesskey` 被拆到了外层查询参数；仅在拆出字段与本次原始 `state` 一致时恢复原编码，同一 `MoodleSession` 下可通过原会话校验并将授权码转发为 `oauth2code`。
     2. **服务端账户信息缺失（阻塞项）**：通过回调会话校验后，`/admin/oauth2callback.php` 303 到 `/auth/oauth2/login.php`，后者 303 回登录页，中文提示「缺少账户信息，可能是配置有误」，英文明确显示 `No user information was returned`（对应 Moodle 上游 `loginerror_nouserinfo`，不同于字段不全的 `loginerror_userincomplete`）；三次复测（中文登录页、英文登录页、从“我的课程”触发）一致复现，访问 `/my/courses.php` 同样 303 回登录页。Moodle 服务端到学校身份提供方的 userinfo 请求及后台映射配置在客户端不可见、无法从客户端修复。
-- **下一步方向**：
-  - 放弃当前坏掉的学校 OAuth2 回跳路径，改为验证在 App 内打开学校物理在线原网页、由用户手动完成一次阿里云点选登录，随后提取并接回该站点的 `MoodleSession` 会话供后续作业与详情同步复用。
+- **2026-11-09 本分支在做**：搁置学校 OAuth2。首页和作业同步状态新增「输入验证码」，设置页保存时先完成点选。独立会话收到验证码通过结果后才提交一次密码，确认「我的课程」可访问再接入应用会话。失败或取消保留设置页输入，已有缓存仍可读。
+- **真实页面取证**：临时调试窗口点选出现「人机验证异常」。AutoConnect 接入用户正常 Chrome 窗口后确认学校已登录，`/my/courses.php` 返回 200 并有退出链接。桌面应用使用系统浏览器打开临时本机点选页，手机使用平台 WebView，页面不持有账号、密码或 Moodle 会话。
+- **本地验证**：`./gradlew :shared:desktopTest` 重跑通过（1438 项，跳过 1 项）。`:shared:compileKotlinIosArm64`、`:shared:compileKotlinIosSimulatorArm64`、`:androidApp:assembleDebug`、`:desktopApp:compileKotlin`、`:windowsApp:compileKotlinWindows` 通过。Android Pixel 10 Pro XL 模拟器使用虚构凭据验证学校验证码加载、进入点选、关闭后返回原设置页并保留两个输入框。iOS 签名模拟器构建成功，iPhone 17 Pro 的显示连接及安装卡住，按用户要求改用 Android。macOS 源码窄窗口 smoke 启动后已退出，未目视验收。
+- **Android 真实账号验证**：用户完成点选后，Moodle 登录 POST 返回 303。保存后返回原生页面时，旧页面作用域取消了首次刷新，所以作业先显示缓存和「等待同步」。用户手动刷新后，日志确认复用会话并拉取 4 门课程、20 条活动记录。
+- **后续修复（代码待提交）**：账号设置与同步状态两处的登录成功回调改为由会话刷新协调器提交物理在线刷新。有效的 Moodle 会话使用按 MIS 与物理在线账号隔离的系统安全存储，重启后先探测课程页再复用；明确返回登录页时清除会话，临时网络失败则保留。显式退出或清除物理在线账号时清理会话。
+- **最新验证**：在持有真实会话期间完成共享桌面测试（1442 项，1 项跳过，全部通过）；重跑 Android、桌面、Windows、iOS arm64、iOS simulator 编译及 Android Debug 包构建成功。iOS 签名 simulator 构建成功，Device Hub 显示连接卡住，按用户要求只用 Android 做界面验证。
+- **尚待验收**：本轮保留 Android 模拟器现有真实登录，未安装会话持久化版本，因此升级后的冷启动复用尚未实测。
+- **本地测试包（2026-11-09，Build 45）**：签名 Release APK 与 ad-hoc 侧载 IPA、Apple Silicon DMG 已复制到 Downloads。APK 签名指纹和正式版 v1.8.6 一致。IPA 的宿主和小组件 App Group 与版本/Build 已校验。DMG 包内 App 签名、macOS SDK 27.0、最低 macOS 12.0 和磁盘映像校验通过。这些是本地下载文件，不是 GitHub Release。
 
 ### 2. 物理在线作业详情与老师附件真实页面校验（PR #98/#99 后续）
 
@@ -43,5 +49,5 @@
 
 ## 接下来
 
-1. 跟进物理在线网页手动点选登录接回 `MoodleSession` 会话，并在真实页面验证物理在线作业详情与老师附件解析。
+1. 物理在线登录修复通过验收后，用真实页面核对作业详情与老师附件解析。
 2. 重新部署私人远程 Site 模板并执行迁移 `0003_attachments.sql`，推进 2.0.0 发版前验收。

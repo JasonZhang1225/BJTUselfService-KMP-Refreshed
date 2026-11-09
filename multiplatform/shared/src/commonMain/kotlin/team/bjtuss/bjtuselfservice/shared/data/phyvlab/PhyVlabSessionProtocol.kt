@@ -2,18 +2,29 @@ package team.bjtuss.bjtuselfservice.shared.data.phyvlab
 
 import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
+import team.bjtuss.bjtuselfservice.shared.network.PhyVlabLoginSession
 
 import com.fleeksoft.ksoup.Ksoup
 import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import io.ktor.http.takeFrom
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import team.bjtuss.bjtuselfservice.shared.network.KtorSchoolHttpTransport
+import team.bjtuss.bjtuselfservice.shared.network.schoolHttpEngineFactory
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.network.parseOffMain
 
-private val PHYVLAB_LOGIN_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/login/index.php"
+internal val PHYVLAB_LOGIN_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/login/index.php"
 private val PHYVLAB_HOME_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/"
 private val PHYVLAB_COURSES_URL = "${SchoolEndpoints.PHYVLAB_ORIGIN}/my/courses.php"
 
@@ -23,6 +34,9 @@ sealed interface PhyVlabSessionResult {
     data class Ready(val homeUrl: String) : PhyVlabSessionResult
     /** 尚未配置物理在线独立账号；需要用户在设置里填写。 */
     data object AccountRequired : PhyVlabSessionResult
+    /** 学校要求用户在登录页手动完成点选。 */
+    data object CaptchaRequired : PhyVlabSessionResult
+    data object CaptchaRejected : PhyVlabSessionResult
     /** 已配置的独立账号被 Moodle 拒绝（“登录无效”）。 */
     data object CredentialsRejected : PhyVlabSessionResult
     /**
@@ -38,28 +52,115 @@ sealed interface PhyVlabSessionResult {
 /**
  * 物理在线 Moodle 会话。
  *
- * 学校统一身份认证改为 sso.bjtu.edu.cn 后，物理在线的 OAuth 按钮仍指向已下线的 CAS，
- * 无法再借 MIS 登录态进入。现在与物理实验、演示实验一样使用独立账号密码：
+ * 学校统一身份认证迁移后，物理在线的 OAuth 回跳暂不可用，当前使用独立账号密码：
  * 已有 MoodleSession 时直接复用；否则取 `/login/index.php` 的 `form#login`（含 logintoken），
- * 用 [credentials] 提供的账号提交，再确认页面出现登录态标记。
+ * 旧版无验证码表单可直接提交；有点选验证码时，等待用户完成学校网页登录。
  *
  * 安全边界：只访问 phyvlab 的 HTTPS 443，跳转到任何其它主机、HTTP 或未知端口立即停止。
  * 凭据只由调用方从系统安全存储读出后传入，本类不保存、不记录。
  */
 class PhyVlabSessionProtocol(
     private val transport: SchoolHttpTransport,
+    private val sessionVault: CredentialVault? = null,
     private val credentials: suspend () -> Credentials? = { null },
 ) {
+    private val sessionVaultMutex = Mutex()
+    private var lastSavedSession: Credentials? = null
+
     suspend fun establishSession(): PhyVlabSessionResult = try {
         val loginPage = loadLoginPage()
         if (parseOffMain { loginPage.pageMarks() }.authenticated) {
+            if (sessionVault != null) credentials()?.let { rememberCurrentSession(it.username) }
             PhyVlabSessionResult.Ready(PHYVLAB_HOME_URL)
         } else {
             val account = credentials()?.takeIf { it.isValid }
-            if (account == null) PhyVlabSessionResult.AccountRequired else submitLogin(loginPage, account)
+            if (account == null) PhyVlabSessionResult.AccountRequired
+            else restoreSessionOrLogin(loginPage, account)
         }
     } catch (error: PhyVlabRemoteException) {
         PhyVlabSessionResult.Failed(error.reason, detail = error.reason.name.lowercase())
+    }
+
+    private suspend fun restoreSessionOrLogin(
+        loginPage: SchoolHttpResponse,
+        account: Credentials,
+    ): PhyVlabSessionResult {
+        val saved = readRememberedSession(account.username)
+        val cookie = saved?.password?.let(PhyVlabLoginSession::fromCookie)
+        if (cookie != null) {
+            when (probeAndAdoptSession(cookie)) {
+                SessionProbe.READY -> {
+                    rememberCurrentSession(account.username)
+                    return PhyVlabSessionResult.Ready(PHYVLAB_HOME_URL)
+                }
+                SessionProbe.EXPIRED -> forgetExpiredSession(saved)
+                SessionProbe.UNAVAILABLE ->
+                    return PhyVlabSessionResult.Failed(PhyVlabRemoteFailure.NETWORK, "saved-session-unconfirmed")
+            }
+        }
+        return submitLogin(loginPage, account).also {
+            if (it is PhyVlabSessionResult.Ready) rememberCurrentSession(account.username)
+        }
+    }
+
+    internal suspend fun rememberCurrentSession(username: String) {
+        val vault = sessionVault ?: return
+        try {
+            val cookie = transport.phyVlabSessionCookie() ?: return
+            val entry = Credentials(username, cookie.value)
+            sessionVaultMutex.withLock {
+                if (entry != lastSavedSession) {
+                    vault.save(entry)
+                    lastSavedSession = entry
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            phyVlabDebug("secure session save unavailable")
+        }
+    }
+
+    internal suspend fun clearRememberedSession() {
+        sessionVaultMutex.withLock {
+            try {
+                sessionVault?.clear()
+                lastSavedSession = null
+            } finally {
+                transport.clearPhyVlabSession()
+            }
+        }
+    }
+
+    private suspend fun readRememberedSession(username: String): Credentials? {
+        val vault = sessionVault ?: return null
+        return try {
+            sessionVaultMutex.withLock {
+                val entry = vault.load()
+                lastSavedSession = entry
+                entry?.takeIf { it.username == username }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            phyVlabDebug("secure session read unavailable")
+            null
+        }
+    }
+
+    private suspend fun forgetExpiredSession(saved: Credentials?) {
+        try {
+            sessionVaultMutex.withLock {
+                if (saved == lastSavedSession) {
+                    sessionVault?.clear()
+                    lastSavedSession = null
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            phyVlabDebug("expired secure session clear unavailable")
+        }
     }
 
     /**
@@ -80,6 +181,91 @@ class PhyVlabSessionProtocol(
         PhyVlabSessionResult.Failed(error.reason, detail = error.reason.name.lowercase())
     }
 
+    private enum class SessionProbe { READY, EXPIRED, UNAVAILABLE }
+
+    /** 只在课程页明确确认登录后接入应用会话。网络错误保留已保存的 Cookie。 */
+    private suspend fun probeAndAdoptSession(session: PhyVlabLoginSession): SessionProbe = try {
+        var expired = false
+        val accepted = transport.adoptPhyVlabSession(session) { page ->
+            val marks = if (page.statusCode in 200..299) parseOffMain { page.pageMarks() } else null
+            expired = marks?.phyVlabLoginPage == true || (
+                page.statusCode in 300..399 && page.header("Location")?.let {
+                    resolveAllowedTarget(page.finalUrl, it)?.substringBefore('?') == PHYVLAB_LOGIN_URL
+                } == true
+            )
+            page.finalUrl.substringBefore('?') == PHYVLAB_COURSES_URL &&
+                marks?.let { it.authenticated && !it.phyVlabLoginPage } == true
+        }
+        when {
+            accepted -> SessionProbe.READY
+            expired -> SessionProbe.EXPIRED
+            else -> SessionProbe.UNAVAILABLE
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        SessionProbe.UNAVAILABLE
+    }
+
+    internal suspend fun prepareManualLogin(): PhyVlabManualLogin {
+        // A failed first configuration must leave any previously working session alone.
+        val isolated = KtorSchoolHttpTransport(schoolHttpEngineFactory())
+        return prepareManualLogin(isolated, isolated::close)
+    }
+
+    internal suspend fun prepareManualLogin(
+        isolated: SchoolHttpTransport,
+        close: () -> Unit,
+    ): PhyVlabManualLogin {
+        try {
+            val protocol = PhyVlabSessionProtocol(isolated)
+            val page = protocol.loadLoginPage()
+            val captchaId = parseOffMain { parsePhyVlabCaptchaId(page.bodyText()) }
+                ?: throw PhyVlabRemoteException(PhyVlabRemoteFailure.PARSE)
+            return PhyVlabManualLogin(captchaId, close) { account, proof ->
+                try {
+                    val verified = isolated.executeWithoutRedirects(
+                        SchoolHttpRequest(
+                            SchoolHttpMethod.POST,
+                            "${SchoolEndpoints.PHYVLAB_ORIGIN}/login/captcha_verify.php",
+                            headers = mapOf("Referer" to PHYVLAB_LOGIN_URL, "Origin" to SchoolEndpoints.PHYVLAB_ORIGIN),
+                            rawBody = proof.toJson().encodeToByteArray(),
+                            rawBodyContentType = "application/json",
+                        ),
+                    )
+                    val passed = verified.statusCode == 200 && parseOffMain {
+                        runCatching {
+                            val json = Json.parseToJsonElement(verified.bodyText()) as? JsonObject
+                            (json?.get("ok") as? JsonPrimitive)?.let { !it.isString && it.booleanOrNull == true } == true
+                        }.getOrDefault(false)
+                    }
+                    if (!passed) {
+                        if (verified.statusCode == 200) PhyVlabSessionResult.CaptchaRejected
+                        else PhyVlabSessionResult.Failed(PhyVlabRemoteFailure.NETWORK)
+                    } else when (val result = protocol.submitLogin(page, account, captchaVerified = true)) {
+                        is PhyVlabSessionResult.Ready -> {
+                            val session = isolated.phyVlabSessionCookie()
+                            when (session?.let { probeAndAdoptSession(it) }) {
+                                SessionProbe.READY -> result
+                                SessionProbe.UNAVAILABLE -> PhyVlabSessionResult.Failed(PhyVlabRemoteFailure.NETWORK, "manual-session-probe")
+                                SessionProbe.EXPIRED, null ->
+                                    PhyVlabSessionResult.Failed(PhyVlabRemoteFailure.SESSION_EXPIRED, "manual-session-unconfirmed")
+                            }
+                        }
+                        else -> result
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    PhyVlabSessionResult.Failed(PhyVlabRemoteFailure.NETWORK)
+                }
+            }
+        } catch (e: Exception) {
+            close()
+            throw e
+        }
+    }
+
     private suspend fun loadLoginPage(): SchoolHttpResponse {
         val login = executeRaw(PHYVLAB_LOGIN_URL, referer = PHYVLAB_HOME_URL)
         // Moodle/反向代理有时会先把登录入口规范化到带语言或 redirect 参数的地址。
@@ -90,8 +276,15 @@ class PhyVlabSessionProtocol(
         return page
     }
 
-    private suspend fun submitLogin(loginPage: SchoolHttpResponse, account: Credentials): PhyVlabSessionResult {
+    private suspend fun submitLogin(
+        loginPage: SchoolHttpResponse,
+        account: Credentials,
+        captchaVerified: Boolean = false,
+    ): PhyVlabSessionResult {
         if (!account.isValid) return PhyVlabSessionResult.AccountRequired
+        if (!captchaVerified && parseOffMain { phyVlabLoginRequiresCaptcha(loginPage.bodyText()) }) {
+            return PhyVlabSessionResult.CaptchaRequired
+        }
         val fields = parseOffMain { parsePhyVlabLoginForm(loginPage.bodyText()) }
             ?: return PhyVlabSessionResult.Failed(PhyVlabRemoteFailure.PARSE, detail = "login-form-missing")
         val submitted = try {
@@ -118,7 +311,7 @@ class PhyVlabSessionProtocol(
         val landing = if (submitted.statusCode in 300..399) followHandshake(submitted) else submitted
         val marks = parseOffMain { landing.pageMarks() }
         if (marks.authenticated) return PhyVlabSessionResult.Ready(PHYVLAB_HOME_URL)
-        if (marks.phyVlabLoginPage) return PhyVlabSessionResult.CredentialsRejected
+        if (marks.phyVlabLoginPage) return loginRejection(landing)
 
         // 登录后的落地页可能只是无导航的中间页；再探测一次“我的课程”确认登录态。
         val probe = executeRaw(PHYVLAB_COURSES_URL, referer = landing.finalUrl)
@@ -130,8 +323,18 @@ class PhyVlabSessionProtocol(
         )
         return when {
             settledMarks.authenticated -> PhyVlabSessionResult.Ready(PHYVLAB_HOME_URL)
-            settledMarks.phyVlabLoginPage -> PhyVlabSessionResult.CredentialsRejected
+            settledMarks.phyVlabLoginPage -> loginRejection(settled)
             else -> PhyVlabSessionResult.Failed(PhyVlabRemoteFailure.SESSION_EXPIRED, detail = "phyvlab-session-unconfirmed")
+        }
+    }
+
+    private suspend fun loginRejection(page: SchoolHttpResponse): PhyVlabSessionResult = parseOffMain {
+        val html = page.bodyText()
+        val message = Ksoup.parse(html).select("[role=alert], #loginerrormessage").text()
+        when {
+            "登录无效" in message || "Invalid login" in message -> PhyVlabSessionResult.CredentialsRejected
+            phyVlabLoginRequiresCaptcha(html) -> PhyVlabSessionResult.CaptchaRequired
+            else -> PhyVlabSessionResult.Failed(PhyVlabRemoteFailure.SESSION_EXPIRED, "login-result-unconfirmed")
         }
     }
 
@@ -173,6 +376,11 @@ class PhyVlabSessionProtocol(
     }
 }
 
+private suspend fun SchoolHttpTransport.phyVlabSessionCookie(): PhyVlabLoginSession? =
+    sessionCookiesFor(PHYVLAB_COURSES_URL).singleOrNull {
+        it.name == "MoodleSession" && it.domain == PHYVLAB_HOST && it.secure && it.path == "/"
+    }?.let { PhyVlabLoginSession.fromCookie(it.value) }
+
 private fun resolveAllowedTarget(base: String, location: String): String? {
     if (location.any(Char::isISOControl) || '#' in location) return null
     val parsed = runCatching {
@@ -184,6 +392,16 @@ private fun resolveAllowedTarget(base: String, location: String): String? {
         return parsed.toString()
     }
     return null
+}
+
+private fun phyVlabLoginRequiresCaptcha(html: String): Boolean =
+    Ksoup.parse(html).selectFirst("form#login #aliyun-captcha-element") != null ||
+        "/login/captcha_verify.php" in html
+
+internal fun parsePhyVlabCaptchaId(html: String): String? {
+    if (!phyVlabLoginRequiresCaptcha(html)) return null
+    return Regex("""initAlicom4\s*\(\s*\{\s*captchaId\s*:\s*['"]([a-fA-F0-9]{32})['"]""")
+        .find(html)?.groupValues?.get(1)
 }
 
 /** Moodle 登录表单：保留 logintoken/anchor 等隐藏字段，账号密码由调用方填入。 */
@@ -240,3 +458,33 @@ private fun looksLikePhyVlabLoginPage(html: String): Boolean {
 }
 
 private const val MAX_HOPS = 12
+
+
+internal class PhyVlabManualLogin(
+    val captchaId: String,
+    val close: () -> Unit,
+    private val submit: suspend (Credentials, PhyVlabCaptchaProof) -> PhyVlabSessionResult,
+) {
+    private val submitted = Mutex()
+
+    suspend fun complete(account: Credentials, proof: PhyVlabCaptchaProof): PhyVlabSessionResult {
+        if (!submitted.tryLock()) return PhyVlabSessionResult.CaptchaRejected
+        return submit(account, proof)
+    }
+}
+
+internal class PhyVlabCaptchaProof private constructor(private val fields: JsonObject) {
+    fun toJson(): String = fields.toString()
+    override fun toString(): String = "PhyVlabCaptchaProof(<redacted>)"
+
+    companion object {
+        private val names = setOf("lot_number", "captcha_output", "pass_token", "gen_time")
+
+        fun parse(value: String): PhyVlabCaptchaProof? {
+            if (value.length > 8192) return null
+            val json = runCatching { Json.parseToJsonElement(value) as? JsonObject }.getOrNull() ?: return null
+            if (json.keys != names || json.values.any { it !is JsonPrimitive || !it.isString || it.content.isBlank() }) return null
+            return PhyVlabCaptchaProof(json)
+        }
+    }
+}

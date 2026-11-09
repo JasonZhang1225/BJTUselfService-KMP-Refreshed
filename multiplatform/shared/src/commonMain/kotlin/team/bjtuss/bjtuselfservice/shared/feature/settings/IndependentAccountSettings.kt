@@ -35,6 +35,7 @@ internal fun IndependentAccountSettings(
     backupWebsiteUrl: String? = null,
     onClear: (() -> Unit)? = null,
     canClear: Boolean = hasSavedPassword,
+    showSavingDialog: Boolean = true,
 ) {
     val scroll = rememberScrollState()
     val focus = LocalFocusManager.current
@@ -100,7 +101,7 @@ internal fun IndependentAccountSettings(
             },
         )
     }
-    if (saving) Dialog(onDismissRequest = {}, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {
+    if (saving && showSavingDialog) Dialog(onDismissRequest = {}, properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false)) {
         Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
             AccountSyncDialogContent()
         }

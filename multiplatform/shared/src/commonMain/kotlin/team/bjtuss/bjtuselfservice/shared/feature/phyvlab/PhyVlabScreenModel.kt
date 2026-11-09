@@ -72,6 +72,7 @@ data class PhyVlabUiState(
     val accountLoginRequired: Boolean = false,
     /** 已配置的独立账号被拒绝（与“尚未配置”区分提示文字）。 */
     val accountRejected: Boolean = false,
+    val captchaRequired: Boolean = false,
     val contentSource: PhyVlabContentSource = PhyVlabContentSource.NONE,
     val cachedAtEpochMillis: Long? = null,
 ) {
@@ -118,6 +119,18 @@ class PhyVlabScreenModel(
         }
     }
 
+    internal suspend fun prepareManualLogin() = sessionProtocol.prepareManualLogin()
+
+    internal suspend fun rememberManualSession(username: String) = sessionProtocol.rememberCurrentSession(username)
+
+    internal fun manualCredentialsRejected() {
+        mutableState.value = mutableState.value.copy(
+            accountLoginRequired = true,
+            accountRejected = true,
+            captchaRequired = false,
+        )
+    }
+
     suspend fun refresh() {
         if (!refreshMutex.tryLock()) return
         try {
@@ -128,7 +141,9 @@ class PhyVlabScreenModel(
             loadCachedSnapshotIfNeeded()
             phyVlabDebug("refresh start")
             sessionReady = false
-            mutableState.value = mutableState.value.copy(isLoading = true, failure = null, accountLoginRequired = false, accountRejected = false)
+            mutableState.value = mutableState.value.copy(isLoading = true, failure = null, failureDetail = null,
+                accountLoginRequired = false, accountRejected = false, captchaRequired = false,
+            )
             when (val session = sessionProtocol.establishSession()) {
                 is PhyVlabSessionResult.Failed -> {
                     phyVlabDebug("session failed reason=${session.reason} detail=${session.detail ?: "none"}")
@@ -142,6 +157,8 @@ class PhyVlabScreenModel(
                     publishFailure(session.reason.toUiFailure(), session.detail)
                     return
                 }
+                PhyVlabSessionResult.CaptchaRequired,
+                PhyVlabSessionResult.CaptchaRejected,
                 PhyVlabSessionResult.AccountRequired,
                 PhyVlabSessionResult.CredentialsRejected,
                 -> {
@@ -150,6 +167,8 @@ class PhyVlabScreenModel(
                         isLoading = false,
                         accountLoginRequired = true,
                         accountRejected = session == PhyVlabSessionResult.CredentialsRejected,
+                        captchaRequired = session == PhyVlabSessionResult.CaptchaRequired ||
+                            session == PhyVlabSessionResult.CaptchaRejected,
                     )
                     return
                 }
@@ -750,6 +769,8 @@ class PhyVlabScreenModel(
             }
             PhyVlabSessionResult.AccountRequired,
             PhyVlabSessionResult.CredentialsRejected,
+            PhyVlabSessionResult.CaptchaRequired,
+            PhyVlabSessionResult.CaptchaRejected,
             is PhyVlabSessionResult.Failed,
             -> {
                 sessionReady = false
