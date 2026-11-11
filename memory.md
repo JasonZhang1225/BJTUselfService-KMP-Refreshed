@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
-> **当前状态（2026-11-09）**
-> - **当前分支**：`fix/phyvlab-manual-captcha`，从 `origin/main` `b6e9f358`（PR #100）开独立工作树，本地已提交修复和测试，尚未推送。
+> **当前状态（2026-11-10）**
+> - **当前分支**：`fix/phyvlab-manual-captcha`，从 `origin/main` `b6e9f358`（PR #100）开独立工作树，本地提交 `a728ffb5` 上有验证码回传与测试的未提交改动，尚未推送。
 > - **源码版本**：`2.0.0-Alpha` / Build 45（最新正式 Release：`v1.8.6-KMP` / Build 44）
 > - **远端活跃分支**：`main`、`feat/mac-swift`（macOS 原生 SwiftUI 探索）；原 `feat/homework-submit-cli-drop`、`feat/agent-assignment-detail` 已合入并删除。
 > - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（课程回放、macOS/Windows 硬件合成、作业忽略与筛选拆分、全应用设备时区、离线更新日志、`DESIGN.md` / `AppleAlert` / `AppleMenuPickerCard`、物理实验 IP 备用路径、上传文件拖放、本机 CLI 交作业、统一作业详情与远程增量同步等，PR #68–#99）均已移入 `history_full.md`。
@@ -32,6 +32,18 @@
 
 - PR #98/#99 新增了从物理在线作业说明 HTML 中解析老师附件（`pluginfile.php` 链接与内嵌图片）、草稿/最终提交状态判定（`phyVlabAssignmentDetailHasSubmission`）以及单批详情同步最多恢复 1 次会话的保护。
 - 此前受上述登录问题阻塞，老师附件解析仅通过脱敏 fixture 测试验证；待登录恢复后，需用真实学校页面核对 `pluginfile.php` 附件解析、重定向白名单下载与缓存补全。
+
+### 3. 手动验证码在 iOS 上提交后卡住（2026-11-10，未提交）
+
+- **现象**：iPhone 完成点选、验证码变绿后，弹层停在页面自带的「正在提交验证结果…」，`开始验证/重新加载` 均为禁用态，物理在线进不去；同期 iPad 的旧会话一小时后仍可用。
+- **判断**：旧版截图将范围缩小到网页产出结果后、原生弹层切换到登录状态前。学校登录页没有「其他设备登录 / 踢掉」类文案，平板会话也没被踢；iOS 用每 350 ms 轮询 `window.phyVlabCaptchaProof`，页面已经跑完 `$send` 却始终没被宿主取走。
+- **11-09 尝试**：iOS 改为 `WKScriptMessageHandler`（名称 `phyVlabCaptcha`）由 WebKit 主动投递，去掉轮询与 WebView 引用；`phyVlabCaptchaHtml` 改为按平台选交付方式（`WindowVariable` / `ScriptMessage` / `LoopbackFetch`）；页面交付后 15 秒没有反应就把「重新加载」放回来并提示；iOS 页面加载失败回传 `onUnavailable`；提交验证结果加 60 秒超时，超时后恢复「重试」与可关闭；新增 `PhyVlabCaptchaHtmlTest`（5 项）。
+- **11-09 验证**：`:shared:desktopTest` 1447 项 0 失败 1 跳过（`*PhyVlab*` 80 项 0 失败）；`:shared:compileAndroidMain`、`:windowsApp:compileKotlinWindows`、`:shared:compileKotlinIosSimulatorArm64`、`:shared:compileKotlinIosArm64`、`:shared:linkDebugFrameworkIosSimulatorArm64` 均 BUILD SUCCESSFUL；签名 iOS 模拟器 `xcodebuild` Debug `** BUILD SUCCEEDED **`，装进 iPhone 17 Pro 模拟器启动到首页正常（未点验证码）。
+- **侧载包（2026-11-09 20:10）**：`~/Downloads/BJTUSelfService-KMP-2.0.0-Alpha-build45-iOS-unsigned.ipa`（23 MB，SHA-256 `81af01a9b14824ec142a90f92b29a4813da4cb18a852622e656ad8f4792a1b17`）。Release `generic/platform=iOS` 未签名构建后按 CI 改名 `Payload/BJTUselfServiceKMP.app`、`scripts/sign-ios-sideload-app.sh` ad-hoc 签名（宿主与小组件 App Group 均 `group.team.bjtuss.bjtuselfservice.kmp`，版本 2.0.0 / Build 45 一致）。包内二进制已确认含新的页面提示与 `phyVlabCaptcha` 通道、不再含旧轮询表达式。同名旧包（15:52）移到 `.artifacts/package-build45-previous/`。
+- **11-10 真机反馈**：11-09 侧载版仍先显示「正在提交验证结果…」，随后触发 15 秒未收到提示。截图能确认页面进入交付阶段，旧版究竟在哪一步丢掉结果仍待真机证据。用户此前在 Android 和 macOS 验证过 `a728ffb5` 版本，本轮反馈来自 iOS。
+- **本轮改动**：iOS 由 `WKWebView.callAsyncJavaScript` 在主文档里等待单次结果，退出旧脚本消息通道。读取/解析失败与网页进程退出交给原生弹层结束当前尝试，重试新建 WebView。Android 仍使用页面变量，macOS/Windows 仍使用回环 POST。
+- **11-10 限资源验证**：Gradle 改用单 worker、禁用并行、JVM 堆上限 1536 MiB。`:shared:desktopTest` 共 1447 项，0 失败、1 跳过（包含验证码 HTML 的通道检查）。iOS 真机与模拟器 Kotlin 目标、macOS、Windows 和 Android 共享源码编译通过。 Android 首轮 APK 构建遇到旧工作树路径的 dex 缓存，移开这一项本地缓存后，单 worker 重跑 `:androidApp:assembleDebug` 通过。脱敏 JavaScript 样例验证了四字段交付、重复回调只接受首个结果、超时后的重开提示。
+- **11-10 运行验证边界**：命令行 WebKit 测试进程无响应，移出 CI 测试目录。独立 UIKit 测试应用编译通过。iOS 27.0 模拟器安装超时，iOS 27.1 模拟器报数据迁移失败且安装超时。已结束本轮模拟器尝试。签名宿主构建、iOS 运行时回传与 iPhone 真机点选仍待验收。
 
 ---
 

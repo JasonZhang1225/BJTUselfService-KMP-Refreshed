@@ -58,7 +58,7 @@ private suspend fun openCaptchaPage(captchaId: String): PhyVlabCaptchaProof? {
                     exchange.requestURI.rawPath != endpoint ||
                         exchange.requestHeaders.getFirst("Host") != authority -> exchange.reply(404)
                     exchange.requestMethod == "GET" ->
-                        exchange.reply(200, phyVlabCaptchaHtml(captchaId, desktopCallback = true))
+                        exchange.reply(200, phyVlabCaptchaHtml(captchaId, PhyVlabCaptchaDelivery.LoopbackFetch))
                     exchange.requestMethod == "POST" &&
                         exchange.requestHeaders.getFirst("Origin") == origin &&
                         exchange.requestHeaders.getFirst("Content-Type") == "application/json" -> {

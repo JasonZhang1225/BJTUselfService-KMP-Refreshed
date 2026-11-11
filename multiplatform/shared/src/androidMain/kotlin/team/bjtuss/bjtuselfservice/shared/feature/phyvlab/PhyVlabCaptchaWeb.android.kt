@@ -52,7 +52,7 @@ internal actual fun PhyVlabCaptchaWeb(
                         request.isForMainFrame
                 }
                 view = this
-                loadDataWithBaseURL(PHYVLAB_CAPTCHA_BASE_URL, phyVlabCaptchaHtml(captchaId), "text/html", "UTF-8", null)
+                loadDataWithBaseURL(PHYVLAB_CAPTCHA_BASE_URL, phyVlabCaptchaHtml(captchaId, PhyVlabCaptchaDelivery.WindowVariable), "text/html", "UTF-8", null)
             }
         },
         onRelease = { browser ->
