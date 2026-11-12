@@ -24,6 +24,7 @@ import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabCaptchaProof
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabManualLogin
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSessionResult
+import team.bjtuss.bjtuselfservice.shared.data.phyvlab.phyVlabDebug
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 
 internal const val PHYVLAB_CAPTCHA_REQUIRED_MESSAGE = "请完成物理在线的人机验证。"
@@ -48,48 +49,6 @@ internal fun PhyVlabCaptchaSheet(
     var submitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var credentialsRejected by remember { mutableStateOf(false) }
-    val proof = remember(attemptNumber) { CompletableDeferred<PhyVlabCaptchaProof?>() }
-    LaunchedEffect(attemptNumber) {
-        var attempt: PhyVlabManualLogin? = null
-        try {
-            attempt = prepare()
-            captchaId = attempt.captchaId
-            loading = false
-            val answer = proof.await()
-            if (answer == null) {
-                captchaId = null
-                error = "无法读取验证码结果，请重试。"
-                return@LaunchedEffect
-            }
-            submitting = true
-            captchaId = null
-            // 学校没有响应时不能一直停在“正在登录”，超时后把重试入口还给用户。
-            val outcome = withTimeoutOrNull(PHYVLAB_SUBMIT_TIMEOUT_MS) { attempt.complete(account, answer) }
-            error = if (outcome == null) PHYVLAB_LOGIN_TIMEOUT_MESSAGE else when (outcome) {
-                is PhyVlabSessionResult.Ready ->
-                    if (onSuccess()) null else "登录成功，但保存账号失败。请关闭后查看设置页的提示。"
-                PhyVlabSessionResult.CaptchaRequired,
-                PhyVlabSessionResult.CaptchaRejected,
-                -> "验证码未通过，请重新验证。"
-                PhyVlabSessionResult.AccountRequired,
-                PhyVlabSessionResult.CredentialsRejected,
-                -> {
-                    credentialsRejected = true
-                    onRejected()
-                    PHYVLAB_ACCOUNT_REJECTED_MESSAGE
-                }
-                is PhyVlabSessionResult.Failed -> PHYVLAB_LOGIN_NETWORK_MESSAGE
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            error = PHYVLAB_LOGIN_NETWORK_MESSAGE
-        } finally {
-            attempt?.close?.invoke()
-            loading = false
-            submitting = false
-        }
-    }
     AppleSheet(
         title = "物理在线验证码",
         fitContentHeight = true,
@@ -103,6 +62,51 @@ internal fun PhyVlabCaptchaSheet(
             attemptNumber++
         },
     ) {
+        // On iOS the sheet has its own Compose root. Keep the proof receiver and its effect in that root.
+        val proof = remember(attemptNumber) { CompletableDeferred<PhyVlabCaptchaProof?>() }
+        LaunchedEffect(attemptNumber) {
+            var attempt: PhyVlabManualLogin? = null
+            try {
+                attempt = prepare()
+                captchaId = attempt.captchaId
+                loading = false
+                val answer = proof.await()
+                if (answer == null) {
+                    captchaId = null
+                    error = "无法读取验证码结果，请重试。"
+                    return@LaunchedEffect
+                }
+                phyVlabDebug("captcha submission started")
+                submitting = true
+                captchaId = null
+                // 学校没有响应时不能一直停在“正在登录”，超时后把重试入口还给用户。
+                val outcome = withTimeoutOrNull(PHYVLAB_SUBMIT_TIMEOUT_MS) { attempt.complete(account, answer) }
+                phyVlabDebug("captcha submission finished: ${outcome?.let { it::class.simpleName } ?: "timeout"}")
+                error = if (outcome == null) PHYVLAB_LOGIN_TIMEOUT_MESSAGE else when (outcome) {
+                    is PhyVlabSessionResult.Ready ->
+                        if (onSuccess()) null else "登录成功，但保存账号失败。请关闭后查看设置页的提示。"
+                    PhyVlabSessionResult.CaptchaRequired,
+                    PhyVlabSessionResult.CaptchaRejected,
+                    -> "验证码未通过，请重新验证。"
+                    PhyVlabSessionResult.AccountRequired,
+                    PhyVlabSessionResult.CredentialsRejected,
+                    -> {
+                        credentialsRejected = true
+                        onRejected()
+                        PHYVLAB_ACCOUNT_REJECTED_MESSAGE
+                    }
+                    is PhyVlabSessionResult.Failed -> PHYVLAB_LOGIN_NETWORK_MESSAGE
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                error = PHYVLAB_LOGIN_NETWORK_MESSAGE
+            } finally {
+                attempt?.close?.invoke()
+                loading = false
+                submitting = false
+            }
+        }
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val message = error
             if (loading || submitting) {
@@ -115,7 +119,9 @@ internal fun PhyVlabCaptchaSheet(
                 key(attemptNumber) {
                     PhyVlabCaptchaWeb(
                         id,
-                        onProof = { proof.complete(it) },
+                        onProof = {
+                            phyVlabDebug("captcha proof accepted by sheet: ${proof.complete(it)}")
+                        },
                         onUnavailable = { proof.complete(null) },
                     )
                 }
@@ -134,15 +140,12 @@ internal expect fun PhyVlabCaptchaWeb(
 // Synthetic origin keeps this document separate from every website cookie jar.
 internal const val PHYVLAB_CAPTCHA_BASE_URL = "https://app-captcha.invalid/"
 
-internal const val PHYVLAB_CAPTCHA_RESULT_PROMISE = "phyVlabCaptchaResult"
+internal const val PHYVLAB_CAPTCHA_RESULT_VARIABLE = "phyVlabCaptchaProof"
 
 /** 验证结果交给宿主的通道。每个平台只有一种，避免页面里出现用不上的分支。 */
 internal enum class PhyVlabCaptchaDelivery {
-    /** Android：写入页面变量，由宿主读取 WebView 的求值结果。 */
+    /** Android / iOS：保留结果，供原生 WebView 读取。 */
     WindowVariable,
-
-    /** iOS：WKWebView 在主文档中等待验证结果。 */
-    WebViewPromise,
 
     /** 桌面：POST 回本机一次性回环地址。 */
     LoopbackFetch,
@@ -155,8 +158,7 @@ internal fun phyVlabCaptchaHtml(
 ): String {
     require(captchaId.matches(Regex("[a-fA-F0-9]{32}")))
     val send = when (delivery) {
-        PhyVlabCaptchaDelivery.WindowVariable -> "window.phyVlabCaptchaProof = result;"
-        PhyVlabCaptchaDelivery.WebViewPromise -> "resolveProof(result);"
+        PhyVlabCaptchaDelivery.WindowVariable -> "window.$PHYVLAB_CAPTCHA_RESULT_VARIABLE = result;"
         PhyVlabCaptchaDelivery.LoopbackFetch -> """
             fetch(location.pathname, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: result})
               .then(response => {
@@ -167,17 +169,6 @@ internal fun phyVlabCaptchaHtml(
               });
         """
     }
-    val setup = if (delivery == PhyVlabCaptchaDelivery.WebViewPromise) """
-        let resolveProof;
-        window.$PHYVLAB_CAPTCHA_RESULT_PROMISE = new Promise(resolve => { resolveProof = resolve; });
-    """.trimIndent() else ""
-    val noResponse = if (delivery == PhyVlabCaptchaDelivery.WebViewPromise) """
-        message.textContent = '已完成验证，但应用没有收到结果。请关闭后重新打开验证码。';
-    """.trimIndent() else """
-        message.textContent = '已完成验证，但应用没有收到结果。请点「重新加载」再试一次。';
-        verify.disabled = false;
-        reload.disabled = false;
-    """.trimIndent()
     return """
         <!doctype html>
         <html lang="zh-CN">
@@ -205,7 +196,6 @@ internal fun phyVlabCaptchaHtml(
         const reload = document.getElementById('reload');
         let widget;
         let timeout;
-        $setup
         function failed() {
           clearTimeout(timeout);
           message.textContent = '学校验证码加载失败，请重新加载。';
@@ -215,7 +205,9 @@ internal fun phyVlabCaptchaHtml(
         function armNoResponseHint() {
           setTimeout(() => {
             if (message.textContent !== '正在提交验证结果…') return;
-            $noResponse
+            message.textContent = '已完成验证，但应用没有收到结果。请点「重新加载」再试一次。';
+            verify.disabled = false;
+            reload.disabled = false;
           }, 15000);
         }
         function start() {

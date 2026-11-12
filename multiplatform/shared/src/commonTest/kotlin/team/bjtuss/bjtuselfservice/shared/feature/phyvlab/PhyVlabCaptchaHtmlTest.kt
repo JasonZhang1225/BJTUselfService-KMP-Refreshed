@@ -10,21 +10,10 @@ class PhyVlabCaptchaHtmlTest {
     private val captchaId = "0123456789abcdef0123456789abcdef"
 
     @Test
-    fun androidDeliveryKeepsTheWindowVariableContract() {
+    fun mobileDeliveryRetainsTheProofForWebViewReads() {
         val html = phyVlabCaptchaHtml(captchaId, PhyVlabCaptchaDelivery.WindowVariable)
-        assertContains(html, "window.phyVlabCaptchaProof = result;")
+        assertContains(html, "window.$PHYVLAB_CAPTCHA_RESULT_VARIABLE = result;")
         assertFalse(html.contains("messageHandlers"))
-        assertFalse(html.contains("fetch(location.pathname"))
-    }
-
-    @Test
-    fun iosDeliveryResolvesThePromiseAwaitedByWebView() {
-        val html = phyVlabCaptchaHtml(captchaId, PhyVlabCaptchaDelivery.WebViewPromise)
-        assertContains(html, "window.$PHYVLAB_CAPTCHA_RESULT_PROMISE = new Promise")
-        assertContains(html, "resolveProof(result);")
-        assertContains(html, "请关闭后重新打开验证码。")
-        assertFalse(html.contains("messageHandlers"))
-        assertFalse(html.contains("phyVlabCaptchaProof"))
         assertFalse(html.contains("fetch(location.pathname"))
     }
 

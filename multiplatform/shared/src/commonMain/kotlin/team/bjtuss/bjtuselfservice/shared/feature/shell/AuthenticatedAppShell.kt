@@ -116,6 +116,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.LayoutDirection
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -527,7 +528,8 @@ fun AuthenticatedAppShell(
     var phyVlabCaptchaAccount by remember(session) { mutableStateOf<Credentials?>(null) }
     var phyVlabCaptchaFromAssignments by remember(session) { mutableStateOf(false) }
     val openPhyVlabCaptcha: (Boolean) -> Unit = { fromAssignments ->
-        scope.launch {
+        // The native sync sheet can cover the Compose host while this account lookup runs.
+        scope.launch(Dispatchers.Main.immediate) {
             if (phyVlabCaptchaAccount == null) {
                 session.phyVlabAccountModel?.credentials()?.let { account ->
                     phyVlabCaptchaFromAssignments = fromAssignments
@@ -1206,8 +1208,8 @@ fun AuthenticatedAppShell(
             prepare = phyVlabModel::prepareManualLogin,
             onSuccess = {
                 phyVlabModel.rememberManualSession(account.username)
+                phyVlabCaptchaAccount = null
                 refreshPhyVlabAfterLogin()
-                closePhyVlabCaptcha()
                 true
             },
             onRejected = phyVlabModel::manualCredentialsRejected,
