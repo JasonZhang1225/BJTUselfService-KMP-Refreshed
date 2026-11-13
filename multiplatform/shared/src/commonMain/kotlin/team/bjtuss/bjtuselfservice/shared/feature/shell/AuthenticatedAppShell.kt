@@ -193,6 +193,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabDetailWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabContentSource
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSyncFailure
+import team.bjtuss.bjtuselfservice.shared.data.phyvlab.phyVlabDebug
 import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeScreenModel
@@ -529,9 +530,12 @@ fun AuthenticatedAppShell(
     var phyVlabCaptchaFromAssignments by remember(session) { mutableStateOf(false) }
     val openPhyVlabCaptcha: (Boolean) -> Unit = { fromAssignments ->
         // The native sync sheet can cover the Compose host while this account lookup runs.
+        phyVlabDebug("openPhyVlabCaptcha requested fromAssignments=$fromAssignments alreadyOpen=${phyVlabCaptchaAccount != null}")
         scope.launch(Dispatchers.Main.immediate) {
             if (phyVlabCaptchaAccount == null) {
-                session.phyVlabAccountModel?.credentials()?.let { account ->
+                val account = session.phyVlabAccountModel?.credentials()
+                phyVlabDebug("openPhyVlabCaptcha credentialsLoaded=${account != null}")
+                if (account != null) {
                     phyVlabCaptchaFromAssignments = fromAssignments
                     phyVlabCaptchaAccount = account
                     homeSyncDialogVisible = false
@@ -541,6 +545,7 @@ fun AuthenticatedAppShell(
         }
     }
     val closePhyVlabCaptcha = {
+        phyVlabDebug("closePhyVlabCaptcha returnToAssignments=$phyVlabCaptchaFromAssignments")
         phyVlabCaptchaAccount = null
         if (phyVlabCaptchaFromAssignments) aggregateSyncDialogVisible = true
         else homeSyncDialogVisible = true
@@ -2367,11 +2372,14 @@ fun AuthenticatedAppShell(
             ) {
                 session.phyVlabAccountModel?.let {
                     team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabAccountSettingsScreen(
-                        it, phyVlabModel::prepareManualLogin, Modifier.fillMaxSize(), onAccountSaved = {
+                        it, phyVlabModel::prepareManualLogin, Modifier.fillMaxSize(),
+                        onAccountSaved = {
                             settingsModel.setPhyVlabEnabled(true)
                             refreshPhyVlabAfterLogin()
                             popBackStack()
-                        })
+                        },
+                        onTestSessionCleared = { refreshPhyVlabAfterLogin() },
+                    )
                 }
             }
             PhysicsDemoRoute -> DestinationPage(

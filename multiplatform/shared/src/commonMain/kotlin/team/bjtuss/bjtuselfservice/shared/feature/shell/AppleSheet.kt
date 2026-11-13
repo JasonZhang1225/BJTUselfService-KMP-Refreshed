@@ -107,7 +107,10 @@ fun AppleSheet(
                 // LocalContentColor by itself. Without this provider, Text with
                 // an unspecified color falls back to black over the native dark
                 // glass surface.
-                CompositionLocalProvider(LocalContentColor provides appColorScheme.onSurface) {
+                CompositionLocalProvider(
+                    LocalContentColor provides appColorScheme.onSurface,
+                    LocalDismissNativeSheet provides presenter::dismiss,
+                ) {
                     val density = LocalDensity.current
                     val horizontalBounds = if (LocalNativeSheetContentBoundsHandled.current) Modifier else
                         Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))

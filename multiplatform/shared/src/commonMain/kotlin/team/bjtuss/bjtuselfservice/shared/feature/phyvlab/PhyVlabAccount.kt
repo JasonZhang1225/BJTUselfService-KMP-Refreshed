@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.phyvlab
 
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -17,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import team.bjtuss.bjtuselfservice.shared.currentPlatform
 import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSessionResult
@@ -150,6 +153,22 @@ class PhyVlabAccountModel(
             }
         }
 
+    internal suspend fun clearSessionForTesting(): Boolean = mutex.withLock {
+        try {
+            clearSession()
+            mutableState.value = state.value.copy(
+                failed = false,
+                message = "已退出本机物理在线会话。账号已保留，可重新验证。",
+            )
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            showError("退出物理在线失败，请重试。")
+            false
+        }
+    }
+
     suspend fun clearConfiguration() {
         initialize()
         mutex.withLock {
@@ -186,12 +205,14 @@ internal fun PhyVlabAccountSettingsScreen(
     prepareManualLogin: suspend () -> PhyVlabManualLogin,
     modifier: Modifier = Modifier,
     onAccountSaved: () -> Unit = {},
+    onTestSessionCleared: () -> Unit = {},
 ) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
     var username by remember(model) { mutableStateOf("") }
     var password by remember(model) { mutableStateOf("") }
     var ready by remember(model) { mutableStateOf(false) }
+    var clearingTestSession by remember(model) { mutableStateOf(false) }
     var accountToVerify by remember(model) { mutableStateOf<Credentials?>(null) }
     LaunchedEffect(model) {
         model.initialize()
@@ -200,7 +221,7 @@ internal fun PhyVlabAccountSettingsScreen(
     }
     IndependentAccountSettings(
         username, password, state.configured && username.trim() == state.username,
-        ready, state.saving, { username = it }, { password = it },
+        ready, state.saving || clearingTestSession, { username = it }, { password = it },
         onSave = {
             scope.launch {
                 accountToVerify = model.configurationCredentials(username, password)
@@ -211,6 +232,23 @@ internal fun PhyVlabAccountSettingsScreen(
         canClear = state.configured,
         onClear = { scope.launch { model.clearConfiguration(); password = "" } },
         showSavingDialog = false,
+        additionalActions = {
+            if (currentPlatform().isDebugBuild && state.configured) {
+                TextButton(
+                    enabled = ready && !state.saving && !clearingTestSession && accountToVerify == null,
+                    onClick = {
+                        clearingTestSession = true
+                        scope.launch {
+                            try {
+                                if (model.clearSessionForTesting()) onTestSessionCleared()
+                            } finally {
+                                clearingTestSession = false
+                            }
+                        }
+                    },
+                ) { Text("退出物理在线会话（调试）") }
+            }
+        },
     )
     accountToVerify?.let { account ->
         PhyVlabCaptchaSheet(

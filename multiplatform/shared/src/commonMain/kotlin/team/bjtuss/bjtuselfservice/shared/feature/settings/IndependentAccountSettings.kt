@@ -36,6 +36,7 @@ internal fun IndependentAccountSettings(
     onClear: (() -> Unit)? = null,
     canClear: Boolean = hasSavedPassword,
     showSavingDialog: Boolean = true,
+    additionalActions: @Composable ColumnScope.() -> Unit = {},
 ) {
     val scroll = rememberScrollState()
     val focus = LocalFocusManager.current
@@ -89,6 +90,7 @@ internal fun IndependentAccountSettings(
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("清除配置信息") }
         }
+        additionalActions()
         if (failed) AppErrorBanner(message ?: "请检查账号密码和网络后重试。", title = "同步失败")
         else message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
     }

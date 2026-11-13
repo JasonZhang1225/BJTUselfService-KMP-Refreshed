@@ -26,6 +26,7 @@ import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabManualLogin
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSessionResult
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.phyVlabDebug
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
+import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalDismissNativeSheet
 
 internal const val PHYVLAB_CAPTCHA_REQUIRED_MESSAGE = "请完成物理在线的人机验证。"
 internal const val PHYVLAB_ACCOUNT_REJECTED_MESSAGE = "物理在线账号或密码错误，请在设置中检查。"
@@ -47,6 +48,7 @@ internal fun PhyVlabCaptchaSheet(
     var captchaId by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
     var submitting by remember { mutableStateOf(false) }
+    var completed by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var credentialsRejected by remember { mutableStateOf(false) }
     AppleSheet(
@@ -55,7 +57,7 @@ internal fun PhyVlabCaptchaSheet(
         onDismissRequest = onDismiss,
         dismissible = !submitting,
         dismissEnabled = !submitting,
-        confirmLabel = if (error != null && !credentialsRejected) "重试" else null,
+        confirmLabel = if (error != null && !credentialsRejected && !completed) "重试" else null,
         onConfirm = {
             error = null
             loading = true
@@ -63,6 +65,7 @@ internal fun PhyVlabCaptchaSheet(
         },
     ) {
         // On iOS the sheet has its own Compose root. Keep the proof receiver and its effect in that root.
+        val dismissNativeSheet = LocalDismissNativeSheet.current
         val proof = remember(attemptNumber) { CompletableDeferred<PhyVlabCaptchaProof?>() }
         LaunchedEffect(attemptNumber) {
             var attempt: PhyVlabManualLogin? = null
@@ -84,7 +87,13 @@ internal fun PhyVlabCaptchaSheet(
                 phyVlabDebug("captcha submission finished: ${outcome?.let { it::class.simpleName } ?: "timeout"}")
                 error = if (outcome == null) PHYVLAB_LOGIN_TIMEOUT_MESSAGE else when (outcome) {
                     is PhyVlabSessionResult.Ready ->
-                        if (onSuccess()) null else "登录成功，但保存账号失败。请关闭后查看设置页的提示。"
+                        if (onSuccess()) {
+                            completed = true
+                            phyVlabDebug("captcha login succeeded, requesting dismiss hasDirectDismiss=${dismissNativeSheet != null}")
+                            // Close the UIKit presentation even if the covered page has not recomposed yet.
+                            dismissNativeSheet?.invoke()
+                            null
+                        } else "登录成功，但保存账号失败。请关闭后查看设置页的提示。"
                     PhyVlabSessionResult.CaptchaRequired,
                     PhyVlabSessionResult.CaptchaRejected,
                     -> "验证码未通过，请重新验证。"
@@ -109,7 +118,10 @@ internal fun PhyVlabCaptchaSheet(
         }
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val message = error
-            if (loading || submitting) {
+            if (completed) {
+                CircularProgressIndicator()
+                Text("验证成功，正在关闭…")
+            } else if (loading || submitting) {
                 CircularProgressIndicator()
                 Text(if (submitting) "正在登录物理在线…" else "正在加载验证码…")
             } else if (message != null) {
