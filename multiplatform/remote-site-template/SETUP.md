@@ -7,14 +7,20 @@
 - 读取当前 Sites skill 的发布流程、身份与机密、Site MCP 文档，以及 Plugin Creator 的 Sites MCP 和 App-backed plugin skill 更新文档。以当前工具返回值为准。
 - 模板源码入口为 `https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed` 的 `main` 分支、`multiplatform/remote-site-template/` 目录。可用 Git 稀疏检出只读取该目录；复制到仓库之外的独立 Site 目录，不能连带 `.git` 或在维护仓库内直接执行 Site 同步。安装文档与查询约定均读取该 main 分支目录内的版本。
 - 在独立空目录或已有 Site 的独立工作目录使用本模板。它是无第三方 Node 依赖的 Worker ESM，Node >=22.5；无需安装整个 KMP 工程、Vinext 或其他框架。不要改写 src 查询实现。
-- 检查 `.openai/hosting.json`：保留 `d1: "DB"`、`capabilities: ["mcp"]`、无 static。只有没有 project_id 的新实例才 create_site 一次，立即将返回的 ID 写入该实例 manifest。维护模板不写用户 ID。
-- 用户未指定旧 Site 则新建。明确指定已有 Site 升级时，按下方「已有 Site 的增量更新」流程保留原 Site、DB、插件和所有设备数据，不能再创建第二份 Site 或第二份插件。创建响应不明先核实原操作，不能重复创建。
+- 检查 `.openai/hosting.json`：保留 `d1: "DB"`、`capabilities: ["mcp"]`、无 static。只有确认确实是全新站点（不存在匹配的已有可用 Site，且工作副本尚无 `project_id`）时才 `create_site` 一次，并立即将返回的 ID 写入该实例 manifest。维护模板不写用户 ID。
+- **先查已有 Sites，宽松匹配并默认走增量更新（不要轻易新建）**：执行任何建站操作前，即使提示词里用户没有贴旧 Site 链接或 `project_id`，也必须先列出用户当前账号下的 Sites。满足以下**任意一条**即按下方「已有 Site 的增量更新」直接升级原 Site，完整保留原 Site、DB、插件与所有设备数据，**禁止再创建第二份 Site 或第二份插件**：
+  1. 用户明确指定了已有 Site / URL / `project_id`；
+  2. 账号下存在**名字相同或相近**的私人 Site（如名称或标题含“交大自由行”/`BJTUselfService`/`bjtuss`/“私人查询”等）；
+  3. 账号下存在**模板结构相似**的私人 Site（如 `hosting.json` 含 `d1: "DB"` 与 `capabilities: ["mcp"]`、文件布局含类似 `src/`/`migrations/`/`drizzle/`、D1 含 `template_meta`/`devices`/`snapshots`/`tasks` 等核心表、或提供 `/api/v1/health` 接口）。旧版站点在文件清单、工具数（如 `11` 个与 `13` 个）、版本号格式或插件状态上与 `2.0.0-KMP` 有差异属升级前的正常现象，**名字相同或模板相似就算同一套站点**，直接增量更新，不得以此为由新建站点。
+  - 若账号下只有这一份匹配 Site，直接增量更新，不要再额外打断用户确认或重新 `create_site`；若恰好存在多份同名/相似候选 Site 且难以区分，优先选择最近活跃或已有绑定数据的那一份，实在无法判断时问用户选哪一份，不新建第三份。
+  - **兼容已发布客户端旧提示词的冲突说明**：若用户粘贴的客户端提示词里仍写有“没有提供旧 Site 时新建一份 / 用户未指定旧 Site 则新建”等旧文案，**不得据此强行新建第二份站点**；该措辞本意是“没有旧 Site 时才新建”。只要按本节检查出已有名称或模板相似的 Site，一律优先在原 Site 上增量更新。
+  - 仅当确认当前 Sites 列表中**没有任何名字或模板相似的已有 Site**，或用户在本轮对话中明确要求另建一个全新 Site 时，才新建一次；创建响应不明时先核实原操作，不能重复创建。
 
 ### 已有 Site 的增量更新（升级指导）
 
-当用户明确提供了已有 Site（如从 `1.8.6-KMP` 等旧模板升级至 `2.0.0-KMP`）时，严格执行以下增量步骤，**禁止销毁重建数据库或更换实例身份**：
+当用户指定了已有 Site，或按上述宽松条件在 Sites 列表中匹配到名字相同/相近、模板结构相似的已有 Site（如从 `0.x` / `1.8.6-Beta` / `1.8.6-KMP` 等任意旧模板升级至 `2.0.0-KMP`）时，严格执行以下增量步骤，**禁止新建重复站点、销毁重建数据库或更换实例身份**：
 
-1. **打开已有源码并增量覆盖模板文件**：按 Sites 源码流程拉取/打开用户原有 Site 源码，**完整保留** `.openai/hosting.json` 中的原有 `project_id`、`d1: "DB"` 与 `capabilities: ["mcp"]`；仅用 `2.0.0-KMP` 模板更新 `src/`、`migrations/`、`drizzle/`、`plugin/`、`scripts/`、`test/`、`package.json`、`README.md`、`SETUP.md`、`agent-query-contract.md`。
+1. **打开已有源码并增量覆盖模板文件**：按 Sites 源码流程拉取/打开用户原有 Site 源码，**完整保留** `.openai/hosting.json` 中的原有 `project_id`、`d1: "DB"` 与 `capabilities: ["mcp"]`（以及本地已有的运行时环境变量/机密，绝不覆盖）；用 `2.0.0-KMP` 模板覆盖以下全部模板文件与目录：`src/`、`fixtures/`、`migrations/`、`drizzle/`、`plugin/`、`scripts/`、`test/`、`package.json`、`README.md`、`SETUP.md`、`agent-query-contract.md`、`.gitignore`、`.env.example`（其中 `fixtures/` 是测试与契约校验必需的共享样例，必须一并同步，否则新增测试会因缺少样例失败）。
 2. **保留原有拥有者与有效机密**：保留 DB 中已固定的 `OWNER_USER_ID`（如已设置不得替换或覆写），并保留已配置的 `OWNER_PRIVATE_BOOTSTRAP` 与 `SITE_DEVICE_ACCESS`；仅当缺少其中一项时按第 2 节补齐。不要无故轮换已有 `SITE_DEVICE_ACCESS`，以免已配对设备立即断连。
 3. **只按顺序补跑未执行的 DB 增量迁移**：先在原 D1 数据库检查当前迁移版本（`SELECT value FROM template_meta WHERE key = 'schema_migration'`）与现有表结构，再严格按序号**仅执行尚未落库的迁移文件**（`migrations/` 与 `drizzle/` 内容对应；构建产物保留 `dist/.openai/drizzle/`）：
    - `0001_init.sql`：基础表（`template_meta`、`pairing_codes`、`devices`、`snapshots`、`tasks`）
@@ -52,7 +58,7 @@
 
   以 `exec_command(tty: true, yield_time_ms: 1000)` 启动，出现 `Ready for Site credential JSON on stdin (input is hidden).` 后，用 `write_stdin` 传入一行 JSON：`{"credential": <create_site 或 create_source_repository_write_credential 返回的完整凭据对象>}`，末尾加换行。不要把凭据替换为聊天文字、文件或命令参数。脚本自己完成测试、构建、源码 commit/push 和打包，输出最终 project_id、commit_sha、archive，原样传给私人发布工具。它只支持当前已验证的 work_proxy 和 http_extra_header 模式；拒绝时报告实际能力缺口，不启动用户登录。
 - 归档根必须有 `.openai/hosting.json` 和 `dist/server/index.js`；不能只对 dist 内部打包成 server/index.js。脚本已固定并校验此布局。单独打包可运行 `npm run package:site -- <源码目录外的绝对路径.tar.gz>`。
-- 新建站点为 owner-private，使用私人发布工具；环境变量变更后必须部署才生效。保留返回的版本和部署 ID；仅非终态继续查部署状态，不重复保存/发布。
+- 已有站点升级或新建站点均保持为 owner-private，使用私人发布工具；环境变量变更后必须部署才生效。保留返回的版本和部署 ID；仅非终态继续查部署状态，不重复保存/发布。
 - 不要求用户在本步骤登录。用户首次打开私人 Site 时由平台处理登录，首次可信请求固定拥有者。
 
 ## 4. 同一个 canonical 插件

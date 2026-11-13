@@ -31,7 +31,7 @@ Windows 打包：在 `multiplatform/` 用 JDK 21 运行 `gradlew.bat :windowsApp
 
 完整步骤的唯一维护源是模板内 `SETUP.md`，它与 `agent-query-contract.md` 都随干净模板包分发。
 
-电脑 App → Agent 和 ChatGPT 插件 → 复制提示词，发给具备 Sites 与 Plugin Creator 的助手。助手完成私人 Site 创建、身份初始化配置、设备访问机密、发布，以及同一 canonical 插件的查询 Skill；最终统一交付 Site 和插件入口。搭建中不要求用户提前登录、取得身份 ID、提供系统存储权限或领取配对码。
+电脑 App → Agent 和 ChatGPT 插件 → 复制提示词，发给具备 Sites 与 Plugin Creator 的助手。助手会先检查现有 Sites 中是否已有名称或模板相似的旧站点并优先增量更新，找不到（或用户要求另建）时再新建，随后完成私人 Site 部署、身份初始化配置、设备访问机密、发布，以及同一 canonical 插件的查询 Skill；最终统一交付 Site 和插件入口。搭建中不要求用户提前登录、取得身份 ID、提供系统存储权限或领取配对码。
 
 用户打开 Site 并登录，点击“生成配对信息”，在支持新流程的 App 中只粘贴完整配对长码（已含地址，无需另填）、选择上云范围并确认。配对信息包含本站机器访问授权，只通过拥有者专属 API 返回，十分钟有效；一次性码只保存摘要，机器访问材料最终保存在设备系统安全存储，不发到聊天、日志或源码。过期在 Site 自行生成，无需回到对话。
 

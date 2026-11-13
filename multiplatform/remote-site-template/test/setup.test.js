@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createSite } from './helpers.js';
 import { page } from '../src/page.js';
 import { createRefreshMonitor } from '../src/refresh-monitor.js';
@@ -52,3 +53,18 @@ for (const [status, code] of [[401, 'sign_in_required'], [403, 'unauthorized'], 
     monitor.stop();
   });
 }
+
+test('SETUP.md 增量更新覆盖清单包含 fixtures/ 等完整模板文件且采用宽松匹配规则', () => {
+  const setup = readFileSync(new URL('../SETUP.md', import.meta.url), 'utf8');
+  assert.equal(setup.includes('- 用户未指定旧 Site 则新建'), false);
+  assert.ok(setup.includes('名字相同或相近'));
+  assert.ok(setup.includes('模板结构相似'));
+  assert.ok(setup.includes('兼容已发布客户端旧提示词的冲突说明'));
+  const upgradeSection = setup.slice(setup.indexOf('### 已有 Site 的增量更新'));
+  for (const entry of [
+    'src/', 'fixtures/', 'migrations/', 'drizzle/', 'plugin/', 'scripts/', 'test/',
+    'package.json', 'README.md', 'SETUP.md', 'agent-query-contract.md', '.gitignore', '.env.example',
+  ]) {
+    assert.ok(upgradeSection.includes(entry), `SETUP.md 增量更新清单缺少 ${entry}`);
+  }
+});
