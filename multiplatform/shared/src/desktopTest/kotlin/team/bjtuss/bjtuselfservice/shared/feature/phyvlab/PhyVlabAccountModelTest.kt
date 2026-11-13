@@ -89,6 +89,74 @@ class PhyVlabAccountModelTest {
             cache.close()
         }
     }
+
+    @Test
+    fun configureOrRequireCaptchaHandlesDirectSaveAndCaptchaChallengeCleanly() = runBlocking<Unit> {
+        val cache = store()
+        try {
+            val vault = MemoryVault()
+            var signInResult: PhyVlabSessionResult = PhyVlabSessionResult.CaptchaRequired
+            val remembered = mutableListOf<String>()
+            val model = PhyVlabAccountModel(
+                scope = "scope-a",
+                cache = cache,
+                vault = vault,
+                rememberSession = { remembered += it },
+                signIn = { signInResult },
+            )
+
+            val challenge = model.configureOrRequireCaptcha("lab-a", "secret-a")
+            assertEquals(
+                PhyVlabAccountModel.ConfigureOutcome.CaptchaRequired(Credentials("lab-a", "secret-a")),
+                challenge,
+            )
+            assertNull(vault.credentials)
+            assertFalse(model.state.value.failed)
+            assertNull(model.state.value.message)
+            assertTrue(remembered.isEmpty())
+
+            signInResult = PhyVlabSessionResult.Ready("https://phyvlab.bjtu.edu.cn/")
+            val direct = model.configureOrRequireCaptcha("lab-a", "secret-a")
+            assertEquals(PhyVlabAccountModel.ConfigureOutcome.Saved, direct)
+            assertEquals("lab-a", vault.credentials?.username)
+            assertEquals(listOf("lab-a"), remembered)
+        } finally {
+            cache.close()
+        }
+    }
+
+    @Test
+    fun saveVerifiedConfigurationFailureClearsUnownedSessionAndKeepsPreviousAccount() = runBlocking<Unit> {
+        val cache = store()
+        try {
+            val vault = object : CredentialVault {
+                var saved: Credentials? = Credentials("account-a", "pass-a")
+                var failSave = false
+                override suspend fun save(credentials: Credentials) {
+                    if (failSave) error("keychain unavailable")
+                    saved = credentials
+                }
+                override suspend fun load(): Credentials? = saved
+                override suspend fun clear() { saved = null }
+            }.apply { failSave = true }
+            var clearSessionCalls = 0
+            val model = PhyVlabAccountModel(
+                scope = "scope-a",
+                cache = cache,
+                vault = vault,
+                clearSession = { clearSessionCalls++ },
+                signIn = { PhyVlabSessionResult.Ready("https://phyvlab.bjtu.edu.cn/") },
+            )
+            model.initialize()
+
+            assertFalse(model.saveVerifiedConfiguration(Credentials("account-b", "pass-b")))
+            assertEquals(1, clearSessionCalls)
+            assertEquals("account-a", vault.saved?.username)
+            assertTrue(model.state.value.failed)
+        } finally {
+            cache.close()
+        }
+    }
 }
 
 private class MemoryVault : CredentialVault {

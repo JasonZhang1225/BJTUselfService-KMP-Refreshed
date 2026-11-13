@@ -234,7 +234,10 @@ fun AppleSheet(
                                 enabled = dismissEnabled,
                             ) { Text(dismissLabel) }
                         } else if (showDismissButton) {
-                            TextButton(onClick = onDismissRequest) { Text("关闭") }
+                            TextButton(
+                                onClick = onDismissRequest,
+                                enabled = dismissEnabled,
+                            ) { Text("关闭") }
                         }
                     }
                 }
@@ -350,7 +353,7 @@ fun AppleSheetOrAlert(
                 {
                     TextButton(
                         onClick = onConfirm ?: onDismissRequest,
-                        enabled = if (confirmLabel != null) confirmEnabled else true,
+                        enabled = if (confirmLabel != null) confirmEnabled else dismissEnabled,
                     ) {
                         Text(fallbackConfirmLabel)
                     }

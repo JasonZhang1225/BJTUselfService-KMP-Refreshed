@@ -11,6 +11,7 @@ import io.ktor.http.takeFrom
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.concurrent.Volatile
 import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -66,12 +67,22 @@ class PhyVlabSessionProtocol(
 ) {
     private val sessionVaultMutex = Mutex()
     private var lastSavedSession: Credentials? = null
+    @Volatile
+    private var activeSessionUsername: String? = null
 
     suspend fun establishSession(): PhyVlabSessionResult = try {
         val loginPage = loadLoginPage()
         if (parseOffMain { loginPage.pageMarks() }.authenticated) {
-            if (sessionVault != null) credentials()?.let { rememberCurrentSession(it.username) }
-            PhyVlabSessionResult.Ready(PHYVLAB_HOME_URL)
+            val owner = activeSessionUsername
+            val account = if (sessionVault != null || owner != null) credentials() else null
+            if (owner != null && (account == null || owner != account.username)) {
+                clearRememberedSession()
+                if (account == null) PhyVlabSessionResult.AccountRequired
+                else restoreSessionOrLogin(loadLoginPage(), account)
+            } else {
+                if (sessionVault != null && account != null) rememberCurrentSession(account.username)
+                PhyVlabSessionResult.Ready(PHYVLAB_HOME_URL)
+            }
         } else {
             val account = credentials()?.takeIf { it.isValid }
             if (account == null) PhyVlabSessionResult.AccountRequired
@@ -90,6 +101,7 @@ class PhyVlabSessionProtocol(
         if (cookie != null) {
             when (probeAndAdoptSession(cookie)) {
                 SessionProbe.READY -> {
+                    activeSessionUsername = account.username
                     rememberCurrentSession(account.username)
                     return PhyVlabSessionResult.Ready(PHYVLAB_HOME_URL)
                 }
@@ -99,16 +111,20 @@ class PhyVlabSessionProtocol(
             }
         }
         return submitLogin(loginPage, account).also {
-            if (it is PhyVlabSessionResult.Ready) rememberCurrentSession(account.username)
+            if (it is PhyVlabSessionResult.Ready) {
+                activeSessionUsername = account.username
+                rememberCurrentSession(account.username)
+            }
         }
     }
 
     internal suspend fun rememberCurrentSession(username: String) {
+        activeSessionUsername = username
         val vault = sessionVault ?: return
         try {
-            val cookie = transport.phyVlabSessionCookie() ?: return
-            val entry = Credentials(username, cookie.value)
             sessionVaultMutex.withLock {
+                val cookie = transport.phyVlabSessionCookie() ?: return
+                val entry = Credentials(username, cookie.value)
                 if (entry != lastSavedSession) {
                     vault.save(entry)
                     lastSavedSession = entry
@@ -124,6 +140,7 @@ class PhyVlabSessionProtocol(
     internal suspend fun clearRememberedSession() {
         sessionVaultMutex.withLock {
             try {
+                activeSessionUsername = null
                 sessionVault?.clear()
                 lastSavedSession = null
             } finally {
@@ -170,13 +187,16 @@ class PhyVlabSessionProtocol(
     suspend fun signInWith(account: Credentials): PhyVlabSessionResult = try {
         var loginPage = loadLoginPage()
         if (parseOffMain { loginPage.pageMarks() }.authenticated) {
+            activeSessionUsername = null
             parseOffMain { parsePhyVlabLogoutUrl(loginPage.bodyText()) }?.let { logout ->
                 val response = executeRaw(logout, referer = loginPage.finalUrl)
                 if (response.statusCode in 300..399) followHandshake(response)
             }
             loginPage = loadLoginPage()
         }
-        submitLogin(loginPage, account)
+        submitLogin(loginPage, account).also { result ->
+            if (result is PhyVlabSessionResult.Ready) activeSessionUsername = account.username
+        }
     } catch (error: PhyVlabRemoteException) {
         PhyVlabSessionResult.Failed(error.reason, detail = error.reason.name.lowercase())
     }
@@ -220,33 +240,46 @@ class PhyVlabSessionProtocol(
         try {
             val protocol = PhyVlabSessionProtocol(isolated)
             val page = protocol.loadLoginPage()
-            val captchaId = parseOffMain { parsePhyVlabCaptchaId(page.bodyText()) }
-                ?: throw PhyVlabRemoteException(PhyVlabRemoteFailure.PARSE)
+            val body = page.bodyText()
+            val requiresCaptcha = parseOffMain { phyVlabLoginRequiresCaptcha(body) }
+            val captchaId = parseOffMain { parsePhyVlabCaptchaId(body) }
+            if (requiresCaptcha) {
+                captchaId ?: throw PhyVlabRemoteException(PhyVlabRemoteFailure.PARSE)
+            } else if (parseOffMain { parsePhyVlabLoginForm(body) } == null) {
+                throw PhyVlabRemoteException(PhyVlabRemoteFailure.PARSE)
+            }
             return PhyVlabManualLogin(captchaId, close) { account, proof ->
                 try {
-                    val verified = isolated.executeWithoutRedirects(
-                        SchoolHttpRequest(
-                            SchoolHttpMethod.POST,
-                            "${SchoolEndpoints.PHYVLAB_ORIGIN}/login/captcha_verify.php",
-                            headers = mapOf("Referer" to PHYVLAB_LOGIN_URL, "Origin" to SchoolEndpoints.PHYVLAB_ORIGIN),
-                            rawBody = proof.toJson().encodeToByteArray(),
-                            rawBodyContentType = "application/json",
-                        ),
-                    )
-                    val passed = verified.statusCode == 200 && parseOffMain {
-                        runCatching {
-                            val json = Json.parseToJsonElement(verified.bodyText()) as? JsonObject
-                            (json?.get("ok") as? JsonPrimitive)?.let { !it.isString && it.booleanOrNull == true } == true
-                        }.getOrDefault(false)
+                    if (captchaId != null) {
+                        if (proof == null) return@PhyVlabManualLogin PhyVlabSessionResult.CaptchaRejected
+                        val verified = isolated.executeWithoutRedirects(
+                            SchoolHttpRequest(
+                                SchoolHttpMethod.POST,
+                                "${SchoolEndpoints.PHYVLAB_ORIGIN}/login/captcha_verify.php",
+                                headers = mapOf("Referer" to PHYVLAB_LOGIN_URL, "Origin" to SchoolEndpoints.PHYVLAB_ORIGIN),
+                                rawBody = proof.toJson().encodeToByteArray(),
+                                rawBodyContentType = "application/json",
+                            ),
+                        )
+                        val passed = verified.statusCode == 200 && parseOffMain {
+                            runCatching {
+                                val json = Json.parseToJsonElement(verified.bodyText()) as? JsonObject
+                                (json?.get("ok") as? JsonPrimitive)?.let { !it.isString && it.booleanOrNull == true } == true
+                            }.getOrDefault(false)
+                        }
+                        if (!passed) {
+                            return@PhyVlabManualLogin if (verified.statusCode == 200) PhyVlabSessionResult.CaptchaRejected
+                            else PhyVlabSessionResult.Failed(PhyVlabRemoteFailure.NETWORK)
+                        }
                     }
-                    if (!passed) {
-                        if (verified.statusCode == 200) PhyVlabSessionResult.CaptchaRejected
-                        else PhyVlabSessionResult.Failed(PhyVlabRemoteFailure.NETWORK)
-                    } else when (val result = protocol.submitLogin(page, account, captchaVerified = true)) {
+                    when (val result = protocol.submitLogin(page, account, captchaVerified = captchaId != null)) {
                         is PhyVlabSessionResult.Ready -> {
                             val session = isolated.phyVlabSessionCookie()
                             when (session?.let { probeAndAdoptSession(it) }) {
-                                SessionProbe.READY -> result
+                                SessionProbe.READY -> {
+                                    activeSessionUsername = account.username
+                                    result
+                                }
                                 SessionProbe.UNAVAILABLE -> PhyVlabSessionResult.Failed(PhyVlabRemoteFailure.NETWORK, "manual-session-probe")
                                 SessionProbe.EXPIRED, null ->
                                     PhyVlabSessionResult.Failed(PhyVlabRemoteFailure.SESSION_EXPIRED, "manual-session-unconfirmed")
@@ -461,13 +494,13 @@ private const val MAX_HOPS = 12
 
 
 internal class PhyVlabManualLogin(
-    val captchaId: String,
+    val captchaId: String?,
     val close: () -> Unit,
-    private val submit: suspend (Credentials, PhyVlabCaptchaProof) -> PhyVlabSessionResult,
+    private val submit: suspend (Credentials, PhyVlabCaptchaProof?) -> PhyVlabSessionResult,
 ) {
     private val submitted = Mutex()
 
-    suspend fun complete(account: Credentials, proof: PhyVlabCaptchaProof): PhyVlabSessionResult {
+    suspend fun complete(account: Credentials, proof: PhyVlabCaptchaProof? = null): PhyVlabSessionResult {
         if (!submitted.tryLock()) return PhyVlabSessionResult.CaptchaRejected
         return submit(account, proof)
     }

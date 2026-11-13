@@ -189,7 +189,7 @@ fun appRefreshAdapters(models: AppRefreshModels): List<RefreshSourceAdapter> = w
                 if (preferences().isPhyVlabEnabled) RefreshAvailability.ENABLED else RefreshAvailability.DISABLED
             override suspend fun refresh() {
                 phyVlabAccountModel?.initialize()
-                phyVlabModel.refresh()
+                phyVlabModel.refreshWaiting()
             }
             override fun outcome(): RefreshSourceResult {
                 val state = phyVlabModel.state.value

@@ -92,6 +92,7 @@ class IosNativeSheetPresenter private constructor(
     private var pendingDismiss = false
     private var awaitingRetry = false
     private var retryCount = 0
+    private var retryToken = 0L
 
     override fun update(
         content: @Composable () -> Unit,
@@ -148,6 +149,7 @@ class IosNativeSheetPresenter private constructor(
             // 打开动画还没结束就被关、又马上被重新打开：取消待执行的关闭，继续用这张 sheet。
             pendingDismiss = false
             awaitingRetry = false
+            retryToken += 1
             BJTUConfigureSheetPresentation(existing, needsFullHeight)
             fittedContentHeight?.let { BJTUSetSheetFittedHeight(existing, it.toDouble()) }
             updateNativeHeader(existing)
@@ -165,6 +167,7 @@ class IosNativeSheetPresenter private constructor(
         }
         host.clearQueuedPresentation(this)
         awaitingRetry = false
+        retryToken += 1
 
         val contentController = ComposeUIViewController(
             configure = { opaque = false },
@@ -227,27 +230,30 @@ class IosNativeSheetPresenter private constructor(
         if (retryCount >= MAX_PRESENT_RETRIES) {
             retryCount = 0
             awaitingRetry = false
+            host.clearQueuedPresentation(this)
             AppLog.d("native-sheet", "present retry exhausted")
             // 实在弹不出来：把 Compose 状态复位，下次点击可以重新打开。
             dismissRequest()
+            flushQueuedPresentation()
             return
         }
         retryCount += 1
         awaitingRetry = true
-        host.queuePresentation(this, needsFullHeight)
+        val token = ++retryToken
+        host.queuePresentation(this, needsFullHeight, front = true)
         dispatch_after(
             dispatch_time(DISPATCH_TIME_NOW, PRESENT_RETRY_DELAY_NS),
             dispatch_get_main_queue(),
         ) {
-            if (!awaitingRetry || sheetController != null) return@dispatch_after
+            if (token != retryToken || !awaitingRetry || sheetController != null) return@dispatch_after
             if (host.dismissingSheet != null || host.activeSheet != null) {
                 // 前一张 sheet 仍在关闭，保持排队等关闭完成回调，不再盲撞 UIKit。
                 return@dispatch_after
             }
-            if (host.queuedPresenter !== this) return@dispatch_after
-            host.clearQueuedPresentation(this)
+            if (host.peekNextQueuedPresenter() !== this) return@dispatch_after
+            val queued = host.pollNextQueued() ?: return@dispatch_after
             awaitingRetry = false
-            present(needsFullHeight)
+            present(queued.needsFullHeight)
         }
     }
 
@@ -270,19 +276,26 @@ class IosNativeSheetPresenter private constructor(
 
     override fun dismiss() {
         awaitingRetry = false
+        retryToken += 1
         host.clearQueuedPresentation(this)
         val sheet = sheetController ?: run {
             AppLog.d("native-sheet", "dismiss skipped: no active sheet")
+            flushQueuedPresentation()
             return
         }
         if (pendingDismiss) {
             AppLog.d("native-sheet", "dismiss skipped: already pending")
             return
         }
-        if (host.dismissingSheet === sheet || sheet.isBeingDismissed()) {
+        if (host.dismissingSheet === sheet) {
             AppLog.d("native-sheet", "dismiss skipped: already dismissing")
+            return
+        }
+        if (sheet.isBeingDismissed()) {
+            AppLog.d("native-sheet", "dismiss observed in-flight UIKit dismissal")
+            host.markDismissing(sheet, sheetDelegate)
             clearSheetReferences(sheet)
-            host.dismissingSheet = sheet
+            scheduleDismissWatchdog(sheet)
             return
         }
         if (host.presentingSheet === sheet || sheet.isBeingPresented()) {
@@ -304,12 +317,10 @@ class IosNativeSheetPresenter private constructor(
     private fun clearSheetReferences(sheet: UIViewController) {
         pendingDismiss = false
         awaitingRetry = false
+        retryToken += 1
         fittedContentHeight = null
         if (sheetController === sheet) sheetController = null
         sheetDelegate = null
-        confirmTarget = null
-        todayTarget = null
-        dismissTarget = null
         if (host.activeSheet === sheet) {
             host.activeSheet = null
         }
@@ -321,6 +332,7 @@ class IosNativeSheetPresenter private constructor(
     private fun performDismiss(sheet: UIViewController) {
         val presentingController = sheet.presentingViewController
         val presentedOnPresenting = presentingController?.presentedViewController
+        val delegate = sheetDelegate
         clearSheetReferences(sheet)
         if (presentingController == null) {
             AppLog.d("native-sheet", "dismiss abort: no presentingViewController")
@@ -336,48 +348,56 @@ class IosNativeSheetPresenter private constructor(
             flushQueuedPresentation()
             return
         }
-        host.dismissingSheet = sheet
+        host.markDismissing(sheet, delegate)
         AppLog.d(
             "native-sheet",
             "dismiss started sameRef=${presentedOnPresenting === sheet} sheetHasChild=${sheet.presentedViewController != null}",
         )
         presentingController.dismissViewControllerAnimated(flag = true) {
             AppLog.d("native-sheet", "dismiss completed")
-            if (host.dismissingSheet === sheet) {
-                host.dismissingSheet = null
-            }
+            host.clearDismissing(sheet)
             flushQueuedPresentation()
         }
+        scheduleDismissWatchdog(sheet)
+    }
+
+    private fun scheduleDismissWatchdog(
+        sheet: UIViewController,
+        delayNs: Long = DISMISS_WATCHDOG_DELAY_NS,
+        remainingPolls: Int = MAX_DISMISS_WATCHDOG_POLLS,
+    ) {
         dispatch_after(
-            dispatch_time(DISPATCH_TIME_NOW, DISMISS_WATCHDOG_DELAY_NS),
+            dispatch_time(DISPATCH_TIME_NOW, delayNs),
             dispatch_get_main_queue(),
         ) {
             if (host.dismissingSheet !== sheet) return@dispatch_after
             val stillPresenting = sheet.presentingViewController
-            if (stillPresenting == null) {
+            if (stillPresenting == null || stillPresenting.presentedViewController == null) {
                 AppLog.d("native-sheet", "dismiss watchdog: already detached")
-                host.dismissingSheet = null
+                host.clearDismissing(sheet)
                 flushQueuedPresentation()
-            } else if (!sheet.isBeingDismissed()) {
-                AppLog.d("native-sheet", "dismiss watchdog: retry without animation")
+            } else if (!sheet.isBeingDismissed() || remainingPolls <= 0) {
+                AppLog.d("native-sheet", "dismiss watchdog: retry without animation polls=$remainingPolls")
                 stillPresenting.dismissViewControllerAnimated(flag = false) {
                     AppLog.d("native-sheet", "dismiss watchdog completed")
-                    if (host.dismissingSheet === sheet) {
-                        host.dismissingSheet = null
-                    }
+                    host.clearDismissing(sheet)
                     flushQueuedPresentation()
                 }
+            } else {
+                scheduleDismissWatchdog(
+                    sheet = sheet,
+                    delayNs = DISMISS_WATCHDOG_POLL_DELAY_NS,
+                    remainingPolls = remainingPolls - 1,
+                )
             }
         }
     }
 
     private fun flushQueuedPresentation() {
         if (host.dismissingSheet != null || host.activeSheet != null) return
-        val next = host.queuedPresenter ?: return
-        val needsFullHeight = host.queuedNeedsFullHeight
-        host.queuedPresenter = null
+        val next = host.pollNextQueued() ?: return
         AppLog.d("native-sheet", "flushing queued present")
-        next.present(needsFullHeight)
+        next.presenter.present(next.needsFullHeight)
     }
 
     private fun handleDismissed(sheet: UIViewController) {
@@ -388,7 +408,7 @@ class IosNativeSheetPresenter private constructor(
         if (!ownedByHandle && !wasDismissing) return
         AppLog.d("native-sheet", "didDismiss callback owned=$ownedByHandle")
         if (wasDismissing) {
-            host.dismissingSheet = null
+            host.clearDismissing(sheet)
         }
         if (ownedByHandle) {
             clearSheetReferences(sheet)
@@ -418,28 +438,71 @@ class IosNativeSheetPresenter private constructor(
     private class SheetHostCoordinator(
         val owner: () -> UIViewController,
     ) {
+        data class QueuedPresentation(
+            val presenter: IosNativeSheetPresenter,
+            var needsFullHeight: Boolean,
+        )
+
         var activeSheet: UIViewController? = null
         var presentingSheet: UIViewController? = null
         var dismissingSheet: UIViewController? = null
-        var queuedPresenter: IosNativeSheetPresenter? = null
-        var queuedNeedsFullHeight: Boolean = false
+        var dismissingDelegate: SheetDelegate? = null
+        private val queuedPresentations = mutableListOf<QueuedPresentation>()
 
-        fun queuePresentation(presenter: IosNativeSheetPresenter, needsFullHeight: Boolean) {
-            queuedPresenter = presenter
-            queuedNeedsFullHeight = needsFullHeight
+        fun markDismissing(sheet: UIViewController, delegate: SheetDelegate?) {
+            dismissingSheet = sheet
+            if (delegate != null) {
+                dismissingDelegate = delegate
+            }
+        }
+
+        fun clearDismissing(sheet: UIViewController) {
+            if (dismissingSheet === sheet) {
+                dismissingSheet = null
+                dismissingDelegate = null
+            }
+        }
+
+        fun queuePresentation(
+            presenter: IosNativeSheetPresenter,
+            needsFullHeight: Boolean,
+            front: Boolean = false,
+        ) {
+            val existingIndex = queuedPresentations.indexOfFirst { it.presenter === presenter }
+            if (existingIndex >= 0) {
+                val existing = queuedPresentations[existingIndex]
+                existing.needsFullHeight = needsFullHeight
+                if (front && existingIndex > 0) {
+                    queuedPresentations.removeAt(existingIndex)
+                    queuedPresentations.add(0, existing)
+                }
+                return
+            }
+            val item = QueuedPresentation(presenter, needsFullHeight)
+            if (front) {
+                queuedPresentations.add(0, item)
+            } else {
+                queuedPresentations.add(item)
+            }
         }
 
         fun clearQueuedPresentation(presenter: IosNativeSheetPresenter) {
-            if (queuedPresenter === presenter) {
-                queuedPresenter = null
-            }
+            queuedPresentations.removeAll { it.presenter === presenter }
         }
+
+        fun peekNextQueuedPresenter(): IosNativeSheetPresenter? =
+            queuedPresentations.firstOrNull()?.presenter
+
+        fun pollNextQueued(): QueuedPresentation? =
+            queuedPresentations.removeFirstOrNull()
     }
 }
 
 private const val MAX_PRESENT_RETRIES = 10
 private const val PRESENT_RETRY_DELAY_NS = 120_000_000L
 private const val DISMISS_WATCHDOG_DELAY_NS = 1_200_000_000L
+private const val DISMISS_WATCHDOG_POLL_DELAY_NS = 250_000_000L
+private const val MAX_DISMISS_WATCHDOG_POLLS = 8
 
 /** Uses this presentation's insets, never the underlying tab/navigation bars. */
 @OptIn(ExperimentalForeignApi::class)

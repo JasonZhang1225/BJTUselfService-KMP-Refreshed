@@ -256,6 +256,53 @@ class AppRefreshCoordinatorTest {
         assertNull(report.result(RefreshSource.CITEL))
     }
 
+    @Test
+    fun refreshFreshWaitsForInFlightRefreshAndStartsFreshRun() = runBlocking {
+        val firstStarted = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val calls = AtomicInteger()
+        var loggedIn = false
+        val phyVlab = object : RefreshSourceAdapter {
+            override val source = RefreshSource.PHYVLAB
+            override val usesSchoolSession = false
+            private var outcome = RefreshSourceResult(RefreshSource.PHYVLAB, RefreshStatus.NEEDS_USER_ACTION)
+
+            override suspend fun refresh() {
+                val authenticated = loggedIn
+                if (calls.incrementAndGet() == 1) {
+                    firstStarted.complete(Unit)
+                    releaseFirst.await()
+                }
+                outcome = if (authenticated) {
+                    RefreshSourceResult(RefreshSource.PHYVLAB, RefreshStatus.SUCCESS)
+                } else {
+                    RefreshSourceResult(RefreshSource.PHYVLAB, RefreshStatus.NEEDS_USER_ACTION, "not_configured")
+                }
+            }
+
+            override fun outcome() = outcome
+            override fun fetchedAtEpochSeconds(): Long? = null
+        }
+        val coordinator = coordinator(listOf(phyVlab))
+        try {
+            val initial = async(Dispatchers.Default) { coordinator.refresh(request(RefreshSource.PHYVLAB)) }
+            withTimeout(5_000) { firstStarted.await() }
+
+            loggedIn = true
+            val postAuth = async(Dispatchers.Default) { coordinator.refreshFresh(request(RefreshSource.PHYVLAB)) }
+            delay(50)
+            assertEquals(1, calls.get())
+
+            releaseFirst.complete(Unit)
+            assertEquals(RefreshStatus.NEEDS_USER_ACTION, withTimeout(5_000) { initial.await() }.result(RefreshSource.PHYVLAB)?.status)
+            assertEquals(RefreshStatus.SUCCESS, withTimeout(5_000) { postAuth.await() }.result(RefreshSource.PHYVLAB)?.status)
+            assertEquals(2, calls.get())
+        } finally {
+            releaseFirst.complete(Unit)
+            coordinator.close()
+        }
+    }
+
     private suspend fun waitUntil(condition: () -> Boolean) {
         withTimeout(5_000) {
             while (!condition()) {

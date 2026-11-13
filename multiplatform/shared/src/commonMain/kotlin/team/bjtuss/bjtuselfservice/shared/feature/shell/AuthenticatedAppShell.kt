@@ -520,9 +520,9 @@ fun AuthenticatedAppShell(
     val refreshPhyVlabAfterLogin = {
         val coordinator = session.refreshCoordinator
         if (coordinator != null) {
-            coordinator.enqueue(RefreshRequest(setOf(RefreshSource.PHYVLAB), RefreshOrigin.APP))
+            coordinator.enqueueFresh(RefreshRequest(setOf(RefreshSource.PHYVLAB), RefreshOrigin.APP))
         } else {
-            scope.launch { phyVlabModel.refresh() }
+            scope.launch { phyVlabModel.refreshWaiting() }
         }
         Unit
     }

@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -133,6 +134,20 @@ class PhyVlabScreenModel(
 
     suspend fun refresh() {
         if (!refreshMutex.tryLock()) return
+        try {
+            performRefresh()
+        } finally {
+            refreshMutex.unlock()
+        }
+    }
+
+    internal suspend fun refreshWaiting() {
+        refreshMutex.withLock {
+            performRefresh()
+        }
+    }
+
+    private suspend fun performRefresh() {
         try {
             // 首页主动刷新、失败后的用户重试和物理在线页初始化都走这里。
             // 只要真正进入过一次网络刷新，本次登录会话内再次进入页面就只复用
@@ -273,7 +288,6 @@ class PhyVlabScreenModel(
             publishFailure(PhyVlabSyncFailure.NETWORK)
         } finally {
             clearLoading()
-            refreshMutex.unlock()
         }
     }
 

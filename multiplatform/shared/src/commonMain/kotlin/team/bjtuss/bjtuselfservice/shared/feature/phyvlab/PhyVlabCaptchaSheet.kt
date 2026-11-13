@@ -71,13 +71,18 @@ internal fun PhyVlabCaptchaSheet(
             var attempt: PhyVlabManualLogin? = null
             try {
                 attempt = prepare()
-                captchaId = attempt.captchaId
-                loading = false
-                val answer = proof.await()
-                if (answer == null) {
-                    captchaId = null
-                    error = "无法读取验证码结果，请重试。"
-                    return@LaunchedEffect
+                val activeCaptchaId = attempt.captchaId
+                val answer = if (activeCaptchaId != null) {
+                    captchaId = activeCaptchaId
+                    loading = false
+                    proof.await() ?: run {
+                        captchaId = null
+                        error = "无法读取验证码结果，请重试。"
+                        return@LaunchedEffect
+                    }
+                } else {
+                    loading = false
+                    null
                 }
                 phyVlabDebug("captcha submission started")
                 submitting = true

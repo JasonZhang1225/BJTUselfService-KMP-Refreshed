@@ -106,18 +106,47 @@ class PhyVlabAccountModel(
         }
     }
 
-    suspend fun configure(username: String, password: String): Boolean {
-        val creds = configurationCredentials(username, password) ?: return false
-        return saveConfiguration(creds) {
+    internal sealed interface ConfigureOutcome {
+        data object Saved : ConfigureOutcome
+        data class CaptchaRequired(val credentials: Credentials) : ConfigureOutcome
+        data object Failed : ConfigureOutcome
+    }
+
+    suspend fun configure(username: String, password: String): Boolean =
+        configureWithOutcome(username, password, showCaptchaError = true) == ConfigureOutcome.Saved
+
+    internal suspend fun configureOrRequireCaptcha(username: String, password: String): ConfigureOutcome =
+        configureWithOutcome(username, password, showCaptchaError = false)
+
+    private suspend fun configureWithOutcome(
+        username: String,
+        password: String,
+        showCaptchaError: Boolean,
+    ): ConfigureOutcome {
+        val creds = configurationCredentials(username, password) ?: return ConfigureOutcome.Failed
+        var captchaRequired = false
+        val saved = saveConfiguration(creds) {
             when (val result = withTimeout(40_000) { signIn(creds) }) {
                 is PhyVlabSessionResult.Ready -> Unit
-                PhyVlabSessionResult.CaptchaRequired, PhyVlabSessionResult.CaptchaRejected ->
+                PhyVlabSessionResult.CaptchaRequired, PhyVlabSessionResult.CaptchaRejected -> {
+                    captchaRequired = true
                     throw PhyVlabAccountFailure(PHYVLAB_CAPTCHA_REQUIRED_MESSAGE)
+                }
                 PhyVlabSessionResult.CredentialsRejected, PhyVlabSessionResult.AccountRequired ->
                     throw PhyVlabAccountFailure("物理在线账号或密码错误。")
                 is PhyVlabSessionResult.Failed -> throw PhyVlabAccountFailure("无法连接物理在线，请稍后重试。")
                     .also { phyVlabAccountDebug(result) }
             }
+        }
+        return when {
+            saved -> ConfigureOutcome.Saved
+            captchaRequired -> {
+                if (!showCaptchaError) {
+                    mutableState.value = state.value.copy(failed = false, message = null)
+                }
+                ConfigureOutcome.CaptchaRequired(creds)
+            }
+            else -> ConfigureOutcome.Failed
         }
     }
 
@@ -134,9 +163,22 @@ class PhyVlabAccountModel(
             try {
                 val storage = vault ?: throw PhyVlabAccountFailure("当前平台安全存储不可用。")
                 verify()
-                storage.save(creds)
-                cache.putMetadata(scope, USERNAME_KEY, creds.username)
-                cache.putMetadata(scope, CONFIGURED_KEY, "true")
+                try {
+                    storage.save(creds)
+                    cache.putMetadata(scope, USERNAME_KEY, creds.username)
+                    cache.putMetadata(scope, CONFIGURED_KEY, "true")
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // 验证或采用会话后持久化失败时，清除未归属该账号的会话，避免后续刷新串号。
+                    try {
+                        clearSession()
+                    } catch (clearError: CancellationException) {
+                        throw clearError
+                    } catch (_: Exception) {
+                    }
+                    throw e
+                }
                 rememberSession(creds.username)
                 mutableState.value = PhyVlabAccountState(creds.username, configured = true, message = "已登录物理在线并保存账号。")
                 true
@@ -224,7 +266,16 @@ internal fun PhyVlabAccountSettingsScreen(
         ready, state.saving || clearingTestSession, { username = it }, { password = it },
         onSave = {
             scope.launch {
-                accountToVerify = model.configurationCredentials(username, password)
+                when (val outcome = model.configureOrRequireCaptcha(username, password)) {
+                    PhyVlabAccountModel.ConfigureOutcome.Saved -> {
+                        password = ""
+                        onAccountSaved()
+                    }
+                    is PhyVlabAccountModel.ConfigureOutcome.CaptchaRequired -> {
+                        accountToVerify = outcome.credentials
+                    }
+                    PhyVlabAccountModel.ConfigureOutcome.Failed -> Unit
+                }
             }
         },
         message = state.message, failed = state.failed, modifier = modifier,

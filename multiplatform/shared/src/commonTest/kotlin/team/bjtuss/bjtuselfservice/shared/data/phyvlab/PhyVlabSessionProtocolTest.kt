@@ -190,6 +190,53 @@ class PhyVlabSessionProtocolTest {
         assertEquals(0, transport.adoptionCount)
     }
 
+    @Test
+    fun verifiedManualSessionOwnedByAnotherAccountIsNeverAttributedToConfiguredAccount() = runBlocking {
+        val isolated = ProtocolQueueTransport(
+            page(LOGIN, captchaLoginPage()),
+            page(VERIFY, """{"ok":true}"""),
+            page(LOGIN, authenticatedHtml()),
+        ).apply { cookies = listOf(SchoolSessionCookie("MoodleSession", "user-b-session", domain = "phyvlab.bjtu.edu.cn")) }
+        val target = ProtocolQueueTransport(
+            page(LOGIN, authenticatedHtml()),
+            page(LOGIN, captchaLoginPage()),
+        ).apply {
+            adoptionProbe = page(COURSES, authenticatedHtml())
+        }
+        val sessionVault = SessionVault()
+        // 外层配置仍是 account-a（模拟 account-b 校验成功后写入安全存储失败）。
+        val protocol = PhyVlabSessionProtocol(target, sessionVault) { Credentials("account-a", "pass-a") }
+        val login = protocol.prepareManualLogin(isolated) {}
+        assertIs<PhyVlabSessionResult.Ready>(login.complete(Credentials("account-b", "pass-b"), proof()))
+
+        // 下次刷新时应清掉未落盘的 account-b 会话，绝不把 account-b 的 Cookie 记到 account-a 名下。
+        assertEquals(PhyVlabSessionResult.CaptchaRequired, protocol.establishSession())
+        assertEquals(1, target.clearPhyVlabCalls)
+        assertNull(sessionVault.entry)
+    }
+
+    @Test
+    fun prepareManualLoginSupportsNoCaptchaFallbackAndRejectsBrokenCaptchaWidget() = runBlocking {
+        val noCaptchaIsolated = ProtocolQueueTransport(
+            page(LOGIN, loginPageHtml()),
+            page(LOGIN, authenticatedHtml()),
+        ).apply { cookies = listOf(SchoolSessionCookie("MoodleSession", "plain-session", domain = "phyvlab.bjtu.edu.cn")) }
+        val target = ProtocolQueueTransport().apply {
+            adoptionProbe = page(COURSES, authenticatedHtml())
+        }
+        val direct = PhyVlabSessionProtocol(target).prepareManualLogin(noCaptchaIsolated) {}
+        assertNull(direct.captchaId)
+        assertIs<PhyVlabSessionResult.Ready>(direct.complete(Credentials("lab-user", "lab-secret")))
+        assertEquals(listOf(LOGIN, LOGIN), noCaptchaIsolated.requests.map { it.url })
+        assertEquals(1, target.adoptionCount)
+
+        val brokenHtml = loginPageHtml().replace("</form>", "<div id='aliyun-captcha-element'></div></form>")
+        val brokenIsolated = ProtocolQueueTransport(page(LOGIN, brokenHtml))
+        val failed = runCatching { PhyVlabSessionProtocol(target).prepareManualLogin(brokenIsolated) {} }.exceptionOrNull()
+        assertIs<PhyVlabRemoteException>(failed)
+        assertEquals(PhyVlabRemoteFailure.PARSE, failed.reason)
+    }
+
     private class SessionVault(var entry: Credentials? = null) : CredentialVault {
         var clearCount = 0
         override suspend fun save(credentials: Credentials) { entry = credentials }
@@ -245,8 +292,14 @@ class PhyVlabSessionProtocolTest {
         var cookies: List<SchoolSessionCookie> = emptyList()
         var adoptionProbe: SchoolHttpResponse? = null
         var adoptionCount = 0
+        var clearPhyVlabCalls = 0
 
         override suspend fun sessionCookiesFor(url: String) = cookies
+
+        override suspend fun clearPhyVlabSession() {
+            clearPhyVlabCalls++
+            cookies = emptyList()
+        }
 
         override suspend fun adoptPhyVlabSession(
             session: PhyVlabLoginSession,

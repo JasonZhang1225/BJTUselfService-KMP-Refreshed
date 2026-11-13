@@ -9,6 +9,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import kotlinx.coroutines.Dispatchers
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalDismissNativeSheet
@@ -17,8 +23,10 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeSheetPresenter
 import javax.swing.SwingUtilities
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class PhyVlabCaptchaSheetDismissTest {
     @Test
@@ -115,20 +123,120 @@ class PhyVlabCaptchaSheetDismissTest {
         }
     }
 
+    @Test
+    fun queuedThirdSheetPreservesSecondSheetInFifoOrder() = onUiThread {
+        val host = CoordinatedTestHost()
+        var showFirst by mutableStateOf(true)
+        var showSecond by mutableStateOf(false)
+        var showThird by mutableStateOf(false)
+        val scene = ImageComposeScene(width = 390, height = 844, coroutineContext = Dispatchers.Unconfined) {
+            MaterialTheme {
+                CompositionLocalProvider(LocalNativeSheetPresenter provides host) {
+                    if (showFirst) AppleSheet(title = "第一张", onDismissRequest = { showFirst = false }) { Text("1") }
+                    if (showSecond) AppleSheet(title = "第二张", onDismissRequest = { showSecond = false }) { Text("2") }
+                    if (showThird) AppleSheet(title = "第三张", onDismissRequest = { showThird = false }) { Text("3") }
+                }
+            }
+        }
+        var frame = 0L
+        fun render() {
+            repeat(4) { scene.render(++frame * 16_000_000L).close() }
+        }
+        try {
+            render()
+            assertEquals("第一张", host.activeHandle?.title)
+
+            showSecond = true
+            render()
+            showThird = true
+            render()
+            showFirst = false
+            render()
+
+            assertEquals(listOf("第二张", "第三张"), host.queuedTitles())
+            host.finishDismissTransition()
+            assertEquals("第二张", host.activeHandle?.title)
+            assertEquals(listOf("第三张"), host.queuedTitles())
+
+            showSecond = false
+            render()
+            host.finishDismissTransition()
+            assertEquals("第三张", host.activeHandle?.title)
+            assertTrue(host.queuedTitles().isEmpty())
+        } finally {
+            scene.close()
+        }
+    }
+
+    @Test
+    fun nonIosFallbackDefaultDismissButtonRespectsDismissEnabled() = onUiThread {
+        var dismissEnabled by mutableStateOf(false)
+        var dismissCalls = 0
+        val scene = ImageComposeScene(width = 390, height = 844, coroutineContext = Dispatchers.Unconfined) {
+            MaterialTheme {
+                AppleSheet(
+                    title = "物理在线验证码",
+                    onDismissRequest = { dismissCalls++ },
+                    dismissEnabled = dismissEnabled,
+                    fitContentHeight = true,
+                ) {
+                    Text("正文")
+                }
+            }
+        }
+        var frame = 0L
+        fun render(frames: Int = 24) {
+            repeat(frames) { scene.render(++frame * 16_000_000L).close() }
+        }
+        fun hasCloseText(node: SemanticsNode): Boolean =
+            node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == "关闭" } == true ||
+                node.children.any(::hasCloseText)
+        fun closeButton(): SemanticsNode {
+            fun collect(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::collect)
+            return scene.semanticsOwners.flatMap { collect(it.unmergedRootSemanticsNode) }.first { node ->
+                node.config.getOrNull(SemanticsActions.OnClick) != null && hasCloseText(node)
+            }
+        }
+        try {
+            render()
+            val disabledButton = closeButton()
+            assertTrue(SemanticsProperties.Disabled in disabledButton.config, "提交中默认关闭按钮也应禁用")
+            val center = disabledButton.boundsInRoot.center
+            scene.sendPointerEvent(PointerEventType.Press, Offset(center.x, center.y))
+            scene.sendPointerEvent(PointerEventType.Release, Offset(center.x, center.y))
+            render(4)
+            assertEquals(0, dismissCalls)
+
+            dismissEnabled = true
+            render(8)
+            val enabledButton = closeButton()
+            assertFalse(SemanticsProperties.Disabled in enabledButton.config, "可关闭时默认关闭按钮应恢复可用")
+            val enabledCenter = enabledButton.boundsInRoot.center
+            scene.sendPointerEvent(PointerEventType.Press, Offset(enabledCenter.x, enabledCenter.y))
+            scene.sendPointerEvent(PointerEventType.Release, Offset(enabledCenter.x, enabledCenter.y))
+            render(4)
+            assertEquals(1, dismissCalls)
+        } finally {
+            scene.close()
+        }
+    }
+
     private fun onUiThread(block: () -> Unit) = SwingUtilities.invokeAndWait(block)
 
     private class CoordinatedTestHost : NativeSheetPresenter {
         val handles = mutableListOf<Handle>()
         var activeHandle: Handle? = null
         var dismissingHandle: Handle? = null
-        var queuedHandle: Handle? = null
+        private val queuedHandles = mutableListOf<Handle>()
+        val queuedHandle: Handle? get() = queuedHandles.firstOrNull()
+
+        fun queuedTitles(): List<String?> = queuedHandles.map { it.title }
 
         override fun createPresentation(): NativeSheetPresenter = Handle().also(handles::add)
 
         fun finishDismissTransition() {
             dismissingHandle = null
-            val next = queuedHandle ?: return
-            queuedHandle = null
+            val next = queuedHandles.removeFirstOrNull() ?: return
             next.present(next.lastNeedsFullHeight)
         }
 
@@ -179,15 +287,16 @@ class PhyVlabCaptchaSheetDismissTest {
                 presentCalls++
                 lastNeedsFullHeight = needsFullHeight
                 if (dismissingHandle != null || (activeHandle != null && activeHandle !== this)) {
-                    queuedHandle = this
+                    if (this !in queuedHandles) queuedHandles += this
                     return
                 }
+                queuedHandles.remove(this)
                 activeHandle = this
             }
 
             override fun dismiss() {
                 dismissCalls++
-                if (queuedHandle === this) queuedHandle = null
+                queuedHandles.remove(this)
                 if (activeHandle === this) {
                     activeHandle = null
                     dismissingHandle = this
