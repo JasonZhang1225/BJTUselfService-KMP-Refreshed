@@ -55,6 +55,8 @@ interface NativeAlertPresentation {
     fun dismiss()
 }
 
+internal val LocalDismissNativeSheet = compositionLocalOf<(() -> Unit)?> { null }
+
 val LocalNativeSheetPresenter = compositionLocalOf<NativeSheetPresenter?> { null }
 /** The modal host bounds its body using the sheet's own UIKit safe area. */
 val LocalNativeSheetContentBoundsHandled = compositionLocalOf { false }

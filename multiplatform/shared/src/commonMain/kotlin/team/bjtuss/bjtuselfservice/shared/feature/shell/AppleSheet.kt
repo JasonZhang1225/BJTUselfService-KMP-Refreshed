@@ -107,7 +107,10 @@ fun AppleSheet(
                 // LocalContentColor by itself. Without this provider, Text with
                 // an unspecified color falls back to black over the native dark
                 // glass surface.
-                CompositionLocalProvider(LocalContentColor provides appColorScheme.onSurface) {
+                CompositionLocalProvider(
+                    LocalContentColor provides appColorScheme.onSurface,
+                    LocalDismissNativeSheet provides presenter::dismiss,
+                ) {
                     val density = LocalDensity.current
                     val horizontalBounds = if (LocalNativeSheetContentBoundsHandled.current) Modifier else
                         Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
@@ -231,7 +234,10 @@ fun AppleSheet(
                                 enabled = dismissEnabled,
                             ) { Text(dismissLabel) }
                         } else if (showDismissButton) {
-                            TextButton(onClick = onDismissRequest) { Text("关闭") }
+                            TextButton(
+                                onClick = onDismissRequest,
+                                enabled = dismissEnabled,
+                            ) { Text("关闭") }
                         }
                     }
                 }
@@ -347,7 +353,7 @@ fun AppleSheetOrAlert(
                 {
                     TextButton(
                         onClick = onConfirm ?: onDismissRequest,
-                        enabled = if (confirmLabel != null) confirmEnabled else true,
+                        enabled = if (confirmLabel != null) confirmEnabled else dismissEnabled,
                     ) {
                         Text(fallbackConfirmLabel)
                     }

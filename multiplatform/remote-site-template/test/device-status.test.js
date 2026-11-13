@@ -25,11 +25,11 @@ test('设备独立在线状态与快照，不把手机静默当作离线，也�
 });
 
 test('App 对齐 Site、MCP 和插件模板版本，网页提供每台设备独立撤销', () => {
-  assert.equal(TEMPLATE_VERSION, '1.8.6-KMP');
+  assert.equal(TEMPLATE_VERSION, '2.0.0-KMP');
   for (const name of ['../package.json','../plugin/plugin.json']) {
     assert.equal(JSON.parse(readFileSync(new URL(name, import.meta.url))).version, TEMPLATE_VERSION);
   }
-  assert.ok(page.includes('版本 1.8.6-KMP'));
+  assert.ok(page.includes(`版本 ${TEMPLATE_VERSION}`));
   assert.ok(page.includes('撤销此设备'));
   assert.ok(!page.includes('device=devices[0]'));
 });
@@ -39,7 +39,7 @@ test('健康检查兼容已安装 App 的数字解析器，显示与 MCP 保留�
   const site=createSite();t.after(()=>site.env.DB.raw.close());
   const response=await site.call('GET','/api/v1/health');
   assert.equal(response.status,200);
-  assert.equal(response.body.templateVersion,'1.8.6');
+  assert.equal(response.body.templateVersion,'2.0.0');
   assert.equal(response.body.releaseVersion,TEMPLATE_VERSION);
   const legacyParts=response.body.templateVersion.split('.').map(Number);
   assert.ok(legacyParts.every(Number.isFinite));

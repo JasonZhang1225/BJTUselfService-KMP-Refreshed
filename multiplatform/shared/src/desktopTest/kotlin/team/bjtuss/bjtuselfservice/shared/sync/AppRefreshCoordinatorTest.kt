@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -67,6 +68,27 @@ class AppRefreshCoordinatorTest {
 
     private fun request(vararg sources: RefreshSource, origin: RefreshOrigin = RefreshOrigin.APP) =
         RefreshRequest(sources = sources.toSet(), origin = origin)
+
+    @Test
+    fun refreshQueuedByClosedSettingsPageCompletesInSession() = runBlocking {
+        val gate = CompletableDeferred<Unit>()
+        val physicalOnline = FakeAdapter(RefreshSource.PHYVLAB, usesSchoolSession = false, gate = gate)
+        val coordinator = coordinator(listOf(physicalOnline))
+        try {
+            val report = async(start = CoroutineStart.UNDISPATCHED) {
+                withTimeout(5_000) { coordinator.completed.first() }
+            }
+            val settingsPage = async {
+                coordinator.enqueue(request(RefreshSource.PHYVLAB))
+            }
+            settingsPage.await()
+            waitUntil { physicalOnline.calls.get() == 1 }
+            gate.complete(Unit)
+            assertEquals(RefreshStatus.SUCCESS, report.await().result(RefreshSource.PHYVLAB)?.status)
+        } finally {
+            coordinator.close()
+        }
+    }
 
     @Test
     fun concurrentIdenticalRequestsShareOneExecution() = runBlocking {
@@ -232,6 +254,53 @@ class AppRefreshCoordinatorTest {
         assertEquals("test-account", report.accountScope)
         assertEquals(1_000L, report.startedAtEpochSeconds)
         assertNull(report.result(RefreshSource.CITEL))
+    }
+
+    @Test
+    fun refreshFreshWaitsForInFlightRefreshAndStartsFreshRun() = runBlocking {
+        val firstStarted = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val calls = AtomicInteger()
+        var loggedIn = false
+        val phyVlab = object : RefreshSourceAdapter {
+            override val source = RefreshSource.PHYVLAB
+            override val usesSchoolSession = false
+            private var outcome = RefreshSourceResult(RefreshSource.PHYVLAB, RefreshStatus.NEEDS_USER_ACTION)
+
+            override suspend fun refresh() {
+                val authenticated = loggedIn
+                if (calls.incrementAndGet() == 1) {
+                    firstStarted.complete(Unit)
+                    releaseFirst.await()
+                }
+                outcome = if (authenticated) {
+                    RefreshSourceResult(RefreshSource.PHYVLAB, RefreshStatus.SUCCESS)
+                } else {
+                    RefreshSourceResult(RefreshSource.PHYVLAB, RefreshStatus.NEEDS_USER_ACTION, "not_configured")
+                }
+            }
+
+            override fun outcome() = outcome
+            override fun fetchedAtEpochSeconds(): Long? = null
+        }
+        val coordinator = coordinator(listOf(phyVlab))
+        try {
+            val initial = async(Dispatchers.Default) { coordinator.refresh(request(RefreshSource.PHYVLAB)) }
+            withTimeout(5_000) { firstStarted.await() }
+
+            loggedIn = true
+            val postAuth = async(Dispatchers.Default) { coordinator.refreshFresh(request(RefreshSource.PHYVLAB)) }
+            delay(50)
+            assertEquals(1, calls.get())
+
+            releaseFirst.complete(Unit)
+            assertEquals(RefreshStatus.NEEDS_USER_ACTION, withTimeout(5_000) { initial.await() }.result(RefreshSource.PHYVLAB)?.status)
+            assertEquals(RefreshStatus.SUCCESS, withTimeout(5_000) { postAuth.await() }.result(RefreshSource.PHYVLAB)?.status)
+            assertEquals(2, calls.get())
+        } finally {
+            releaseFirst.complete(Unit)
+            coordinator.close()
+        }
     }
 
     private suspend fun waitUntil(condition: () -> Boolean) {

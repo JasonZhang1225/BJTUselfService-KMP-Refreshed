@@ -29,7 +29,7 @@ object AppUpdateChecker {
     const val REPO = "JasonZhang1225/BJTUselfService-KMP-Refreshed"
 
     /** 当前构建版本。与 androidApp versionName / 设置页展示一致。 */
-    const val CURRENT_VERSION = "2.0.0-Alpha"
+    const val CURRENT_VERSION = "2.0.0-KMP"
 
     /** 当前构建号。与 androidApp versionCode、iOS CFBundleVersion、桌面 packageBuildVersion 一致。 */
     const val CURRENT_BUILD = 45

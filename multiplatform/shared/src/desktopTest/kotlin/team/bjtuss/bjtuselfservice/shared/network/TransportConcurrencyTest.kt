@@ -1,6 +1,18 @@
 package team.bjtuss.bjtuselfservice.shared.network
 
 import com.sun.net.httpserver.HttpServer
+import io.ktor.client.engine.HttpClientEngineBase
+import io.ktor.client.engine.HttpClientEngineConfig
+import io.ktor.client.engine.HttpClientEngineFactory
+import io.ktor.client.engine.callContext
+import io.ktor.client.plugins.HttpTimeoutCapability
+import io.ktor.client.request.HttpRequestData
+import io.ktor.client.request.HttpResponseData
+import io.ktor.http.Headers
+import io.ktor.http.HttpProtocolVersion
+import io.ktor.http.HttpStatusCode
+import io.ktor.util.date.GMTDate
+import io.ktor.utils.io.ByteReadChannel
 import java.net.InetSocketAddress
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -55,6 +67,49 @@ class TransportConcurrencyTest {
             transport.close()
             server.stop(0)
             executor.shutdownNow()
+        }
+    }
+
+    @Test
+    @OptIn(io.ktor.utils.io.InternalAPI::class)
+    fun clearPhyVlabSessionPreventsInFlightAdoptFromPersistingCookie() = runBlocking {
+        val probeStarted = CompletableDeferred<Unit>()
+        val releaseProbe = CompletableDeferred<Unit>()
+        val factory = object : HttpClientEngineFactory<HttpClientEngineConfig> {
+            override fun create(block: HttpClientEngineConfig.() -> Unit) = object : HttpClientEngineBase("probe-gate") {
+                override val config = HttpClientEngineConfig().apply(block)
+                override val supportedCapabilities = setOf(HttpTimeoutCapability)
+                @io.ktor.utils.io.InternalAPI
+                override suspend fun execute(data: HttpRequestData): HttpResponseData {
+                    probeStarted.complete(Unit)
+                    releaseProbe.await()
+                    return HttpResponseData(
+                        statusCode = HttpStatusCode.OK,
+                        requestTime = GMTDate(),
+                        headers = Headers.Empty,
+                        version = HttpProtocolVersion.HTTP_1_1,
+                        body = ByteReadChannel("ok"),
+                        callContext = callContext(),
+                    )
+                }
+            }
+        }
+        val transport = KtorSchoolHttpTransport(factory)
+        try {
+            val session = requireNotNull(PhyVlabLoginSession.fromCookie("fresh-session-token"))
+            val adoptJob = async(Dispatchers.Default) {
+                transport.adoptPhyVlabSession(session) { true }
+            }
+            withTimeout(5_000) { probeStarted.await() }
+            transport.clearPhyVlabSession()
+            releaseProbe.complete(Unit)
+
+            assertFalse(withTimeout(5_000) { adoptJob.await() })
+            val stored = transport.sessionCookiesFor("${SchoolEndpoints.PHYVLAB_ORIGIN}/my/courses.php")
+            assertTrue(stored.none { it.name == "MoodleSession" && it.value.isNotBlank() })
+        } finally {
+            releaseProbe.complete(Unit)
+            transport.close()
         }
     }
 }

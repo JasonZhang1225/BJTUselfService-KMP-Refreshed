@@ -1,6 +1,10 @@
 package team.bjtuss.bjtuselfservice.shared.feature.phyvlab
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlin.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -352,6 +356,49 @@ class PhyVlabScreenModelTest {
         assertTrue(byId["activity-76-3963-start"]?.submitted == true)
         assertFalse(byId["activity-76-3947-due"]?.submitted == true)
         assertFalse(byId["activity-76-3947-start"]?.submitted == true)
+    }
+
+    @Test
+    fun refreshWaitingRunsSecondPassAfterBusyRefreshFinishes() = runBlocking {
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        var authenticated = false
+        var calls = 0
+        val gatedTransport = object : SchoolHttpTransport {
+            override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse {
+                calls += 1
+                if (calls == 1) {
+                    firstEntered.complete(Unit)
+                    releaseFirst.await()
+                }
+                return if (authenticated) {
+                    SchoolHttpResponse(200, "https://phyvlab.bjtu.edu.cn/login/index.php", body = "<a href=\"/login/logout.php\">退出登录</a>".encodeToByteArray())
+                } else {
+                    SchoolHttpResponse(200, "https://phyvlab.bjtu.edu.cn/login/index.php", body = "<form id=\"login\"><input name=\"logintoken\" type=\"hidden\" value=\"t\"><input name=\"username\"><input name=\"password\"><div id=\"aliyun-captcha-element\"></div></form>".encodeToByteArray())
+                }
+            }
+            override fun clearSession() = Unit
+        }
+        val courses = listOf(PhyVlabCourse(1, "物理在线", "", 0, "https://phyvlab.bjtu.edu.cn/course/view.php?id=1"))
+        val repository = object : PhyVlabRepository {
+            override suspend fun fetchCourses() = PhyVlabCoursesResult.Success(courses)
+            override suspend fun fetchCourseActivities(course: PhyVlabCourse) = PhyVlabActivitiesResult.Success(emptyList())
+            override suspend fun fetchEvents(monthTimestampSeconds: Long) = PhyVlabEventsResult.Success(emptyList())
+            override suspend fun fetchAssignmentDetail(activity: PhyVlabActivity) = error("unused")
+            override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>) = error("unused")
+        }
+        val model = PhyVlabScreenModel(repository, PhyVlabSessionProtocol(gatedTransport))
+        val first = async(Dispatchers.Default) { model.refresh() }
+        withTimeout(5_000) { firstEntered.await() }
+
+        authenticated = true
+        val afterAuth = async(Dispatchers.Default) { model.refreshWaiting() }
+        releaseFirst.complete(Unit)
+        withTimeout(5_000) { first.await(); afterAuth.await() }
+
+        assertEquals(2, calls)
+        assertEquals(courses, model.state.value.courses)
+        assertFalse(model.state.value.accountLoginRequired)
     }
 
     private fun activity(course: PhyVlabCourse, id: Int) = PhyVlabActivity(

@@ -176,9 +176,26 @@ interface SchoolHttpTransport {
     suspend fun executePublic(request: SchoolHttpRequest): SchoolHttpResponse = execute(request)
 
     suspend fun sessionCookiesFor(url: String): List<SchoolSessionCookie> = emptyList()
+    /** 验证通过才把独立登录的 Cookie 接入应用会话。 */
+    suspend fun adoptPhyVlabSession(
+        session: PhyVlabLoginSession,
+        verify: suspend (SchoolHttpResponse) -> Boolean,
+    ): Boolean = false
+    suspend fun clearPhyVlabSession() {}
     fun clearSession()
     /** Clear only the independent demo-lab login, without touching CAS or physics labs. */
     fun clearPhysicsDemoSession() {}
+}
+
+/** 物理在线独立登录的根路径会话 Cookie；仅在内存中传递。 */
+class PhyVlabLoginSession private constructor(internal val value: String) {
+    override fun toString(): String = "PhyVlabLoginSession(<redacted>)"
+
+    companion object {
+        private val token = Regex("[A-Za-z0-9,-]{1,256}")
+        internal fun fromCookie(value: String): PhyVlabLoginSession? =
+            value.takeIf(token::matches)?.let(::PhyVlabLoginSession)
+    }
 }
 
 /** 只用于把当前内存会话桥接给受信任网页容器；字符串化永不包含值。 */
@@ -187,6 +204,7 @@ data class SchoolSessionCookie(
     val value: String,
     val path: String = "/",
     val secure: Boolean = true,
+    val domain: String? = null,
 ) {
     override fun toString(): String =
         "SchoolSessionCookie(name=$name, value=<redacted>, path=$path, secure=$secure)"

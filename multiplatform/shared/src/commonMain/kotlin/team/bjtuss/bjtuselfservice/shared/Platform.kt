@@ -13,6 +13,7 @@ data class PlatformInfo(
     val isWindows: Boolean = false,
     /** 设备型号（如 Pixel 8、iPhone）；ChatGPT 插件配对时作为设备名的一部分。桌面端为空。 */
     val deviceModel: String = "",
+    val isDebugBuild: Boolean = false,
 ) {
     val isMobile: Boolean get() = family == PlatformFamily.Android || family == PlatformFamily.IOS
 }

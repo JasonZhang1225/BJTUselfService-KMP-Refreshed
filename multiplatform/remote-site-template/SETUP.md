@@ -1,14 +1,28 @@
-# 私人 Site 和插件：一次交付流程（模板 1.8.6-KMP）
+# 私人 Site 和插件：一次交付流程（模板 2.0.0-KMP）
 
-本文给搭建助手执行。每个用户复用同一模板，但有自己的 Site、DB、canonical 插件和设备授权。搭建中不要求用户提前登录 Site、取身份 ID、取配对码或给助手本机存储权限。用户交互集中在最后交付 Site、插件安装入口及操作说明。
+本文给搭建助手执行，支持**新建私人 Site**与**从旧版本增量更新已有 Site**。每个用户复用同一模板，但有自己的 Site、DB、canonical 插件和设备授权。搭建与升级中不要求用户提前登录 Site、取身份 ID、取配对码或给助手本机存储权限。用户交互集中在最后交付 Site、插件安装/连接入口及操作说明。
 
 ## 1. 准备和注册
 
 - 读取当前 Sites skill 的发布流程、身份与机密、Site MCP 文档，以及 Plugin Creator 的 Sites MCP 和 App-backed plugin skill 更新文档。以当前工具返回值为准。
 - 模板源码入口为 `https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed` 的 `main` 分支、`multiplatform/remote-site-template/` 目录。可用 Git 稀疏检出只读取该目录；复制到仓库之外的独立 Site 目录，不能连带 `.git` 或在维护仓库内直接执行 Site 同步。安装文档与查询约定均读取该 main 分支目录内的版本。
-- 在独立空目录使用本模板。它是无第三方 Node 依赖的 Worker ESM，Node >=22.5；无需安装整个 KMP 工程、Vinext 或其他框架。不要改写 src 查询实现。
+- 在独立空目录或已有 Site 的独立工作目录使用本模板。它是无第三方 Node 依赖的 Worker ESM，Node >=22.5；无需安装整个 KMP 工程、Vinext 或其他框架。不要改写 src 查询实现。
 - 检查 `.openai/hosting.json`：保留 `d1: "DB"`、`capabilities: ["mcp"]`、无 static。只有没有 project_id 的新实例才 create_site 一次，立即将返回的 ID 写入该实例 manifest。维护模板不写用户 ID。
-- 用户未指定旧 Site 则新建。明确指定的升级则保留原 Site、DB、插件和所有设备数据；按 Sites 源码流程打开已有源码。创建响应不明先核实原操作，不能再创建第二份。
+- 用户未指定旧 Site 则新建。明确指定已有 Site 升级时，按下方「已有 Site 的增量更新」流程保留原 Site、DB、插件和所有设备数据，不能再创建第二份 Site 或第二份插件。创建响应不明先核实原操作，不能重复创建。
+
+### 已有 Site 的增量更新（升级指导）
+
+当用户明确提供了已有 Site（如从 `1.8.6-KMP` 等旧模板升级至 `2.0.0-KMP`）时，严格执行以下增量步骤，**禁止销毁重建数据库或更换实例身份**：
+
+1. **打开已有源码并增量覆盖模板文件**：按 Sites 源码流程拉取/打开用户原有 Site 源码，**完整保留** `.openai/hosting.json` 中的原有 `project_id`、`d1: "DB"` 与 `capabilities: ["mcp"]`；仅用 `2.0.0-KMP` 模板更新 `src/`、`migrations/`、`drizzle/`、`plugin/`、`scripts/`、`test/`、`package.json`、`README.md`、`SETUP.md`、`agent-query-contract.md`。
+2. **保留原有拥有者与有效机密**：保留 DB 中已固定的 `OWNER_USER_ID`（如已设置不得替换或覆写），并保留已配置的 `OWNER_PRIVATE_BOOTSTRAP` 与 `SITE_DEVICE_ACCESS`；仅当缺少其中一项时按第 2 节补齐。不要无故轮换已有 `SITE_DEVICE_ACCESS`，以免已配对设备立即断连。
+3. **只按顺序补跑未执行的 DB 增量迁移**：先在原 D1 数据库检查当前迁移版本（`SELECT value FROM template_meta WHERE key = 'schema_migration'`）与现有表结构，再严格按序号**仅执行尚未落库的迁移文件**（`migrations/` 与 `drizzle/` 内容对应；构建产物保留 `dist/.openai/drizzle/`）：
+   - `0001_init.sql`：基础表（`template_meta`、`pairing_codes`、`devices`、`snapshots`、`tasks`）
+   - `0002_multi_device.sql`：多设备支持（`devices.device_kind` 列）
+   - `0003_attachments.sql`：作业附件与分块表（`attachments`、`attachment_chunks`、`attachments_lookup` 索引）
+   - 例：当前为 `0002`（`1.8.6-KMP`）升级至 `2.0.0-KMP`，**只需补跑 `0003_attachments.sql`**；当前为 `0001` 则依次补跑 `0002_multi_device.sql` 和 `0003_attachments.sql`。确认 `template_meta.schema_migration` 已更新为 `'0003'`。切勿删除、重建或清空已有表，原有 `devices`、`snapshots`、`tasks` 与设备令牌必须完整保留。
+4. **验证、部署原 Site 并同步升级同一个 canonical 插件**：按第 3 节运行 `npm test`、`npm run build` 并部署回原 Site；验证 `GET /api/v1/health` 返回 `releaseVersion: "2.0.0-KMP"`（`templateVersion: "2.0.0"`）。随后按第 4 节打开同一个 canonical `plugin_id`，保留原 App 绑定，增量更新 `plugin/skills/bjtuss-remote/SKILL.md` 与插件版本并核对 `/mcp` 的 13 个工具，不新建第二个插件。
+5. **无需重新配对已绑设备**：增量升级不会失效既有设备令牌与快照；告知用户原有已配对的电脑和手机可继续直接同步，只有新加设备时才需到 Site 重新生成配对信息。
 
 ## 2. 发布前配置，两项都由助手完成
 
@@ -44,8 +58,8 @@
 ## 4. 同一个 canonical 插件
 
 - 发布 MCP 后，调用 `get_site(include_mcp_connection: true)`，复制其实际 plugin_id；不要调用 create_plugin 再建第二个插件。
-- 通过 Plugin Creator get_plugin_files 先列文件再读 manifest，保留真实插件 ID、App 绑定、MCP 配置、名称、描述和界面配置。只附加 `plugin/skills/bjtuss-remote/SKILL.md`，按原格式更新版本，用当前 release ID 做更新保护，再读回检查。
-- 不上传本模板本地 stdio 桥作为云插件。插件工具应来自本站 `/mcp` 的 11 个工具。
+- 通过 Plugin Creator get_plugin_files 先列文件再读 manifest，保留真实插件 ID、App 绑定、MCP 配置、名称、描述和界面配置。只附加或更新 `plugin/skills/bjtuss-remote/SKILL.md`，按原格式更新版本，用当前 release ID 做更新保护，再读回检查。
+- 不上传本模板本地 stdio 桥作为云插件。插件工具应来自本站 `/mcp` 的 13 个工具。
 - 检查 MCP 发现和工具目录；如当前会话有本站工具，执行只读 get_status。没有设备/快照是正常待配对状态，不是需要登录学校、刷新或重装插件的理由。
 - 当前会话没有新工具时，如实记录待加载，不能仅凭 tools/list 声称完整宿主查询通过。不要自建 OAuth、调用 codex mcp login 或不断开新对话。只在最后交付时按 Sites 返回 ID 展示一次插件安装/连接 UI。
 

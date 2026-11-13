@@ -41,8 +41,6 @@ def generate():
             label = tag.removeprefix('debug-') + '（调试构建）'
         elif tag == 'v1.0.0-gitee-test':
             label += '（更新源测试）'
-        elif tag == 'v2.0.0-KMP':
-            label += '（发布草稿）'
         version = tuple(map(int, re.search(r'(\d+)\.(\d+)\.(\d+)', tag).groups()))
         releases.append((version, tag.startswith('v'), tag, label, sections))
     releases.sort(reverse=True)

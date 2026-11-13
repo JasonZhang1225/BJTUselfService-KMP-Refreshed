@@ -22,12 +22,13 @@ class AppUpdateCheckerTest {
     }
 
     @Test
-    fun alphaVersionCanUpgradeEarlierReleases() {
-        assertTrue(AppUpdateChecker.CURRENT_VERSION == "2.0.0-Alpha")
+    fun releaseVersionCanUpgradeEarlierReleases() {
+        assertTrue(AppUpdateChecker.CURRENT_VERSION == "2.0.0-KMP")
         assertTrue(AppUpdateChecker.CURRENT_BUILD == 45)
+        assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "2.0.0-Alpha") > 0)
+        assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "2.0.0-Beta") > 0)
+        assertTrue(AppUpdateChecker.compareVersions("v2.0.1-KMP", AppUpdateChecker.CURRENT_VERSION) > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.6-KMP") > 0)
-        assertTrue(AppUpdateChecker.compareVersions("2.0.0-Beta", AppUpdateChecker.CURRENT_VERSION) > 0)
-        assertTrue(AppUpdateChecker.compareVersions("v2.0.0-KMP", AppUpdateChecker.CURRENT_VERSION) > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.6-Alpha") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.6-Beta2") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.6-Beta") > 0)

@@ -24,7 +24,7 @@ class SettingsScreenModelTest {
 
     @Test fun everyManualCheckUsesFreshReleaseEvenAfterHigherTestVersion() = runBlocking {
         var calls = 0
-        val versions = listOf("v2.1.0-EmergencyFix2", "v2.0.0-KMP", "v2.0.0-Alpha")
+        val versions = listOf("v2.1.0-EmergencyFix2", "v2.0.1-KMP", "v2.0.0-KMP")
         val model = model(checkLatestRelease = {
             AppUpdateChecker.Result.Success(AppUpdateChecker.Release(versions[calls++], htmlUrl = "https://github.com/release"))
         })
@@ -44,7 +44,7 @@ class SettingsScreenModelTest {
         val fetch: suspend () -> AppUpdateChecker.Result = {
             calls++
             AppUpdateChecker.Result.Success(AppUpdateChecker.Release(
-                if (calls == 1) "v2.1.0-EmergencyFix2" else "v2.0.0-KMP", htmlUrl = "https://github.com/release"))
+                if (calls == 1) "v2.1.0-EmergencyFix2" else "v2.0.1-KMP", htmlUrl = "https://github.com/release"))
         }
         val firstLogin = model(persistPreferences = { stored = it; true }, checkLatestRelease = fetch)
         firstLogin.checkForUpdate(silentOnMiss = true)
@@ -54,7 +54,7 @@ class SettingsScreenModelTest {
         nextLogin.checkForUpdate(silentOnMiss = true)
         assertEquals(2, calls)
         val result = assertIs<UpdateCheckState.Done>(nextLogin.state.value.updateCheck)
-        assertEquals("v2.0.0-KMP", result.release.tagName)
+        assertEquals("v2.0.1-KMP", result.release.tagName)
         assertTrue(result.hasUpdate)
     }
 

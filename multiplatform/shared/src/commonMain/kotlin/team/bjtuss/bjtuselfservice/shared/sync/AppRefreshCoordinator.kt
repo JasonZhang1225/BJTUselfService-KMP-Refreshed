@@ -88,6 +88,35 @@ class AppRefreshCoordinator(
 
     val supportedSources: Set<RefreshSource> get() = adapterBySource.keys
 
+    /** 设置页提交后会立即退出，刷新请求从会话作用域启动。 */
+    internal fun enqueue(request: RefreshRequest) {
+        scope.launch { refresh(request) }
+    }
+
+    /** 若目标来源当前已在途，先等该轮结束再重新发起一轮，不把登录后刷新并回登录前的在途任务。 */
+    internal fun enqueueFresh(request: RefreshRequest) {
+        scope.launch { refreshFresh(request) }
+    }
+
+    /**
+     * 先等待调用时刻已存在的在途同源刷新完成，再发起一次新的 [refresh]。
+     */
+    suspend fun refreshFresh(request: RefreshRequest): RefreshReport {
+        val requested = RefreshSource.entries.filter { it in request.sources }
+        val active = mutex.withLock {
+            if (closed) return@withLock emptyList()
+            requested.mapNotNull { inFlight[it] }
+        }
+        active.forEach { deferred ->
+            try {
+                deferred.await()
+            } catch (error: CancellationException) {
+                if (!currentCoroutineContext().isActive) throw error
+            }
+        }
+        return refresh(request)
+    }
+
     /**
      * 刷新 [request] 中的来源并等待结果。不支持的来源记为跳过。
      * 调用方取消只停止等待；共享的在途刷新继续运行，直至完成或 [close]。

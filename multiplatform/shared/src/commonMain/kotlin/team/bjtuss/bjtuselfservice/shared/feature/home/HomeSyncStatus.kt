@@ -12,6 +12,7 @@ internal data class HomeSyncItem(
     val title: String,
     val detail: String,
     val state: HomeSyncItemState,
+    val requiresCaptcha: Boolean = false,
 )
 
 internal fun homeSyncDialogTitle(

@@ -5,6 +5,7 @@ import io.ktor.client.engine.HttpClientEngineFactory
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.timeout
 import team.bjtuss.bjtuselfservice.shared.logging.SyncTiming
+import kotlin.concurrent.Volatile
 import kotlin.time.TimeSource
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CoroutineName
@@ -21,7 +22,9 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.readAvailable
+import io.ktor.util.date.GMTDate
 import io.ktor.http.ContentType
+import io.ktor.http.Cookie
 import io.ktor.http.HttpMethod
 import io.ktor.http.Headers as KtorHeaders
 import io.ktor.http.HttpHeaders
@@ -43,7 +46,10 @@ class KtorSchoolHttpTransport(
     private val engineFactory: HttpClientEngineFactory<*>,
     private val hostPolicy: (String) -> HostRequestPolicy = ::defaultHostRequestPolicy,
 ) : SchoolHttpTransport {
+    @Volatile
     private var cookieStorage = AcceptAllCookiesStorage()
+    private val phyVlabSessionMutex = Mutex()
+    private var phyVlabSessionGeneration = 0L
     private var client = newClient(cookieStorage, sessionScoped = true)
     private var rawClient = newClient(cookieStorage, sessionScoped = true, followRedirects = false)
     /**
@@ -272,8 +278,51 @@ class KtorSchoolHttpTransport(
                     value = cookie.value,
                     path = cookie.path ?: "/",
                     secure = cookie.secure,
+                    domain = cookie.domain,
                 )
             }
+
+    override suspend fun adoptPhyVlabSession(
+        session: PhyVlabLoginSession,
+        verify: suspend (SchoolHttpResponse) -> Boolean,
+    ): Boolean {
+        val url = Url("${SchoolEndpoints.PHYVLAB_ORIGIN}/my/courses.php")
+        val request = SchoolHttpRequest(SchoolHttpMethod.GET, url.toString())
+        val (currentStorage, generation) = phyVlabSessionMutex.withLock {
+            cookieStorage to phyVlabSessionGeneration
+        }
+        val candidate = AcceptAllCookiesStorage()
+        candidate.addCookie(url, Cookie("MoodleSession", session.value, path = "/", secure = true, httpOnly = true))
+        val verifier = newClient(candidate, sessionScoped = false, followRedirects = false)
+        return try {
+            val response = executeTimed(request, "phyvlab-manual-probe", gateFor(request)) { verifier }
+            if (!verify(response)) return false
+            val confirmed = candidate.get(url).singleOrNull {
+                it.name == "MoodleSession" && it.path == "/" && it.secure &&
+                    it.domain == url.host && PhyVlabLoginSession.fromCookie(it.value) != null
+            } ?: return false
+            phyVlabSessionMutex.withLock {
+                if (currentStorage !== cookieStorage || generation != phyVlabSessionGeneration) {
+                    return@withLock false
+                }
+                currentStorage.addCookie(url, confirmed)
+                true
+            }
+        } finally {
+            verifier.close()
+        }
+    }
+
+    override suspend fun clearPhyVlabSession() {
+        val url = Url(SchoolEndpoints.PHYVLAB_ORIGIN)
+        phyVlabSessionMutex.withLock {
+            phyVlabSessionGeneration += 1
+            cookieStorage.addCookie(
+                url,
+                Cookie("MoodleSession", "", expires = GMTDate(0L), path = "/", secure = true, httpOnly = true),
+            )
+        }
+    }
 
     private fun newClient(
         storage: AcceptAllCookiesStorage,
