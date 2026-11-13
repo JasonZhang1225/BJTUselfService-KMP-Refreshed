@@ -1,4 +1,4 @@
-# Windows 本地开发与私人 Site 搭建（模板 1.8.6-KMP / 协议 1 / 快照 schema 2）
+# Windows 本地开发与私人 Site 搭建（模板 2.0.0-KMP / 协议 1 / 快照 schema 2）
 
 维护源：[main 分支模板目录](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/tree/main/multiplatform/remote-site-template)，安装指导见其中的 [SETUP.md](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/blob/main/multiplatform/remote-site-template/SETUP.md)。该目录与 Gradle 工程独立，无第三方 Node 依赖，要求 Node ≥22.5。
 MCP 工具、Skill 与本机 CLI 共用的查询参数和返回结构见同目录 `agent-query-contract.md`；工具与 Skill 的唯一维护源是模板的 `src/mcp.js` 与 `plugin/skills/bjtuss-remote/SKILL.md`，不要另存副本。
@@ -37,13 +37,13 @@ Windows 打包：在 `multiplatform/` 用 JDK 21 运行 `gradlew.bat :windowsApp
 
 ## 手机与平板（Android / iOS）
 
-仅在手机 ChatGPT 查询已配对电脑上传的数据时，无需配对手机 App。手机 App 自己需要上传缓存时，登录同一 Site 另生成一份配对信息；模板需为 1.8.6-Beta2 或更高（1.8.6-Beta2 与 1.8.6-KMP 的 App、模板可互相连接），并使用支持完整配对信息的新客户端。
+仅在手机 ChatGPT 查询已配对电脑上传的数据时，无需配对手机 App。手机 App 自己需要上传缓存时，登录同一 Site 另生成一份配对信息；基础配对要求模板为 1.8.6-Beta2 或更高（1.8.6-Beta2、1.8.6-KMP 与 2.0.0-KMP 的 App、模板可互通，使用作业详情与附件读取需将 Site 增量更新到 2.0.0-KMP），并使用支持完整配对信息的新客户端。
 
 手机不定时上传、不心跳、不轮询任务，只在 App 刷新后上传；即时任务由电脑执行。health 认证/网络失败应报告实际错误，只有确实读到旧版才提示升级。
 
 ## 开发与回归
 
-`node scripts/package-template.mjs <源码目录外的绝对输出路径.tar.gz>` 生成无个人部署身份的包。创建实例保留 DB、MCP、Drizzle 迁移；新实例确认 owner-private 后，用 Sites 工具设置 `OWNER_PRIVATE_BOOTSTRAP=true` 与 secret `SITE_DEVICE_ACCESS`，后者来自本站 get_site 的服务访问令牌。配置后部署，用户首次可信登录固定身份。升级保留已有身份与数据。
+`node scripts/package-template.mjs <源码目录外的绝对输出路径.tar.gz>` 生成无个人部署身份的包。创建实例保留 DB、MCP、Drizzle 迁移；新实例确认 owner-private 后，用 Sites 工具设置 `OWNER_PRIVATE_BOOTSTRAP=true` 与 secret `SITE_DEVICE_ACCESS`，后者来自本站 get_site 的服务访问令牌。配置后部署，用户首次可信登录固定身份。已有 Site 升级保留已有身份、设备绑定与数据，只按顺序补跑未执行的增量迁移（如从 1.8.6-KMP 升至 2.0.0-KMP 只补跑 `0003_attachments.sql`）。
 
 不要以公开 Site 绕过平台访问，不让搭建助手直接写用户安装版存储，不用诊断进程成功代替实际 App 配对证据。对权限和部署配置错误停止自动重试，给出可操作原因。
 

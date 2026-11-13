@@ -182,6 +182,22 @@ class SecurityReleaseConfigTest {
     }
 
     @Test
+    fun remoteSiteTemplateVersionAndGuideStayInSyncWithAppRelease() {
+        val version = team.bjtuss.bjtuselfservice.shared.update.AppUpdateChecker.CURRENT_VERSION
+        val templateDir = root.resolve("multiplatform/remote-site-template")
+        assertTrue("\"version\": \"$version\"" in templateDir.resolve("package.json").readText())
+        assertTrue("\"version\": \"$version\"" in templateDir.resolve("plugin/plugin.json").readText())
+        assertTrue("TEMPLATE_VERSION = \"$version\"" in templateDir.resolve("src/protocol.js").readText())
+        val setup = templateDir.resolve("SETUP.md").readText()
+        assertTrue("模板 $version" in setup)
+        assertTrue("13 个工具" in setup)
+        assertTrue("0003_attachments.sql" in setup)
+        val readme = templateDir.resolve("README.md").readText()
+        assertTrue("模板版本 $version" in readme)
+        assertTrue("0003_attachments.sql" in readme)
+    }
+
+    @Test
     fun debugSecuritySmokeActivityRequiresSignaturePermission() {
         val manifest = root.resolve("multiplatform/androidApp/src/debug/AndroidManifest.xml").readText()
         assertTrue("android:protectionLevel=\"signature\"" in manifest)

@@ -7,7 +7,7 @@ class BundledChangelogTest {
         val entries = BundledChangelog.entries
         assertEquals(entries.size, entries.map { it.tag }.distinct().size)
         assertEquals("v2.0.0-KMP", entries.first().tag)
-        assertTrue(entries.first().label.contains("草稿"))
+        assertEquals("2.0.0-KMP", entries.first().label)
         assertTrue(entries.any { it.tag == "v1.8.6-KMP" })
         assertTrue(entries.any { it.tag == "v1.8.5-EmergencyFix2" })
     }

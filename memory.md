@@ -1,8 +1,8 @@
 # BJTUselfService 实时工作记忆
 
-> **当前状态（2026-11-12）**
-> - **当前分支**：`fix/phyvlab-manual-captcha`，从 `origin/main` `b6e9f358`（PR #100）开独立工作树，跟踪 `origin/fix/phyvlab-manual-captcha`，包含 iOS 验证码短时读取、登录流程和弹层修复，尚待合入。
-> - **源码版本**：`2.0.0-Alpha` / Build 45（最新正式 Release：`v1.8.6-KMP` / Build 44）
+> **当前状态（2026-11-13）**
+> - **当前分支**：`fix/phyvlab-manual-captcha`，从 `origin/main` `b6e9f358`（PR #100）开独立工作树，跟踪 `origin/fix/phyvlab-manual-captcha`，已完成 iOS 物理在线验证码弹层修复与 `2.0.0-KMP` 发版准备，推送并准备 PR 合入 `main`。
+> - **源码版本**：`2.0.0-KMP` / Build 45（最新已发布 Release：`v1.8.6-KMP` / Build 44）
 > - **远端活跃分支**：`main`、`feat/mac-swift`（macOS 原生 SwiftUI 探索）；原 `feat/homework-submit-cli-drop`、`feat/agent-assignment-detail` 已合入并删除。
 > - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（课程回放、macOS/Windows 硬件合成、作业忽略与筛选拆分、全应用设备时区、离线更新日志、`DESIGN.md` / `AppleAlert` / `AppleMenuPickerCard`、物理实验 IP 备用路径、上传文件拖放、本机 CLI 交作业、统一作业详情与远程增量同步等，PR #68–#99）均已移入 `history_full.md`。
 
@@ -62,6 +62,12 @@
 - **后续验证**：`:shared:desktopTest` 共 1446 项，0 失败、1 跳过。Android Debug、macOS/Windows Kotlin、iOS 模拟器目标编译和 iOS 真机签名构建均通过。新版已覆盖安装到 iPhone，钥匙串自检通过，正常启动后已接上真机日志。随后用户反馈首页同步弹层的「输入验证码」没有打开验证码弹层，Device Hub 同样复现。入口读取账号的协程已改用主线程调度，避免在 UIKit 弹层覆盖期间等待背后 Compose 页面的调度。随后覆盖安装了入口修复版，签名和钥匙串自检通过。Device Hub 确认首页「输入验证码」可以打开弹层，用户手动点选后日志依次记录收到结果、弹层接收、开始提交、登录 POST 303、会话 Ready，课程页 HTTP 200 并同步 4 门课。
 
 - **登录成功后关弹层**：在真机课程同步成功后仍看到空的「物理在线验证码」弹层。同步入口成功后直接清除验证码弹层状态并刷新，取消路径仍返回同步详情，避免成功时同一轮关闭验证码又打开同步详情。新包签名构建与覆盖安装成功，钥匙串自检通过，冷启动复用现有会话，课程页 200 并同步 4 门课。成功后自动关闭需在下一次真实验证码流程验证。最终版 `:shared:desktopTest` 共 1446 项，0 失败、1 跳过，Android Debug、macOS/Windows Kotlin、iOS 模拟器目标编译及 iOS 真机签名构建通过。
+
+- **11-13 关弹层修复、真机验证与 2.0.0-KMP 发版准备**：
+  - 根因定位：`IosNativeSheetPresenter` 旧 `dismissIfReady` 用 Kotlin 引用 `!==` 比较同一 ObjC `UIViewController` 的不同包装器误判 `sameRef=false` 导致静默跳过 `dismissViewControllerAnimated`，且每次 `createPresentation()` 独立状态未序列化，同步失败弹层关闭与验证码弹层弹出互撞；`PhyVlabCaptchaSheet` 在 `Ready` 时清空内容引发 `setFittedContentHeight` 与关闭竞态。
+  - 修复方案：`IosNativeSheetPresenter` 增加按宿主 `owner` 共享的 `SheetHostCoordinator` 序列化 UIKit 呈现/关闭队列、改用 ObjC `!=`（`isEqual:`）判断并加 1.2s dismiss watchdog；`PhyVlabCaptchaSheet` 成功后进入 `"验证成功，正在关闭…"` 状态并调用 `LocalDismissNativeSheet`；调试版「退出物理在线会话（调试）」按钮按用户确认保留（仅 Debug 构建显示）。新增 `PhyVlabCaptchaSheetDismissTest`（2 项）。真机（iPhone 17 Pro 有线调试，`captchadebug` 构建）已实测验证验证码可正常输入、登录成功后弹层自动关闭；随后的仅日志脱敏清理未再重装真机，代码编译与单测均已重跑通过。
+  - 2.0.0-KMP 发版与模板同步准备：版本从 `2.0.0-Alpha` 切为 `2.0.0-KMP`（Build 45）；`docs/releases/v2.0.0-KMP.md`、`scripts/sync-bundled-changelog.py` 去掉「发布草稿」并补入物理在线图形验证码与物理实验/物理在线修复条目；同步 `multiplatform/remote-site-template` 模板版本至 `2.0.0-KMP`、修正 13 个工具核对与 `SETUP.md` / `RemoteSetupGuide.kt` / `README.md` 增量升级与 `0003_attachments.sql` 迁移指导，并在 `SecurityReleaseConfigTest`、`MobileRemoteAgentTest`、`BundledChangelogTest`、`AppUpdateCheckerTest`、`SettingsScreenModelTest` 同步锁住校验。
+  - 本机验证完成 `remote-site-template` `npm test`（82/82）、`sync-bundled-changelog.py --check`、`:shared:desktopTest`（1449 项：1448 通过、0 失败、1 项 Windows 专属测试在 macOS 跳过）、`:desktopApp:test`、`:androidApp:assembleDebug`、`:windowsApp:compileKotlinWindows`、`:shared:compileKotlinIosArm64` / `IosSimulatorArm64`、`:desktopApp:createDistributable -PmacosAppImageSmokeTest` + macOS 包检查、iOS 18.0 部署目标/Swift 类型检查、`xcodebuild -configuration Debug -destination 'generic/platform=iOS'` 与 `verify-apple-release-metadata.sh`。iOS `Release` 全量链接在本机 16 GiB 内存下守护进程中断，Release 产物与 Windows/Android Release 包交由 GitHub Actions CI 完成。
 
 ---
 

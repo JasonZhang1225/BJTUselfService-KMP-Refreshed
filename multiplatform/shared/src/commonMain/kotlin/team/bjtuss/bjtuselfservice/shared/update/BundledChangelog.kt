@@ -8,7 +8,7 @@ internal data class ChangelogRelease(val tag: String, val label: String, val sec
 
 internal object BundledChangelog {
     val entries: List<ChangelogRelease> = listOf(
-        ChangelogRelease("v2.0.0-KMP", "2.0.0-KMP（发布草稿）", listOf(
+        ChangelogRelease("v2.0.0-KMP", "2.0.0-KMP", listOf(
             ChangelogSection("新增", listOf(
                 ChangelogItem("课程回放", "在「应用 → 课程回放」选择课程和课节，观看教师、屏幕或课件画面；可两路同步播放，选择声音、调整倍速、跳转和全屏，横屏并排观看。Windows 和 macOS 还可下载录像，单独保存或合成为左右并排的 MP4（高、中、低三档清晰度），下载可暂停、继续，中断后恢复。Android 和 iOS 仅在线播放。"),
                 ChangelogItem("作业忽略", "课程平台、物理在线和 CITEL 的未提交作业，可长按、右键、手机左滑或在详情中忽略，收进列表末尾的「已忽略」分组，可撤销。忽略按账号保存在本机，不改变学校的提交状态，也不再出现在首页截止提醒里。"),
@@ -20,6 +20,7 @@ internal object BundledChangelog {
                 ChangelogItem("CITEL 折扣提醒", "首页单独提醒未来 48 小时内结束折扣的未完成作业。"),
                 ChangelogItem("切换时区支持", "支持切换到其他时区后正确处理时间。学校的时间都按北京时间换算成真实时刻，再按手机所在时区显示；作业截止、考试、首页日程都换成当地时间，课表格子仍按北京时间的星期和节次排列，只把上课时间换成当地时间。让你在世界各地都能饮水思源。"),
                 ChangelogItem("更新日志", "「应用」页新增入口，可按版本离线查看新增、优化和修复。"),
+                ChangelogItem("物理在线图形验证码", "物理在线手动输入图形验证码支持，会话会尽可能保留直至服务端过期。"),
             )),
             ChangelogSection("优化", listOf(
                 ChangelogItem("远程同步", "改为只上传变化的内容，每台设备只和自己上次的数据比较，同步更省流量。"),
@@ -36,6 +37,7 @@ internal object BundledChangelog {
                 ChangelogItem(null, "修复 Android 导出整门课或文件夹时失败。"),
                 ChangelogItem(null, "修复成绩课程性质筛选按钮在勾选、取消时宽度变化导致位置跳动。"),
                 ChangelogItem(null, "修复更新检查受旧缓存影响而错过新版本。"),
+                ChangelogItem(null, "修复物理实验和物理在线系统无法登录的问题。"),
             )),
         )),
         ChangelogRelease("v1.8.6-KMP", "1.8.6-KMP", listOf(
