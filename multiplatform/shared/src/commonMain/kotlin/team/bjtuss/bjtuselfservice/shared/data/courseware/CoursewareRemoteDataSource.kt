@@ -21,7 +21,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareSnapshot
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackDetail
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackLesson
 import team.bjtuss.bjtuselfservice.shared.data.homework.isSchoolPlaybackStreamUrl
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.files.StreamingFileSink
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
@@ -69,13 +69,13 @@ interface CoursewareRemoteDataSource {
     suspend fun fetchSnapshot(): CoursewareSnapshot
     suspend fun fetchChildren(course: CoursewareCourse, parentId: Int): List<CoursewareNode> =
         throw CoursewareRemoteException(CoursewareRemoteFailure.MALFORMED_RESPONSE)
-    suspend fun downloadResource(node: CoursewareNode): HomeworkFileContent
+    suspend fun downloadResource(node: CoursewareNode): FileContent
     suspend fun streamResource(node: CoursewareNode, sink: StreamingFileSink, onProgress: (Long, Long) -> Unit) {
         val file = downloadResource(node)
         sink.write(file.bytes)
         onProgress(file.bytes.size.toLong(), file.bytes.size.toLong())
     }
-    suspend fun downloadTeachingCalendar(course: CoursewareCourse): HomeworkFileContent
+    suspend fun downloadTeachingCalendar(course: CoursewareCourse): FileContent
     /** 未开放下载文件的备用路径：先确定实际可读的存储地址与文件名，再由 [streamStoredDownload] 分段写盘。 */
     suspend fun planStoredDownload(node: CoursewareNode): CoursewareStoredDownload =
         throw CoursewareRemoteException(CoursewareRemoteFailure.MALFORMED_RESPONSE)
@@ -160,7 +160,7 @@ class SchoolCoursewareRemoteDataSource(
         }
     }
 
-    override suspend fun downloadResource(node: CoursewareNode): HomeworkFileContent {
+    override suspend fun downloadResource(node: CoursewareNode): FileContent {
         require(node.kind == CoursewareNodeKind.RESOURCE && node.rpId.isNotBlank())
         ensureInitialized()
         // 老师未开放下载时网页不给按钮，下载票据换来的 download.shtml 也只会 500；
@@ -179,7 +179,7 @@ class SchoolCoursewareRemoteDataSource(
      * 备用下载（整块读入内存，供目录导出等需要字节的场景）：按 [planStoredDownload] 选出的地址读取。
      * 超过 [STORED_IN_MEMORY_LIMIT_BYTES] 的文件不在这里读，避免手机内存不足闪退。
      */
-    private suspend fun downloadStoredResource(node: CoursewareNode): HomeworkFileContent {
+    private suspend fun downloadStoredResource(node: CoursewareNode): FileContent {
         val plan = planStoredDownload(node)
         if (plan.totalBytes > STORED_IN_MEMORY_LIMIT_BYTES) throw CoursewareRemoteException(CoursewareRemoteFailure.TOO_LARGE)
         val response = execute(
@@ -192,7 +192,7 @@ class SchoolCoursewareRemoteDataSource(
         )
         if (response.statusCode !in 200..299 || response.body.isEmpty()) network()
         if (!endpoint.acceptsResourceUrl(response.finalUrl)) secureChannelUnavailable()
-        return HomeworkFileContent(fileName = plan.fileName, contentType = plan.contentType, bytes = response.body)
+        return FileContent(fileName = plan.fileName, contentType = plan.contentType, bytes = response.body)
     }
 
     /**
@@ -408,7 +408,7 @@ class SchoolCoursewareRemoteDataSource(
         onProgress(written, total)
     }
 
-    private suspend fun downloadTicketResource(node: CoursewareNode): HomeworkFileContent {
+    private suspend fun downloadTicketResource(node: CoursewareNode): FileContent {
         val url = ticketUrl(node)
         val response = execute(
             SchoolHttpRequest(
@@ -421,14 +421,14 @@ class SchoolCoursewareRemoteDataSource(
         if (response.statusCode !in 200..299) network()
         if (!endpoint.acceptsResourceUrl(response.finalUrl)) secureChannelUnavailable()
         if (response.body.isEmpty()) malformed()
-        return HomeworkFileContent(
+        return FileContent(
             fileName = node.suggestedFileName(),
             contentType = response.contentTypeOrDefault(),
             bytes = response.body,
         )
     }
 
-    override suspend fun downloadTeachingCalendar(course: CoursewareCourse): HomeworkFileContent {
+    override suspend fun downloadTeachingCalendar(course: CoursewareCourse): FileContent {
         ensureInitialized()
         val platform = smartGet(
             path = COURSE_PLATFORM_PATH,
@@ -468,7 +468,7 @@ class SchoolCoursewareRemoteDataSource(
         if (!contentType.equals("application/pdf", ignoreCase = true) && !response.body.isPdfBytes()) {
             malformed()
         }
-        return HomeworkFileContent(
+        return FileContent(
             fileName = "${course.name}_教学日历.pdf",
             contentType = "application/pdf",
             bytes = response.body,

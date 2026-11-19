@@ -24,7 +24,7 @@ import team.bjtuss.bjtuselfservice.shared.agent.AgentAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.agent.AgentAttachmentInfo
 import team.bjtuss.bjtuselfservice.shared.cache.JvmAesCacheValueProtector
 import team.bjtuss.bjtuselfservice.shared.cache.openDesktopCacheStore
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 
 private fun item(id: String, title: String) = buildJsonObject { put("id", id); put("title", title) }
 private fun section(vararg items: JsonObject, sources: String = "a") = buildJsonObject {
@@ -140,7 +140,7 @@ class RemoteSnapshotDeltaUploadTest {
     private val executor = object : RemoteRefreshExecutor by FakeExecutor() {
         override suspend fun prepareAssignmentDetails(scopes: Set<RemoteScope>) { prepared += scopes }
         override suspend fun attachmentPlan(scopes: Set<RemoteScope>) = plan
-        override suspend fun readAttachment(ref: RemoteAttachmentRef) = files[ref.attachmentId]?.let { HomeworkFileContent("a.pdf", "application/pdf", it) }
+        override suspend fun readAttachment(ref: RemoteAttachmentRef) = files[ref.attachmentId]?.let { FileContent("a.pdf", "application/pdf", it) }
     }
     private var now = 1_800_000_000L
     private val config = MutableStateFlow(RemoteAgentConfig(enabled = true, siteUrl = "https://site.example", deviceId = "dev_testDevice01",
@@ -245,7 +245,7 @@ class RemoteSnapshotDeltaUploadTest {
     fun attachmentFailureDoesNotFailTheUpload(): Unit = runBlocking {
         plan = RemoteAttachmentPlan(listOf(RemoteAttachmentRef("att_boomboom001", "phyvlab:1", "boom", null)), emptySet())
         val failing = object : RemoteRefreshExecutor by executor {
-            override suspend fun readAttachment(ref: RemoteAttachmentRef): HomeworkFileContent? = throw IllegalStateException("x")
+            override suspend fun readAttachment(ref: RemoteAttachmentRef): FileContent? = throw IllegalStateException("x")
         }
         val other = RemoteAgentRunner(config, { client }, failing, store, { now }, Random(7), secondMillis = 10)
         assertIs<RemoteUploadOutcome.Uploaded>(other.runUploadCycle(refreshFirst = true, remote = false))

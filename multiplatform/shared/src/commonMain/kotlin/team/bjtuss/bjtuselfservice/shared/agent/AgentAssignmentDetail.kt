@@ -11,7 +11,7 @@ import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkOperationResult
 import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkRepository
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabAssignmentDetailResult
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabAttachmentResult
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAttachment
 
@@ -152,7 +152,7 @@ class AgentAssignmentDetailService(
         if (kept.size != existing.size) save(kept)
     }
 
-    suspend fun attachment(id: String, attachmentId: String): HomeworkFileContent {
+    suspend fun attachment(id: String, attachmentId: String): FileContent {
         val (source, number) = splitId(id)
         return when (source) {
             "course_platform" -> {

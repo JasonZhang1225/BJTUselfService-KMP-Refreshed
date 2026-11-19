@@ -25,7 +25,7 @@ import team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
 
 class WindowsPlaybackRecoveryTest {
@@ -35,11 +35,11 @@ class WindowsPlaybackRecoveryTest {
             val recovery = WindowsPlaybackRecovery(File(directory, "state"))
             val store = recovery.storeFor("path-test")
             val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
-            val gateway = object : team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway {
+            val gateway = object : team.bjtuss.bjtuselfservice.shared.files.FileGateway {
                 override val isAvailable = true
                 override val isStreamingSaveAvailable = true
-                override suspend fun pickFiles() = team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult.Cancelled
-                override suspend fun saveFile(file: team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent) = HomeworkFileSaveResult.Cancelled
+                override suspend fun pickFiles() = team.bjtuss.bjtuselfservice.shared.files.FilePickResult.Cancelled
+                override suspend fun saveFile(file: team.bjtuss.bjtuselfservice.shared.files.FileContent) = FileSaveResult.Cancelled
                 override suspend fun openStreamingDestination(fileName: String, contentType: String) =
                     StreamingDestinationResult.Opened(prepareFileStreamingDestination(target))
             }
@@ -124,7 +124,7 @@ class WindowsPlaybackRecoveryTest {
             val target = File(directory, "output.mp4")
             val destination = prepareFileStreamingDestination(target)
             destination.write("保存的视频".toByteArray())
-            assertEquals(HomeworkFileSaveResult.Saved, destination.commit())
+            assertEquals(FileSaveResult.Saved, destination.commit())
             Files.writeString(destination.temporary, "之后创建的其他文件")
             destination.abort()
             assertEquals("保存的视频", target.readText())
@@ -275,7 +275,7 @@ class WindowsPlaybackRecoveryTest {
                 WindowsPlaybackRecovery(directory).restoreDestination(token, target.name)).destination
             restored.write("complete".toByteArray())
             assertEquals("original", target.readText())
-            assertEquals(HomeworkFileSaveResult.Saved, restored.commit())
+            assertEquals(FileSaveResult.Saved, restored.commit())
             assertEquals("complete", target.readText())
             assertTrue(!Files.exists(temporary))
         }

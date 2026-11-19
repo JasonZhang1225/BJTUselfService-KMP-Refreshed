@@ -109,16 +109,16 @@ import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkOperationResult
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkDetail
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkSortOrder
 import team.bjtuss.bjtuselfservice.shared.domain.homework.SubmittedHomeworkAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.homework.searchHomework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.stableKey
 import team.bjtuss.bjtuselfservice.shared.domain.homework.typeLabel
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FilePickResult
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.safeExportFileName
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetScrollContentPadding
@@ -140,7 +140,7 @@ fun HomeworkWorkspace(
     legacyWarningVisible: Boolean = false,
     onDismissLegacyWarning: () -> Unit = {},
     model: HomeworkScreenModel,
-    fileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     onReauthenticate: (suspend () -> Boolean)? = null,
     onRefresh: () -> Unit,
     onOpenDetail: () -> Unit,
@@ -321,13 +321,13 @@ fun HomeworkWorkspace(
 /** 作业附件下载/上传的共享传输状态：宽屏列表侧栏与紧凑详情二级页各持一份，逻辑一致。 */
 private class HomeworkTransferState(
     private val model: HomeworkScreenModel,
-    private val fileGateway: HomeworkFileGateway,
+    private val fileGateway: FileGateway,
     private val reauthenticate: (suspend () -> Boolean)?,
     private val scope: CoroutineScope,
     private val copyText: (String) -> Unit,
 ) {
     var showUpload by mutableStateOf(false)
-    var uploadFiles by mutableStateOf<List<HomeworkFileContent>>(emptyList())
+    var uploadFiles by mutableStateOf<List<FileContent>>(emptyList())
     var uploadContent by mutableStateOf("")
     var uploadFeedback by mutableStateOf<String?>(null)
     var fileFeedback by mutableStateOf<String?>(null)
@@ -345,15 +345,15 @@ private class HomeworkTransferState(
         }
         scope.launch {
             fileFeedback = null
-            val file = HomeworkFileContent(
+            val file = FileContent(
                 fileName = safeExportFileName(suggestedName),
                 contentType = "text/markdown",
                 bytes = markdown.encodeToByteArray(),
             )
             fileFeedback = when (val result = fileGateway.saveFile(file)) {
-                HomeworkFileSaveResult.Saved -> "Markdown 已保存"
-                HomeworkFileSaveResult.Cancelled -> null
-                is HomeworkFileSaveResult.Failed -> result.saveFeedback()
+                FileSaveResult.Saved -> "Markdown 已保存"
+                FileSaveResult.Cancelled -> null
+                is FileSaveResult.Failed -> result.saveFeedback()
             }
         }
     }
@@ -414,10 +414,10 @@ private class HomeworkTransferState(
     fun pickUploadFiles() {
         scope.launch {
             when (val result = fileGateway.pickFiles()) {
-                HomeworkFilePickResult.Cancelled -> Unit
-                HomeworkFilePickResult.TooLarge -> uploadFeedback = UPLOAD_TOO_LARGE_FEEDBACK
-                is HomeworkFilePickResult.Failed -> uploadFeedback = result.pickFeedback()
-                is HomeworkFilePickResult.Selected -> {
+                FilePickResult.Cancelled -> Unit
+                FilePickResult.TooLarge -> uploadFeedback = UPLOAD_TOO_LARGE_FEEDBACK
+                is FilePickResult.Failed -> uploadFeedback = result.pickFeedback()
+                is FilePickResult.Selected -> {
                     uploadFiles = mergePickedFiles(uploadFiles, result.files)
                     uploadFeedback = null
                 }
@@ -425,12 +425,12 @@ private class HomeworkTransferState(
         }
     }
 
-    fun dropUploadFiles(result: HomeworkFilePickResult) {
+    fun dropUploadFiles(result: FilePickResult) {
         when (result) {
-            HomeworkFilePickResult.Cancelled -> Unit
-            HomeworkFilePickResult.TooLarge -> uploadFeedback = UPLOAD_TOO_LARGE_FEEDBACK
-            is HomeworkFilePickResult.Failed -> uploadFeedback = result.dropFeedback()
-            is HomeworkFilePickResult.Selected -> {
+            FilePickResult.Cancelled -> Unit
+            FilePickResult.TooLarge -> uploadFeedback = UPLOAD_TOO_LARGE_FEEDBACK
+            is FilePickResult.Failed -> uploadFeedback = result.dropFeedback()
+            is FilePickResult.Selected -> {
                 uploadFiles = mergePickedFiles(uploadFiles, result.files)
                 uploadFeedback = null
             }
@@ -494,7 +494,7 @@ private class HomeworkTransferState(
 @Composable
 private fun rememberHomeworkTransferState(
     model: HomeworkScreenModel,
-    fileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     reauthenticate: (suspend () -> Boolean)?,
 ): HomeworkTransferState {
     val scope = rememberCoroutineScope()
@@ -542,7 +542,7 @@ private fun HomeworkUploadDialog(
 @Composable
 fun HomeworkDetailWorkspace(
     model: HomeworkScreenModel,
-    fileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     onReauthenticate: (suspend () -> Boolean)? = null,
     modifier: Modifier = Modifier,
     headerContent: (@Composable () -> Unit)? = null,
@@ -1331,14 +1331,14 @@ private fun HomeworkDetailSheetBody(
 
 @Composable
 private fun ColumnScope.UploadHomeworkContent(
-    files: List<HomeworkFileContent>,
+    files: List<FileContent>,
     content: String,
     feedback: String?,
     busy: Boolean,
     pickEnabled: Boolean,
     onContentChange: (String) -> Unit,
     onPickFiles: () -> Unit,
-    onDropFiles: (HomeworkFilePickResult) -> Unit,
+    onDropFiles: (FilePickResult) -> Unit,
     onRemoveFile: (Int) -> Unit,
     onSubmit: () -> Unit,
 ) {
@@ -1474,10 +1474,10 @@ private fun Long.toReadableSize(): String = when {
     else -> "${this / (1024L * 1024L)} MB"
 }
 
-private fun HomeworkFileSaveResult.saveFeedback(): String? = when (this) {
-    HomeworkFileSaveResult.Saved -> "附件已保存到你选择的位置。"
-    HomeworkFileSaveResult.Cancelled -> null
-    is HomeworkFileSaveResult.Failed -> "系统保存失败，请重新选择位置。"
+private fun FileSaveResult.saveFeedback(): String? = when (this) {
+    FileSaveResult.Saved -> "附件已保存到你选择的位置。"
+    FileSaveResult.Cancelled -> null
+    is FileSaveResult.Failed -> "系统保存失败，请重新选择位置。"
 }
 
 /** A failed read must confirm expiry before attempting authentication recovery. */

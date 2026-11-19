@@ -46,13 +46,13 @@ class MainActivity : ComponentActivity() {
         refreshRate.start()
         val accountSecurityStore = createAndroidAccountSecurityStore(this)
         val cacheStoreHandle = createAndroidCacheStore(this)
-        val homeworkFileGateway = AndroidHomeworkFileGateway(this)
+        val fileGateway = AndroidFileGateway(this)
         setContent {
             App(
                 accountSecurityStore = accountSecurityStore,
                 cacheStoreHandle = cacheStoreHandle,
-                homeworkFileGateway = homeworkFileGateway,
-                coursewareDirectoryGateway = homeworkFileGateway,
+                fileGateway = fileGateway,
+                directoryGateway = fileGateway,
                 nativeNavigationEnabled = true,
                 onOpenExternalUrl = ::openExternalUrl,
                 onOpenNativeRoute = { routeId ->

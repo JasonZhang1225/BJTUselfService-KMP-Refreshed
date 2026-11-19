@@ -27,13 +27,13 @@ class NativeDetailActivity : ComponentActivity() {
         }
         if (BuildConfig.DEBUG) Log.d("NativeNavigation", "Detail opened route=$routeId")
 
-        val fileGateway = AndroidHomeworkFileGateway(this)
+        val fileGateway = AndroidFileGateway(this)
         setContent {
             AuthenticatedDestinationApp(
                 session = session,
                 routeId = routeId,
-                homeworkFileGateway = fileGateway,
-                coursewareDirectoryGateway = fileGateway,
+                fileGateway = fileGateway,
+                directoryGateway = fileGateway,
                 onOpenExternalUrl = ::openExternalUrl,
                 onOpenNativeRoute = ::openRoute,
                 onCloseNativeRoute = ::finish,

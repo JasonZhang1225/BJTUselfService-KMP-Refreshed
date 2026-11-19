@@ -215,8 +215,8 @@ import team.bjtuss.bjtuselfservice.shared.sync.AppRefreshCoordinator
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshRequest
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshSource
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.domain.grade.CourseType
 import team.bjtuss.bjtuselfservice.shared.domain.grade.Grade
 import team.bjtuss.bjtuselfservice.shared.domain.grade.GradeInfoResult
@@ -267,8 +267,8 @@ fun AuthenticatedAppShell(
     onOpenExternalUrl: (String) -> Unit = ::openExternalUrl,
     forcedRouteId: String? = null,
     onCloseNativeRoute: () -> Unit = {},
-    homeworkFileGatewayOverride: HomeworkFileGateway? = null,
-    coursewareDirectoryGatewayOverride: CoursewareDirectoryGateway? = null,
+    fileGatewayOverride: FileGateway? = null,
+    directoryGatewayOverride: DirectoryGateway? = null,
 ) {
     val profile = session.profile
     val entryLoggingIn = session.entryLoggingIn
@@ -285,8 +285,8 @@ fun AuthenticatedAppShell(
     val phyVlabModel = session.phyVlabModel
     val homeModel = session.homeModel
     val homeChangeFeed = session.homeChangeFeed
-    val homeworkFileGateway = homeworkFileGatewayOverride ?: session.homeworkFileGateway
-    val coursewareDirectoryGateway = coursewareDirectoryGatewayOverride ?: session.coursewareDirectoryGateway
+    val fileGateway = fileGatewayOverride ?: session.fileGateway
+    val directoryGateway = directoryGatewayOverride ?: session.directoryGateway
     val systemCalendarGateway = session.systemCalendarGateway
     val onLogout = session.onLogout
     val reauthenticateSession = session.reauthenticateSession
@@ -408,7 +408,7 @@ fun AuthenticatedAppShell(
             CompositionLocalProvider(
                 team.bjtuss.bjtuselfservice.shared.feature.assignment.LocalAssignmentCompletionStore provides session.assignmentCompletionStore,
             ) {
-                AssignmentMarkdownActions(item, homeworkFileGateway,
+                AssignmentMarkdownActions(item, fileGateway,
                     aggregateAssignmentMarkdown(item, homeworkState, phyVlabState, citelState))
             }
         }
@@ -1774,7 +1774,7 @@ fun AuthenticatedAppShell(
                     courseTypesByCode = gradeState.courseTypesByCode,
                     expanded = expanded,
                     model = courseScheduleModel,
-                    fileGateway = homeworkFileGateway,
+                    fileGateway = fileGateway,
                     systemCalendarGateway = systemCalendarGateway,
                     showCalendarExportSheet = showCourseCalendarExport,
                     onDismissCalendarExport = { showCourseCalendarExport = false },
@@ -1806,7 +1806,7 @@ fun AuthenticatedAppShell(
                     state = examState,
                     expanded = expanded,
                     model = examScheduleModel,
-                    fileGateway = homeworkFileGateway,
+                    fileGateway = fileGateway,
                     systemCalendarGateway = systemCalendarGateway,
                     onRefresh = refresh,
                     modifier = Modifier.fillMaxSize(),
@@ -1866,18 +1866,18 @@ fun AuthenticatedAppShell(
                         }
                     }, onRefreshSource = { source -> scope.launch { refreshAssignmentSource(source) } },
                     showSyncDetails = aggregateSyncDialogVisible, onDismissSyncDetails = { aggregateSyncDialogVisible = false },
-                    modifier = Modifier.fillMaxSize(), expanded = expanded, fileGateway = homeworkFileGateway,
+                    modifier = Modifier.fillMaxSize(), expanded = expanded, fileGateway = fileGateway,
                     markdown = { item -> aggregateAssignmentMarkdown(item, homeworkState, phyVlabState, citelState) },
                     search = assignmentSearch,
                     onEnterCaptcha = { openPhyVlabCaptcha(true) },
                     detailContent = { item ->
                         when (item.source) {
-                            AssignmentSource.COURSE_PLATFORM -> HomeworkDetailWorkspace(homeworkModel, homeworkFileGateway,
+                            AssignmentSource.COURSE_PLATFORM -> HomeworkDetailWorkspace(homeworkModel, fileGateway,
                                 reauthenticateSession, Modifier.fillMaxSize())
-                            AssignmentSource.PHYVLAB -> PhyVlabDetailWorkspace(phyVlabModel, homeworkFileGateway,
+                            AssignmentSource.PHYVLAB -> PhyVlabDetailWorkspace(phyVlabModel, fileGateway,
                                 onOpenExternalUrl, modifier = Modifier.fillMaxSize())
                             AssignmentSource.CITEL -> session.citelModel?.let { model ->
-                                CitelDetailWorkspace(model, homeworkFileGateway, onOpenExternalUrl, modifier = Modifier.fillMaxSize(), directoryGateway = coursewareDirectoryGateway)
+                                CitelDetailWorkspace(model, fileGateway, onOpenExternalUrl, modifier = Modifier.fillMaxSize(), directoryGateway = directoryGateway)
                             }
                         }
                     })
@@ -1907,7 +1907,7 @@ fun AuthenticatedAppShell(
                     legacyWarningVisible = usesLegacySmartTransportFor(platform.family) && !legacyWarningDismissed,
                     onDismissLegacyWarning = dismissLegacyWarning,
                     model = homeworkModel,
-                    fileGateway = homeworkFileGateway,
+                    fileGateway = fileGateway,
                     onReauthenticate = reauthenticateSession,
                     onRefresh = refresh,
                     onOpenDetail = {
@@ -1946,8 +1946,8 @@ fun AuthenticatedAppShell(
                     legacyWarningVisible = usesLegacySmartTransportFor(platform.family) && !legacyWarningDismissed,
                     onDismissLegacyWarning = dismissLegacyWarning,
                     model = coursewareModel,
-                    fileGateway = homeworkFileGateway,
-                    directoryGateway = coursewareDirectoryGateway,
+                    fileGateway = fileGateway,
+                    directoryGateway = directoryGateway,
                     onRefresh = refresh,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -1958,7 +1958,7 @@ fun AuthenticatedAppShell(
             ) {
                 session.playbackModel?.let { model ->
                     team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackDetailWorkspace(
-                        model, coursewareState.courses, homeworkFileGateway, Modifier.fillMaxSize())
+                        model, coursewareState.courses, fileGateway, Modifier.fillMaxSize())
                 }
             }
             AppSection.PLAYBACK -> DestinationPage(
@@ -1985,7 +1985,7 @@ fun AuthenticatedAppShell(
                         coursewareState = coursewareState,
                         coursewareModel = coursewareModel,
                         model = playbackModel,
-                        fileGateway = homeworkFileGateway,
+                        fileGateway = fileGateway,
                         expanded = expanded,
                         onRefresh = refresh,
                         modifier = Modifier.fillMaxSize(),
@@ -2151,7 +2151,7 @@ fun AuthenticatedAppShell(
             ) {
                 HomeworkDetailWorkspace(
                     model = homeworkModel,
-                    fileGateway = homeworkFileGateway,
+                    fileGateway = fileGateway,
                     onReauthenticate = reauthenticateSession,
                     modifier = Modifier.fillMaxSize(),
                     headerContent = { renderAssignmentMarkdownActions(AssignmentSource.COURSE_PLATFORM) },
@@ -2232,7 +2232,7 @@ fun AuthenticatedAppShell(
                     expanded = expanded,
                     onRefresh = refresh,
                     onReauthenticate = reauthenticateSession,
-                    fileGateway = homeworkFileGateway,
+                    fileGateway = fileGateway,
                     onOpenNativeDetail = if (useNativeSecondaryRoutes) {
                         { onOpenNativeRoute(MAILBOX_DETAIL_ROUTE_ID) }
                     } else {
@@ -2261,7 +2261,7 @@ fun AuthenticatedAppShell(
                     nativeDetail = true,
                     onRefresh = refresh,
                     onReauthenticate = reauthenticateSession,
-                    fileGateway = homeworkFileGateway,
+                    fileGateway = fileGateway,
                     onOpenNativeCompose = { onOpenNativeRoute(MAILBOX_COMPOSE_ROUTE_ID) },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -2310,7 +2310,7 @@ fun AuthenticatedAppShell(
                 PhyVlabWorkspace(
                     model = phyVlabModel,
                     holdNetwork = entryLoggingIn,
-                    fileGateway = homeworkFileGateway,
+                    fileGateway = fileGateway,
                     onRefresh = refresh,
                     showDetailSheet = !useNativeSecondaryRoutes,
                     onOpenAccountSettings = openPhyVlabSettings,
@@ -2339,7 +2339,7 @@ fun AuthenticatedAppShell(
             ) {
                 PhyVlabDetailWorkspace(
                     model = phyVlabModel,
-                    fileGateway = homeworkFileGateway,
+                    fileGateway = fileGateway,
                     onRetry = retryPhyVlabDetail,
                     onOpenActivity = { url -> onOpenExternalUrl(upgradePhyVlabUrlToHttps(url)) },
                     modifier = Modifier.fillMaxSize(),
@@ -2433,8 +2433,8 @@ fun AuthenticatedAppShell(
             ) {
                 session.citelModel?.let { model ->
                     team.bjtuss.bjtuselfservice.shared.feature.citel.CitelWorkspace(
-                        model, entryLoggingIn, onOpenExternalUrl, Modifier.fillMaxSize(), fileGateway = homeworkFileGateway,
-                        showDetailSheet = !useNativeSecondaryRoutes, directoryGateway = coursewareDirectoryGateway,
+                        model, entryLoggingIn, onOpenExternalUrl, Modifier.fillMaxSize(), fileGateway = fileGateway,
+                        showDetailSheet = !useNativeSecondaryRoutes, directoryGateway = directoryGateway,
                         onOpenTask = {
                             if (useNativeSecondaryRoutes) onOpenNativeRoute(CITEL_DETAIL_ROUTE_ID)
                         })
@@ -2443,8 +2443,8 @@ fun AuthenticatedAppShell(
             CitelDetailRoute -> DestinationPage(title = "作业详情", expanded = expanded, refreshable = true,
                 isRefreshing = citelState.submissionBusy, showBack = true, modifier = modifier, scrollUnderTopBar = true) {
                 session.citelModel?.let { model ->
-                    team.bjtuss.bjtuselfservice.shared.feature.citel.CitelDetailWorkspace(model, homeworkFileGateway,
-                        onOpenExternalUrl, entryLoggingIn, Modifier.fillMaxSize(), directoryGateway = coursewareDirectoryGateway,
+                    team.bjtuss.bjtuselfservice.shared.feature.citel.CitelDetailWorkspace(model, fileGateway,
+                        onOpenExternalUrl, entryLoggingIn, Modifier.fillMaxSize(), directoryGateway = directoryGateway,
                         headerContent = { renderAssignmentMarkdownActions(AssignmentSource.CITEL) })
                 }
             }

@@ -7,7 +7,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 
 enum class PhyVlabSyncFailure {
     NETWORK,
@@ -67,7 +67,7 @@ sealed interface PhyVlabAssignmentDetailResult {
 }
 
 sealed interface PhyVlabAttachmentResult {
-    class Success(val file: HomeworkFileContent) : PhyVlabAttachmentResult
+    class Success(val file: FileContent) : PhyVlabAttachmentResult
     data class Failure(val reason: PhyVlabSyncFailure) : PhyVlabAttachmentResult
 }
 
@@ -85,9 +85,9 @@ interface PhyVlabRepository {
         PhyVlabAttachmentResult.Failure(PhyVlabSyncFailure.NETWORK)
     suspend fun submitAssignment(
         activity: PhyVlabActivity,
-        files: List<HomeworkFileContent>,
+        files: List<FileContent>,
     ): PhyVlabSubmissionResult
-    suspend fun saveAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>, removed: Set<String>): PhyVlabSubmissionResult =
+    suspend fun saveAssignment(activity: PhyVlabActivity, files: List<FileContent>, removed: Set<String>): PhyVlabSubmissionResult =
         if (removed.isEmpty()) submitAssignment(activity, files) else PhyVlabSubmissionResult.Failure(PhyVlabSyncFailure.PARSE)
     suspend fun finalizationStatement(activity: PhyVlabActivity): String? = throw IllegalStateException("Finalization unavailable")
     suspend fun finalizeAssignment(activity: PhyVlabActivity, acceptedStatement: String?): PhyVlabSubmissionResult = PhyVlabSubmissionResult.Failure(PhyVlabSyncFailure.PARSE)
@@ -96,7 +96,7 @@ interface PhyVlabRepository {
 class DefaultPhyVlabRepository(
     private val remote: PhyVlabRemoteDataSource,
 ) : PhyVlabRepository {
-    override suspend fun saveAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>, removed: Set<String>): PhyVlabSubmissionResult =
+    override suspend fun saveAssignment(activity: PhyVlabActivity, files: List<FileContent>, removed: Set<String>): PhyVlabSubmissionResult =
         writeAssignment { remote.saveAssignment(activity, files, removed) }
     override suspend fun finalizationStatement(activity: PhyVlabActivity): String? = remote.finalizationStatement(activity)
     override suspend fun finalizeAssignment(activity: PhyVlabActivity, acceptedStatement: String?): PhyVlabSubmissionResult = writeAssignment { remote.finalizeAssignment(activity, acceptedStatement) }
@@ -157,7 +157,7 @@ class DefaultPhyVlabRepository(
 
     override suspend fun submitAssignment(
         activity: PhyVlabActivity,
-        files: List<HomeworkFileContent>,
+        files: List<FileContent>,
     ): PhyVlabSubmissionResult = try {
         remote.submitAssignment(activity, files)
         PhyVlabSubmissionResult.Success

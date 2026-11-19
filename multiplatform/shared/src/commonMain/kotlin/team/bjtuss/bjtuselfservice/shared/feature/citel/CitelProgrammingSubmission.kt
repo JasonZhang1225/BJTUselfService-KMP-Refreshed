@@ -2,7 +2,7 @@ package team.bjtuss.bjtuselfservice.shared.feature.citel
 
 import com.fleeksoft.ksoup.Ksoup
 import kotlinx.coroutines.CancellationException
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.network.*
 
 data class CitelProgrammingOptions(val languages: Map<String, String>, val maxBytes: Long, val alreadyAccepted: Boolean = false)
@@ -39,7 +39,7 @@ class CitelProgrammingClient(
         val url = result.resultUrl ?: return result
         return parseCitelProgrammingTestResult(read(url).bodyText(), result)
     }
-    suspend fun submit(task: CitelTask, file: HomeworkFileContent, language: String): CitelProgrammingResult {
+    suspend fun submit(task: CitelTask, file: FileContent, language: String): CitelProgrammingResult {
         val form = form(task)
         if (form.options.alreadyAccepted) throw CitelFailure("已通过（AC），无需再次提交。")
         if (language !in form.options.languages) throw CitelFailure("请选择平台支持的编程语言。")

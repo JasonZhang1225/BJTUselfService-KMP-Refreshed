@@ -39,15 +39,15 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackDetail
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackLesson
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStream
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStreamKind
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackEnqueueResult
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackTaskManager
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackTaskPhase
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackTasksPage
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGatewayFailure
+import team.bjtuss.bjtuselfservice.shared.files.FilePickResult
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestination
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingSinkIoException
@@ -258,11 +258,11 @@ private fun loadLiveHarnessMedia(streamsFile: File): HarnessMedia {
     )
 }
 
-private class HarnessHomeworkGateway(private val root: File) : HomeworkFileGateway {
+private class HarnessHomeworkGateway(private val root: File) : FileGateway {
     override val isAvailable = true
     override val isStreamingSaveAvailable = true
-    override suspend fun pickFiles() = HomeworkFilePickResult.Cancelled
-    override suspend fun saveFile(file: HomeworkFileContent) = HomeworkFileSaveResult.Cancelled
+    override suspend fun pickFiles() = FilePickResult.Cancelled
+    override suspend fun saveFile(file: FileContent) = FileSaveResult.Cancelled
 
     override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult =
         withContext(Dispatchers.IO) {
@@ -276,13 +276,13 @@ private class HarnessHomeworkGateway(private val root: File) : HomeworkFileGatew
                     val stream = output ?: throw StreamingSinkIoException()
                     withContext(Dispatchers.IO) { stream.write(bytes) }
                 }
-                override suspend fun commit(): HomeworkFileSaveResult = withContext(Dispatchers.IO) {
+                override suspend fun commit(): FileSaveResult = withContext(Dispatchers.IO) {
                     try {
                         output?.close(); output = null
                         Files.move(temporary, target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-                        HomeworkFileSaveResult.Saved
+                        FileSaveResult.Saved
                     } catch (_: Exception) {
-                        HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+                        FileSaveResult.Failed(FileGatewayFailure.IO)
                     }
                 }
                 override suspend fun abort() {

@@ -9,7 +9,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
@@ -35,10 +35,10 @@ interface PhyVlabRemoteDataSource {
     suspend fun fetchCourseActivities(course: PhyVlabCourse): List<PhyVlabActivity>
     suspend fun fetchEvents(monthTimestampSeconds: Long): List<PhyVlabEvent>
     suspend fun fetchAssignmentDetail(activity: PhyVlabActivity): PhyVlabAssignmentDetail
-    suspend fun submitAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>)
-    suspend fun downloadAttachment(attachment: PhyVlabAttachment): HomeworkFileContent =
+    suspend fun submitAssignment(activity: PhyVlabActivity, files: List<FileContent>)
+    suspend fun downloadAttachment(attachment: PhyVlabAttachment): FileContent =
         throw PhyVlabRemoteException(PhyVlabRemoteFailure.NETWORK)
-    suspend fun saveAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>, removed: Set<String>) {
+    suspend fun saveAssignment(activity: PhyVlabActivity, files: List<FileContent>, removed: Set<String>) {
         if (removed.isNotEmpty()) throw PhyVlabRemoteException(PhyVlabRemoteFailure.PARSE)
         submitAssignment(activity, files)
     }
@@ -56,7 +56,7 @@ class SchoolPhyVlabRemoteDataSource(
     private val assignmentClient = team.bjtuss.bjtuselfservice.shared.data.moodle.MoodleAssignmentClient(
         SchoolEndpoints.PHYVLAB_ORIGIN,
         read = { fetchPage(it, SchoolEndpoints.PHYVLAB_ORIGIN) }, write = { transport.executeWithoutRedirects(it) })
-    override suspend fun saveAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>, removed: Set<String>) {
+    override suspend fun saveAssignment(activity: PhyVlabActivity, files: List<FileContent>, removed: Set<String>) {
         assignmentClient.saveFiles(activity.id, files, removed)
     }
     override suspend fun finalizationStatement(activity: PhyVlabActivity) = assignmentClient.finalizationStatement(activity.id)
@@ -155,10 +155,10 @@ class SchoolPhyVlabRemoteDataSource(
         isDraft = secondary.isDraft || original.isDraft,
     )
 
-    override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>) {
+    override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<FileContent>) {
         saveAssignment(activity, files, emptySet())
     }
-    override suspend fun downloadAttachment(attachment: PhyVlabAttachment): HomeworkFileContent {
+    override suspend fun downloadAttachment(attachment: PhyVlabAttachment): FileContent {
         var url = attachment.url
         var response: SchoolHttpResponse? = null
         for (hop in 0..5) {
@@ -176,7 +176,7 @@ class SchoolPhyVlabRemoteDataSource(
         if (finalResponse.statusCode !in 200..299) network()
         if ("/login/index.php" in finalResponse.finalUrl) sessionExpired()
         if (finalResponse.body.isEmpty()) parse()
-        return HomeworkFileContent(attachment.fileName,
+        return FileContent(attachment.fileName,
             finalResponse.headers.entries.firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }?.value?.firstOrNull()
                 ?.substringBefore(';')?.trim()?.ifBlank { null } ?: "application/octet-stream", finalResponse.body)
     }

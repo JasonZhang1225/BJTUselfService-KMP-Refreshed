@@ -39,7 +39,7 @@ fun OfflineLayoutBootstrap(onReady: (AuthenticatedSession) -> Unit): UIViewContr
         StudentProfile("布局测试", "offline-layout", "测试", "测试"), false,
         transport, remember { SchoolLoginProtocol(transport) }, cache, currentPlatform(), preferences,
         { true }, security, UnavailableCaptchaRecognizer, "", "",
-        UnavailableHomeworkFileGateway, UnavailableCoursewareDirectoryGateway, UnavailableSystemCalendarGateway,
+        UnavailableFileGateway, UnavailableDirectoryGateway, UnavailableSystemCalendarGateway,
         {}, {},
     )
     val session = remember(source) {
@@ -59,7 +59,7 @@ fun OfflineLayoutBootstrap(onReady: (AuthenticatedSession) -> Unit): UIViewContr
             mailboxModel = source.mailboxModel, phyVlabModel = source.phyVlabModel,
             homeModel = source.homeModel, homeChangeFeed = source.homeChangeFeed,
             libraryModel = source.libraryModel,
-            homeworkFileGateway = source.homeworkFileGateway, coursewareDirectoryGateway = source.coursewareDirectoryGateway,
+            fileGateway = source.fileGateway, directoryGateway = source.directoryGateway,
             systemCalendarGateway = source.systemCalendarGateway, onLogout = {},
         ).also { it.legacyHttpWarningDismissed = true }
     }
@@ -100,6 +100,6 @@ private class OfflineLayoutHomeworkRepository : HomeworkRepository {
     override suspend fun loadSubmittedAttachments(homework: Homework) = HomeworkOperationResult.Success(emptyList<SubmittedHomeworkAttachment>())
     override suspend fun downloadTeacherAttachment(homeworkId: Int, attachment: HomeworkAttachment) = HomeworkOperationResult.Failure(HomeworkSyncFailure.NETWORK)
     override suspend fun downloadSubmittedAttachment(attachment: SubmittedHomeworkAttachment) = HomeworkOperationResult.Failure(HomeworkSyncFailure.NETWORK)
-    override suspend fun submitHomework(homework: Homework, content: String, files: List<HomeworkFileContent>) = HomeworkOperationResult.Failure(HomeworkSyncFailure.SUBMIT_REJECTED)
+    override suspend fun submitHomework(homework: Homework, content: String, files: List<FileContent>) = HomeworkOperationResult.Failure(HomeworkSyncFailure.SUBMIT_REJECTED)
     override fun attachmentDownloadUrl(homeworkId: Int, attachmentId: Int) = ""
 }

@@ -1,15 +1,39 @@
 package team.bjtuss.bjtuselfservice.shared.files
 
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+class FileContent(
+    val fileName: String,
+    val contentType: String,
+    val bytes: ByteArray,
+) {
+    init {
+        require(fileName.isNotBlank())
+        require(contentType.isNotBlank())
+    }
 
-enum class HomeworkFileGatewayFailure {
+    override fun equals(other: Any?): Boolean = other is FileContent &&
+        fileName == other.fileName &&
+        contentType == other.contentType &&
+        bytes.contentEquals(other.bytes)
+
+    override fun hashCode(): Int {
+        var result = fileName.hashCode()
+        result = 31 * result + contentType.hashCode()
+        result = 31 * result + bytes.contentHashCode()
+        return result
+    }
+
+    override fun toString(): String =
+        "FileContent(fileName=<redacted>, contentType=$contentType, bytes=${bytes.size})"
+}
+
+enum class FileGatewayFailure {
     UNAVAILABLE,
     PERMISSION_DENIED,
     IO,
 }
 
-sealed interface HomeworkFilePickResult {
-    class Selected(val files: List<HomeworkFileContent>) : HomeworkFilePickResult {
+sealed interface FilePickResult {
+    class Selected(val files: List<FileContent>) : FilePickResult {
         init {
             require(files.isNotEmpty())
         }
@@ -17,28 +41,28 @@ sealed interface HomeworkFilePickResult {
         override fun toString(): String = "Selected(files=${files.size}, names=<redacted>)"
     }
 
-    data object Cancelled : HomeworkFilePickResult
+    data object Cancelled : FilePickResult
     /** 文件太大，整块读进内存可能撑爆 App；没有读取任何内容。 */
-    data object TooLarge : HomeworkFilePickResult
-    data class Failed(val reason: HomeworkFileGatewayFailure) : HomeworkFilePickResult
+    data object TooLarge : FilePickResult
+    data class Failed(val reason: FileGatewayFailure) : FilePickResult
 }
 
-sealed interface HomeworkFileSaveResult {
-    data object Saved : HomeworkFileSaveResult
-    data object Cancelled : HomeworkFileSaveResult
-    data class Failed(val reason: HomeworkFileGatewayFailure) : HomeworkFileSaveResult
+sealed interface FileSaveResult {
+    data object Saved : FileSaveResult
+    data object Cancelled : FileSaveResult
+    data class Failed(val reason: FileGatewayFailure) : FileSaveResult
 }
 
-sealed interface HomeworkFilePreviewResult {
-    data object Opened : HomeworkFilePreviewResult
-    data class Failed(val reason: HomeworkFileGatewayFailure) : HomeworkFilePreviewResult
+sealed interface FilePreviewResult {
+    data object Opened : FilePreviewResult
+    data class Failed(val reason: FileGatewayFailure) : FilePreviewResult
 }
 
 /** 平台实现必须使用系统文件面板；不得静默保存或把完整路径写入日志。 */
-interface HomeworkFileGateway {
+interface FileGateway {
     val isAvailable: Boolean
-    suspend fun pickFiles(): HomeworkFilePickResult
-    suspend fun saveFile(file: HomeworkFileContent): HomeworkFileSaveResult
+    suspend fun pickFiles(): FilePickResult
+    suspend fun saveFile(file: FileContent): FileSaveResult
 
     /** 能否交给系统预览器（iOS 快速查看、macOS 默认应用、Android 打开方式）。 */
     val isPreviewAvailable: Boolean get() = false
@@ -47,8 +71,8 @@ interface HomeworkFileGateway {
      * 把文件写入应用临时目录后交给系统预览器，不写入用户的下载/文稿目录。
      * 临时文件由平台在下次预览或进程退出时清理。
      */
-    suspend fun previewFile(file: HomeworkFileContent): HomeworkFilePreviewResult =
-        HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+    suspend fun previewFile(file: FileContent): FilePreviewResult =
+        FilePreviewResult.Failed(FileGatewayFailure.UNAVAILABLE)
 
     /** 能否边下载边写盘（课程回放动辄 1–2 GB，不能整块放进内存再保存）。 */
     val isStreamingSaveAvailable: Boolean get() = false
@@ -59,29 +83,29 @@ interface HomeworkFileGateway {
      * [StreamingDestination.abort] 会删除未完成的内容。
      */
     suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult =
-        StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        StreamingDestinationResult.Failed(FileGatewayFailure.UNAVAILABLE)
 
     /**
      * 选位置后立即把 [produce] 写进来的字节依次写入，全部成功才落盘。
      * [produce] 抛出的异常（网络失败、取消）在删除未完成文件后原样抛给调用方；
-     * 写盘本身失败返回 [HomeworkFileGatewayFailure.IO]。
+     * 写盘本身失败返回 [FileGatewayFailure.IO]。
      */
     suspend fun saveStreamingFile(
         fileName: String,
         contentType: String,
         produce: suspend (StreamingFileSink) -> Unit,
-    ): HomeworkFileSaveResult {
+    ): FileSaveResult {
         val destination = when (val opened = openStreamingDestination(fileName, contentType)) {
-            StreamingDestinationResult.Cancelled -> return HomeworkFileSaveResult.Cancelled
-            is StreamingDestinationResult.Failed -> return HomeworkFileSaveResult.Failed(opened.reason)
+            StreamingDestinationResult.Cancelled -> return FileSaveResult.Cancelled
+            is StreamingDestinationResult.Failed -> return FileSaveResult.Failed(opened.reason)
             is StreamingDestinationResult.Opened -> opened.destination
         }
         var committed = false
         try {
             produce(StreamingFileSink(destination::write))
-            return destination.commit().also { committed = it == HomeworkFileSaveResult.Saved }
+            return destination.commit().also { committed = it == FileSaveResult.Saved }
         } catch (_: StreamingSinkIoException) {
-            return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+            return FileSaveResult.Failed(FileGatewayFailure.IO)
         } finally {
             if (!committed) kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { destination.abort() }
         }
@@ -97,7 +121,7 @@ interface StreamingDestination {
     /** 可展示的本地保存位置；平台不提供文件系统路径时为 null，不解析恢复句柄。 */
     val outputPath: String? get() = null
     suspend fun write(bytes: ByteArray)
-    suspend fun commit(): HomeworkFileSaveResult
+    suspend fun commit(): FileSaveResult
     /** 保留所选文件和权限，关闭未完成写入；重试时由平台重新从文件开头写。 */
     suspend fun closeForRecovery() = Unit
     /** 上次保存可能已经完成但记录尚未更新时，不能自动覆盖目标。 */
@@ -110,7 +134,7 @@ interface StreamingDestination {
 sealed interface StreamingDestinationResult {
     class Opened(val destination: StreamingDestination) : StreamingDestinationResult
     data object Cancelled : StreamingDestinationResult
-    data class Failed(val reason: HomeworkFileGatewayFailure) : StreamingDestinationResult
+    data class Failed(val reason: FileGatewayFailure) : StreamingDestinationResult
 }
 
 fun interface StreamingFileSink {
@@ -120,12 +144,12 @@ fun interface StreamingFileSink {
 /** 平台实现包装写盘异常用，好与生产者（网络）异常区分开。 */
 class StreamingSinkIoException(cause: Throwable? = null) : Exception("Streaming file write failed", cause)
 
-object UnavailableHomeworkFileGateway : HomeworkFileGateway {
+object UnavailableFileGateway : FileGateway {
     override val isAvailable: Boolean = false
-    override suspend fun pickFiles(): HomeworkFilePickResult =
-        HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
-    override suspend fun saveFile(file: HomeworkFileContent): HomeworkFileSaveResult =
-        HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+    override suspend fun pickFiles(): FilePickResult =
+        FilePickResult.Failed(FileGatewayFailure.UNAVAILABLE)
+    override suspend fun saveFile(file: FileContent): FileSaveResult =
+        FileSaveResult.Failed(FileGatewayFailure.UNAVAILABLE)
 }
 
 /**

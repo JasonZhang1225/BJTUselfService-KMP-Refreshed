@@ -18,12 +18,12 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import org.jetbrains.skia.EncodedImageFormat
 import team.bjtuss.bjtuselfservice.shared.PlatformAppTheme
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailAttachmentContent
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FilePickResult
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 
 /** 用虚构附件渲染邮件附件区与文本预览；无网络、无账号。输出 build/reports/mail-attachments/。 */
 class MailAttachmentRenderTest {
@@ -33,11 +33,11 @@ class MailAttachmentRenderTest {
         MailAttachment("5", "现场照片.jpg", 2_400_000, "image/jpeg"),
     )
 
-    private val gateway = object : HomeworkFileGateway {
+    private val gateway = object : FileGateway {
         override val isAvailable = true
         override val isPreviewAvailable = true
-        override suspend fun pickFiles() = HomeworkFilePickResult.Cancelled
-        override suspend fun saveFile(file: HomeworkFileContent) = HomeworkFileSaveResult.Saved
+        override suspend fun pickFiles() = FilePickResult.Cancelled
+        override suspend fun saveFile(file: FileContent) = FileSaveResult.Saved
     }
 
     private val actions = MailAttachmentActions(

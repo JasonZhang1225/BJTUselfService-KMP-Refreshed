@@ -21,8 +21,8 @@ import team.bjtuss.bjtuselfservice.shared.data.library.DefaultLibraryRepository
 import team.bjtuss.bjtuselfservice.shared.data.library.LibraryLoginProtocol
 import team.bjtuss.bjtuselfservice.shared.data.library.SchoolLibraryRemoteDataSource
 import team.bjtuss.bjtuselfservice.shared.feature.library.LibraryModel
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityCoordinator
 import team.bjtuss.bjtuselfservice.shared.sync.AppDataGraph
@@ -46,8 +46,8 @@ internal fun rememberAuthenticatedSession(
     captchaRecognizer: CaptchaRecognizer,
     username: String,
     password: String,
-    homeworkFileGateway: HomeworkFileGateway,
-    coursewareDirectoryGateway: CoursewareDirectoryGateway,
+    fileGateway: FileGateway,
+    directoryGateway: DirectoryGateway,
     systemCalendarGateway: SystemCalendarGateway,
     onLogout: (String) -> Unit,
     onPurgeLogout: (String) -> Unit,
@@ -59,7 +59,7 @@ internal fun rememberAuthenticatedSession(
     val logoutScope = rememberCoroutineScope()
     // 业务依赖由普通 Kotlin 组合根装配（无窗口宿主复用同一份）；Compose 只负责按账号持有与释放。
     val graph = remember(profile.studentId, cacheStore, transport, loginProtocol, platform.family,
-        securityCoordinator, captchaRecognizer, homeworkFileGateway) {
+        securityCoordinator, captchaRecognizer, fileGateway) {
         AppDataGraph(
             profile = profile,
             transport = transport,
@@ -71,7 +71,7 @@ internal fun rememberAuthenticatedSession(
             securityCoordinator = securityCoordinator,
             captchaRecognizer = captchaRecognizer,
             credentialsProvider = { latestCredentials.value },
-            homeworkFileGateway = homeworkFileGateway,
+            fileGateway = fileGateway,
             onPurgeLogout = onPurgeLogout,
             refreshDispatcher = Dispatchers.Main,
         )
@@ -105,7 +105,7 @@ internal fun rememberAuthenticatedSession(
             graph.close()
         }
     }
-    val session = remember(graph, libraryModel, profile, appPreferences, coursewareDirectoryGateway, systemCalendarGateway) {
+    val session = remember(graph, libraryModel, profile, appPreferences, directoryGateway, systemCalendarGateway) {
         AuthenticatedSession(
             profile = profile,
             entryLoggingIn = entryLoggingIn,
@@ -131,8 +131,8 @@ internal fun rememberAuthenticatedSession(
             assignmentCompletionStore = graph.assignmentCompletionStore,
             homeModel = graph.homeModel,
             homeChangeFeed = graph.homeChangeFeed,
-            homeworkFileGateway = homeworkFileGateway,
-            coursewareDirectoryGateway = coursewareDirectoryGateway,
+            fileGateway = fileGateway,
+            directoryGateway = directoryGateway,
             systemCalendarGateway = systemCalendarGateway,
             onLogout = { logoutScope.launch { graph.playbackTaskManager.cancelAllAndJoin(); onLogout(profile.studentId) }; Unit },
             reauthenticateSession = graph.sessionRecovery::attempt,

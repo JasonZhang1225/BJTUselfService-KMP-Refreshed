@@ -6,13 +6,13 @@ import kotlin.test.assertEquals
 import team.bjtuss.bjtuselfservice.shared.data.otherfunction.OtherFunctionDownloadResult
 import team.bjtuss.bjtuselfservice.shared.data.otherfunction.OtherFunctionRepository
 import team.bjtuss.bjtuselfservice.shared.data.otherfunction.OtherFunctionSyncFailure
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.otherfunction.OtherFunctionFailure
 import team.bjtuss.bjtuselfservice.shared.domain.otherfunction.OtherFunctionTaskState
 import team.bjtuss.bjtuselfservice.shared.domain.otherfunction.ReportCardLanguage
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FilePickResult
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 
 class OtherFunctionScreenModelTest {
 
@@ -21,7 +21,7 @@ class OtherFunctionScreenModelTest {
         val repository = FakeRepository(
             reportCard = OtherFunctionDownloadResult.Failure(OtherFunctionSyncFailure.SESSION_EXPIRED),
         )
-        val gateway = FakeFileGateway(HomeworkFileSaveResult.Saved)
+        val gateway = FakeFileGateway(FileSaveResult.Saved)
         val model = OtherFunctionScreenModel(repository, gateway)
 
         model.downloadReportCard()
@@ -35,7 +35,7 @@ class OtherFunctionScreenModelTest {
     @Test
     fun switchingLanguageAffectsRepositoryLanguage() = runBlocking {
         val repository = FakeRepository(reportCard = success("英文成绩单.pdf"))
-        val gateway = FakeFileGateway(HomeworkFileSaveResult.Saved)
+        val gateway = FakeFileGateway(FileSaveResult.Saved)
         val model = OtherFunctionScreenModel(repository, gateway)
 
         model.setReportCardLanguage(ReportCardLanguage.ENGLISH)
@@ -49,7 +49,7 @@ class OtherFunctionScreenModelTest {
     }
 
     private fun success(fileName: String) = OtherFunctionDownloadResult.Success(
-        HomeworkFileContent(fileName, "application/pdf", "pdf".encodeToByteArray()),
+        FileContent(fileName, "application/pdf", "pdf".encodeToByteArray()),
     )
 
     private class FakeRepository(
@@ -65,13 +65,13 @@ class OtherFunctionScreenModelTest {
     }
 
     private class FakeFileGateway(
-        private val saveResult: HomeworkFileSaveResult,
-    ) : HomeworkFileGateway {
+        private val saveResult: FileSaveResult,
+    ) : FileGateway {
         override val isAvailable: Boolean = true
 
-        override suspend fun pickFiles(): HomeworkFilePickResult = HomeworkFilePickResult.Cancelled
+        override suspend fun pickFiles(): FilePickResult = FilePickResult.Cancelled
 
-        override suspend fun saveFile(file: HomeworkFileContent): HomeworkFileSaveResult {
+        override suspend fun saveFile(file: FileContent): FileSaveResult {
             return saveResult
         }
     }

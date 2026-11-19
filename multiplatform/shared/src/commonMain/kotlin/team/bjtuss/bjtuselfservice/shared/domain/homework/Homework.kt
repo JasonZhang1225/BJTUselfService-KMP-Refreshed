@@ -69,32 +69,6 @@ data class SubmittedHomeworkAttachment(
     val sourcePath: String,
 )
 
-class HomeworkFileContent(
-    val fileName: String,
-    val contentType: String,
-    val bytes: ByteArray,
-) {
-    init {
-        require(fileName.isNotBlank())
-        require(contentType.isNotBlank())
-    }
-
-    override fun equals(other: Any?): Boolean = other is HomeworkFileContent &&
-        fileName == other.fileName &&
-        contentType == other.contentType &&
-        bytes.contentEquals(other.bytes)
-
-    override fun hashCode(): Int {
-        var result = fileName.hashCode()
-        result = 31 * result + contentType.hashCode()
-        result = 31 * result + bytes.contentHashCode()
-        return result
-    }
-
-    override fun toString(): String =
-        "HomeworkFileContent(fileName=<redacted>, contentType=$contentType, bytes=${bytes.size})"
-}
-
 fun Homework.stableKey(): String = "$courseName\u0000$upId"
 
 fun Homework.typeLabel(): String = when (homeworkType) {

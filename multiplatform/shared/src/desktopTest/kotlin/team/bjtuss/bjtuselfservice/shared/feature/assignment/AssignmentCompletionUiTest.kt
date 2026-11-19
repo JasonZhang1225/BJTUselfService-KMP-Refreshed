@@ -23,7 +23,7 @@ import kotlin.test.*
 import team.bjtuss.bjtuselfservice.shared.PlatformAppTheme
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.cache.db.CacheDatabaseSql
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
 
 class AssignmentCompletionUiTest {
     private val items = aggregateAssignments(listOf(completionFixtureHomework()),
@@ -116,7 +116,7 @@ class AssignmentCompletionUiTest {
                         CompositionLocalProvider(LocalAssignmentCompletionStore provides store, LocalDensity provides density) {
                             Surface(Modifier.fillMaxSize()) {
                                 AggregatedAssignmentWorkspace(items, emptyList(), filterStore, {}, {}, {}, false, {},
-                                    Modifier.fillMaxSize(), fileGateway = UnavailableHomeworkFileGateway,
+                                    Modifier.fillMaxSize(), fileGateway = UnavailableFileGateway,
                                     markdown = { "" }, detailContent = {})
                             }
                         }

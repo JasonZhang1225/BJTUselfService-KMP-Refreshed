@@ -27,10 +27,10 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalNativeSheetPresenter
 import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeSheetPresenter
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityStore
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableCoursewareDirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.system.rememberPlatformIncreasedContrast
 import team.bjtuss.bjtuselfservice.shared.system.rememberPlatformFontScale
 import team.bjtuss.bjtuselfservice.shared.system.rememberPlatformReduceMotion
@@ -45,8 +45,8 @@ import team.bjtuss.bjtuselfservice.shared.webview.openExternalUrl
 fun App(
     accountSecurityStore: AccountSecurityStore,
     cacheStoreHandle: CacheStoreHandle,
-    homeworkFileGateway: HomeworkFileGateway = UnavailableHomeworkFileGateway,
-    coursewareDirectoryGateway: CoursewareDirectoryGateway = UnavailableCoursewareDirectoryGateway,
+    fileGateway: FileGateway = UnavailableFileGateway,
+    directoryGateway: DirectoryGateway = UnavailableDirectoryGateway,
     systemCalendarGateway: SystemCalendarGateway = UnavailableSystemCalendarGateway,
     appCommandBus: AppCommandBus? = null,
     captchaRecognizer: CaptchaRecognizer = UnavailableCaptchaRecognizer,
@@ -94,8 +94,8 @@ fun App(
                         ),
                         accountSecurityStore = accountSecurityStore,
                         cacheStoreHandle = cacheStoreHandle,
-                        homeworkFileGateway = homeworkFileGateway,
-                        coursewareDirectoryGateway = coursewareDirectoryGateway,
+                        fileGateway = fileGateway,
+                        directoryGateway = directoryGateway,
                         systemCalendarGateway = systemCalendarGateway,
                         appCommandBus = appCommandBus,
                         appPreferences = appPreferences,
@@ -118,8 +118,8 @@ fun App(
 fun AuthenticatedDestinationApp(
     session: AuthenticatedSession,
     routeId: String,
-    homeworkFileGateway: HomeworkFileGateway = session.homeworkFileGateway,
-    coursewareDirectoryGateway: CoursewareDirectoryGateway = session.coursewareDirectoryGateway,
+    fileGateway: FileGateway = session.fileGateway,
+    directoryGateway: DirectoryGateway = session.directoryGateway,
     nativeTabBarEnabled: Boolean = false,
     useNativeTitleBar: Boolean = false,
     /** iOS uses the host's real UISheetPresentationController for shared sheets. */
@@ -161,8 +161,8 @@ fun AuthenticatedDestinationApp(
                         onOpenExternalUrl = onOpenExternalUrl,
                         forcedRouteId = routeId,
                         onCloseNativeRoute = onCloseNativeRoute,
-                        homeworkFileGatewayOverride = homeworkFileGateway,
-                        coursewareDirectoryGatewayOverride = coursewareDirectoryGateway,
+                        fileGatewayOverride = fileGateway,
+                        directoryGatewayOverride = directoryGateway,
                     )
                 }
             }

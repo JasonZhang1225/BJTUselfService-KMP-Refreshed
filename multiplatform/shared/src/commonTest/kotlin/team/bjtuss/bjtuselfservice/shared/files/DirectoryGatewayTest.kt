@@ -5,21 +5,20 @@ import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 
-class CoursewareDirectoryGatewayTest {
+class DirectoryGatewayTest {
     @Test
     fun directoryContractsRejectBlankSegmentsAndRedactNames() {
         assertFailsWith<IllegalArgumentException> {
-            CoursewareDirectoryFile(
+            DirectoryFile(
                 relativeFolders = listOf("第一章", " "),
-                content = HomeworkFileContent("secret.pdf", "application/pdf", byteArrayOf(1)),
+                content = FileContent("secret.pdf", "application/pdf", byteArrayOf(1)),
             )
         }
 
-        val file = CoursewareDirectoryFile(
+        val file = DirectoryFile(
             relativeFolders = listOf("第一章"),
-            content = HomeworkFileContent("secret.pdf", "application/pdf", byteArrayOf(1)),
+            content = FileContent("secret.pdf", "application/pdf", byteArrayOf(1)),
         )
 
         assertFalse("secret.pdf" in file.toString())
@@ -72,11 +71,11 @@ class CoursewareDirectoryGatewayTest {
 
     @Test
     fun exportAllocatorKeepsSanitizedFolderAndFileCollisionsDistinct() {
-        val allocator = CoursewareExportNameAllocator()
-        fun resolve(folder: String, fileName: String): CoursewareDirectoryFile = allocator.resolve(
-            CoursewareDirectoryFile(
+        val allocator = ExportNameAllocator()
+        fun resolve(folder: String, fileName: String): DirectoryFile = allocator.resolve(
+            DirectoryFile(
                 relativeFolders = listOf(folder),
-                content = HomeworkFileContent(fileName, "application/pdf", byteArrayOf(1)),
+                content = FileContent(fileName, "application/pdf", byteArrayOf(1)),
             ),
         )
 
@@ -91,34 +90,34 @@ class CoursewareDirectoryGatewayTest {
         assertEquals(listOf("第一_章 (2)"), collidingFolder.relativeFolders)
         assertEquals("成绩.pdf", collidingFolder.content.fileName)
 
-        val crossTypeAllocator = CoursewareExportNameAllocator()
+        val crossTypeAllocator = ExportNameAllocator()
         val rootFile = crossTypeAllocator.resolve(
-            CoursewareDirectoryFile(
+            DirectoryFile(
                 relativeFolders = emptyList(),
-                content = HomeworkFileContent("第一章", "application/octet-stream", byteArrayOf(1)),
+                content = FileContent("第一章", "application/octet-stream", byteArrayOf(1)),
             ),
         )
         val folderAfterFile = crossTypeAllocator.resolve(
-            CoursewareDirectoryFile(
+            DirectoryFile(
                 relativeFolders = listOf("第一章"),
-                content = HomeworkFileContent("说明.pdf", "application/pdf", byteArrayOf(1)),
+                content = FileContent("说明.pdf", "application/pdf", byteArrayOf(1)),
             ),
         )
         assertEquals("第一章", rootFile.content.fileName)
         assertEquals(listOf("第一章 (2)"), folderAfterFile.relativeFolders)
 
-        val longExtensionAllocator = CoursewareExportNameAllocator()
+        val longExtensionAllocator = ExportNameAllocator()
         val longExtensionName = "a." + "x".repeat(77)
         longExtensionAllocator.resolve(
-            CoursewareDirectoryFile(
+            DirectoryFile(
                 relativeFolders = emptyList(),
-                content = HomeworkFileContent(longExtensionName, "application/octet-stream", byteArrayOf(1)),
+                content = FileContent(longExtensionName, "application/octet-stream", byteArrayOf(1)),
             ),
         )
         val renamedLongExtension = longExtensionAllocator.resolve(
-            CoursewareDirectoryFile(
+            DirectoryFile(
                 relativeFolders = emptyList(),
-                content = HomeworkFileContent(longExtensionName, "application/octet-stream", byteArrayOf(1)),
+                content = FileContent(longExtensionName, "application/octet-stream", byteArrayOf(1)),
             ),
         )
         assertTrue(renamedLongExtension.content.fileName.length <= 80)

@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkDetail
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkAttachment
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.SubmittedHomeworkAttachment
 
 class HomeworkRepositoryTest {
@@ -81,7 +81,7 @@ class HomeworkRepositoryTest {
             repository.submitHomework(
                 homework(1, 1, "作业"),
                 content = "提交说明",
-                files = listOf(HomeworkFileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
+                files = listOf(FileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
             ),
         )
 
@@ -101,7 +101,7 @@ class HomeworkRepositoryTest {
             repository.submitHomework(
                 homework(1, 1, "作业"),
                 content = "提交说明",
-                files = listOf(HomeworkFileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
+                files = listOf(FileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
             ),
         )
 
@@ -132,16 +132,16 @@ class HomeworkRepositoryTest {
         override suspend fun downloadTeacherAttachment(
             homeworkId: Int,
             attachment: HomeworkAttachment,
-        ): HomeworkFileContent = HomeworkFileContent(attachment.fileName, "application/octet-stream", byteArrayOf(1))
+        ): FileContent = FileContent(attachment.fileName, "application/octet-stream", byteArrayOf(1))
 
         override suspend fun downloadSubmittedAttachment(
             attachment: SubmittedHomeworkAttachment,
-        ): HomeworkFileContent = HomeworkFileContent(attachment.fileName, "application/octet-stream", byteArrayOf(1))
+        ): FileContent = FileContent(attachment.fileName, "application/octet-stream", byteArrayOf(1))
 
         override suspend fun submitHomework(
             homework: Homework,
             content: String,
-            files: List<HomeworkFileContent>,
+            files: List<FileContent>,
         ) {
             submitError?.let { throw it }
         }

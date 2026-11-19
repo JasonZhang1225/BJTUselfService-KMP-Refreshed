@@ -34,7 +34,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEventKind
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import kotlin.time.Clock
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentFilters
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentFilterStore
@@ -451,7 +451,7 @@ class PhyVlabScreenModel(
         }
     }
 
-    suspend fun submitSelectedActivity(files: List<HomeworkFileContent>, removed: Set<String> = emptySet(), finalize: Boolean = false,
+    suspend fun submitSelectedActivity(files: List<FileContent>, removed: Set<String> = emptySet(), finalize: Boolean = false,
         filesChecked: Boolean = false) {
         if (mutableState.value.isSubmitting) return
         val activity = mutableState.value.selectedActivity ?: return

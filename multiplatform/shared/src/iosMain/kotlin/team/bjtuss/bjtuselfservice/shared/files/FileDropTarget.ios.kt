@@ -9,5 +9,5 @@ actual val fileDropSupported: Boolean = false
 actual fun Modifier.fileDropTarget(
     enabled: Boolean,
     onHoverChange: (Boolean) -> Unit,
-    onDrop: (HomeworkFilePickResult) -> Unit,
+    onDrop: (FilePickResult) -> Unit,
 ): Modifier = this

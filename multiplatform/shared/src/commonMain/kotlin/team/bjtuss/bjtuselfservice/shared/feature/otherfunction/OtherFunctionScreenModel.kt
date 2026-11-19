@@ -12,8 +12,8 @@ import team.bjtuss.bjtuselfservice.shared.domain.otherfunction.OtherFunctionFail
 import team.bjtuss.bjtuselfservice.shared.domain.otherfunction.OtherFunctionTask
 import team.bjtuss.bjtuselfservice.shared.domain.otherfunction.OtherFunctionTaskState
 import team.bjtuss.bjtuselfservice.shared.domain.otherfunction.ReportCardLanguage
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 
 data class OtherFunctionUiState(
     val reportCardLanguage: ReportCardLanguage = ReportCardLanguage.CHINESE,
@@ -25,7 +25,7 @@ data class OtherFunctionUiState(
 
 class OtherFunctionScreenModel(
     private val repository: OtherFunctionRepository,
-    private val fileGateway: HomeworkFileGateway,
+    private val fileGateway: FileGateway,
 ) {
     private val mutableState = MutableStateFlow(OtherFunctionUiState())
     val state: StateFlow<OtherFunctionUiState> = mutableState.asStateFlow()
@@ -50,11 +50,11 @@ class OtherFunctionScreenModel(
                     )
                 is OtherFunctionDownloadResult.Success -> {
                     val next = when (val save = fileGateway.saveFile(result.file)) {
-                        HomeworkFileSaveResult.Saved -> OtherFunctionTaskState.Saved(result.file.fileName)
-                        HomeworkFileSaveResult.Cancelled -> OtherFunctionTaskState.SaveCancelled
-                        is HomeworkFileSaveResult.Failed ->
+                        FileSaveResult.Saved -> OtherFunctionTaskState.Saved(result.file.fileName)
+                        FileSaveResult.Cancelled -> OtherFunctionTaskState.SaveCancelled
+                        is FileSaveResult.Failed ->
                             OtherFunctionTaskState.Failed(
-                                if (save.reason == team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure.UNAVAILABLE) {
+                                if (save.reason == team.bjtuss.bjtuselfservice.shared.files.FileGatewayFailure.UNAVAILABLE) {
                                     OtherFunctionFailure.SAVE_UNAVAILABLE
                                 } else {
                                     OtherFunctionFailure.SAVE_FAILED

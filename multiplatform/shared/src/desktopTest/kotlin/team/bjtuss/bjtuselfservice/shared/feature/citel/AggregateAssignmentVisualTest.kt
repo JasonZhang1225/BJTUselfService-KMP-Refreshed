@@ -32,10 +32,10 @@ class AggregateAssignmentVisualTest {
             listOf(PhyVlabActivity(2, 2, "大学物理", "物理在线实验", "作业", "")),
             listOf(CitelTask(3, 3, "程序设计", "CITEL 编程练习", "", true)))
         var opened: AggregatedAssignment? = null
-        val gateway = object : HomeworkFileGateway {
+        val gateway = object : FileGateway {
             override val isAvailable = true
-            override suspend fun pickFiles() = HomeworkFilePickResult.Cancelled
-            override suspend fun saveFile(file: team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent) = HomeworkFileSaveResult.Cancelled
+            override suspend fun pickFiles() = FilePickResult.Cancelled
+            override suspend fun saveFile(file: team.bjtuss.bjtuselfservice.shared.files.FileContent) = FileSaveResult.Cancelled
         }
         val scene = ImageComposeScene(1200, 840, density = Density(1f), coroutineContext = Dispatchers.Unconfined) {
             PlatformAppTheme(false, false) {
@@ -85,7 +85,7 @@ class AggregateAssignmentVisualTest {
                     Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Panel("作业聚合", Modifier.weight(1f)) {
                             AggregatedAssignmentWorkspace(items, sync, null, {}, {}, {}, false, {}, Modifier.fillMaxSize(),
-                                fileGateway = team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway, markdown = { "" }, detailContent = {})
+                                fileGateway = team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway, markdown = { "" }, detailContent = {})
                         }
                         Panel("按平台筛选课程", Modifier.weight(1f)) {
                             AggregateAssignmentFilterSheet(items, AssignmentSource.entries,

@@ -27,8 +27,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.settings.SettingsScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.shell.PHYSICS_DEMO_ROUTE_ID
 import team.bjtuss.bjtuselfservice.shared.feature.shell.PHYSICS_DEMO_SETTINGS_ROUTE_ID
 import team.bjtuss.bjtuselfservice.shared.feature.shell.PHYVLAB_SETTINGS_ROUTE_ID
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
 import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
 
 /**
@@ -55,8 +55,8 @@ class AuthenticatedSession(
     val phyVlabModel: PhyVlabScreenModel,
     val homeModel: HomeScreenModel,
     val homeChangeFeed: HomeChangeFeedRepository,
-    val homeworkFileGateway: HomeworkFileGateway,
-    val coursewareDirectoryGateway: CoursewareDirectoryGateway,
+    val fileGateway: FileGateway,
+    val directoryGateway: DirectoryGateway,
     val systemCalendarGateway: SystemCalendarGateway,
     val onLogout: () -> Unit,
     /** 业务会话失效时，在 App 内复用当前内存中的 CAS 凭据恢复。 */

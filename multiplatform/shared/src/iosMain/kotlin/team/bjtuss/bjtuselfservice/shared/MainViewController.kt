@@ -9,7 +9,7 @@ import platform.WebKit.WKWebViewConfiguration
 import platform.WebKit.WKWebsiteDataStore
 import team.bjtuss.bjtuselfservice.shared.cache.createAppleCacheStore
 import team.bjtuss.bjtuselfservice.shared.security.createAppleAccountSecurityStore
-import team.bjtuss.bjtuselfservice.shared.files.IosHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.IosFileGateway
 import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeBarAction
 import team.bjtuss.bjtuselfservice.shared.calendar.IosSystemCalendarGateway
 
@@ -109,7 +109,7 @@ private fun createDestinationViewController(
     onSelectNativeTab: (String) -> Unit,
 ): UIViewController {
     lateinit var controller: UIViewController
-    val homeworkFileGateway = IosHomeworkFileGateway { controller }
+    val fileGateway = IosFileGateway { controller }
     val nativeSheetPresenter = IosNativeSheetPresenter { controller }
     controller = ComposeUIViewController(
         configure = { opaque = false },
@@ -117,8 +117,8 @@ private fun createDestinationViewController(
         AuthenticatedDestinationApp(
             session = session,
             routeId = routeId,
-            homeworkFileGateway = homeworkFileGateway,
-            coursewareDirectoryGateway = homeworkFileGateway,
+            fileGateway = fileGateway,
+            directoryGateway = fileGateway,
             nativeTabBarEnabled = nativeTabBarEnabled,
             useNativeTitleBar = useNativeTitleBar,
             nativeSheetPresenter = nativeSheetPresenter,
@@ -151,7 +151,7 @@ private fun createMainViewController(
     val accountSecurityStore = createAppleAccountSecurityStore(accessibleAfterFirstUnlock = true)
     val cacheStoreHandle = createAppleCacheStore()
     lateinit var controller: UIViewController
-    val homeworkFileGateway = IosHomeworkFileGateway { controller }
+    val fileGateway = IosFileGateway { controller }
     val systemCalendarGateway = IosSystemCalendarGateway()
     val nativeSheetPresenter = IosNativeSheetPresenter { controller }
     controller = ComposeUIViewController(
@@ -160,8 +160,8 @@ private fun createMainViewController(
         App(
             accountSecurityStore = accountSecurityStore,
             cacheStoreHandle = cacheStoreHandle,
-            homeworkFileGateway = homeworkFileGateway,
-            coursewareDirectoryGateway = homeworkFileGateway,
+            fileGateway = fileGateway,
+            directoryGateway = fileGateway,
             systemCalendarGateway = systemCalendarGateway,
             nativeNavigationEnabled = nativeNavigationEnabled,
             nativeTabBarEnabled = nativeTabBarEnabled,

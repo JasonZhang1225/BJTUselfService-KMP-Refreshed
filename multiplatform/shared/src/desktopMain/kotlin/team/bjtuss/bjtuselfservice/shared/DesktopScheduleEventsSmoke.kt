@@ -10,7 +10,7 @@ import kotlinx.datetime.LocalDate
 import team.bjtuss.bjtuselfservice.shared.cache.*
 import team.bjtuss.bjtuselfservice.shared.cache.db.CacheDatabaseSql
 import team.bjtuss.bjtuselfservice.shared.calendar.UnavailableSystemCalendarGateway
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
 import team.bjtuss.bjtuselfservice.shared.feature.course.*
 import team.bjtuss.bjtuselfservice.shared.feature.physicslab.*
 import team.bjtuss.bjtuselfservice.shared.feature.phydemo.*
@@ -77,7 +77,7 @@ fun DesktopScheduleEventsSmoke(initialDark: Boolean = false, initialExpanded: Bo
                     )
                     "日历" -> team.bjtuss.bjtuselfservice.shared.feature.calendar.CourseCalendarExportSheet(
                         modelState.copy(courses = ordinary, academicWeeks = weeks, physicsLabs = labs, physicsDemoBookings = demos),
-                        UnavailableHomeworkFileGateway, UnavailableSystemCalendarGateway, {},
+                        UnavailableFileGateway, UnavailableSystemCalendarGateway, {},
                     )
                     "设置" -> SettingsWorkspace(settings, "测试账号", currentPlatform(), expanded, {}, Modifier.fillMaxSize())
                     else -> CourseScheduleWorkspace(
@@ -86,7 +86,7 @@ fun DesktopScheduleEventsSmoke(initialDark: Boolean = false, initialExpanded: Bo
                             calendarSemesterLabel = "2026-2027-1", todayDate = LocalDate(2026, 11, 26),
                             supplementalCourses = scheduleEventCourses(exams, labs, weeks, demos), physicsLabs = labs, physicsDemoBookings = demos),
                         courseTypesByCode = mapOf("C312009B" to CourseType.REQUIRED), expanded = expanded,
-                        model = model, fileGateway = UnavailableHomeworkFileGateway, systemCalendarGateway = UnavailableSystemCalendarGateway,
+                        model = model, fileGateway = UnavailableFileGateway, systemCalendarGateway = UnavailableSystemCalendarGateway,
                         showCalendarExportSheet = export, onDismissCalendarExport = { export = false }, onRefresh = {}, modifier = Modifier.fillMaxSize(),
                     )
                 }

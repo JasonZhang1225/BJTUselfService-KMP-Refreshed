@@ -52,7 +52,7 @@ class WindowsPlaybackRecovery(private val root: File) : PlaybackRecoveryAccess {
             require(attributes == null || (attributes.isRegularFile && !attributes.isSymbolicLink && !attributes.isOther))
             StreamingDestinationResult.Opened(FileStreamingDestination(target, temporary.toPath(),
                 temporaryOwned = attributes != null))
-        } catch (_: Exception) { StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO) }
+        } catch (_: Exception) { StreamingDestinationResult.Failed(FileGatewayFailure.IO) }
     }
     private companion object {
         val managers = mutableMapOf<String, PlaybackTaskManager>()

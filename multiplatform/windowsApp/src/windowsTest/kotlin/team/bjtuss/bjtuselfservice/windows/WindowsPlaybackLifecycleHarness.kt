@@ -14,7 +14,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.*
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.*
 import team.bjtuss.bjtuselfservice.shared.files.*
 import team.bjtuss.bjtuselfservice.shared.media.*
@@ -33,11 +33,11 @@ fun main(args: Array<String>) {
     val manager = PlaybackTaskManager(scope, HlsRecordingDownloader(PlaybackCrashFixture.transport, 0),
         { compositor }, { null }, recovery.storeFor("visual-fixture"), restoreDestination = recovery::restoreDestination)
     var outputNumber = 0
-    val gateway = object : HomeworkFileGateway {
+    val gateway = object : FileGateway {
         override val isAvailable = true
         override val isStreamingSaveAvailable = true
-        override suspend fun pickFiles() = HomeworkFilePickResult.Cancelled
-        override suspend fun saveFile(file: HomeworkFileContent) = HomeworkFileSaveResult.Cancelled
+        override suspend fun pickFiles() = FilePickResult.Cancelled
+        override suspend fun saveFile(file: FileContent) = FileSaveResult.Cancelled
         override suspend fun openStreamingDestination(fileName: String, contentType: String) =
             StreamingDestinationResult.Opened(prepareFileStreamingDestination(File(root, "测试视频-${++outputNumber}.mp4")))
     }

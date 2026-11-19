@@ -43,9 +43,9 @@ class AndroidPlaybackRecovery(context: Context) : PlaybackRecoveryAccess {
 
     override suspend fun restoreDestination(token: String, displayName: String): StreamingDestinationResult = withContext(Dispatchers.IO) {
         val uri = runCatching { Uri.parse(token) }.getOrNull()
-        if (uri?.scheme != "content" || uri.query != null) return@withContext StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        if (uri?.scheme != "content" || uri.query != null) return@withContext StreamingDestinationResult.Failed(FileGatewayFailure.UNAVAILABLE)
         val granted = app.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isWritePermission }
-        if (!granted) return@withContext StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+        if (!granted) return@withContext StreamingDestinationResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
         // 保存时才打开并截断目标；重进 App 不会重写或删除用户文件。
         StreamingDestinationResult.Opened(ContentStreamingDestination(app.contentResolver, uri, null, displayName))
     }

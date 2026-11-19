@@ -19,14 +19,14 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareCourse
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNode
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNodeKind
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareSnapshot
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryFile
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryOpenResult
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryWriteSession
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryFile
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryOpenResult
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryWriteSession
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FilePickResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestination
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingFileSink
@@ -38,23 +38,23 @@ class CoursewareScreenModelTest {
         val release = CompletableDeferred<Unit>()
         var fileAborted = false
         var directoryCommitted = false
-        val gateway = object : CoursewareDirectoryGateway {
+        val gateway = object : DirectoryGateway {
             override val isDirectoryExportAvailable = true
-            override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult =
-                CoursewareDirectoryOpenResult.Opened(object : CoursewareDirectoryWriteSession {
+            override suspend fun openDirectory(directoryName: String): DirectoryOpenResult =
+                DirectoryOpenResult.Opened(object : DirectoryWriteSession {
                     override val supportsStreamingFiles = true
-                    override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult = error("unexpected")
-                    override suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult {
+                    override suspend fun write(file: DirectoryFile): FileSaveResult = error("unexpected")
+                    override suspend fun openFile(file: DirectoryFile): StreamingDestinationResult {
                         started.complete(Unit)
                         release.await()
                         return StreamingDestinationResult.Opened(object : StreamingDestination {
                             override val displayName = file.content.fileName
                             override suspend fun write(bytes: ByteArray) = error("must not write")
-                            override suspend fun commit(): HomeworkFileSaveResult = error("must not commit file")
+                            override suspend fun commit(): FileSaveResult = error("must not commit file")
                             override suspend fun abort() { fileAborted = true }
                         })
                     }
-                    override suspend fun commit(): HomeworkFileSaveResult { directoryCommitted = true; return HomeworkFileSaveResult.Saved }
+                    override suspend fun commit(): FileSaveResult { directoryCommitted = true; return FileSaveResult.Saved }
                     override suspend fun abort() = error("must not discard directory")
                 })
         }
@@ -77,27 +77,27 @@ class CoursewareScreenModelTest {
             val abortedFiles = mutableListOf<String>()
             var directoryCommitted = false
             var directoryAborted = false
-            var keepResult: HomeworkFileSaveResult? = null
+            var keepResult: FileSaveResult? = null
             val repository = object : CoursewareRepository by FakeRepository(snapshot(), snapshot()) {
                 override suspend fun streamResource(node: CoursewareNode, sink: StreamingFileSink, onProgress: (Long, Long) -> Unit) {
                     sink.write(byteArrayOf(1))
                     if (node.id == 3) { secondStarted.complete(Unit); awaitCancellation() }
                 }
             }
-            val gateway = object : CoursewareDirectoryGateway {
+            val gateway = object : DirectoryGateway {
                 override val isDirectoryExportAvailable = true
-                override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult =
-                    CoursewareDirectoryOpenResult.Opened(object : CoursewareDirectoryWriteSession {
+                override suspend fun openDirectory(directoryName: String): DirectoryOpenResult =
+                    DirectoryOpenResult.Opened(object : DirectoryWriteSession {
                         override val supportsStreamingFiles = true
-                        override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult = error("unexpected")
-                        override suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult =
+                        override suspend fun write(file: DirectoryFile): FileSaveResult = error("unexpected")
+                        override suspend fun openFile(file: DirectoryFile): StreamingDestinationResult =
                             StreamingDestinationResult.Opened(object : StreamingDestination {
                                 override val displayName = file.content.fileName
                                 override suspend fun write(bytes: ByteArray) = Unit
-                                override suspend fun commit(): HomeworkFileSaveResult { completed += displayName; return HomeworkFileSaveResult.Saved }
+                                override suspend fun commit(): FileSaveResult { completed += displayName; return FileSaveResult.Saved }
                                 override suspend fun abort() { abortedFiles += displayName }
                             })
-                        override suspend fun commit(): HomeworkFileSaveResult { directoryCommitted = true; return HomeworkFileSaveResult.Saved }
+                        override suspend fun commit(): FileSaveResult { directoryCommitted = true; return FileSaveResult.Saved }
                         override suspend fun abort() { directoryAborted = true; completed.clear() }
                     })
             }
@@ -112,7 +112,7 @@ class CoursewareScreenModelTest {
             assertEquals(keep, directoryCommitted)
             assertEquals(!keep, directoryAborted)
             assertEquals(if (keep) listOf("第一讲.pdf") else emptyList(), completed)
-            assertEquals(if (keep) HomeworkFileSaveResult.Saved else null, keepResult)
+            assertEquals(if (keep) FileSaveResult.Saved else null, keepResult)
         }
     }
 
@@ -137,16 +137,16 @@ class CoursewareScreenModelTest {
                 onProgress(4, 4)
             }
         }
-        val gateway = object : HomeworkFileGateway {
+        val gateway = object : FileGateway {
             override val isAvailable = true
-            override suspend fun pickFiles(): HomeworkFilePickResult = HomeworkFilePickResult.Cancelled
-            override suspend fun saveFile(file: HomeworkFileContent): HomeworkFileSaveResult = error("unexpected whole-file save")
+            override suspend fun pickFiles(): FilePickResult = FilePickResult.Cancelled
+            override suspend fun saveFile(file: FileContent): FileSaveResult = error("unexpected whole-file save")
             override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
                 events += "select"
                 return StreamingDestinationResult.Opened(object : StreamingDestination {
                     override val displayName = fileName
                     override suspend fun write(bytes: ByteArray) { events += "write:${bytes.size}" }
-                    override suspend fun commit(): HomeworkFileSaveResult { events += "commit"; return HomeworkFileSaveResult.Saved }
+                    override suspend fun commit(): FileSaveResult { events += "commit"; return FileSaveResult.Saved }
                     override suspend fun abort() { events += "abort" }
                 })
             }
@@ -160,7 +160,7 @@ class CoursewareScreenModelTest {
         assertEquals(resource().stableKey, model.state.value.streamNodeKey)
         assertEquals(listOf("select", "download", "write:2"), events)
         resume.complete(Unit)
-        assertEquals(HomeworkFileSaveResult.Saved, assertIs<CoursewareOperationResult.Success<HomeworkFileSaveResult>>(job.await()).value)
+        assertEquals(FileSaveResult.Saved, assertIs<CoursewareOperationResult.Success<FileSaveResult>>(job.await()).value)
         assertEquals(listOf("select", "download", "write:2", "write:2", "commit"), events)
         assertEquals(null, model.state.value.streamProgress)
         assertEquals(null, model.state.value.streamListedSize)
@@ -178,15 +178,15 @@ class CoursewareScreenModelTest {
                 awaitCancellation()
             }
         }
-        val gateway = object : HomeworkFileGateway {
+        val gateway = object : FileGateway {
             override val isAvailable = true
-            override suspend fun pickFiles(): HomeworkFilePickResult = HomeworkFilePickResult.Cancelled
-            override suspend fun saveFile(file: HomeworkFileContent): HomeworkFileSaveResult = error("unexpected")
+            override suspend fun pickFiles(): FilePickResult = FilePickResult.Cancelled
+            override suspend fun saveFile(file: FileContent): FileSaveResult = error("unexpected")
             override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult =
                 StreamingDestinationResult.Opened(object : StreamingDestination {
                     override val displayName = fileName
                     override suspend fun write(bytes: ByteArray) = Unit
-                    override suspend fun commit(): HomeworkFileSaveResult = error("must not commit")
+                    override suspend fun commit(): FileSaveResult = error("must not commit")
                     override suspend fun abort() { aborted = true }
                 })
         }
@@ -213,20 +213,20 @@ class CoursewareScreenModelTest {
                 awaitCancellation()
             }
         }
-        val gateway = object : CoursewareDirectoryGateway {
+        val gateway = object : DirectoryGateway {
             override val isDirectoryExportAvailable = true
-            override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult =
-                CoursewareDirectoryOpenResult.Opened(object : CoursewareDirectoryWriteSession {
+            override suspend fun openDirectory(directoryName: String): DirectoryOpenResult =
+                DirectoryOpenResult.Opened(object : DirectoryWriteSession {
                     override val supportsStreamingFiles = true
-                    override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult = error("unexpected whole-file write")
-                    override suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult =
+                    override suspend fun write(file: DirectoryFile): FileSaveResult = error("unexpected whole-file write")
+                    override suspend fun openFile(file: DirectoryFile): StreamingDestinationResult =
                         StreamingDestinationResult.Opened(object : StreamingDestination {
                             override val displayName = file.content.fileName
                             override suspend fun write(bytes: ByteArray) = Unit
-                            override suspend fun commit(): HomeworkFileSaveResult = error("must not commit")
+                            override suspend fun commit(): FileSaveResult = error("must not commit")
                             override suspend fun abort() { destinationAborted = true }
                         })
-                    override suspend fun commit(): HomeworkFileSaveResult = error("must not commit")
+                    override suspend fun commit(): FileSaveResult = error("must not commit")
                     override suspend fun abort() { directoryAborted = true }
                 })
         }
@@ -341,10 +341,10 @@ class CoursewareScreenModelTest {
             ): CoursewareOperationResult<CoursewareSnapshot> = CoursewareOperationResult.Success(snapshot)
             override suspend fun downloadResource(
                 node: CoursewareNode,
-            ): CoursewareOperationResult<HomeworkFileContent> = error("Not used")
+            ): CoursewareOperationResult<FileContent> = error("Not used")
             override suspend fun downloadTeachingCalendar(
                 course: CoursewareCourse,
-            ): CoursewareOperationResult<HomeworkFileContent> = error("Not used")
+            ): CoursewareOperationResult<FileContent> = error("Not used")
         }
         val model = CoursewareScreenModel(repository)
         val first = async { model.initialize() }
@@ -372,10 +372,10 @@ class CoursewareScreenModelTest {
                 CoursewareOperationResult.Success(snapshot.copy(courses = snapshot.courses.map { it.copy(children = emptyList()) }))
             override suspend fun downloadResource(
                 node: CoursewareNode,
-            ): CoursewareOperationResult<HomeworkFileContent> = error("Not used")
+            ): CoursewareOperationResult<FileContent> = error("Not used")
             override suspend fun downloadTeachingCalendar(
                 course: CoursewareCourse,
-            ): CoursewareOperationResult<HomeworkFileContent> = error("Not used")
+            ): CoursewareOperationResult<FileContent> = error("Not used")
         }
         val model = CoursewareScreenModel(repository)
         model.initialize()
@@ -405,10 +405,10 @@ class CoursewareScreenModelTest {
             ): CoursewareOperationResult<CoursewareSnapshot> = CoursewareOperationResult.Success(prefetched)
             override suspend fun downloadResource(
                 node: CoursewareNode,
-            ): CoursewareOperationResult<HomeworkFileContent> = error("Not used")
+            ): CoursewareOperationResult<FileContent> = error("Not used")
             override suspend fun downloadTeachingCalendar(
                 course: CoursewareCourse,
-            ): CoursewareOperationResult<HomeworkFileContent> = error("Not used")
+            ): CoursewareOperationResult<FileContent> = error("Not used")
         }
         val model = CoursewareScreenModel(repository)
         model.initialize()
@@ -452,7 +452,7 @@ class CoursewareScreenModelTest {
 
         val result = model.exportDirectory(null, "程序设计", gateway)
 
-        assertEquals(HomeworkFileSaveResult.Saved, assertIs<CoursewareOperationResult.Success<HomeworkFileSaveResult>>(result).value)
+        assertEquals(FileSaveResult.Saved, assertIs<CoursewareOperationResult.Success<FileSaveResult>>(result).value)
         assertEquals("load-folder:17:FOLDER:1", events.first())
         assertEquals("open:程序设计", events[1])
         assertEquals(2, gateway.files.size)
@@ -468,7 +468,7 @@ class CoursewareScreenModelTest {
 
         val result = model.exportDirectory(null, "程序设计", gateway)
 
-        assertEquals(HomeworkFileSaveResult.Saved, assertIs<CoursewareOperationResult.Success<HomeworkFileSaveResult>>(result).value)
+        assertEquals(FileSaveResult.Saved, assertIs<CoursewareOperationResult.Success<FileSaveResult>>(result).value)
         assertTrue(model.state.value.directoryExportSkipped.isEmpty())
         assertEquals(2, gateway.files.size)
         assertTrue("download:3" in events)
@@ -488,7 +488,7 @@ class CoursewareScreenModelTest {
 
         val result = model.exportDirectory(null, "程序设计", gateway)
 
-        assertEquals(HomeworkFileSaveResult.Saved, assertIs<CoursewareOperationResult.Success<HomeworkFileSaveResult>>(result).value)
+        assertEquals(FileSaveResult.Saved, assertIs<CoursewareOperationResult.Success<FileSaveResult>>(result).value)
         assertEquals(listOf("说明.pdf"), model.state.value.directoryExportSkipped)
         assertEquals(1, gateway.files.size)
         assertTrue(gateway.committed)
@@ -502,7 +502,7 @@ class CoursewareScreenModelTest {
         model.initialize()
 
         val single = model.downloadResource(description().stableKey)
-        assertIs<CoursewareOperationResult.Success<HomeworkFileContent>>(single)
+        assertIs<CoursewareOperationResult.Success<FileContent>>(single)
         assertTrue("download:3" in events)
 
         val failing = CoursewareScreenModel(
@@ -529,20 +529,20 @@ class CoursewareScreenModelTest {
 
     @Test
     fun downloadUsesTypedOperationAndClearsBusyState() = runBlocking {
-        val file = HomeworkFileContent("第一讲.pdf", "application/pdf", "body".encodeToByteArray())
+        val file = FileContent("第一讲.pdf", "application/pdf", "body".encodeToByteArray())
         val model = CoursewareScreenModel(FakeRepository(snapshot(), snapshot(), file))
         model.initialize()
 
         val result = model.downloadResource(resource().stableKey)
 
-        assertEquals(file, assertIs<CoursewareOperationResult.Success<HomeworkFileContent>>(result).value)
+        assertEquals(file, assertIs<CoursewareOperationResult.Success<FileContent>>(result).value)
         assertFalse(model.state.value.isDownloading)
     }
 
     @Test
     fun resourceDownloadRetriesTemporaryInvalidResponse() = runBlocking {
         var calls = 0
-        val file = HomeworkFileContent("第一讲.pdf", "application/pdf", "body".encodeToByteArray())
+        val file = FileContent("第一讲.pdf", "application/pdf", "body".encodeToByteArray())
         val repository = object : CoursewareRepository {
             override fun load(): CoursewareSnapshot = snapshot()
             override suspend fun refresh(): CoursewareRefreshResult = CoursewareRefreshResult.Success(snapshot())
@@ -553,7 +553,7 @@ class CoursewareScreenModelTest {
             ): CoursewareOperationResult<CoursewareSnapshot> = CoursewareOperationResult.Success(snapshot())
             override suspend fun downloadResource(
                 node: CoursewareNode,
-            ): CoursewareOperationResult<HomeworkFileContent> {
+            ): CoursewareOperationResult<FileContent> {
                 calls++
                 return if (calls == 1) {
                     CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
@@ -563,14 +563,14 @@ class CoursewareScreenModelTest {
             }
             override suspend fun downloadTeachingCalendar(
                 course: CoursewareCourse,
-            ): CoursewareOperationResult<HomeworkFileContent> = CoursewareOperationResult.Success(file)
+            ): CoursewareOperationResult<FileContent> = CoursewareOperationResult.Success(file)
         }
         val model = CoursewareScreenModel(repository)
         model.initialize()
 
         val result = model.downloadResource(resource().stableKey)
 
-        assertEquals(file, assertIs<CoursewareOperationResult.Success<HomeworkFileContent>>(result).value)
+        assertEquals(file, assertIs<CoursewareOperationResult.Success<FileContent>>(result).value)
         assertEquals(2, calls)
         assertFalse(model.state.value.isDownloading)
     }
@@ -579,7 +579,7 @@ class CoursewareScreenModelTest {
     fun resourceDownloadReauthenticatesOnceAfterSessionExpiry() = runBlocking {
         var calls = 0
         var recoveryCalls = 0
-        val file = HomeworkFileContent("第一讲.pdf", "application/pdf", "body".encodeToByteArray())
+        val file = FileContent("第一讲.pdf", "application/pdf", "body".encodeToByteArray())
         val repository = object : CoursewareRepository {
             override fun load(): CoursewareSnapshot = snapshot()
             override suspend fun refresh(): CoursewareRefreshResult = CoursewareRefreshResult.Success(snapshot())
@@ -590,7 +590,7 @@ class CoursewareScreenModelTest {
             ): CoursewareOperationResult<CoursewareSnapshot> = CoursewareOperationResult.Success(snapshot())
             override suspend fun downloadResource(
                 node: CoursewareNode,
-            ): CoursewareOperationResult<HomeworkFileContent> {
+            ): CoursewareOperationResult<FileContent> {
                 calls++
                 return if (calls == 1) {
                     CoursewareOperationResult.Failure(CoursewareSyncFailure.SESSION_EXPIRED)
@@ -600,7 +600,7 @@ class CoursewareScreenModelTest {
             }
             override suspend fun downloadTeachingCalendar(
                 course: CoursewareCourse,
-            ): CoursewareOperationResult<HomeworkFileContent> = CoursewareOperationResult.Success(file)
+            ): CoursewareOperationResult<FileContent> = CoursewareOperationResult.Success(file)
         }
         val model = CoursewareScreenModel(
             repository = repository,
@@ -613,7 +613,7 @@ class CoursewareScreenModelTest {
 
         val result = model.downloadResource(resource().stableKey)
 
-        assertIs<CoursewareOperationResult.Success<HomeworkFileContent>>(result)
+        assertIs<CoursewareOperationResult.Success<FileContent>>(result)
         assertEquals(2, calls)
         assertEquals(1, recoveryCalls)
     }
@@ -625,18 +625,18 @@ class CoursewareScreenModelTest {
         val model = CoursewareScreenModel(FakeRepository(snapshot(), snapshot(), events = courseEvents))
         model.initialize()
 
-        val courseResult = assertIs<CoursewareOperationResult.Success<HomeworkFileSaveResult>>(
+        val courseResult = assertIs<CoursewareOperationResult.Success<FileSaveResult>>(
             model.exportDirectory(null, "程序设计", courseGateway),
         ).value
         val folderEvents = mutableListOf<String>()
         val folderGateway = RecordingDirectoryGateway(folderEvents)
         val folderModel = CoursewareScreenModel(FakeRepository(snapshot(), snapshot(), events = folderEvents))
         folderModel.initialize()
-        val folderResult = assertIs<CoursewareOperationResult.Success<HomeworkFileSaveResult>>(
+        val folderResult = assertIs<CoursewareOperationResult.Success<FileSaveResult>>(
             folderModel.exportDirectory(folder().stableKey, "第一章", folderGateway),
         ).value
 
-        assertEquals(HomeworkFileSaveResult.Saved, courseResult)
+        assertEquals(FileSaveResult.Saved, courseResult)
         assertEquals("open:程序设计", courseEvents.first())
         assertEquals(
             listOf("open:程序设计", "download:2", "write:第一章", "download:3", "write:", "commit"),
@@ -645,7 +645,7 @@ class CoursewareScreenModelTest {
         assertEquals(listOf(listOf("第一章"), emptyList()), courseGateway.files.map { it.relativeFolders })
         assertTrue(courseGateway.committed)
         assertFalse(courseGateway.aborted)
-        assertEquals(HomeworkFileSaveResult.Saved, folderResult)
+        assertEquals(FileSaveResult.Saved, folderResult)
         assertEquals(listOf(emptyList()), folderGateway.files.map { it.relativeFolders })
         assertEquals("file.bin", folderGateway.files.single().content.fileName)
         assertEquals(0, model.state.value.directoryDownloadTotal)
@@ -664,11 +664,11 @@ class CoursewareScreenModelTest {
             ): CoursewareOperationResult<CoursewareSnapshot> = CoursewareOperationResult.Success(snapshot())
             override suspend fun downloadResource(
                 node: CoursewareNode,
-            ): CoursewareOperationResult<HomeworkFileContent> {
+            ): CoursewareOperationResult<FileContent> {
                 calls++
                 return if (calls == 1) {
                     CoursewareOperationResult.Success(
-                        HomeworkFileContent(node.name, "application/pdf", byteArrayOf(1)),
+                        FileContent(node.name, "application/pdf", byteArrayOf(1)),
                     )
                 } else {
                     CoursewareOperationResult.Failure(team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareSyncFailure.NETWORK)
@@ -676,7 +676,7 @@ class CoursewareScreenModelTest {
             }
             override suspend fun downloadTeachingCalendar(
                 course: CoursewareCourse,
-            ): CoursewareOperationResult<HomeworkFileContent> = error("Not used")
+            ): CoursewareOperationResult<FileContent> = error("Not used")
         }
         val gateway = RecordingDirectoryGateway(mutableListOf())
         val model = CoursewareScreenModel(repository)
@@ -695,18 +695,18 @@ class CoursewareScreenModelTest {
     fun directoryExportCancellationAbortsTheOpenSession() = runBlocking {
         val writeStarted = CompletableDeferred<Unit>()
         var aborted = false
-        val gateway = object : CoursewareDirectoryGateway {
+        val gateway = object : DirectoryGateway {
             override val isDirectoryExportAvailable: Boolean = true
 
-            override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult =
-                CoursewareDirectoryOpenResult.Opened(
-                    object : CoursewareDirectoryWriteSession {
-                        override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult {
+            override suspend fun openDirectory(directoryName: String): DirectoryOpenResult =
+                DirectoryOpenResult.Opened(
+                    object : DirectoryWriteSession {
+                        override suspend fun write(file: DirectoryFile): FileSaveResult {
                             writeStarted.complete(Unit)
                             awaitCancellation()
                         }
 
-                        override suspend fun commit(): HomeworkFileSaveResult = HomeworkFileSaveResult.Saved
+                        override suspend fun commit(): FileSaveResult = FileSaveResult.Saved
 
                         override suspend fun abort() {
                             aborted = true
@@ -733,14 +733,14 @@ class CoursewareScreenModelTest {
         val releaseFirst = CompletableDeferred<Unit>()
         var active = 0
         var maxActive = 0
-        suspend fun gatedFile(fileName: String): CoursewareOperationResult<HomeworkFileContent> {
+        suspend fun gatedFile(fileName: String): CoursewareOperationResult<FileContent> {
             active++
             maxActive = maxOf(maxActive, active)
             if (!firstStarted.isCompleted) firstStarted.complete(Unit)
             releaseFirst.await()
             active--
             return CoursewareOperationResult.Success(
-                HomeworkFileContent(fileName, "application/pdf", "%PDF".encodeToByteArray()),
+                FileContent(fileName, "application/pdf", "%PDF".encodeToByteArray()),
             )
         }
         val repository = object : CoursewareRepository {
@@ -753,10 +753,10 @@ class CoursewareScreenModelTest {
             ): CoursewareOperationResult<CoursewareSnapshot> = CoursewareOperationResult.Success(snapshot())
             override suspend fun downloadResource(
                 node: CoursewareNode,
-            ): CoursewareOperationResult<HomeworkFileContent> = gatedFile(node.name)
+            ): CoursewareOperationResult<FileContent> = gatedFile(node.name)
             override suspend fun downloadTeachingCalendar(
                 course: CoursewareCourse,
-            ): CoursewareOperationResult<HomeworkFileContent> = gatedFile("calendar.pdf")
+            ): CoursewareOperationResult<FileContent> = gatedFile("calendar.pdf")
         }
         val model = CoursewareScreenModel(repository)
         model.initialize()
@@ -778,7 +778,7 @@ class CoursewareScreenModelTest {
     private class FakeRepository(
         private val loaded: CoursewareSnapshot,
         private val refreshed: CoursewareSnapshot,
-        private val file: HomeworkFileContent = HomeworkFileContent("file.bin", "application/octet-stream", byteArrayOf(1)),
+        private val file: FileContent = FileContent("file.bin", "application/octet-stream", byteArrayOf(1)),
         private val events: MutableList<String>? = null,
         private val loadedFolderSnapshot: CoursewareSnapshot? = null,
         private val rootSnapshot: CoursewareSnapshot = refreshed,
@@ -816,7 +816,7 @@ class CoursewareScreenModelTest {
                     team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareSyncFailure.MALFORMED_RESPONSE,
                 )
         }
-        override suspend fun downloadResource(node: CoursewareNode): CoursewareOperationResult<HomeworkFileContent> {
+        override suspend fun downloadResource(node: CoursewareNode): CoursewareOperationResult<FileContent> {
             events?.add("download:${node.id}")
             if (node.id in failingIds) {
                 return CoursewareOperationResult.Failure(
@@ -828,34 +828,34 @@ class CoursewareScreenModelTest {
 
         override suspend fun downloadTeachingCalendar(
             course: CoursewareCourse,
-        ): CoursewareOperationResult<HomeworkFileContent> = CoursewareOperationResult.Success(
-            HomeworkFileContent("${course.name}_教学日历.pdf", "application/pdf", "%PDF".encodeToByteArray()),
+        ): CoursewareOperationResult<FileContent> = CoursewareOperationResult.Success(
+            FileContent("${course.name}_教学日历.pdf", "application/pdf", "%PDF".encodeToByteArray()),
         )
     }
 
     private class RecordingDirectoryGateway(
         private val events: MutableList<String>,
-    ) : CoursewareDirectoryGateway {
-        val files = mutableListOf<CoursewareDirectoryFile>()
+    ) : DirectoryGateway {
+        val files = mutableListOf<DirectoryFile>()
         var committed = false
         var aborted = false
 
         override val isDirectoryExportAvailable: Boolean = true
 
-        override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult {
+        override suspend fun openDirectory(directoryName: String): DirectoryOpenResult {
             events += "open:$directoryName"
-            return CoursewareDirectoryOpenResult.Opened(
-                object : CoursewareDirectoryWriteSession {
-                    override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult {
+            return DirectoryOpenResult.Opened(
+                object : DirectoryWriteSession {
+                    override suspend fun write(file: DirectoryFile): FileSaveResult {
                         events += "write:${file.relativeFolders.joinToString("/")}"
                         files += file
-                        return HomeworkFileSaveResult.Saved
+                        return FileSaveResult.Saved
                     }
 
-                    override suspend fun commit(): HomeworkFileSaveResult {
+                    override suspend fun commit(): FileSaveResult {
                         events += "commit"
                         committed = true
-                        return HomeworkFileSaveResult.Saved
+                        return FileSaveResult.Saved
                     }
 
                     override suspend fun abort() {

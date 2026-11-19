@@ -13,7 +13,7 @@ import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.network.SchoolNetworkException
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkAttachment
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 
 class HomeworkRemoteDataSourceTest {
     @Test
@@ -177,7 +177,7 @@ class HomeworkRemoteDataSourceTest {
         remote.submitHomework(
             homework = homework,
             content = "提交说明",
-            files = listOf(HomeworkFileContent("我的答案.pdf", "application/pdf", "answer-body".encodeToByteArray())),
+            files = listOf(FileContent("我的答案.pdf", "application/pdf", "answer-body".encodeToByteArray())),
         )
 
         assertEquals("teacher-file", teacherFile.bytes.decodeToString())
@@ -223,7 +223,7 @@ class HomeworkRemoteDataSourceTest {
         remote.submitHomework(
             homework = homework(),
             content = "提交说明",
-            files = listOf(HomeworkFileContent("答案.pdf", "application/pdf", byteArrayOf(1, 2, 3, 4))),
+            files = listOf(FileContent("答案.pdf", "application/pdf", byteArrayOf(1, 2, 3, 4))),
         )
 
         assertEquals(1, transport.failedUploads)
@@ -247,7 +247,7 @@ class HomeworkRemoteDataSourceTest {
             remote.submitHomework(
                 homework = homework(),
                 content = "提交说明",
-                files = listOf(HomeworkFileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
+                files = listOf(FileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
             )
         }
 
@@ -274,7 +274,7 @@ class HomeworkRemoteDataSourceTest {
             remote.submitHomework(
                 homework = homework(),
                 content = "提交说明",
-                files = listOf(HomeworkFileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
+                files = listOf(FileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
             )
         }
 
@@ -296,7 +296,7 @@ class HomeworkRemoteDataSourceTest {
             remote.submitHomework(
                 homework = homework(),
                 content = "提交说明",
-                files = listOf(HomeworkFileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
+                files = listOf(FileContent("答案.pdf", "application/pdf", byteArrayOf(1))),
             )
         }
 
