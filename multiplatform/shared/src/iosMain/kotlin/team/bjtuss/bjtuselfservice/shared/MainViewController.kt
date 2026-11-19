@@ -10,6 +10,7 @@ import platform.WebKit.WKWebsiteDataStore
 import team.bjtuss.bjtuselfservice.shared.cache.createAppleCacheStore
 import team.bjtuss.bjtuselfservice.shared.security.createAppleAccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.files.IosFileGateway
+import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeHostState
 import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeBarAction
 import team.bjtuss.bjtuselfservice.shared.calendar.IosSystemCalendarGateway
 
@@ -53,6 +54,7 @@ fun NativeMainViewController(
 fun NativeDestinationViewController(
     session: AuthenticatedSession,
     routeId: String,
+    nativeHostState: NativeHostState,
     useNativeTitleBar: Boolean,
     onOpenNativeRoute: (String) -> Unit,
     onCloseNativeRoute: () -> Unit,
@@ -62,6 +64,7 @@ fun NativeDestinationViewController(
 ): UIViewController = createDestinationViewController(
     session = session,
     routeId = routeId,
+    nativeHostState = nativeHostState,
     nativeTabBarEnabled = false,
     useNativeTitleBar = useNativeTitleBar,
     onOpenNativeRoute = onOpenNativeRoute,
@@ -79,14 +82,17 @@ fun NativeDestinationViewController(
 fun NativeTabRootViewController(
     session: AuthenticatedSession,
     routeId: String,
+    nativeHostState: NativeHostState,
     onOpenNativeRoute: (String) -> Unit,
     onCloseNativeRoute: () -> Unit,
     onTitleChanged: (String) -> Unit = {},
     onActionChanged: (NativeBarAction?) -> Unit = {},
     onSelectNativeTab: (String) -> Unit = {},
+    onTabItemsChanged: (List<String>) -> Unit = {},
 ): UIViewController = createDestinationViewController(
     session = session,
     routeId = routeId,
+    nativeHostState = nativeHostState,
     nativeTabBarEnabled = true,
     useNativeTitleBar = true,
     onOpenNativeRoute = onOpenNativeRoute,
@@ -94,12 +100,14 @@ fun NativeTabRootViewController(
     onTitleChanged = onTitleChanged,
     onActionChanged = onActionChanged,
     onSelectNativeTab = onSelectNativeTab,
+    onTabItemsChanged = onTabItemsChanged,
 )
 
 @OptIn(ExperimentalComposeUiApi::class)
 private fun createDestinationViewController(
     session: AuthenticatedSession,
     routeId: String,
+    nativeHostState: NativeHostState,
     nativeTabBarEnabled: Boolean,
     useNativeTitleBar: Boolean,
     onOpenNativeRoute: (String) -> Unit,
@@ -107,6 +115,7 @@ private fun createDestinationViewController(
     onTitleChanged: (String) -> Unit,
     onActionChanged: (NativeBarAction?) -> Unit = {},
     onSelectNativeTab: (String) -> Unit,
+    onTabItemsChanged: (List<String>) -> Unit = {},
 ): UIViewController {
     lateinit var controller: UIViewController
     val fileGateway = IosFileGateway { controller }
@@ -117,6 +126,7 @@ private fun createDestinationViewController(
         AuthenticatedDestinationApp(
             session = session,
             routeId = routeId,
+            nativeHostState = nativeHostState,
             fileGateway = fileGateway,
             directoryGateway = fileGateway,
             nativeTabBarEnabled = nativeTabBarEnabled,
@@ -125,6 +135,7 @@ private fun createDestinationViewController(
             onOpenNativeRoute = onOpenNativeRoute,
             onCloseNativeRoute = onCloseNativeRoute,
             onSelectNativeTab = onSelectNativeTab,
+            onNativeTabItemsChanged = onTabItemsChanged,
             onNativeTitleChanged = onTitleChanged,
             onNativeActionChanged = onActionChanged,
         )

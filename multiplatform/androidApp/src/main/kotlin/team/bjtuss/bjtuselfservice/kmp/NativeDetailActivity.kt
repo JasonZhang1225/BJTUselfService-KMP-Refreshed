@@ -9,8 +9,10 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import team.bjtuss.bjtuselfservice.shared.AuthenticatedDestinationApp
 import team.bjtuss.bjtuselfservice.shared.isNativeDetailRoute
+import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeHostState
 
 class NativeDetailActivity : ComponentActivity() {
+    private val nativeHostState = NativeHostState()
     private val refreshRate = AndroidRefreshRateController(this)
     private var removeSessionObserver: (() -> Unit)? = null
 
@@ -19,6 +21,7 @@ class NativeDetailActivity : ComponentActivity() {
         enableImmersiveEdgeToEdge()
         refreshRate.start()
         val routeId = intent.getStringExtra(EXTRA_ROUTE_ID)
+        nativeHostState.systemBottomInsetDp = intent.getFloatExtra(EXTRA_SYSTEM_BOTTOM_INSET, 0f)
         val session = AndroidAuthenticatedSessionRegistry.session
         if (routeId == null || !isNativeDetailRoute(routeId) || session == null) {
             if (BuildConfig.DEBUG) Log.d("NativeNavigation", "Detail rejected routeValid=${routeId != null && isNativeDetailRoute(routeId)} sessionReady=${session != null}")
@@ -32,6 +35,7 @@ class NativeDetailActivity : ComponentActivity() {
             AuthenticatedDestinationApp(
                 session = session,
                 routeId = routeId,
+                nativeHostState = nativeHostState,
                 fileGateway = fileGateway,
                 directoryGateway = fileGateway,
                 onOpenExternalUrl = ::openExternalUrl,
@@ -78,7 +82,6 @@ class NativeDetailActivity : ComponentActivity() {
 
     private fun openRoute(routeId: String) {
         if (!isNativeDetailRoute(routeId)) return
-        rememberSystemBottomInset()
         startActivity(intentFor(this, routeId))
     }
 
@@ -87,10 +90,13 @@ class NativeDetailActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val EXTRA_SYSTEM_BOTTOM_INSET = "native_system_bottom_inset"
         private const val EXTRA_ROUTE_ID = "native_route_id"
         private const val MAILBOX_COMPOSE_ROUTE_ID = "MAILBOX_COMPOSE"
 
         fun intentFor(activity: ComponentActivity, routeId: String): Intent =
-            Intent(activity, NativeDetailActivity::class.java).putExtra(EXTRA_ROUTE_ID, routeId)
+            Intent(activity, NativeDetailActivity::class.java)
+                .putExtra(EXTRA_ROUTE_ID, routeId)
+                .putExtra(EXTRA_SYSTEM_BOTTOM_INSET, activity.measuredSystemBottomInsetDp())
     }
 }

@@ -93,42 +93,6 @@ class AuthenticatedSession(
     private val appIdleClickGenerationState = MutableStateFlow(0L)
     private var claimedAppIdleClickGeneration = 0L
 
-    /**
-     * M17：一级入口集合变化时通知宿主原生 tab 容器（例如「物理在线」开关会增减底栏项）。
-     * 由宿主装配 tab 容器时赋值；Compose 状态变化不会自动传到 UIKit。
-     */
-    var onNativeTabItemsChanged: ((List<String>) -> Unit)? = null
-
-    /**
-     * 宿主玻璃 TabBar 实际占掉的底部高度（点；iOS 上 1pt == 1dp）。
-     *
-     * 宿主报告完整 tab bar frame 的高度（包含 frame 中的底部安全区）。
-     * 应用壳据此为滚动内容末尾提供净空；滚动视口仍延伸到胶囊下方。
-     */
-    var glassTabBarBottomInsetDp: Float by mutableStateOf(0f)
-
-    /** True when UIKit already bounds the body beside/below its adaptive system bars. */
-    var systemManagedContentBounds: Boolean by mutableStateOf(false)
-
-    /**
-     * 窗口底部系统安全区（Home Indicator / 导航条），点；iOS 上 1pt == 1dp。
-     *
-     * 全出血宿主里 Compose 的 `WindowInsets.navigationBars` 可能是 0。
-     * 没有底栏的二级页使用这份安全区；一级页使用完整底栏 frame，不重复相加。
-     * Android 打开新 Activity 前保存当前窗口已测得的导航条边距，避免首帧为零后课表收缩。
-     */
-    var systemBottomInsetDp: Float by mutableStateOf(0f)
-
-    /**
-     * 宿主原生导航栏实际占掉的顶部高度（点；iOS 上 1pt == 1dp），即导航栏 frame.maxY。
-     *
-     * 与底栏同一道理：内容要能伸进导航栏下面，原生 blur 才有东西可采样，而 UIKit 不会把
-     * 导航栏算进 Compose 的可用 inset（`WindowInsets.statusBars` 停在栏底），所以栏底高度
-     * 只能由宿主在布局时写进来。只在 opt-in 的页面以滚动内容顶边距消费（`LocalTopBarClearance`），
-     * 未 opt-in 的页面保持原来的 Spacer 占位，行为不变。
-     */
-    var glassTopBarInsetDp: Float by mutableStateOf(0f)
-
     /** 平台回到前台时递增；应用壳会针对当前页面的失效请求自动重试一次。 */
     val appResumeGeneration: StateFlow<Long> = appResumeGenerationState.asStateFlow()
     /** iOS／桌面后台满阈值的全局刷新事件；不是每次聚焦事件。 */

@@ -57,7 +57,6 @@ class MainActivity : ComponentActivity() {
                 onOpenExternalUrl = ::openExternalUrl,
                 onOpenNativeRoute = { routeId ->
                     if (BuildConfig.DEBUG) Log.d("NativeNavigation", "Root requested route=$routeId sessionReady=${AndroidAuthenticatedSessionRegistry.session != null}")
-                    rememberSystemBottomInset()
                     startActivity(NativeDetailActivity.intentFor(this, routeId))
                 },
                 onAuthenticatedSessionChanged = publishSession,

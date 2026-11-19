@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStoreHandle
+import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeHostState
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalNativeSheetPresenter
 import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeSheetPresenter
@@ -58,11 +59,13 @@ fun App(
     onOpenNativeRoute: (String) -> Unit = {},
     onOpenExternalUrl: (String) -> Unit = ::openExternalUrl,
     onAuthenticatedSessionChanged: (AuthenticatedSession?) -> Unit = {},
+    nativeHostState: NativeHostState? = null,
 ) {
     if (cacheStoreHandle.state == team.bjtuss.bjtuselfservice.shared.cache.CacheOpenState.UNAVAILABLE) {
         CacheStorageFailureScreen()
         return
     }
+    val hostState = nativeHostState ?: remember { NativeHostState() }
     val cacheStore = cacheStoreHandle.store
     var appPreferences by remember(cacheStore) {
         mutableStateOf(runCatching(cacheStore::prepareRedesignPreferences).getOrDefault(AppPreferences(bottomNavigationItems = emptyList())))
@@ -103,6 +106,7 @@ fun App(
                         captchaRecognizer = captchaRecognizer,
                         nativeNavigationEnabled = nativeNavigationEnabled,
                         nativeTabBarEnabled = nativeTabBarEnabled,
+                        nativeHostState = hostState,
                         onOpenNativeRoute = onOpenNativeRoute,
                         onOpenExternalUrl = onOpenExternalUrl,
                         onAuthenticatedSessionChanged = onAuthenticatedSessionChanged,
@@ -130,7 +134,10 @@ fun AuthenticatedDestinationApp(
     onNativeTitleChanged: (String) -> Unit = {},
     onNativeActionChanged: (team.bjtuss.bjtuselfservice.shared.feature.shell.NativeBarAction?) -> Unit = {},
     onOpenExternalUrl: (String) -> Unit = ::openExternalUrl,
+    nativeHostState: NativeHostState? = null,
+    onNativeTabItemsChanged: (List<String>) -> Unit = {},
 ) {
+    val hostState = nativeHostState ?: remember { NativeHostState() }
     // 跟设置页开关同一 StateFlow，切换动态取色时原生二级页也会立刻换色。
     val settingsState by session.settingsModel.state.collectAsState()
     PlatformAppTheme(
@@ -140,7 +147,7 @@ fun AuthenticatedDestinationApp(
         CompositionLocalProvider(LocalNativeSheetPresenter provides nativeSheetPresenter) {
             Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 BoxWithConstraints(modifier = Modifier.fillMaxSize().then(
-                    if (currentPlatform().family == PlatformFamily.IOS && !session.systemManagedContentBounds) {
+                    if (currentPlatform().family == PlatformFamily.IOS && !hostState.systemManagedContentBounds) {
                         Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                     } else Modifier,
                 )) {
@@ -153,9 +160,11 @@ fun AuthenticatedDestinationApp(
                         ),
                         nativeNavigationEnabled = true,
                         nativeTabBarEnabled = nativeTabBarEnabled,
+                        nativeHostState = hostState,
                         useNativeTitleBar = useNativeTitleBar,
                         onOpenNativeRoute = onOpenNativeRoute,
                         onSelectNativeTab = onSelectNativeTab,
+                        onNativeTabItemsChanged = onNativeTabItemsChanged,
                         onNativeTitleChanged = onNativeTitleChanged,
                         onNativeActionChanged = onNativeActionChanged,
                         onOpenExternalUrl = onOpenExternalUrl,
