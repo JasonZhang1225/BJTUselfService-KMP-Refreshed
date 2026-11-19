@@ -9,8 +9,8 @@ import kotlin.test.assertTrue
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.course.Course
 import team.bjtuss.bjtuselfservice.shared.domain.grade.CourseType
-import team.bjtuss.bjtuselfservice.shared.feature.course.CourseColorCategory
-import team.bjtuss.bjtuselfservice.shared.feature.course.tones
+import team.bjtuss.bjtuselfservice.shared.presentation.course.CourseColorCategory
+import team.bjtuss.bjtuselfservice.shared.presentation.course.tones
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeSchedulePresentation
 
 class CourseWidgetSnapshotTest {

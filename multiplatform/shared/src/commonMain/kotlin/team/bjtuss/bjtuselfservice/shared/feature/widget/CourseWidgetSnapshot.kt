@@ -15,9 +15,9 @@ import team.bjtuss.bjtuselfservice.shared.domain.course.isStaggered
 import team.bjtuss.bjtuselfservice.shared.domain.course.displayScheduleCourseName
 import team.bjtuss.bjtuselfservice.shared.domain.course.eventDates
 import team.bjtuss.bjtuselfservice.shared.domain.grade.CourseType
-import team.bjtuss.bjtuselfservice.shared.feature.course.CourseColorCategory
-import team.bjtuss.bjtuselfservice.shared.feature.course.courseColorCategory
-import team.bjtuss.bjtuselfservice.shared.feature.course.tones
+import team.bjtuss.bjtuselfservice.shared.presentation.course.CourseColorCategory
+import team.bjtuss.bjtuselfservice.shared.presentation.course.courseColorCategory
+import team.bjtuss.bjtuselfservice.shared.presentation.course.tones
 import team.bjtuss.bjtuselfservice.shared.domain.home.parseHmRange
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeSchedulePresentation
 import team.bjtuss.bjtuselfservice.shared.feature.home.homeCoursesOnDate

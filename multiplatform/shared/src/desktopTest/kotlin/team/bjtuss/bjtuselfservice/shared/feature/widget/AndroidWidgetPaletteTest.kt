@@ -3,8 +3,8 @@ package team.bjtuss.bjtuselfservice.shared.feature.widget
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import team.bjtuss.bjtuselfservice.shared.feature.course.CourseColorCategory
-import team.bjtuss.bjtuselfservice.shared.feature.course.tones
+import team.bjtuss.bjtuselfservice.shared.presentation.course.CourseColorCategory
+import team.bjtuss.bjtuselfservice.shared.presentation.course.tones
 
 class AndroidWidgetPaletteTest {
     @Test fun androidStaticDrawablesUseTheSharedCourseAccents() {

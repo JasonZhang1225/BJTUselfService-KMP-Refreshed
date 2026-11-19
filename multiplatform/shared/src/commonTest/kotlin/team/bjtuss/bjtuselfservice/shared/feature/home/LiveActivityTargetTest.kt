@@ -7,7 +7,7 @@ import kotlin.test.assertEquals
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.course.Course
 import team.bjtuss.bjtuselfservice.shared.domain.home.pickHomeNowSessions
-import team.bjtuss.bjtuselfservice.shared.feature.course.courseColorCategory
+import team.bjtuss.bjtuselfservice.shared.presentation.course.courseColorCategory
 import team.bjtuss.bjtuselfservice.shared.feature.widget.buildCourseWidgetSnapshot
 
 class LiveActivityTargetTest {

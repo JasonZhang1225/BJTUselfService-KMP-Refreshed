@@ -1299,14 +1299,14 @@ private fun courseAgendaMarkColor(): Color =
 /** 紫色实验标记与课程蓝、作业红绿和考试橙保持清楚区分。 */
 @Composable
 private fun labAgendaMarkColor(): Color =
-    team.bjtuss.bjtuselfservice.shared.feature.course.courseCategoryColors(
-        team.bjtuss.bjtuselfservice.shared.feature.course.CourseColorCategory.LAB,
+    team.bjtuss.bjtuselfservice.shared.presentation.course.courseCategoryColors(
+        team.bjtuss.bjtuselfservice.shared.presentation.course.CourseColorCategory.LAB,
     ).onContainer
 
 @Composable
 private fun examAgendaMarkColor(): Color =
-    team.bjtuss.bjtuselfservice.shared.feature.course.courseCategoryColors(
-        team.bjtuss.bjtuselfservice.shared.feature.course.CourseColorCategory.EXAM,
+    team.bjtuss.bjtuselfservice.shared.presentation.course.courseCategoryColors(
+        team.bjtuss.bjtuselfservice.shared.presentation.course.CourseColorCategory.EXAM,
     ).onContainer
 
 /** 待提交作业用红色，与已提交的深绿区分。 */
@@ -1533,8 +1533,8 @@ private fun AgendaDayDetails(
                     ?.let { displaySchoolClockText(it, schoolDate, timeZone, markDayShift = false) }.orEmpty()
                 AgendaEventRow(
                     type = "课程",
-                    markColor = team.bjtuss.bjtuselfservice.shared.feature.course.courseCategoryAccent(
-                        team.bjtuss.bjtuselfservice.shared.feature.course.courseColorCategory(
+                    markColor = team.bjtuss.bjtuselfservice.shared.presentation.course.courseCategoryAccent(
+                        team.bjtuss.bjtuselfservice.shared.presentation.course.courseColorCategory(
                             course, LocalHomeSchedule.current.courseTypesByCode,
                         ),
                     ),
