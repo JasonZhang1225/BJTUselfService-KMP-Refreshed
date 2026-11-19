@@ -25,12 +25,13 @@ class CacheStorageFailureRenderTest {
                 override suspend fun setShouldRememberCredentials(enabled: Boolean) = error("Must not write account settings")
                 override suspend fun clearRememberCredentialsSetting() = error("Must not clear account settings")
             })
+            val runtime = team.bjtuss.bjtuselfservice.shared.runtime.AppRuntime(Dispatchers.Unconfined)
             try {
                 for (variant in listOf("startup", "light", "dark", "large")) {
                     val scene = ImageComposeScene(width = 390, height = 844,
                         density = Density(1f, if (variant == "large") 2f else 1f),
                         coroutineContext = Dispatchers.Unconfined) {
-                        if (variant == "startup") App(security, CacheStoreHandle(cache, CacheOpenState.UNAVAILABLE))
+                        if (variant == "startup") App(security, CacheStoreHandle(cache, CacheOpenState.UNAVAILABLE), appRuntime = runtime)
                         else CacheStorageFailureScreen(useDarkTheme = variant == "dark")
                     }
                     try {
@@ -43,7 +44,7 @@ class CacheStorageFailureRenderTest {
                         assertEquals(0L, cache.rowCount(), "Error screen must not initialize preferences")
                     } finally { scene.close() }
                 }
-            } finally { cache.close() }
+            } finally { runtime.close(); cache.close() }
         }
     }
 }

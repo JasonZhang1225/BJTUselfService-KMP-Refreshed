@@ -9,10 +9,10 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import team.bjtuss.bjtuselfservice.shared.AuthenticatedDestinationApp
 import team.bjtuss.bjtuselfservice.shared.isNativeDetailRoute
-import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeHostState
 
 class NativeDetailActivity : ComponentActivity() {
-    private val nativeHostState = NativeHostState()
+    private val nativeHostState = team.bjtuss.bjtuselfservice.shared.feature.shell.NativeHostState()
+    private var presentedSession: team.bjtuss.bjtuselfservice.shared.AuthenticatedSession? = null
     private val refreshRate = AndroidRefreshRateController(this)
     private var removeSessionObserver: (() -> Unit)? = null
 
@@ -21,7 +21,6 @@ class NativeDetailActivity : ComponentActivity() {
         enableImmersiveEdgeToEdge()
         refreshRate.start()
         val routeId = intent.getStringExtra(EXTRA_ROUTE_ID)
-        nativeHostState.systemBottomInsetDp = intent.getFloatExtra(EXTRA_SYSTEM_BOTTOM_INSET, 0f)
         val session = AndroidAuthenticatedSessionRegistry.session
         if (routeId == null || !isNativeDetailRoute(routeId) || session == null) {
             if (BuildConfig.DEBUG) Log.d("NativeNavigation", "Detail rejected routeValid=${routeId != null && isNativeDetailRoute(routeId)} sessionReady=${session != null}")
@@ -30,6 +29,8 @@ class NativeDetailActivity : ComponentActivity() {
         }
         if (BuildConfig.DEBUG) Log.d("NativeNavigation", "Detail opened route=$routeId")
 
+        presentedSession = session
+        nativeHostState.systemBottomInsetDp = intent.getFloatExtra(EXTRA_SYSTEM_BOTTOM_INSET, 0f)
         val fileGateway = AndroidFileGateway(this)
         setContent {
             AuthenticatedDestinationApp(
@@ -49,12 +50,13 @@ class NativeDetailActivity : ComponentActivity() {
         super.onStart()
         refreshRate.apply()
         removeSessionObserver = AndroidAuthenticatedSessionRegistry.observe { session ->
-            if (session == null && !isFinishing) finish()
+            if (session !== presentedSession && !isFinishing) finish()
         }
     }
 
     override fun onResume() {
         super.onResume()
+        AndroidAuthenticatedSessionRegistry.session?.reportActivePage(intent.getStringExtra(EXTRA_ROUTE_ID))
         AndroidAuthenticatedSessionRegistry.notifyAppBecameActive()
         refreshRate.apply()
     }
@@ -73,10 +75,11 @@ class NativeDetailActivity : ComponentActivity() {
     override fun onDestroy() {
         refreshRate.stop()
         if (isFinishing && intent.getStringExtra(EXTRA_ROUTE_ID) == MAILBOX_COMPOSE_ROUTE_ID) {
-            AndroidAuthenticatedSessionRegistry.session?.mailboxModel?.let { mailboxModel ->
+            presentedSession?.mailboxModel?.let { mailboxModel ->
                 lifecycleScope.launch { mailboxModel.cancelCompose() }
             }
         }
+        presentedSession = null
         super.onDestroy()
     }
 
@@ -90,8 +93,8 @@ class NativeDetailActivity : ComponentActivity() {
     }
 
     companion object {
-        private const val EXTRA_SYSTEM_BOTTOM_INSET = "native_system_bottom_inset"
         private const val EXTRA_ROUTE_ID = "native_route_id"
+        private const val EXTRA_SYSTEM_BOTTOM_INSET = "native_system_bottom_inset"
         private const val MAILBOX_COMPOSE_ROUTE_ID = "MAILBOX_COMPOSE"
 
         fun intentFor(activity: ComponentActivity, routeId: String): Intent =

@@ -49,11 +49,12 @@ internal fun createMobileRemoteAgent(
     securityCoordinator: AccountSecurityCoordinator,
     refreshCoordinator: AppRefreshCoordinator?,
     holder: MobileSessionHolder,
+    work: team.bjtuss.bjtuselfservice.shared.runtime.AccountWork? = null,
 ): MobileRemoteAgent? {
     if (!platform.isMobile) return null
     val vault = securityCoordinator.remoteVault ?: return null
     val coordinator = refreshCoordinator ?: return null
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val scope = work?.scope(Dispatchers.Default) ?: CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val controller = RemoteAgentController(
         store = RemoteAgentStore(cacheStore),
         secrets = VaultRemoteSecretStore(vault),

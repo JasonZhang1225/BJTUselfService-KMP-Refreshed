@@ -23,6 +23,7 @@ import team.bjtuss.bjtuselfservice.shared.files.*
 /** 只持有公开媒体 transport、任务目录和保存路径，不持有窗口或登录会话。 */
 class WindowsPlaybackRecovery(private val root: File) : PlaybackRecoveryAccess {
     override fun retainedManager(accountScope: String): PlaybackTaskManager = synchronized(managers) {
+        owners.getOrPut(root.canonicalPath) { mutableSetOf() }.add(accountScope)
         val key = File(root, digest(accountScope)).canonicalPath
         managers.getOrPut(key) {
             PlaybackTaskManager(CoroutineScope(SupervisorJob() + Dispatchers.Main),
@@ -32,6 +33,22 @@ class WindowsPlaybackRecovery(private val root: File) : PlaybackRecoveryAccess {
                 { null }, storeFor(accountScope), restoreDestination = ::restoreDestination)
         }
     }
+    override fun knownAccountScopes(): Set<String> = synchronized(managers) { owners[root.canonicalPath]?.toSet().orEmpty() }
+
+    override suspend fun clearUnregisteredAccountData(knownScopes: Set<String>): Boolean = withContext(Dispatchers.IO) {
+        if (!root.exists()) return@withContext true
+        if (Files.isSymbolicLink(root.toPath())) return@withContext false
+        val protected = (knownScopes + knownAccountScopes()).map(::digest).toSet()
+        var ok = true
+        for (directory in root.listFiles() ?: return@withContext false) {
+            if (directory.name in protected) continue
+            val attrs = Files.readAttributes(directory.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            if (!directory.name.matches(Regex("[a-f0-9]{64}")) || attrs.isSymbolicLink || attrs.isOther || !attrs.isDirectory) { ok = false; continue }
+            if (!team.bjtuss.bjtuselfservice.shared.cleanup.clearStoredPlaybackData(WindowsPlaybackTaskStore(directory), ::restoreDestination)) ok = false
+        }
+        ok
+    }
+
     override fun storeFor(accountScope: String): PlaybackTaskStore = WindowsPlaybackTaskStore(File(root, digest(accountScope)))
     override suspend fun restoreDestination(token: String, displayName: String): StreamingDestinationResult = withContext(Dispatchers.IO) {
         try {
@@ -56,6 +73,7 @@ class WindowsPlaybackRecovery(private val root: File) : PlaybackRecoveryAccess {
     }
     private companion object {
         val managers = mutableMapOf<String, PlaybackTaskManager>()
+        val owners = mutableMapOf<String, MutableSet<String>>()
         fun digest(value: String) = MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
     }
 }

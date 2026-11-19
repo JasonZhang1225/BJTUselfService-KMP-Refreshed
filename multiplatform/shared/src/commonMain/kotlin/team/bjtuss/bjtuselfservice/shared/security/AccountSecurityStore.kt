@@ -12,6 +12,8 @@ data class AccountSecurityStore(
     val phyVlabVault: ((String) -> CredentialVault)? = null,
     /** 手机端 ChatGPT 插件的设备令牌等（每项一个条目）；桌面端各有自己的安全存储，不用这一项。 */
     val remoteVault: ((String) -> CredentialVault)? = null,
+    val clearAllServiceVaults: (suspend () -> Unit)? = null,
+    val cleanupJournalVault: CredentialVault? = null,
 )
 
 interface AccountPreferences {
@@ -30,13 +32,35 @@ sealed interface CredentialRestoreResult {
 class AccountSecurityCoordinator(
     private val store: AccountSecurityStore,
 ) {
+    val cleanupJournal: team.bjtuss.bjtuselfservice.shared.cleanup.CleanupJournal by lazy {
+        team.bjtuss.bjtuselfservice.shared.cleanup.VaultCleanupJournal(store.cleanupJournalVault)
+    }
+    suspend fun clearAllServiceCredentials(knownAccounts: Set<String>): Boolean {
+        val native = store.clearAllServiceVaults
+        if (native != null) return runCatching { native() }.isSuccess
+        var ok = true
+        for (account in knownAccounts) {
+            for (factory in listOf(store.physicsLabVault, store.physicsDemoVault, store.citelVault)) {
+                if (runCatching { factory?.invoke(account)?.clear() }.isFailure) ok = false
+            }
+            if (!clearPhyVlabCredentials(account)) ok = false
+        }
+        return ok
+    }
+
     fun physicsLabVault(accountScope: String): CredentialVault? = store.physicsLabVault?.invoke(accountScope)
     fun physicsDemoVault(accountScope: String): CredentialVault? = store.physicsDemoVault?.invoke(accountScope)
     fun citelVault(accountScope: String): CredentialVault? = store.citelVault?.invoke(accountScope)
     fun phyVlabVault(accountScope: String): CredentialVault? = store.phyVlabVault?.invoke(accountScope)
-    /** 与独立账号密码分开清除。账号范围使用同一个平台安全存储工厂。 */
-    fun phyVlabSessionVault(accountScope: String): CredentialVault? =
-        store.phyVlabVault?.invoke("$accountScope.moodle-session")
+    internal fun phyVlabSessionVault(accountScope: String): CredentialVault? =
+        phyVlabVault("$accountScope.moodle-session")
+
+    internal suspend fun clearPhyVlabCredentials(accountScope: String): Boolean {
+        val sessionCleared = runCatching { phyVlabSessionVault(accountScope)?.clear() }.isSuccess
+        val accountCleared = runCatching { phyVlabVault(accountScope)?.clear() }.isSuccess
+        return sessionCleared && accountCleared
+    }
+
     val remoteVault: ((String) -> CredentialVault)? get() = store.remoteVault
 
     val canStoreCredentials: Boolean get() = store.credentialVault != null

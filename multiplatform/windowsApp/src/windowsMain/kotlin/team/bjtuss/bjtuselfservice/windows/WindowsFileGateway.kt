@@ -40,10 +40,7 @@ import team.bjtuss.bjtuselfservice.shared.files.safeExportPathSegment
  */
 class WindowsFileGateway(
     private val owner: () -> Frame? = { null },
-    recoveryRoot: File = File(System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), "BJTUselfServiceKMP/playback-tasks"),
-) : FileGateway, DirectoryGateway,
-    team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryProvider {
-    override val playbackRecovery = WindowsPlaybackRecovery(recoveryRoot)
+) : FileGateway, DirectoryGateway {
     private val requestMutex = Mutex()
 
     override val isAvailable: Boolean = true

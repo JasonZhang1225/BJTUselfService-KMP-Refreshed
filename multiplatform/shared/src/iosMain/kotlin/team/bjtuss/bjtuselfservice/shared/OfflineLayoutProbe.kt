@@ -23,7 +23,7 @@ import team.bjtuss.bjtuselfservice.shared.data.homework.*
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkScreenModel
 
 /** Only selected by the Swift DEBUG gate. No network, real cache, Keychain or login UI. */
-fun OfflineLayoutBootstrap(onReady: (AuthenticatedSession) -> Unit): UIViewController = ComposeUIViewController {
+fun OfflineLayoutBootstrap(owner: IosAppRuntimeOwner, onReady: (AuthenticatedSession) -> Unit): UIViewController = ComposeUIViewController {
     val cache = remember { CacheStore(NativeSqliteDriver(CacheDatabaseSql.Schema, ":memory:")) }
     val transport = remember { object : SchoolHttpTransport {
         override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse = error("Offline layout fixture")
@@ -35,13 +35,15 @@ fun OfflineLayoutBootstrap(onReady: (AuthenticatedSession) -> Unit): UIViewContr
         override suspend fun clearRememberCredentialsSetting() = Unit
     })) }
     val preferences = remember { AppPreferences(bottomNavigationItems = listOf("HOME", "SCHEDULE", "GRADES", "ASSIGNMENTS", "MORE"), physicsLabEnabled = false, citelEnabled = false, redesignGuideAcknowledged = true, citelGuideAcknowledged = true, assignmentAggregateGuideAcknowledged = true, release184GuideAcknowledged = true, emergencyFix185NoticeAcknowledged = true) }
-    val source = rememberAuthenticatedSession(
+    val protocol = remember(transport) { SchoolLoginProtocol(transport) }
+    val source = remember(owner) { team.bjtuss.bjtuselfservice.shared.runtime.bindAuthenticatedSession(
+        owner.runtime,
         StudentProfile("布局测试", "offline-layout", "测试", "测试"), false,
-        transport, remember { SchoolLoginProtocol(transport) }, cache, currentPlatform(), preferences,
+        transport, protocol, cache, currentPlatform(), preferences,
         { true }, security, UnavailableCaptchaRecognizer, "", "",
         UnavailableFileGateway, UnavailableDirectoryGateway, UnavailableSystemCalendarGateway,
         {}, {},
-    )
+    ) }
     val session = remember(source) {
         val snapshot = CourseScheduleSnapshot((1..7).flatMap { slot -> (1..7).map { day ->
             Course(slot * 10 + day, "fixture", "测试课程 $slot", "测试教师", slot * 8 + day,

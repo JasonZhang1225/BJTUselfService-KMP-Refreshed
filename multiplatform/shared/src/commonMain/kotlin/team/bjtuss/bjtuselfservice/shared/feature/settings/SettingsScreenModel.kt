@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.settings
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import team.bjtuss.bjtuselfservice.shared.update.UpdateSource
@@ -44,12 +47,13 @@ data class SettingsUiState(
 class SettingsScreenModel(
     initialPreferences: AppPreferences,
     private val persistPreferences: (AppPreferences) -> Boolean,
-    private val clearAccountCache: () -> Boolean,
+    private val clearAccountCache: suspend () -> Boolean,
     private val wipeAllLocalData: suspend () -> Boolean,
     private val checkLatestRelease: suspend () -> AppUpdateChecker.Result,
     private val nowMillis: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     private val prepareUninstall: (suspend () -> Boolean)? = null,
     private val checkReleaseFromSource: (suspend (UpdateSource) -> AppUpdateChecker.Result)? = null,
+    private val accountWork: AccountWork? = null,
 ) {
     private val mutableState = MutableStateFlow(SettingsUiState(initialPreferences.copy(
         autoSyncGrades = true, autoSyncHomework = true, autoSyncSchedule = true, autoSyncExams = true,
@@ -143,11 +147,13 @@ class SettingsScreenModel(
         copy(dynamicColor = enabled)
     }
 
-    suspend fun clearOfflineCache() {
+    suspend fun clearOfflineCache() = accountWork.inAccount { clearOfflineCacheInAccount() }
+
+    private suspend fun clearOfflineCacheInAccount() {
         if (mutableState.value.cacheAction == OfflineCacheActionState.Clearing) return
         mutableState.value = mutableState.value.copy(cacheAction = OfflineCacheActionState.Clearing)
         mutableState.value = mutableState.value.copy(
-            cacheAction = if (runCatching(clearAccountCache).getOrDefault(false)) {
+            cacheAction = if (runCatching { clearAccountCache() }.getOrDefault(false)) {
                 OfflineCacheActionState.Cleared
             } else {
                 OfflineCacheActionState.Failed
@@ -192,7 +198,9 @@ class SettingsScreenModel(
      * @param silentOnMiss 自动检测（进主界面后）为 true：无更新或失败时回到 Idle 不打扰用户；
      * 手动点「检查更新」为 false：始终弹结果（已最新/失败也明确告知）。
      */
-    suspend fun checkForUpdate(silentOnMiss: Boolean = false) {
+    suspend fun checkForUpdate(silentOnMiss: Boolean = false) = accountWork.inAccount { checkForUpdateInAccount(silentOnMiss = silentOnMiss) }
+
+    private suspend fun checkForUpdateInAccount(silentOnMiss: Boolean = false) {
         if (mutableState.value.updateCheck == UpdateCheckState.Checking) return
         if (silentOnMiss) {
             if (automaticUpdateChecked || !mutableState.value.preferences.checkUpdate || nowMillis() < postponedUntilMillis) return

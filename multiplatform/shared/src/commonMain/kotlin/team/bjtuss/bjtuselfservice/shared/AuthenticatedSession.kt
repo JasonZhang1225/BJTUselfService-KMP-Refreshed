@@ -1,5 +1,6 @@
 package team.bjtuss.bjtuselfservice.shared
 
+import team.bjtuss.bjtuselfservice.shared.feature.shell.toAppRoute
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -39,7 +40,7 @@ import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
  * 存活，不负责落盘，也不持有 Activity、UIViewController 或 Window。
  */
 class AuthenticatedSession(
-    val profile: StudentProfile,
+    profile: StudentProfile,
     entryLoggingIn: Boolean,
     val gradeModel: GradeScreenModel,
     val courseScheduleModel: CourseScheduleScreenModel,
@@ -50,7 +51,7 @@ class AuthenticatedSession(
     val classroomModel: ClassroomScreenModel,
     val classroomOccupancyModel: ClassroomOccupancyScreenModel,
     val settingsModel: SettingsScreenModel,
-    val loginSyncPreferences: AppPreferences,
+    loginSyncPreferences: AppPreferences,
     val mailboxModel: MailboxScreenModel,
     val phyVlabModel: PhyVlabScreenModel,
     val homeModel: HomeScreenModel,
@@ -82,7 +83,52 @@ class AuthenticatedSession(
     val playbackModel: team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackScreenModel? = null,
     /** 当前账号的本地手动完成标记；原生页面共享此实例，预览会话可不提供。 */
     val assignmentCompletionStore: team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCompletionStore? = null,
+    val accountWork: team.bjtuss.bjtuselfservice.shared.runtime.AccountWork? = null,
 ) {
+    internal val entryLoginState = MutableStateFlow(entryLoggingIn)
+    internal val pageStateModel: team.bjtuss.bjtuselfservice.shared.feature.presentation.AccountPageStateModel? by lazy {
+        accountWork?.let { createPageStateModel(it.scope(kotlinx.coroutines.Dispatchers.Default)) }
+    }
+
+    internal fun createPageStateModel(scope: kotlinx.coroutines.CoroutineScope) =
+        team.bjtuss.bjtuselfservice.shared.feature.presentation.AccountPageStateModel(
+            team.bjtuss.bjtuselfservice.shared.feature.presentation.PresentationSources(
+                settings = settingsModel.state, grades = gradeModel.state, courses = courseScheduleModel.state,
+                exams = examScheduleModel.state, homework = homeworkModel.state, phyVlab = phyVlabModel.state,
+                home = homeModel.state, library = libraryModel.state,
+                citel = citelModel?.state ?: MutableStateFlow(team.bjtuss.bjtuselfservice.shared.feature.citel.CitelState()),
+                physicsLab = physicsLabModel?.state ?: MutableStateFlow(team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabState()),
+                physicsDemo = physicsDemoModel?.state ?: MutableStateFlow(team.bjtuss.bjtuselfservice.shared.feature.phydemo.PhysicsDemoState()),
+                entryLoggingIn = entryLoginState,
+                recoveryInProgress = refreshCoordinator?.recoveryInProgress ?: MutableStateFlow(false),
+            ), scope, accountWork,
+        )
+
+    var profile: StudentProfile by mutableStateOf(profile)
+        internal set
+    var loginSyncPreferences: AppPreferences by mutableStateOf(loginSyncPreferences)
+        internal set
+
+    internal var refreshService: team.bjtuss.bjtuselfservice.shared.runtime.AccountRefresher? = null
+    internal var syncTasks: team.bjtuss.bjtuselfservice.shared.runtime.AccountSyncTasks? = null
+    internal var activeSyncRoute: team.bjtuss.bjtuselfservice.shared.feature.shell.AppRoute =
+        team.bjtuss.bjtuselfservice.shared.feature.shell.AppSection.HOME
+        private set
+    private var rootSyncRoute = activeSyncRoute
+    private var nativePageActive = false
+
+    /** Host visibility/navigation input only; reporting a route never starts network work. */
+    fun reportActivePage(routeId: String?) {
+        nativePageActive = routeId != null
+        activeSyncRoute = routeId?.let { it.toAppRoute() }
+            ?: rootSyncRoute
+    }
+
+    internal fun reportRootPage(route: team.bjtuss.bjtuselfservice.shared.feature.shell.AppRoute) {
+        rootSyncRoute = route
+        if (!nativePageActive) activeSyncRoute = route
+    }
+
     private val appResumeGenerationState = MutableStateFlow(0L)
     private val appForegroundGenerationState = MutableStateFlow(0L)
     private val appResumeMutex = Mutex()
@@ -93,7 +139,7 @@ class AuthenticatedSession(
     private val appIdleClickGenerationState = MutableStateFlow(0L)
     private var claimedAppIdleClickGeneration = 0L
 
-    /** 平台回到前台时递增；应用壳会针对当前页面的失效请求自动重试一次。 */
+    /** 平台回到前台时递增；账号任务会针对当前页面的失效请求自动重试一次。 */
     val appResumeGeneration: StateFlow<Long> = appResumeGenerationState.asStateFlow()
     /** iOS／桌面后台满阈值的全局刷新事件；不是每次聚焦事件。 */
     val appForegroundGeneration: StateFlow<Long> = appForegroundGenerationState.asStateFlow()
@@ -156,7 +202,10 @@ class AuthenticatedSession(
      * 原生壳（M17 玻璃 TabBar）按会话实例装配一级入口，若登录完成就换一个新实例，
      * 整条 tab 栏会重建、各 tab 的返回栈被丢弃。改为在既有实例上更新，宿主只换状态不换人。
      */
-    var entryLoggingIn: Boolean by mutableStateOf(entryLoggingIn)
+    private var entryLoggingInValue: Boolean by mutableStateOf(entryLoggingIn)
+    var entryLoggingIn: Boolean
+        get() = entryLoggingInValue
+        set(value) { entryLoggingInValue = value; entryLoginState.value = value }
 }
 
 /**

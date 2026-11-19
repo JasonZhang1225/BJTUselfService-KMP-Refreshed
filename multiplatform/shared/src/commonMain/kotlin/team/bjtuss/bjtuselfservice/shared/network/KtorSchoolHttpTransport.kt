@@ -161,7 +161,7 @@ class KtorSchoolHttpTransport(
         return if (gate == null) operation() else gate.run(request, operation)
     }
 
-    fun close() {
+    override fun close() {
         client.close()
         rawClient.close()
         physicsLabClient.close()

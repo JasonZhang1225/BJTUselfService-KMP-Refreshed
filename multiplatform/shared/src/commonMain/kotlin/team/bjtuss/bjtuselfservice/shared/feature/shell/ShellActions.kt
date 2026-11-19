@@ -35,7 +35,7 @@ internal class ShellActions(
         refreshAction()
     }
 
-    suspend fun refreshAssignmentSource(source: AssignmentSource) {
+    fun refreshAssignmentSource(source: AssignmentSource) {
         refresher.refreshAssignmentSource(source)
     }
 
@@ -82,5 +82,5 @@ internal class ShellActions(
         else view.homeSyncDialogVisible.value = true
     }
 
-    fun refreshPhyVlabAfterLogin() = refresher.refreshPhyVlabAfterLogin()
+    fun refreshPhyVlabAfterLogin() { session.refreshService?.refreshPhyVlabAfterAccountSaved() }
 }

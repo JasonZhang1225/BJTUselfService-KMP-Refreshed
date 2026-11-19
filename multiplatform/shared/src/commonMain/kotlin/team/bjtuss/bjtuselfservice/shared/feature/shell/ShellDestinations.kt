@@ -65,6 +65,7 @@ internal fun ShellDestination(
     usesLegacySmartTransport: Boolean,
 ) {
     val session = ui.session
+    val data = rememberShellData(session, ui.sessionRecoveryInProgress, route = route)
     val platform = ui.platform
     val profile = session.profile
     val scope = ui.scope
@@ -77,7 +78,7 @@ internal fun ShellDestination(
     val entryLoggingIn = ui.entryLoggingIn
     val navigateToSection: (AppSection) -> Unit = ui.actions::navigateToSection
     val refresh: () -> Unit = ui.actions::refresh
-    val refreshAssignmentSource: suspend (AssignmentSource) -> Unit = ui.actions::refreshAssignmentSource
+    val refreshAssignmentSource: (AssignmentSource) -> Unit = ui.actions::refreshAssignmentSource
     val retryPhyVlabDetail: () -> Unit = ui.actions::retryPhyVlabDetail
     val openPhyVlabSettings: () -> Unit = ui.actions::openPhyVlabSettings
     val openExamDetail: (Int) -> Unit = ui.actions::openExamDetail
@@ -91,29 +92,29 @@ internal fun ShellDestination(
     val fileGateway = ui.chrome.fileGateway
     val directoryGateway = ui.chrome.directoryGateway
     val systemCalendarGateway = ui.chrome.systemCalendarGateway
-    val compactBottomNavSections = remember(ui.data.settingsState.preferences) {
-        bottomNavSections(ui.data.settingsState.preferences)
+    val compactBottomNavSections = remember(data.settingsState.preferences) {
+        bottomNavSections(data.settingsState.preferences)
     }
     val gradeModel = session.gradeModel
-    val gradeState = ui.data.gradeState
+    val gradeState = data.gradeState
     val courseScheduleModel = session.courseScheduleModel
-    val courseState = ui.data.courseState
-    val scheduleStateWithEvents = ui.data.scheduleStateWithEvents
+    val courseState = data.courseState
+    val scheduleStateWithEvents = data.scheduleStateWithEvents
     val examScheduleModel = session.examScheduleModel
-    val examState = ui.data.examState
+    val examState = data.examState
     val homeworkModel = session.homeworkModel
-    val homeworkState = ui.data.homeworkState
+    val homeworkState = data.homeworkState
     val coursewareModel = session.coursewareModel
-    val coursewareState = ui.data.coursewareState
+    val coursewareState = data.coursewareState
     val classroomModel = session.classroomModel
-    val classroomState = ui.data.classroomState
+    val classroomState = data.classroomState
     val classroomOccupancyModel = session.classroomOccupancyModel
-    val classroomOccupancyState = ui.data.classroomOccupancyState
+    val classroomOccupancyState = data.classroomOccupancyState
     val mailboxModel = session.mailboxModel
-    val mailboxState = ui.data.mailboxState
-    val mailboxReadyState = ui.data.mailboxReadyState
-    val mailboxMessageLoading = ui.data.mailboxMessageLoading
-    val mailboxUnread = ui.data.mailboxUnread
+    val mailboxState = data.mailboxState
+    val mailboxReadyState = data.mailboxReadyState
+    val mailboxMessageLoading = data.mailboxMessageLoading
+    val mailboxUnread = data.mailboxUnread
     val mailboxInlineDetail = mailboxBackTarget(
         useNativeSecondaryRoutes = useNativeSecondaryRoutes,
         hasSelectedMessage = mailboxReadyState?.selectedMessage != null,
@@ -131,32 +132,32 @@ internal fun ShellDestination(
         else -> popBackStack
     }
     val phyVlabModel = session.phyVlabModel
-    val phyVlabState = ui.data.phyVlabState
-    val phyVlabAccountState = ui.data.phyVlabAccountState
-    val phyVlabEnabled = ui.data.phyVlabEnabled
-    val physicsLabState = ui.data.physicsLabState
-    val physicsDemoState = ui.data.physicsDemoState
-    val physicsLabEnabled = ui.data.physicsLabEnabled
-    val citelEnabled = ui.data.citelEnabled
-    val citelState = ui.data.citelState
-    val citelEvents = ui.data.citelEvents
+    val phyVlabState = data.phyVlabState
+    val phyVlabAccountState = data.phyVlabAccountState
+    val phyVlabEnabled = data.phyVlabEnabled
+    val physicsLabState = data.physicsLabState
+    val physicsDemoState = data.physicsDemoState
+    val physicsLabEnabled = data.physicsLabEnabled
+    val citelEnabled = data.citelEnabled
+    val citelState = data.citelState
+    val citelEvents = data.citelEvents
     val settingsModel = session.settingsModel
-    val settingsState = ui.data.settingsState
+    val settingsState = data.settingsState
     val homeModel = session.homeModel
-    val homeState = ui.data.homeState
+    val homeState = data.homeState
     val homeChangeFeed = session.homeChangeFeed
-    val homeScheduleEvents = ui.data.homeScheduleEvents
-    val homeChanges = ui.data.homeChanges
-    val aggregatedAssignments = ui.data.aggregatedAssignments
-    val assignmentSync = ui.data.assignmentSync
-    val homeSyncItems = ui.data.homeSyncItems
-    val homeSyncFailureItems = ui.data.homeSyncFailureItems
-    val homeSyncInProgress = ui.data.homeSyncInProgress
+    val homeScheduleEvents = data.homeScheduleEvents
+    val homeChanges = data.homeChanges
+    val aggregatedAssignments = data.aggregatedAssignments
+    val assignmentSync = data.assignmentSync
+    val homeSyncItems = data.homeSyncItems
+    val homeSyncFailureItems = data.homeSyncFailureItems
+    val homeSyncInProgress = data.homeSyncInProgress
     val otherFunctionModel = session.otherFunctionModel
     val libraryModel = session.libraryModel
-    val libraryState = ui.data.libraryState
-    val libraryReminder = ui.data.libraryReminder
-    val staggeredClassTimes = ui.data.staggeredClassTimes
+    val libraryState = data.libraryState
+    val libraryReminder = data.libraryReminder
+    val staggeredClassTimes = data.staggeredClassTimes
     val remoteAgent = team.bjtuss.bjtuselfservice.shared.feature.settings.LocalRemoteAgentController.current
         ?: session.remoteAgent
     var homeTodayRequest by ui.view.homeTodayRequest
@@ -478,7 +479,7 @@ internal fun ShellDestination(
                     if (!expanded) {
                         if (useNativeSecondaryRoutes) onOpenNativeRoute(routeId) else backStack.add(detailRoute)
                     }
-                }, onRefreshSource = { source -> scope.launch { refreshAssignmentSource(source) } },
+                }, onRefreshSource = { source -> refreshAssignmentSource(source) },
                 showSyncDetails = aggregateSyncDialogVisible, onDismissSyncDetails = { aggregateSyncDialogVisible = false },
                 modifier = Modifier.fillMaxSize(), expanded = expanded, fileGateway = fileGateway,
                 markdown = { item -> aggregateAssignmentMarkdown(item, homeworkState, phyVlabState, citelState) },

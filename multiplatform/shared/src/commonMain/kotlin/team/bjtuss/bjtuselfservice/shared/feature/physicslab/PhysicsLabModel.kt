@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.physicslab
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,15 +35,18 @@ class PhysicsLabModel(
     private val vault: CredentialVault?,
     private val remote: PhysicsLabRemote,
     private val changeRecorder: DataChangeRecorder<PhysicsLab>? = null,
+    private val accountWork: AccountWork? = null,
 ) {
-    private val mutableState = MutableStateFlow(PhysicsLabState(username = scope))
+    private val mutableState = accountWork.accountState(PhysicsLabState(username = scope))
     val state = mutableState.asStateFlow()
     private val mutex = Mutex()
     private var initialized = false
     private var resetChangeBaseline = false
     private var twoWeekOverrides: Map<String, Boolean> = emptyMap()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-    suspend fun initialize() = mutex.withLock {
+    suspend fun initialize() = accountWork.inAccount { initializeInAccount() }
+
+    private suspend fun initializeInAccount() = mutex.withLock {
         if (initialized) return@withLock
         val enabled = cache.metadata(scope, "physicslab.enabled") == "true"
         resetChangeBaseline = cache.metadata(scope, "physicslab.changeBaselinePending") == "true"
@@ -61,7 +67,9 @@ class PhysicsLabModel(
         initialized = true
     }
     /** Separate lab credentials must be configured before activation. */
-    suspend fun setEnabled(enabled: Boolean) {
+    suspend fun setEnabled(enabled: Boolean) = accountWork.inAccount { setEnabledInAccount(enabled = enabled) }
+
+    private suspend fun setEnabledInAccount(enabled: Boolean) {
         initialize()
         mutex.withLock {
             if (enabled && !mutableState.value.configured) return@withLock
@@ -70,7 +78,9 @@ class PhysicsLabModel(
             mutableState.value = mutableState.value.copy(enabled = enabled, failed = false, message = null)
         }
     }
-    suspend fun configure(username: String, password: String, enabled: Boolean) {
+    suspend fun configure(username: String, password: String, enabled: Boolean) = accountWork.inAccount { configureInAccount(username = username, password = password, enabled = enabled) }
+
+    private suspend fun configureInAccount(username: String, password: String, enabled: Boolean) {
         initialize()
         mutex.withLock {
             try {
@@ -104,11 +114,15 @@ class PhysicsLabModel(
         }
         if (enabled) refresh()
     }
-    suspend fun refresh() {
+    suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
+
+    private suspend fun refreshInAccount() {
         refresh(includeDisabled = false)
     }
 
-    suspend fun saveAccountAndSync(username: String, password: String): Boolean {
+    suspend fun saveAccountAndSync(username: String, password: String): Boolean = accountWork.inAccount { saveAccountAndSyncInAccount(username = username, password = password) }
+
+    private suspend fun saveAccountAndSyncInAccount(username: String, password: String): Boolean {
         initialize()
         configure(username, password, state.value.enabled)
         if (state.value.failed || !state.value.configured) return false
@@ -116,7 +130,9 @@ class PhysicsLabModel(
         return !state.value.failed && state.value.configured
     }
 
-    suspend fun clearConfiguration(): Boolean {
+    suspend fun clearConfiguration(): Boolean = accountWork.inAccount { clearConfigurationInAccount() }
+
+    private suspend fun clearConfigurationInAccount(): Boolean {
         initialize()
         return mutex.withLock {
             try { vault?.clear() }
@@ -166,7 +182,9 @@ class PhysicsLabModel(
     }
 
     /** 本地时长设置：更新 Flow 后首页、课表与日历立即使用新的日期集合。 */
-    suspend fun setTwoWeeks(lab: PhysicsLab, twoWeeks: Boolean) {
+    suspend fun setTwoWeeks(lab: PhysicsLab, twoWeeks: Boolean) = accountWork.inAccount { setTwoWeeksInAccount(lab = lab, twoWeeks = twoWeeks) }
+
+    private suspend fun setTwoWeeksInAccount(lab: PhysicsLab, twoWeeks: Boolean) {
         initialize()
         mutex.withLock {
             if (mutableState.value.labs.none { it.durationSettingKey == lab.durationSettingKey }) return@withLock
@@ -181,7 +199,9 @@ class PhysicsLabModel(
         }
     }
 
-    suspend fun savedPassword(): String = try {
+    suspend fun savedPassword(): String = accountWork.inAccount { savedPasswordInAccount() }
+
+    private suspend fun savedPasswordInAccount(): String = try {
         if (cache.metadata(scope, "physicslab.configured") == "true") vault?.load()?.password.orEmpty() else ""
     } catch (e: CancellationException) { throw e } catch (_: Exception) { "" }
 }

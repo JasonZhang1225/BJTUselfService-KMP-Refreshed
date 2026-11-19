@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.otherfunction
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,8 +29,9 @@ data class OtherFunctionUiState(
 class OtherFunctionScreenModel(
     private val repository: OtherFunctionRepository,
     private val fileGateway: FileGateway,
+    private val accountWork: AccountWork? = null,
 ) {
-    private val mutableState = MutableStateFlow(OtherFunctionUiState())
+    private val mutableState = accountWork.accountState(OtherFunctionUiState())
     val state: StateFlow<OtherFunctionUiState> = mutableState.asStateFlow()
 
     private val taskMutex = Mutex()
@@ -36,7 +40,9 @@ class OtherFunctionScreenModel(
         mutableState.value = mutableState.value.copy(reportCardLanguage = language)
     }
 
-    suspend fun downloadReportCard() {
+    suspend fun downloadReportCard() = accountWork.inAccount { downloadReportCardInAccount() }
+
+    private suspend fun downloadReportCardInAccount() {
         if (!taskMutex.tryLock()) return
         try {
             val language = mutableState.value.reportCardLanguage

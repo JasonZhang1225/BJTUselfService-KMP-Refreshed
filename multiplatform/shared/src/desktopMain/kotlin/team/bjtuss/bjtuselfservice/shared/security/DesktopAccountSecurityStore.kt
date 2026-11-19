@@ -10,6 +10,10 @@ fun createDesktopAccountSecurityStore(): AccountSecurityStore = AccountSecurityS
         legacyAccount = LEGACY_PRIMARY_ACCOUNT,
     ),
     preferences = DesktopAccountPreferences(),
+    cleanupJournalVault = MacOsBagBackedCredentialVault(
+        bag = productionMacOsSecretBag, key = MacOsSecretKeys.CLEANUP_JOURNAL,
+        legacyService = "team.bjtuss.bjtuselfservice.kmp.cleanup", legacyAccount = "journal",
+    ),
     remoteVault = { name ->
         MacOsBagBackedCredentialVault(
             bag = productionMacOsSecretBag,
@@ -50,6 +54,10 @@ fun createDesktopAccountSecurityStore(): AccountSecurityStore = AccountSecurityS
             legacyService = LEGACY_CITEL_SERVICE,
             legacyAccount = accountScope,
         )
+    },
+    clearAllServiceVaults = {
+        productionMacOsSecretBag.clearPersonalData()
+        clearLegacyMacOsAppSecrets()
     },
 )
 

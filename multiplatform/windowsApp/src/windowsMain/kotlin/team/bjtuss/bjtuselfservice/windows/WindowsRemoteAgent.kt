@@ -41,9 +41,11 @@ internal class WindowsRemoteSecretStore(
     override suspend fun loadPlatformAccessSiteUrl(): String? = read(PLATFORM_SITE_KEY)
     override suspend fun savePlatformAccessSiteUrl(siteUrl: String?) = write(PLATFORM_SITE_KEY, siteUrl)
     override suspend fun clear() {
-        write(DEVICE_TOKEN_KEY, null)
-        write(PLATFORM_ACCESS_KEY, null)
-        write(PLATFORM_SITE_KEY, null)
+        var failed = false
+        for (key in listOf(DEVICE_TOKEN_KEY, PLATFORM_ACCESS_KEY, PLATFORM_SITE_KEY)) {
+            if (runCatching { write(key, null) }.isFailure) failed = true
+        }
+        check(!failed) { "Remote secret cleanup failed" }
     }
 
     private companion object {
@@ -114,6 +116,13 @@ internal class WindowsStartupHost(
 
     override fun isSilentStart(): Boolean = preferences.silentStart()
     override fun setSilentStart(enabled: Boolean) = preferences.setSilentStart(enabled)
+
+    fun clearLocalSettings(): Boolean = runCatching {
+        if (Advapi32Util.registryValueExists(WinReg.HKEY_CURRENT_USER, RUN_KEY, VALUE_NAME)) Advapi32Util.registryDeleteValue(WinReg.HKEY_CURRENT_USER, RUN_KEY, VALUE_NAME)
+        if (approvedValue() != null) Advapi32Util.registryDeleteValue(WinReg.HKEY_CURRENT_USER, APPROVED_KEY, VALUE_NAME)
+        preferences.clear()
+        true
+    }.getOrDefault(false)
 
     override fun openSystemSettings(): Boolean = runCatching {
         // Windows 11 的“设置 → 应用 → 启动”；与任务管理器“启动应用”是同一份开关。

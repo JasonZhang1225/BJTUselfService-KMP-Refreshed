@@ -92,10 +92,32 @@ object CourseLiveUpdates : AndroidLiveActivityHost {
 
     /** 由 MainActivity 创建时调用，重复调用无副作用。Live Updates 从 Android 16（API 36）开始。 */
     fun install(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) return
         appContext = context.applicationContext
         installAndroidLiveActivityHost(this)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA) return
         reconcile(context)
+    }
+
+    override fun clearAccountData(allLocalData: Boolean): Boolean {
+        val context = appContext ?: return true
+        pendingEnable = null
+        manualFallback = null
+        handler.removeCallbacks(tick)
+        context.getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)
+        val alarm = context.getSystemService(AlarmManager::class.java)
+        for (code in listOf(0, 3)) {
+            val intent = broadcast(context, ACTION_REFRESH, null, code)
+            alarm?.cancel(intent)
+            intent.cancel()
+        }
+        val editor = prefs(context).edit()
+        if (allLocalData) editor.clear() else {
+            val retained = setOf(KEY_LEAD, KEY_ASKED_PERMISSION, KEY_INTRO_SHOWN)
+            prefs(context).all.keys.filter { it !in retained }.forEach(editor::remove)
+        }
+        val saved = editor.commit()
+        statusFlow.value = statusFlow.value?.copy(activeId = null)
+        return saved
     }
 
     fun attachPermissionRequester(requester: (() -> Unit)?) {

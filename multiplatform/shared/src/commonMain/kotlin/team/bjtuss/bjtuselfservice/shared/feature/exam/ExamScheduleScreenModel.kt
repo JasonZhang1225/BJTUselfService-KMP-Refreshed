@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.exam
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,8 +41,9 @@ data class ExamScheduleUiState(
 class ExamScheduleScreenModel(
     private val repository: ExamScheduleRepository,
     private val changeRecorder: DataChangeRecorder<ExamSchedule>? = null,
+    private val accountWork: AccountWork? = null,
 ) {
-    private val mutableState = MutableStateFlow(ExamScheduleUiState())
+    private val mutableState = accountWork.accountState(ExamScheduleUiState())
     val state: StateFlow<ExamScheduleUiState> = mutableState.asStateFlow()
 
     private var cacheLoaded = false
@@ -49,7 +53,9 @@ class ExamScheduleScreenModel(
     /**
      * @param refreshFromNetwork false 只读缓存；true 在登录成功后由 shell 触发自动同步。
      */
-    suspend fun initialize(refreshFromNetwork: Boolean = true) {
+    suspend fun initialize(refreshFromNetwork: Boolean = true) = accountWork.inAccount { initializeInAccount(refreshFromNetwork = refreshFromNetwork) }
+
+    private suspend fun initializeInAccount(refreshFromNetwork: Boolean = true) {
         if (!cacheLoaded) {
             cacheLoaded = true
             val cached = runCatching(repository::load).getOrNull()
@@ -75,7 +81,9 @@ class ExamScheduleScreenModel(
         }
     }
 
-    suspend fun refresh() {
+    suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
+
+    private suspend fun refreshInAccount() {
         if (refreshInFlight) return
         refreshInFlight = true
         val before = mutableState.value

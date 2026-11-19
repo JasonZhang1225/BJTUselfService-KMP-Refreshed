@@ -169,7 +169,7 @@ fun HomeWorkspace(
     onClearAllChanges: () -> Unit,
     onClearChangeDomain: (HomeChangeDomain) -> Unit,
     onOpenChangeDomain: (HomeChangeDomain) -> Unit,
-    // 静默自动登录期间为 true：会话未就绪，初始化（含网络刷新）延后到登录完成。
+    // 首次同步的登录门禁由账号任务负责；保留此参数兼容既有页面装配。
     holdNetwork: Boolean = false,
     todayRequest: Int = 0,
     onTodaySelectedChanged: (Boolean) -> Unit = {},
@@ -186,7 +186,6 @@ fun HomeWorkspace(
     var selectedChangeDomain by remember { mutableStateOf<HomeChangeDomain?>(null) }
     var selectedChangeCourse by remember { mutableStateOf<Course?>(null) }
     val homeSchedule = LocalHomeSchedule.current
-    LaunchedEffect(model, holdNetwork) { if (!holdNetwork) team.bjtuss.bjtuselfservice.shared.logging.SyncTiming.measure("startup.home-status") { model.initialize() } }
     selectedChangeDomain?.let { domain ->
         HomeChangeDialog(
             domain = domain,

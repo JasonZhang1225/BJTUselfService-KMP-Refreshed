@@ -13,6 +13,7 @@ import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,8 @@ import team.bjtuss.bjtuselfservice.shared.auth.UnavailableCaptchaRecognizer
 import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
 import team.bjtuss.bjtuselfservice.shared.calendar.UnavailableSystemCalendarGateway
 import team.bjtuss.bjtuselfservice.shared.webview.openExternalUrl
+import team.bjtuss.bjtuselfservice.shared.runtime.AppRuntime
+import team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryAccess
 
 @Composable
 fun App(
@@ -59,7 +62,9 @@ fun App(
     onOpenNativeRoute: (String) -> Unit = {},
     onOpenExternalUrl: (String) -> Unit = ::openExternalUrl,
     onAuthenticatedSessionChanged: (AuthenticatedSession?) -> Unit = {},
+    appRuntime: AppRuntime,
     nativeHostState: NativeHostState? = null,
+    playbackRecovery: PlaybackRecoveryAccess? = null,
 ) {
     if (cacheStoreHandle.state == team.bjtuss.bjtuselfservice.shared.cache.CacheOpenState.UNAVAILABLE) {
         CacheStorageFailureScreen()
@@ -67,6 +72,16 @@ fun App(
     }
     val hostState = nativeHostState ?: remember { NativeHostState() }
     val cacheStore = cacheStoreHandle.store
+    val runtime = appRuntime
+    val services = remember(runtime) { runtime.hostServices(playbackRecovery) }
+    remember(runtime, cacheStore, accountSecurityStore) {
+        runtime.bindCleanupResources(cacheStore, accountSecurityStore, services.playbackRecovery,
+            cacheAvailable = cacheStoreHandle.state != team.bjtuss.bjtuselfservice.shared.cache.CacheOpenState.UNAVAILABLE)
+    }
+    DisposableEffect(services, fileGateway, directoryGateway, systemCalendarGateway) {
+        val release = services.attach(fileGateway, directoryGateway, systemCalendarGateway)
+        onDispose { release() }
+    }
     var appPreferences by remember(cacheStore) {
         mutableStateOf(runCatching(cacheStore::prepareRedesignPreferences).getOrDefault(AppPreferences(bottomNavigationItems = emptyList())))
     }
@@ -90,6 +105,7 @@ fun App(
                     } else Modifier,
                 )) {
                     LoginRoute(
+                        runtime = runtime,
                         platform = currentPlatform(),
                         windowClass = adaptiveWindowClassFor(
                             widthDp = maxWidth.value.toInt(),
@@ -97,9 +113,10 @@ fun App(
                         ),
                         accountSecurityStore = accountSecurityStore,
                         cacheStoreHandle = cacheStoreHandle,
-                        fileGateway = fileGateway,
-                        directoryGateway = directoryGateway,
-                        systemCalendarGateway = systemCalendarGateway,
+                        fileGateway = services.files,
+                        playbackRecovery = services.playbackRecovery,
+                        directoryGateway = services.directories,
+                        systemCalendarGateway = services.calendar,
                         appCommandBus = appCommandBus,
                         appPreferences = appPreferences,
                         onPreferencesChanged = onPreferencesChanged,

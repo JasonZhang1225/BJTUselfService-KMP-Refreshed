@@ -53,3 +53,5 @@ internal actual fun writeCourseWidgetSnapshot(json: String?) {
     lastWrittenJson = json
     runCatching { onWidgetSnapshotChanged?.invoke(context) }
 }
+
+internal fun androidWidgetCleanupContext(): Context? = widgetContext

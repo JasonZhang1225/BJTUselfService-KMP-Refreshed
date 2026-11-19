@@ -20,11 +20,19 @@ fun createAppleAccountSecurityStore(
         accessibleAfterFirstUnlock = accessibleAfterFirstUnlock,
     ),
     preferences = AppleAccountPreferences(rememberCredentialsKey),
+    cleanupJournalVault = AppleKeychainCredentialVault(service = "$credentialService.cleanup", account = "journal", accessibleAfterFirstUnlock = accessibleAfterFirstUnlock),
     physicsLabVault = { AppleKeychainCredentialVault(service = "$credentialService.physicslab", account = it, accessibleAfterFirstUnlock = accessibleAfterFirstUnlock) },
     physicsDemoVault = { AppleKeychainCredentialVault(service = "$credentialService.phydemo", account = it, accessibleAfterFirstUnlock = accessibleAfterFirstUnlock) },
     citelVault = { AppleKeychainCredentialVault(service = "$credentialService.citel", account = it, accessibleAfterFirstUnlock = accessibleAfterFirstUnlock) },
     phyVlabVault = { AppleKeychainCredentialVault(service = "$credentialService.phyvlab", account = it, accessibleAfterFirstUnlock = accessibleAfterFirstUnlock) },
     remoteVault = { AppleKeychainCredentialVault(service = "$credentialService.remote", account = it, accessibleAfterFirstUnlock = accessibleAfterFirstUnlock) },
+    clearAllServiceVaults = {
+        var ok = true
+        for (suffix in listOf("physicslab", "phydemo", "phyvlab", "citel", "remote")) {
+            if (runCatching { AppleKeychainCredentialVault(service = "$credentialService.$suffix", account = "", accessibleAfterFirstUnlock = accessibleAfterFirstUnlock).clearService() }.isFailure) ok = false
+        }
+        check(ok) { "Unable to clear application service credentials" }
+    },
 )
 
 private class AppleAccountPreferences(

@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.courseware
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -93,8 +96,9 @@ class CoursewareScreenModel(
     private val repository: CoursewareRepository,
     /** 会话过期时在当前 App 会话内重新建立学校登录态，不跳回登录页。 */
     private val reauthenticate: (suspend () -> Boolean)? = null,
+    private val accountWork: AccountWork? = null,
 ) {
-    private val mutableState = MutableStateFlow(CoursewareUiState())
+    private val mutableState = accountWork.accountState(CoursewareUiState())
     val state: StateFlow<CoursewareUiState> = mutableState.asStateFlow()
 
     private val refreshMutex = Mutex()
@@ -104,7 +108,9 @@ class CoursewareScreenModel(
     private var initialized = false
     private var navigationGeneration = 0L
 
-    suspend fun initialize() {
+    suspend fun initialize() = accountWork.inAccount { initializeInAccount() }
+
+    private suspend fun initializeInAccount() {
         if (initialized) return
         initialized = true
         val cached = runCatching(repository::load).getOrNull()
@@ -125,7 +131,9 @@ class CoursewareScreenModel(
         ensureCourseRootsLoaded()
     }
 
-    suspend fun refresh() {
+    suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
+
+    private suspend fun refreshInAccount() {
         refreshMutex.withLock {
             var reloadLoaded = false
             operationMutex.withLock {
@@ -168,7 +176,9 @@ class CoursewareScreenModel(
      * 并发补拉尚未加载顶层目录的课程（有界并发）。
      * 打开选课列表 / 初始化 / 手动同步后都会调用；已在加载中则跳过。
      */
-    suspend fun ensureCourseRootsLoaded(reloadLoaded: Boolean = false) {
+    suspend fun ensureCourseRootsLoaded(reloadLoaded: Boolean = false) = accountWork.inAccount { ensureCourseRootsLoadedInAccount(reloadLoaded = reloadLoaded) }
+
+    private suspend fun ensureCourseRootsLoadedInAccount(reloadLoaded: Boolean = false) {
         val ids = mutableState.value.courses
             .filter { reloadLoaded || !it.childrenLoaded }
             .map { it.id }
@@ -183,7 +193,9 @@ class CoursewareScreenModel(
         prefetchUnloadedFolders()
     }
 
-    suspend fun selectCourse(courseId: Int) {
+    suspend fun selectCourse(courseId: Int) = accountWork.inAccount { selectCourseInAccount(courseId = courseId) }
+
+    private suspend fun selectCourseInAccount(courseId: Int) {
         if (mutableState.value.courses.none { it.id == courseId }) return
         navigationGeneration++
         // Navigation is local and must not queue behind a network/download operation.
@@ -198,7 +210,9 @@ class CoursewareScreenModel(
         prefetchUnloadedFolders()
     }
 
-    suspend fun openCompactNode(stableKey: String) {
+    suspend fun openCompactNode(stableKey: String) = accountWork.inAccount { openCompactNodeInAccount(stableKey = stableKey) }
+
+    private suspend fun openCompactNodeInAccount(stableKey: String) {
         val generation = ++navigationGeneration
         var state = mutableState.value
         val courseId = state.selectedCourseId
@@ -230,7 +244,9 @@ class CoursewareScreenModel(
         return true
     }
 
-    suspend fun toggleExpanded(stableKey: String) {
+    suspend fun toggleExpanded(stableKey: String) = accountWork.inAccount { toggleExpandedInAccount(stableKey = stableKey) }
+
+    private suspend fun toggleExpandedInAccount(stableKey: String) {
         val generation = ++navigationGeneration
         var state = mutableState.value
         val course = state.selectedCourse ?: return
@@ -262,6 +278,10 @@ class CoursewareScreenModel(
     }
 
     suspend fun downloadResource(
+        stableKey: String,
+    ): CoursewareOperationResult<FileContent> = accountWork.inAccount { downloadResourceInAccount(stableKey = stableKey) }
+
+    private suspend fun downloadResourceInAccount(
         stableKey: String,
     ): CoursewareOperationResult<FileContent> = operationMutex.withLock {
         val course = mutableState.value.selectedCourse
@@ -306,6 +326,11 @@ class CoursewareScreenModel(
     suspend fun saveResourceStreaming(
         stableKey: String,
         gateway: FileGateway,
+    ): CoursewareOperationResult<FileSaveResult> = accountWork.inAccount { saveResourceStreamingInAccount(stableKey = stableKey, gateway = gateway) }
+
+    private suspend fun saveResourceStreamingInAccount(
+        stableKey: String,
+        gateway: FileGateway,
     ): CoursewareOperationResult<FileSaveResult> = operationMutex.withLock {
         val course = mutableState.value.selectedCourse
             ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
@@ -335,6 +360,11 @@ class CoursewareScreenModel(
 
     /** 备用地址可能是转换件，先确定实际文件名再选择目标。 */
     suspend fun saveRestrictedResource(
+        stableKey: String,
+        gateway: FileGateway,
+    ): CoursewareOperationResult<FileSaveResult> = accountWork.inAccount { saveRestrictedResourceInAccount(stableKey = stableKey, gateway = gateway) }
+
+    private suspend fun saveRestrictedResourceInAccount(
         stableKey: String,
         gateway: FileGateway,
     ): CoursewareOperationResult<FileSaveResult> = operationMutex.withLock {
@@ -376,6 +406,14 @@ class CoursewareScreenModel(
     }
 
     suspend fun exportDirectory(
+        stableKey: String?,
+        directoryName: String,
+        gateway: DirectoryGateway,
+        keepCompletedOnCancel: () -> Boolean = { true },
+        onCancelledWithKeptFiles: (FileSaveResult) -> Unit = {},
+    ): CoursewareOperationResult<FileSaveResult> = accountWork.inAccount { exportDirectoryInAccount(stableKey = stableKey, directoryName = directoryName, gateway = gateway, keepCompletedOnCancel = keepCompletedOnCancel, onCancelledWithKeptFiles = onCancelledWithKeptFiles) }
+
+    private suspend fun exportDirectoryInAccount(
         stableKey: String?,
         directoryName: String,
         gateway: DirectoryGateway,
@@ -579,7 +617,9 @@ class CoursewareScreenModel(
         }
     }
 
-    suspend fun downloadTeachingCalendar(): CoursewareOperationResult<FileContent> = operationMutex.withLock {
+    suspend fun downloadTeachingCalendar(): CoursewareOperationResult<FileContent> = accountWork.inAccount { downloadTeachingCalendarInAccount() }
+
+    private suspend fun downloadTeachingCalendarInAccount(): CoursewareOperationResult<FileContent> = operationMutex.withLock {
         val course = mutableState.value.selectedCourse
             ?: return@withLock CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
         mutableState.value = mutableState.value.copy(isDownloading = true, fileFailure = null)

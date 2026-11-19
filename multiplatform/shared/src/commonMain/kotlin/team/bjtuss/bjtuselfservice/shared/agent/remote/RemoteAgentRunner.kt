@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.agent.remote
 
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountCommit
 import kotlin.math.min
 import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
@@ -56,6 +58,8 @@ data class RemoteAgentStatus(
 
 /** 平台侧能力：全量刷新（交给 App 当前会话的公共刷新服务）与读取本机缓存生成快照。 */
 interface RemoteRefreshExecutor {
+    fun currentAccountWork(): team.bjtuss.bjtuselfservice.shared.runtime.AccountWork? = null
+
     /** 当前登录账号；未登录返回 null。 */
     fun currentAccountScope(): String?
 
@@ -121,10 +125,12 @@ class RemoteAgentRunner(
         stateMutex.withLock {
             val current = store.loadState()
             val next = transform(current)
-            if (next != current) store.saveState(next)
+            if (next != current) accountCommit { store.saveState(next) }
             next
         }
     private var jobs: List<Job> = emptyList()
+    private val lifecycleLock = team.bjtuss.bjtuselfservice.shared.runtime.AccountMutationLock()
+    private val stoppingJobs = mutableSetOf<Job>()
     @kotlin.concurrent.Volatile private var stopped: RemotePhase? = null
 
     private fun initialStatus(): RemoteAgentStatus {
@@ -150,7 +156,8 @@ class RemoteAgentRunner(
 
     private fun refreshPhase() = statusState.update { it.copy(phase = phaseFor(configFlow.value)) }
 
-    private fun bindingStillCurrent(expected: RemoteAgentConfig): Boolean {
+    private suspend fun bindingStillCurrent(expected: RemoteAgentConfig): Boolean {
+        accountCommit { Unit }
         val current = configFlow.value
         return current.runnable && current.siteUrl == expected.siteUrl && current.deviceId == expected.deviceId &&
             current.accountBindingId == expected.accountBindingId && current.accountScope == expected.accountScope &&
@@ -159,20 +166,33 @@ class RemoteAgentRunner(
     }
 
     /** 启动两个循环；重复调用不会多开。 */
-    fun start(scope: CoroutineScope) {
-        if (jobs.any { it.isActive }) return
+    fun start(scope: CoroutineScope) = lifecycleLock.withLock {
+        if (jobs.any { it.isActive }) return@withLock
         jobs = listOf(scope.launch { uploadLoop() }, scope.launch { pollLoop() })
     }
 
-    fun stop() {
+    fun stop() = lifecycleLock.withLock {
+        stoppingJobs += jobs
         jobs.forEach { it.cancel() }
         jobs = emptyList()
+    }
+
+    suspend fun stopAndJoin() {
+        stop()
+        val pending = lifecycleLock.withLock { stoppingJobs.toList() }
+        pending.forEach { it.join() }
+        lifecycleLock.withLock { stoppingJobs.removeAll(pending.toSet()) }
     }
 
     /** 重新配对或用户手动恢复后清除“需重新配对/版本不一致”的停止状态。 */
     fun clearStopped() {
         stopped = null
         refreshPhase()
+    }
+
+    internal fun resetAfterCleanup() {
+        stopped = null
+        statusState.value = initialStatus()
     }
 
     private suspend fun waitForRunnable(): RemoteAgentConfig {
@@ -260,7 +280,17 @@ class RemoteAgentRunner(
      * 一轮上报。[refreshFirst] 为 true 时先全量刷新再生成快照；有未送达且仍在本周期内的快照时只重传它。
      * [report] 由即时任务传入（已刷新过），避免重复刷新。
      */
-    suspend fun runUploadCycle(refreshFirst: Boolean, remote: Boolean, report: RefreshReport? = null): RemoteUploadOutcome =
+    suspend fun runUploadCycle(refreshFirst: Boolean, remote: Boolean, report: RefreshReport? = null): RemoteUploadOutcome {
+        val work = executor.currentAccountWork()
+        return try {
+            work.inAccount { runUploadCycleInAccount(refreshFirst = refreshFirst, remote = remote, report = report) }
+        } catch (cancelled: CancellationException) {
+            if (work != null && !work.isActive && kotlin.coroutines.coroutineContext.isActive) RemoteUploadOutcome.Skipped("account_changed")
+            else throw cancelled
+        }
+    }
+
+    private suspend fun runUploadCycleInAccount(refreshFirst: Boolean, remote: Boolean, report: RefreshReport? = null): RemoteUploadOutcome =
         uploadMutex.withLock {
             val config = configFlow.value
             if (!config.runnable) return@withLock RemoteUploadOutcome.Skipped("disabled")
@@ -312,7 +342,7 @@ class RemoteAgentRunner(
                     scopesRevision = config.scopesRevision,
                 ).also {
                     // 先落盘再上传：上传失败或进程退出后重传同一快照。
-                    store.savePending(it)
+                    accountCommit { store.savePending(it) }
                 }
             }
             if (!bindingStillCurrent(config)) return@withLock RemoteUploadOutcome.Skipped("configuration_changed")
@@ -328,8 +358,8 @@ class RemoteAgentRunner(
             val outgoing = snapshot.copy(uploadedAt = clock())
             when (val result = uploadSnapshot(api, outgoing)) {
                 is RemoteCall.Ok -> {
-                    store.savePending(null)
-                    store.saveBaseline(outgoing)
+                    accountCommit { store.savePending(null) }
+                    accountCommit { store.saveBaseline(outgoing) }
                     val uploadedAt = clock()
                     updateState { it.copy(lastUploadAt = uploadedAt, lastError = null) }
                     statusState.update { it.copy(lastUploadAt = uploadedAt, lastError = null, lastSequence = snapshot.sequence) }
@@ -339,8 +369,8 @@ class RemoteAgentRunner(
                 is RemoteCall.Failure -> {
                     // 旧快照永远传不上去：丢弃，下一轮生成新的。
                     if (result.kind == RemoteFailureKind.CONFLICT) {
-                        store.savePending(null)
-                        store.saveBaseline(null)
+                        accountCommit { store.savePending(null) }
+                        accountCommit { store.saveBaseline(null) }
                     }
                     handleTerminal(result)
                     RemoteUploadOutcome.Failed(result)
@@ -413,6 +443,15 @@ class RemoteAgentRunner(
 
     /** 执行一条已领取的任务并提交结果；执行期间每分钟续租一次。 */
     internal suspend fun handleTask(api: RemoteSiteClient, task: RemoteTask) {
+        val work = executor.currentAccountWork()
+        try {
+            work.inAccount { handleTaskInAccount(api = api, task = task) }
+        } catch (cancelled: CancellationException) {
+            if (work == null || work.isActive || !kotlin.coroutines.coroutineContext.isActive) throw cancelled
+        }
+    }
+
+    private suspend fun handleTaskInAccount(api: RemoteSiteClient, task: RemoteTask) {
         val leaseId = task.leaseId ?: return
         statusState.update { it.copy(activeTasks = it.activeTasks + 1) }
         try {
@@ -460,7 +499,7 @@ class RemoteAgentRunner(
             }
             resultMutex.withLock {
                 val cutoff = clock() - 24 * 3600
-                store.saveResults((store.loadResults().filter { it.requestId != outcome.requestId && it.storedAt > cutoff } + outcome).takeLast(50))
+                accountCommit { store.saveResults((store.loadResults().filter { it.requestId != outcome.requestId && it.storedAt > cutoff } + outcome).takeLast(50)) }
             }
             pending.complete(outcome)
             return outcome

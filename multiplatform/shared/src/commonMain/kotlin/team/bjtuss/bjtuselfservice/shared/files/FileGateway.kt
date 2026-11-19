@@ -126,6 +126,8 @@ interface StreamingDestination {
     suspend fun closeForRecovery() = Unit
     /** 上次保存可能已经完成但记录尚未更新时，不能自动覆盖目标。 */
     suspend fun isRecoveryCommitAmbiguous(): Boolean = false
+    /** Some providers cannot distinguish a recovered partial output from an already exported file. */
+    val recoveredOutputMayBeCommitted: Boolean get() = false
     suspend fun abort()
     /** 任务清理需要知道是否成功；支持的平台在失败时抛出异常供记录重试。 */
     suspend fun abortForCleanup() = abort()

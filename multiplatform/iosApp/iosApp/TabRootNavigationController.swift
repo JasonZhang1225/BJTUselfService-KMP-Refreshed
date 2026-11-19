@@ -389,6 +389,9 @@ final class TabRootNavigationController: UINavigationController, UINavigationCon
         didShow viewController: UIViewController,
         animated: Bool
     ) {
+        if viewIfLoaded?.window != nil {
+            session.reportActivePage(routeId: viewController.restorationIdentifier ?? tabRouteId)
+        }
         // A pop does not recreate Compose. Restore this page's own title and scroll state,
         // including a cancelled interactive pop, without requiring a new scroll event.
         glassState.retain(Set(viewControllers.map { ObjectIdentifier($0) }))
@@ -401,6 +404,11 @@ final class TabRootNavigationController: UINavigationController, UINavigationCon
         // 部分系统版本在 didShow 后会把 delegate 重置；每次确认仍由本类接管。
         installInteractivePopGesture(on: navigationController)
         updateInteractivePopEnabled()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        session.reportActivePage(routeId: topViewController?.restorationIdentifier ?? tabRouteId)
     }
 
     // MARK: - UIGestureRecognizerDelegate

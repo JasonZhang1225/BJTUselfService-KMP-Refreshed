@@ -27,17 +27,28 @@ import team.bjtuss.bjtuselfservice.shared.security.encodeCredentialPayload
 fun createWindowsAccountSecurityStore(): AccountSecurityStore = AccountSecurityStore(
     credentialVault = WindowsDpapiCredentialVault(),
     preferences = WindowsAccountPreferences(),
+    cleanupJournalVault = WindowsDpapiCredentialVault(service = "team.bjtuss.bjtuselfservice.kmp.cleanup", account = "journal"),
     physicsLabVault = { WindowsDpapiCredentialVault(service = "team.bjtuss.bjtuselfservice.kmp.physicslab", account = it) },
     physicsDemoVault = { WindowsDpapiCredentialVault(service = "team.bjtuss.bjtuselfservice.kmp.phydemo", account = it) },
     citelVault = { WindowsDpapiCredentialVault(service = "team.bjtuss.bjtuselfservice.kmp.citel", account = it) },
     phyVlabVault = { WindowsDpapiCredentialVault(service = "team.bjtuss.bjtuselfservice.kmp.phyvlab", account = it) },
+    clearAllServiceVaults = {
+        val root = Preferences.userRoot().node("/team/bjtuss/bjtuselfservice/kmp/credentials")
+        var ok = true
+        for (suffix in listOf("physicslab", "phydemo", "phyvlab", "citel")) {
+            val service = "team.bjtuss.bjtuselfservice.kmp.$suffix"
+            if (runCatching { if (root.nodeExists(service)) root.node(service).removeNode() }.isFailure) ok = false
+        }
+        root.flush()
+        check(ok) { "Unable to clear application service credentials" }
+    },
 )
 
 class WindowsDpapiCredentialVault(
     private val service: String = "team.bjtuss.bjtuselfservice.kmp.credentials",
     private val account: String = "primary",
 ) : CredentialVault {
-    private val preferences = Preferences.userRoot().node(
+    private val preferences get() = Preferences.userRoot().node(
         "/team/bjtuss/bjtuselfservice/kmp/credentials",
     ).node("$service/$account")
 
@@ -69,12 +80,10 @@ class WindowsDpapiCredentialVault(
     }
 
     override suspend fun clear() {
-        try {
-            preferences.remove(PAYLOAD_KEY)
-            preferences.flush()
-        } catch (error: Exception) {
-            throw CredentialVaultException(CredentialVaultOperation.CLEAR, cause = error)
-        }
+        val root = Preferences.userRoot().node("/team/bjtuss/bjtuselfservice/kmp/credentials")
+        val path = "$service/$account"
+        if (root.nodeExists(path)) root.node(path).removeNode()
+        root.flush()
     }
 
     private companion object {

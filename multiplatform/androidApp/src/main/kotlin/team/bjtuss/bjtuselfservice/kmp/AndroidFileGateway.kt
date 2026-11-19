@@ -49,9 +49,7 @@ import team.bjtuss.bjtuselfservice.shared.files.safeExportPathSegment
 
 class AndroidFileGateway(
     private val activity: ComponentActivity,
-) : FileGateway, DirectoryGateway, DefaultLifecycleObserver,
-    team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryProvider {
-    override val playbackRecovery = team.bjtuss.bjtuselfservice.kmp.playback.AndroidPlaybackRecovery(activity.applicationContext)
+) : FileGateway, DirectoryGateway, DefaultLifecycleObserver {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var pickContinuation: CancellableContinuation<FilePickResult>? = null
     private var saveContinuation: CancellableContinuation<FileSaveResult>? = null
@@ -506,6 +504,7 @@ internal class ContentStreamingDestination(
     private val uri: Uri,
     private var output: java.io.OutputStream?,
     override val displayName: String,
+    override val recoveredOutputMayBeCommitted: Boolean = false,
 ) : StreamingDestination {
     override val recoveryToken: String get() = uri.toString()
     private var finished = false

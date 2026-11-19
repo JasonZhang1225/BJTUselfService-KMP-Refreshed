@@ -1,5 +1,6 @@
 package team.bjtuss.bjtuselfservice.desktop
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AppRuntime
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -78,19 +79,20 @@ fun main(args: Array<String>) {
     }
     val accountSecurityStore = createDesktopAccountSecurityStore()
     val cacheStoreHandle = createDesktopCacheStore()
+    val appRuntime = AppRuntime()
     // 刷新执行者：持锁并开放本机 IPC，命令行 `cache update` 交给当前会话执行，避免两边各登录一次互相顶掉会话。
     // 后台命令行正在刷新时先请它交出执行权（最多等几秒），拿不到也照常启动。
-    val currentSession = java.util.concurrent.atomic.AtomicReference<AuthenticatedSession?>(null)
+    val currentSession = { appRuntime.session.value }
     appRunningLock = team.bjtuss.bjtuselfservice.shared.agent.host.AppRefreshHost.start(
         File(System.getProperty("user.home"), "Library/Application Support/BJTUselfServiceKMP"),
-        sessionProvider = currentSession::get,
+        sessionProvider = currentSession,
     )
 
     val remoteScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val remoteController = RemoteAgentController(
         store = RemoteAgentStore(cacheStoreHandle.store),
         secrets = VaultRemoteSecretStore(requireNotNull(accountSecurityStore.remoteVault)),
-        executor = AppSessionRemoteExecutor(currentSession::get, cacheStoreHandle.store),
+        executor = AppSessionRemoteExecutor(currentSession, cacheStoreHandle.store),
         scope = remoteScope,
         host = object : RemoteHostPlatform {
             override val usesDockForBackground = true
@@ -99,11 +101,12 @@ fun main(args: Array<String>) {
     )
     if (cacheStoreHandle.state == team.bjtuss.bjtuselfservice.shared.cache.CacheOpenState.OPENED) remoteController.start()
     // 关闭“后台定时同步”时，像手机端一样在每次 App 内刷新完成后上传。
-    val sessionUpdates = kotlinx.coroutines.flow.MutableStateFlow<AuthenticatedSession?>(null)
-    remoteController.followAppRefreshes(sessionUpdates)
+    appRuntime.bindRemoteAgent(remoteController)
+    remoteController.followAppRefreshes(appRuntime.session)
 
     // 开机登录项带 --background 启动：用户开了静默启动就不弹窗口，点程序坞图标再打开（同一个窗口）。
     val startupHost = MacLaunchAgentStartupHost()
+    appRuntime.bindDeviceCleanup { startupHost.clearLocalSettings() }
     val startHidden = shouldStartHidden(args, startupHost.isSilentStart(), canReopen = Desktop.isDesktopSupported())
 
     try {
@@ -216,6 +219,7 @@ fun main(args: Array<String>) {
                     val systemCalendarGateway = remember { DesktopSystemCalendarGateway() }
                     CompositionLocalProvider(LocalAppStartupHost provides startupHost, LocalRemoteAgentController provides remoteController) {
                     App(
+                        appRuntime = appRuntime,
                         accountSecurityStore = accountSecurityStore,
                         cacheStoreHandle = cacheStoreHandle,
                         fileGateway = fileGateway,
@@ -224,8 +228,6 @@ fun main(args: Array<String>) {
                         appCommandBus = appCommandBus,
                         onAuthenticatedSessionChanged = {
                             authenticatedSession.value = it
-                            currentSession.set(it)
-                            sessionUpdates.value = it
                         },
                     )
                     }
@@ -236,6 +238,7 @@ fun main(args: Array<String>) {
         remoteController.close()
         remoteScope.cancel()
         runCatching { appRunningLock?.close() }
+        kotlinx.coroutines.runBlocking { appRuntime.closeAndJoin() }
         cacheStoreHandle.store.close()
     }
 }
