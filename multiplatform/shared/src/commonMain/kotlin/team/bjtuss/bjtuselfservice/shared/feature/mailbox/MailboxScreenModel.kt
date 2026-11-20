@@ -160,7 +160,6 @@ class MailboxScreenModel(
         var session: SessionRefreshCoordinator?,
         var firstLoad: FirstLoad?,
     ) {
-        var sessionConsumed = false
         lateinit var completion: Deferred<Unit>
     }
     // 详情页可能在上一次读取尚未返回时被退出并重新打开；只允许当前消息的结果落地。
@@ -265,15 +264,11 @@ class MailboxScreenModel(
 
     private suspend fun requestRefresh(session: SessionRefreshCoordinator? = null): Unit = accountWork.inAccount {
         while (true) {
-            var joinNeedsRecovery = false
             val restarted = coroutineScope {
                 val completion = refreshLock.withLock {
                     val active = pageRefresh?.takeUnless { it.completion.isCompleted }
                     if (active != null) {
-                        if (active.session == null && session != null) {
-                            active.session = session
-                            if (active.sessionConsumed) joinNeedsRecovery = true
-                        }
+                        if (active.session == null) active.session = session
                         return@withLock active.completion
                     }
                     // 已结束的首次加载只供当时已发起的刷新接用。之后点重试会重新查询。
@@ -295,12 +290,7 @@ class MailboxScreenModel(
                     true
                 }
             }
-            if (!restarted) {
-                if (joinNeedsRecovery && session != null) {
-                    session.retryAfterExpiry({ requestRefresh(session = null) }, ::sessionExpired)
-                }
-                return@inAccount
-            }
+            if (!restarted) return@inAccount
         }
     }
 
@@ -316,11 +306,25 @@ class MailboxScreenModel(
             }
             if (!alreadyLoaded) refreshFolder()
         }
-        val session = refreshLock.withLock {
-            request.sessionConsumed = true
-            request.session
+        try {
+            val session = refreshLock.withLock { request.session }
+            if (session != null) {
+                session.run(::refresh, ::sessionExpired)
+                return
+            }
+            refresh()
+            // 在途无协调器的刷新若加入了一位带协调器的等待方，在共享任务内完成恢复并让所有加入方等待同一结果。
+            val lateSession = refreshLock.withLock {
+                request.session?.takeIf { sessionExpired() }.also {
+                    if (it == null && pageRefresh === request) pageRefresh = null
+                }
+            }
+            lateSession?.retryAfterExpiry(::refresh, ::sessionExpired)
+        } finally {
+            refreshLock.withLock {
+                if (pageRefresh === request) pageRefresh = null
+            }
         }
-        if (session == null) refresh() else session.run(::refresh, ::sessionExpired)
     }
 
     private fun sessionExpired(): Boolean = when (val current = state.value) {
@@ -393,6 +397,11 @@ class MailboxScreenModel(
     private suspend fun selectFolderInAccount(folderId: Int) {
         operationMutex.withLock {
             val current = mutableState.value as? MailboxUiState.Ready ?: return
+            refreshLock.withLock {
+                firstLoad?.completed = false
+                firstLoad = null
+                pageRefresh?.firstLoad = null
+            }
             currentFolderId = folderId
             currentFolders = current.folders
             mutableState.value = current.copy(

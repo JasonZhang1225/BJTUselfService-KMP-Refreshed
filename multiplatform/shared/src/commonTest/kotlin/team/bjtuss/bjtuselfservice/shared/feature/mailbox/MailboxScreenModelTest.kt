@@ -2,11 +2,13 @@ package team.bjtuss.bjtuselfservice.shared.feature.mailbox
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
 import team.bjtuss.bjtuselfservice.shared.data.mailbox.MailboxRemoteDataSource
 import team.bjtuss.bjtuselfservice.shared.data.mailbox.MailboxRemoteException
 import team.bjtuss.bjtuselfservice.shared.data.mailbox.MailboxRemoteFailure
@@ -693,6 +695,150 @@ class MailboxScreenModelTest {
         assertEquals(1, recoveries)
         val ready = assertIs<MailboxUiState.Ready>(model.state.value)
         assertEquals(listOf(summary), ready.messages)
+    }
+
+    @Test
+    fun multipleJoinedRefreshWithSessionCallersAwaitSharedRecoveryEvenIfFirstJoinerCancels() = runBlocking {
+        val account = AccountWork()
+        try {
+            val summary = sampleSummary("m-multi-join", "共享恢复邮件")
+            val cookiesEntered = CompletableDeferred<Unit>()
+            val releaseCookies = CompletableDeferred<Unit>()
+            val recoveryEntered = CompletableDeferred<Unit>()
+            val releaseRecovery = CompletableDeferred<Unit>()
+            var cookieCalls = 0
+            var recovered = false
+            val remote = FakeMailboxRemote(
+                page = MailboxPage(totalCount = 1, messages = listOf(summary)),
+                detail = summary.toDetail(),
+            )
+            val model = MailboxScreenModel(
+                transport = CookieTransport(
+                    onCookies = {
+                        if (++cookieCalls == 1) {
+                            cookiesEntered.complete(Unit)
+                            releaseCookies.await()
+                        }
+                        if (recovered) listOf(SchoolSessionCookie("session", "secret")) else emptyList()
+                    },
+                ),
+                remote = remote,
+                accountWork = account,
+                refreshScope = account.scope(Dispatchers.Default),
+            )
+
+            val manualNoSession = launch { model.refresh() }
+            withTimeout(5_000) { cookiesEntered.await() }
+
+            var recoveries = 0
+            val firstSession = SessionRefreshCoordinator(
+                reauthenticate = {
+                    recoveries++
+                    recoveryEntered.complete(Unit)
+                    releaseRecovery.await()
+                    recovered = true
+                    true
+                },
+                probeSession = { true },
+            )
+            val secondSession = SessionRefreshCoordinator(
+                reauthenticate = {
+                    recoveries++
+                    true
+                },
+                probeSession = { true },
+            )
+
+            val firstJoiner = launch(start = CoroutineStart.UNDISPATCHED) {
+                model.refreshWithSession(firstSession)
+            }
+            val secondJoiner = launch(start = CoroutineStart.UNDISPATCHED) {
+                model.refreshWithSession(secondSession)
+            }
+            releaseCookies.complete(Unit)
+            withTimeout(5_000) { recoveryEntered.await() }
+
+            firstJoiner.cancelAndJoin()
+            assertFalse(secondJoiner.isCompleted)
+
+            releaseRecovery.complete(Unit)
+            withTimeout(5_000) {
+                manualNoSession.join()
+                secondJoiner.join()
+            }
+
+            assertEquals(1, recoveries)
+            val ready = assertIs<MailboxUiState.Ready>(model.state.value)
+            assertEquals(listOf(summary), ready.messages)
+        } finally {
+            account.stop()
+            account.join()
+        }
+    }
+
+    @Test
+    fun folderSwitchAfterFirstLoadInvalidatesReuseForPendingRefreshWithSession() = runBlocking {
+        val summary = sampleSummary("m-reselect", "收件箱新邮件")
+        val initListEntered = CompletableDeferred<Unit>()
+        val releaseInitList = CompletableDeferred<Unit>()
+        val probeEntered = CompletableDeferred<Unit>()
+        val releaseProbe = CompletableDeferred<Unit>()
+        val cancelableInboxReloadEntered = CompletableDeferred<Unit>()
+        var listCalls = 0
+        val remote = FakeMailboxRemote(
+            page = MailboxPage(totalCount = 1, messages = listOf(summary)),
+            detail = summary.toDetail(),
+            listBlock = {
+                when (++listCalls) {
+                    1 -> {
+                        initListEntered.complete(Unit)
+                        releaseInitList.await()
+                    }
+                    3 -> {
+                        cancelableInboxReloadEntered.complete(Unit)
+                        awaitCancellation()
+                    }
+                }
+            },
+        )
+        val model = MailboxScreenModel(
+            transport = CookieTransport(listOf(SchoolSessionCookie("session", "secret"))),
+            remote = remote,
+        )
+
+        val initJob = launch { model.initialize() }
+        withTimeout(5_000) { initListEntered.await() }
+
+        val session = SessionRefreshCoordinator(
+            reauthenticate = { true },
+            probeSession = {
+                probeEntered.complete(Unit)
+                releaseProbe.await()
+                true
+            },
+        )
+        val refreshJob = launch(start = CoroutineStart.UNDISPATCHED) { model.refreshWithSession(session) }
+        withTimeout(5_000) { probeEntered.await() }
+
+        releaseInitList.complete(Unit)
+        withTimeout(5_000) { initJob.join() }
+
+        // 先切到已发送，再切回收件箱并在列表拉取阶段取消，确保收件箱列表已被清空。
+        model.selectFolder(3)
+        val returnToInbox = launch { model.selectFolder(1) }
+        withTimeout(5_000) { cancelableInboxReloadEntered.await() }
+        returnToInbox.cancelAndJoin()
+        val cleared = assertIs<MailboxUiState.Ready>(model.state.value)
+        assertEquals(1, cleared.selectedFolderId)
+        assertTrue(cleared.messages.isEmpty())
+
+        releaseProbe.complete(Unit)
+        withTimeout(5_000) { refreshJob.join() }
+
+        val reloaded = assertIs<MailboxUiState.Ready>(model.state.value)
+        assertEquals(1, reloaded.selectedFolderId)
+        assertEquals(listOf(summary), reloaded.messages)
+        assertEquals(4, listCalls)
     }
 }
 
