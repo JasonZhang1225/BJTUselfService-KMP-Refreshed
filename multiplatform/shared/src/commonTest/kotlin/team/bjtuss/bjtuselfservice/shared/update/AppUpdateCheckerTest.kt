@@ -1,6 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.update
 
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class AppUpdateCheckerTest {
@@ -28,6 +29,9 @@ class AppUpdateCheckerTest {
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "2.0.0-KMP") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "2.0.0-Alpha") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "2.0.0-Beta") > 0)
+        assertFalse(AppUpdateChecker.isNewer(AppUpdateChecker.Release("v2.0.0-KMP", htmlUrl = "https://github.com/release")))
+        assertFalse(AppUpdateChecker.isNewer(AppUpdateChecker.Release("v2.0.1-Alpha", htmlUrl = "https://github.com/release")))
+        assertTrue(AppUpdateChecker.isNewer(AppUpdateChecker.Release("v2.0.1-KMP", htmlUrl = "https://github.com/release")))
         assertTrue(AppUpdateChecker.compareVersions("2.0.1-Beta", AppUpdateChecker.CURRENT_VERSION) > 0)
         assertTrue(AppUpdateChecker.compareVersions("v2.0.1-KMP", AppUpdateChecker.CURRENT_VERSION) > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.6-KMP") > 0)
