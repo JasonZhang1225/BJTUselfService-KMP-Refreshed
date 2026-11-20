@@ -1,16 +1,23 @@
 package team.bjtuss.bjtuselfservice.shared.feature.citel
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountMutationLock
 import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
 import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
 import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
+import kotlin.concurrent.Volatile
 import kotlin.time.Clock
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentFilters
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentFilterStore
@@ -54,12 +61,16 @@ class CitelModel(
     private val remote: CitelDataSource,
     private val changeRecorder: DataChangeRecorder<CitelTask>? = null,
     private val accountWork: AccountWork? = null,
+    private val refreshScope: CoroutineScope? = null,
 ) {
     private val filterStore = AssignmentFilterStore(cache, scope, "citel")
     private val mutableState = accountWork.accountState(CitelState(username = scope, filters = filterStore.load()))
     val state = mutableState.asStateFlow()
     private val mutex = Mutex()
+    private val refreshLock = AccountMutationLock()
+    private var inFlightRefresh: Deferred<Unit>? = null
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    @Volatile
     private var initialized = false
     private var resetChangeBaseline = false
     private var credentials: Credentials? = null
@@ -83,25 +94,29 @@ class CitelModel(
 
     suspend fun initialize() = accountWork.inAccount { initializeInAccount() }
 
-    private suspend fun initializeInAccount() = mutex.withLock {
-        if (initialized) return@withLock
-        val rememberMarker = cache.metadata(scope, "citel.remember")
-        credentials = try { if (rememberMarker != "false") vault?.load() else null }
-            catch (e: CancellationException) { throw e } catch (_: Exception) { null }
-        val remember = rememberMarker == "true" || (rememberMarker == null && credentials?.isValid == true)
-        val username = credentials?.username ?: cache.metadata(scope, "citel.username")?.takeIf { it.isNotBlank() } ?: scope
-        if (credentials?.isValid == true && cache.metadata(scope, "citel.remember") == null) {
-            cache.putMetadata(scope, "citel.remember", "true")
-            cache.putMetadata(scope, "citel.username", username)
+    private suspend fun initializeInAccount() {
+        // 已恢复缓存的调用方可以直接加入正在同步的列表。
+        if (initialized) return
+        mutex.withLock {
+            if (initialized) return@withLock
+            val rememberMarker = cache.metadata(scope, "citel.remember")
+            credentials = try { if (rememberMarker != "false") vault?.load() else null }
+                catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+            val remember = rememberMarker == "true" || (rememberMarker == null && credentials?.isValid == true)
+            val username = credentials?.username ?: cache.metadata(scope, "citel.username")?.takeIf { it.isNotBlank() } ?: scope
+            if (credentials?.isValid == true && cache.metadata(scope, "citel.remember") == null) {
+                cache.putMetadata(scope, "citel.remember", "true")
+                cache.putMetadata(scope, "citel.username", username)
+            }
+            val tasks = runCatching { json.decodeFromString<List<CitelTask>>(cache.metadata(scope, "citel.tasks").orEmpty()) }.getOrDefault(emptyList())
+            val lastSync = cache.metadata(scope, "citel.lastSync")?.toLongOrNull()
+            resetChangeBaseline = lastSync == null && tasks.isEmpty()
+            mutableState.value = CitelState(cache.metadata(scope, "citel.enabled") == "true" && credentials?.isValid == true, username, remember,
+                tasks, fromCache = lastSync != null || tasks.isNotEmpty(), lastSync = lastSync, filters = state.value.filters,
+                configured = credentials?.isValid == true,
+                problems = tasks.mapNotNull { task -> cache.citelProblem(scope, username, task.id)?.let { task.id to it } }.toMap())
+            initialized = true
         }
-        val tasks = runCatching { json.decodeFromString<List<CitelTask>>(cache.metadata(scope, "citel.tasks").orEmpty()) }.getOrDefault(emptyList())
-        val lastSync = cache.metadata(scope, "citel.lastSync")?.toLongOrNull()
-        resetChangeBaseline = lastSync == null && tasks.isEmpty()
-        mutableState.value = CitelState(cache.metadata(scope, "citel.enabled") == "true" && credentials?.isValid == true, username, remember,
-            tasks, fromCache = lastSync != null || tasks.isNotEmpty(), lastSync = lastSync, filters = state.value.filters,
-            configured = credentials?.isValid == true,
-            problems = tasks.mapNotNull { task -> cache.citelProblem(scope, username, task.id)?.let { task.id to it } }.toMap())
-        initialized = true
     }
 
     fun updateFilters(filters: AssignmentFilters) {
@@ -136,7 +151,7 @@ class CitelModel(
     private suspend fun saveAccountAndSyncInAccount(username: String, password: String): Boolean {
         saveAccount(username, password, remember = true)
         if (state.value.failed || !state.value.configured) return false
-        if (!state.value.enabled) refresh(includeDisabled = true)
+        if (!state.value.enabled) mutex.withLock { fetchAssignments() }
         return !state.value.failed && state.value.configured
     }
 
@@ -204,37 +219,49 @@ class CitelModel(
     suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
 
     private suspend fun refreshInAccount() {
-        refresh(includeDisabled = false)
+        initializeInAccount()
+        coroutineScope {
+            val completion = refreshLock.withLock {
+                inFlightRefresh?.takeUnless { it.isCompleted }
+                    ?: (refreshScope ?: this).async(start = CoroutineStart.LAZY) {
+                        mutex.withLock {
+                            try {
+                                if (state.value.enabled) fetchAssignments()
+                            } finally {
+                                // 在配置修改获得锁前结束本轮，后续刷新才能使用更新后的凭据。
+                                refreshLock.withLock { inFlightRefresh = null }
+                            }
+                        }
+                    }.also { inFlightRefresh = it }
+            }
+            completion.await()
+        }
     }
 
-    private suspend fun refresh(includeDisabled: Boolean) {
-        initialize()
-        mutex.withLock {
-            if (!includeDisabled && !mutableState.value.enabled) return@withLock
-            team.bjtuss.bjtuselfservice.shared.logging.AppLog.d("CitelSync", "refresh started")
-            mutableState.value = mutableState.value.copy(refreshing = true, message = null, failed = false)
-            try {
-                val login = credentials ?: throw CitelFailure("请在应用设置的 CITEL 账号设置中输入密码；未记住密码时，重启后需要重新输入。")
-                val tasks = withTimeout(90_000) { remote.fetch(login) }
-                val time = Clock.System.now().epochSeconds
-                cache.putMetadata(scope, "citel.tasks", json.encodeToString(tasks))
-                cache.putMetadata(scope, "citel.lastSync", time.toString())
-                // 内容没变就沿用旧列表实例：首页/聚合作业以它作 remember 键，等值的新实例会让每次重组都逐项比较。
-                val current = mutableState.value
-                mutableState.value = current.copy(tasks = if (tasks == current.tasks) current.tasks else tasks,
-                    fromCache = false, lastSync = time, message = "已同步 ${tasks.size} 项作业。")
-                changeRecorder.recordSafely(if (resetChangeBaseline) tasks else current.tasks, tasks)
-                resetChangeBaseline = false
-            } catch (e: TimeoutCancellationException) {
-                fail("CITEL 连接超时，保留上次同步结果。")
-            } catch (e: CancellationException) {
-                fail("CITEL 同步已中断，正显示上次同步结果。")
-                throw e
-            } catch (e: Exception) { fail((e as? CitelFailure)?.userMessage ?: "CITEL 暂时无法连接，保留上次同步结果。")
-            } finally {
-                mutableState.value = mutableState.value.copy(refreshing = false)
-                team.bjtuss.bjtuselfservice.shared.logging.AppLog.d("CitelSync", "refresh finished failed=${state.value.failed} cached=${state.value.fromCache} tasks=${state.value.tasks.size}")
-            }
+    private suspend fun fetchAssignments() {
+        team.bjtuss.bjtuselfservice.shared.logging.AppLog.d("CitelSync", "refresh started")
+        mutableState.value = mutableState.value.copy(refreshing = true, message = null, failed = false)
+        try {
+            val login = credentials ?: throw CitelFailure("请在应用设置的 CITEL 账号设置中输入密码；未记住密码时，重启后需要重新输入。")
+            val tasks = withTimeout(90_000) { remote.fetch(login) }
+            val time = Clock.System.now().epochSeconds
+            cache.putMetadata(scope, "citel.tasks", json.encodeToString(tasks))
+            cache.putMetadata(scope, "citel.lastSync", time.toString())
+            // 内容没变就沿用旧列表实例：首页/聚合作业以它作 remember 键，等值的新实例会让每次重组都逐项比较。
+            val current = mutableState.value
+            mutableState.value = current.copy(tasks = if (tasks == current.tasks) current.tasks else tasks,
+                fromCache = false, lastSync = time, message = "已同步 ${tasks.size} 项作业。")
+            changeRecorder.recordSafely(if (resetChangeBaseline) tasks else current.tasks, tasks)
+            resetChangeBaseline = false
+        } catch (e: TimeoutCancellationException) {
+            fail("CITEL 连接超时，保留上次同步结果。")
+        } catch (e: CancellationException) {
+            fail("CITEL 同步已中断，正显示上次同步结果。")
+            throw e
+        } catch (e: Exception) { fail((e as? CitelFailure)?.userMessage ?: "CITEL 暂时无法连接，保留上次同步结果。")
+        } finally {
+            mutableState.value = mutableState.value.copy(refreshing = false)
+            team.bjtuss.bjtuselfservice.shared.logging.AppLog.d("CitelSync", "refresh finished failed=${state.value.failed} cached=${state.value.fromCache} tasks=${state.value.tasks.size}")
         }
     }
 

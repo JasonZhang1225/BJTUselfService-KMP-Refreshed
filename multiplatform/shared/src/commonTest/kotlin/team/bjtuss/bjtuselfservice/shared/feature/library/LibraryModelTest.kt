@@ -1,6 +1,13 @@
 package team.bjtuss.bjtuselfservice.shared.feature.library
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -18,6 +25,7 @@ import team.bjtuss.bjtuselfservice.shared.data.library.LibraryLoanPage
 import team.bjtuss.bjtuselfservice.shared.data.library.LibraryRenewResult
 import team.bjtuss.bjtuselfservice.shared.data.library.LibraryRepository
 import team.bjtuss.bjtuselfservice.shared.data.library.LibraryUser
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
 
 /**
  * 图书馆页面模型测试：全部用合成数据与固定时钟，不碰真实网络和系统时间。
@@ -120,6 +128,110 @@ class LibraryModelTest {
         assertEquals(1, homeFirst.userLoads, "每个会话只自动同步一次")
         homeModel.initialize()
         assertEquals(1, homeFirst.userLoads, "首页已同步后页面进入不再重复请求")
+    }
+
+    @Test
+    fun manualRefreshShowsProgressWhileSharingSilentRefresh() = runBlocking {
+        val fake = FakeLibraryRepository()
+        val model = libraryModel(fake)
+        model.refresh()
+        model.renewSelected() // Leave an existing page message with no loan selected.
+        val oldMessage = model.state.value.message
+        assertNotNull(oldMessage)
+
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        fake.beforeLoadUser = { entered.complete(Unit); release.await() }
+        val silent = launch { model.refresh(silent = true) }
+        withTimeout(5_000) { entered.await() }
+        assertEquals(oldMessage, model.state.value.message)
+        assertFalse(model.state.value.refreshing)
+
+        val manual = launch(start = CoroutineStart.UNDISPATCHED) { model.refresh() }
+        assertTrue(model.state.value.refreshing)
+        assertNull(model.state.value.message)
+        assertFalse(manual.isCompleted)
+        release.complete(Unit)
+        silent.join()
+        manual.join()
+
+        assertFalse(model.state.value.refreshing)
+        assertEquals(2, fake.userLoads)
+        assertEquals(2, fake.loanLoads)
+        assertEquals(2, fake.historyLoads)
+    }
+
+    @Test
+    fun overlappingFailureIsSharedAndLaterRetryStartsAnotherRefresh() = runBlocking {
+        val fake = FakeLibraryRepository()
+        val model = libraryModel(fake)
+        model.refresh()
+        val before = model.state.value
+        fake.loansFailure = LibraryFailure(LibraryFailureKind.NETWORK)
+
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        fake.beforeLoadUser = { entered.complete(Unit); release.await() }
+        val silent = launch { model.refresh(silent = true) }
+        withTimeout(5_000) { entered.await() }
+        val manual = launch(start = CoroutineStart.UNDISPATCHED) { model.retry() }
+        release.complete(Unit)
+        silent.join()
+        manual.join()
+
+        assertEquals(2, fake.userLoads)
+        assertEquals(2, fake.loanLoads)
+        assertEquals(1, fake.historyLoads)
+        assertEquals(LibraryFailureKind.NETWORK, model.state.value.failure?.kind)
+        assertEquals(before.loans, model.state.value.loans)
+        assertEquals(before.history, model.state.value.history)
+        assertEquals(before.lastSyncEpochSeconds, model.state.value.lastSyncEpochSeconds)
+        assertFalse(model.state.value.refreshing)
+
+        fake.loansFailure = null
+        model.retry()
+        assertEquals(3, fake.userLoads)
+        assertEquals(3, fake.loanLoads)
+        assertEquals(2, fake.historyLoads)
+        assertNull(model.state.value.failure)
+    }
+
+    @Test
+    fun sharedRefreshSurvivesCallerCancellationAndStopsAtAccountEnd() = runBlocking {
+        val account = AccountWork()
+        val fake = FakeLibraryRepository()
+        val model = LibraryModel(fake, accountWork = account, refreshScope = account.scope(Dispatchers.Unconfined))
+        try {
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            fake.beforeLoadUser = { entered.complete(Unit); release.await() }
+            val first = launch { model.initialize() }
+            withTimeout(5_000) { entered.await() }
+            val second = launch(start = CoroutineStart.UNDISPATCHED) { model.refresh() }
+            first.cancelAndJoin()
+            release.complete(Unit)
+            second.join()
+            assertEquals(1, fake.userLoads)
+            assertEquals(1, fake.loanLoads)
+            assertEquals(1, fake.historyLoads)
+
+            val nextEntered = CompletableDeferred<Unit>()
+            val stopped = CompletableDeferred<Unit>()
+            fake.beforeLoadUser = {
+                nextEntered.complete(Unit)
+                try { awaitCancellation() } finally { stopped.complete(Unit) }
+            }
+            val next = launch { model.refresh() }
+            withTimeout(5_000) { nextEntered.await() }
+            account.stop()
+            withTimeout(5_000) { stopped.await(); account.join(); next.join() }
+            assertTrue(next.isCancelled)
+            assertEquals(2, fake.userLoads)
+            assertEquals(1, fake.loanLoads)
+        } finally {
+            account.stop()
+            account.join()
+        }
     }
 
     @Test
@@ -335,9 +447,11 @@ private class FakeLibraryRepository(
     var historyLoads = 0
     var renewCalls = 0
     var renewedIds: List<Long> = emptyList()
+    var beforeLoadUser: suspend () -> Unit = {}
 
     override suspend fun loadUser(): LibraryUser {
         userLoads++
+        beforeLoadUser()
         userFailure?.let { throw LibraryException(it) }
         return user
     }

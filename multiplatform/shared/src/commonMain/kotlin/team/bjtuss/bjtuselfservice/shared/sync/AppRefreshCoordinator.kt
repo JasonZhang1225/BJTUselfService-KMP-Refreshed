@@ -121,13 +121,18 @@ class AppRefreshCoordinator(
      * 刷新 [request] 中的来源并等待结果。不支持的来源记为跳过。
      * 调用方取消只停止等待；共享的在途刷新继续运行，直至完成或 [close]。
      */
-    suspend fun refresh(request: RefreshRequest): RefreshReport {
+    suspend fun refresh(request: RefreshRequest): RefreshReport = refresh(request, probeSession)
+
+    internal suspend fun refresh(
+        request: RefreshRequest,
+        sessionProbe: (suspend () -> Boolean)?,
+    ): RefreshReport {
         val startedAt = nowEpochSeconds()
         val requested = RefreshSource.entries.filter { it in request.sources }
         val waits: Map<RefreshSource, Deferred<RefreshSourceResult>> = mutex.withLock {
             if (closed) return@withLock emptyMap()
             val missing = requested.filter { it in adapterBySource && it !in inFlight }
-            if (missing.isNotEmpty()) startBatch(missing, request.forceReauthenticate)
+            if (missing.isNotEmpty()) startBatch(missing, request.forceReauthenticate, sessionProbe)
             requested.mapNotNull { source -> inFlight[source]?.let { source to it } }.toMap()
         }
         val results = requested.map { source ->
@@ -163,10 +168,14 @@ class AppRefreshCoordinator(
 
     val isClosed: Boolean get() = closed
 
-    private fun startBatch(sources: List<RefreshSource>, forceReauthenticate: Boolean) {
+    private fun startBatch(
+        sources: List<RefreshSource>,
+        forceReauthenticate: Boolean,
+        sessionProbe: (suspend () -> Boolean)?,
+    ) {
         val session = SessionRefreshCoordinator(
             reauthenticate = reauthenticate,
-            probeSession = probeSession,
+            probeSession = sessionProbe,
             onRecoveryStateChanged = { active -> recoveryState.value = active },
         )
         // 显式“先登录再刷新”：整批共享一次恢复，失败则整批不访问学校（与旧 refreshGlobal 一致）。

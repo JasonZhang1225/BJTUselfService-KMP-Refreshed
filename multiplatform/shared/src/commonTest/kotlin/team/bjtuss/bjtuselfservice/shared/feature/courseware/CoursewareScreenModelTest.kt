@@ -3,6 +3,7 @@ package team.bjtuss.bjtuselfservice.shared.feature.courseware
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.async
 import kotlinx.coroutines.yield
@@ -30,6 +31,7 @@ import team.bjtuss.bjtuselfservice.shared.files.FilePickResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestination
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingFileSink
+import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
 
 class CoursewareScreenModelTest {
     @Test
@@ -320,7 +322,7 @@ class CoursewareScreenModelTest {
     }
 
     @Test
-    fun overlappingRefreshWaitsAndRunsAgain() = runBlocking {
+    fun overlappingRefreshSharesTheFirstReadAndLaterRefreshRunsAgain() = runBlocking {
         val firstStarted = CompletableDeferred<Unit>()
         val releaseFirst = CompletableDeferred<Unit>()
         var refreshCount = 0
@@ -349,12 +351,53 @@ class CoursewareScreenModelTest {
         val model = CoursewareScreenModel(repository)
         val first = async { model.initialize() }
         firstStarted.await()
-        val second = async { model.refresh() }
-        yield()
+        val second = async(start = CoroutineStart.UNDISPATCHED) { model.refresh() }
+        assertFalse(second.isCompleted)
         releaseFirst.complete(Unit)
         first.await()
         second.await()
+        assertEquals(1, refreshCount)
+        model.refresh()
         assertEquals(2, refreshCount)
+    }
+
+    @Test
+    fun manualRefreshJoiningExpiredFirstLoadRecoversAndRetriesOnce() = runBlocking {
+        val firstStarted = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val empty = CoursewareSnapshot(emptyList())
+        val cached = snapshot()
+        var reads = 0
+        var recoveries = 0
+        var probes = 0
+        val repository = object : CoursewareRepository by FakeRepository(empty, cached) {
+            override suspend fun refresh(): CoursewareRefreshResult {
+                if (++reads == 1) {
+                    firstStarted.complete(Unit)
+                    releaseFirst.await()
+                    return CoursewareRefreshResult.Failure(empty, CoursewareSyncFailure.SESSION_EXPIRED)
+                }
+                return CoursewareRefreshResult.Success(cached)
+            }
+        }
+        val model = CoursewareScreenModel(repository)
+        val initial = async { model.initialize() }
+        firstStarted.await()
+        val session = SessionRefreshCoordinator(
+            reauthenticate = { recoveries++; true },
+            probeSession = { probes++; true },
+        )
+        val manual = async(start = CoroutineStart.UNDISPATCHED) { model.refreshWithSession(session) }
+        assertFalse(manual.isCompleted)
+        releaseFirst.complete(Unit)
+        initial.await()
+        manual.await()
+
+        assertEquals(2, reads)
+        assertEquals(1, recoveries)
+        assertEquals(0, probes)
+        assertEquals(CoursewareContentSource.NETWORK, model.state.value.source)
+        assertEquals(null, model.state.value.failure)
     }
 
     @Test

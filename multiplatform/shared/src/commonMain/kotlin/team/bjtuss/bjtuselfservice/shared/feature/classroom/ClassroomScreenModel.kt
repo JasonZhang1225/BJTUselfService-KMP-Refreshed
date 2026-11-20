@@ -3,8 +3,7 @@ package team.bjtuss.bjtuselfservice.shared.feature.classroom
 import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
 import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
 import team.bjtuss.bjtuselfservice.shared.runtime.accountState
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountMutationLock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,22 +65,22 @@ class ClassroomScreenModel(
 
     /** 会话内各教学楼最近一次成功快照，用于失败时保留旧数据。 */
     private val lastSuccessByBuilding = mutableMapOf<String, ClassroomBuildingInfo>()
-    private val fetchMutex = Mutex()
+    private val stateLock = AccountMutationLock()
 
     /** 选择教学楼并触发加载（若该楼从未成功加载过）。 */
     suspend fun selectBuilding(building: String) = accountWork.inAccount { selectBuildingInAccount(building = building) }
 
     private suspend fun selectBuildingInAccount(building: String) {
         require(building in CLASSROOM_BUILDINGS) { "unknown building" }
-        val cached = lastSuccessByBuilding[building]
-        updateState {
-            it.copy(
-                selectedBuilding = building,
-                buildingState = when {
-                    cached != null -> ClassroomBuildingState.Loaded(cached)
-                    else -> ClassroomBuildingState.Loading
-                },
-            )
+        val cached = stateLock.withLock {
+            val snapshot = lastSuccessByBuilding[building]
+            updateState {
+                it.copy(
+                    selectedBuilding = building,
+                    buildingState = snapshot?.let(ClassroomBuildingState::Loaded) ?: ClassroomBuildingState.Loading,
+                )
+            }
+            snapshot
         }
         if (cached == null) {
             fetch(building)
@@ -151,14 +150,15 @@ class ClassroomScreenModel(
     }
 
     private suspend fun fetch(building: String) {
-        fetchMutex.withLock {
-            // 若在排队期间用户切到了别的楼，这次请求只更新缓存不覆盖当前选中状态。
+        stateLock.withLock {
             if (mutableState.value.selectedBuilding == building) {
-                updateState {
-                    it.copy(buildingState = ClassroomBuildingState.Loading)
-                }
+                updateState { it.copy(buildingState = ClassroomBuildingState.Loading) }
             }
-            when (val result = repository.fetchBuildingInfo(building)) {
+        }
+        val result = repository.fetchBuildingInfo(building)
+        stateLock.withLock {
+            // 若在请求期间用户切到了别的楼，只更新该楼的缓存。
+            when (result) {
                 is ClassroomFetchResult.Success -> {
                     lastSuccessByBuilding[building] = result.info
                     if (mutableState.value.selectedBuilding == building) {
@@ -183,7 +183,7 @@ class ClassroomScreenModel(
         }
     }
 
-    private fun updateState(transform: (ClassroomUiState) -> ClassroomUiState) {
+    private fun updateState(transform: (ClassroomUiState) -> ClassroomUiState) = stateLock.withLock {
         val next = transform(mutableState.value)
         mutableState.value = next.copy(visibleClassrooms = next.computeVisibleClassrooms())
     }

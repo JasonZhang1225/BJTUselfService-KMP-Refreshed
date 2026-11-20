@@ -1,7 +1,15 @@
 package team.bjtuss.bjtuselfservice.shared.data.classroom
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomBuildingInfo
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountMutationLock
 
 enum class ClassroomFetchFailure {
     NETWORK,
@@ -25,9 +33,31 @@ interface ClassroomRepository {
  */
 class DefaultClassroomRepository(
     private val remote: ClassroomRemoteDataSource,
+    private val refreshScope: CoroutineScope? = null,
 ) : ClassroomRepository {
 
-    override suspend fun fetchBuildingInfo(buildingName: String): ClassroomFetchResult = try {
+    private val requestsLock = AccountMutationLock()
+    private val inFlight = mutableMapOf<String, Deferred<ClassroomFetchResult>>()
+    private val requestMutex = Mutex()
+
+    override suspend fun fetchBuildingInfo(buildingName: String): ClassroomFetchResult = coroutineScope {
+        val request = requestsLock.withLock {
+            val active = inFlight[buildingName]?.takeUnless { it.isCompleted }
+            active ?: (refreshScope ?: this).async(start = CoroutineStart.LAZY) {
+                requestMutex.withLock { loadBuildingInfo(buildingName) }
+            }.also { pending ->
+                inFlight[buildingName] = pending
+                pending.invokeOnCompletion {
+                    requestsLock.withLock {
+                        if (inFlight[buildingName] === pending) inFlight.remove(buildingName)
+                    }
+                }
+            }
+        }
+        request.await()
+    }
+
+    private suspend fun loadBuildingInfo(buildingName: String): ClassroomFetchResult = try {
         ClassroomFetchResult.Success(remote.fetchBuildingInfo(buildingName))
     } catch (error: CancellationException) {
         throw error

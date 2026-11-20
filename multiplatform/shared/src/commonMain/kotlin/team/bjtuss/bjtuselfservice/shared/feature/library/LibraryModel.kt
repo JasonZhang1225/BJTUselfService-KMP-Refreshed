@@ -1,9 +1,15 @@
 package team.bjtuss.bjtuselfservice.shared.feature.library
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountMutationLock
 import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
 import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
 import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,11 +42,19 @@ class LibraryModel(
     private val clock: Clock = Clock.System,
     private val timeZone: TimeZone = TimeZone.currentSystemDefault(),
     private val accountWork: AccountWork? = null,
+    private val refreshScope: CoroutineScope? = null,
 ) {
     private val mutableState = accountWork.accountState(LibraryUiState())
     val state: StateFlow<LibraryUiState> = mutableState.asStateFlow()
 
     private val mutex = Mutex()
+    private val refreshLock = AccountMutationLock()
+    private var inFlightRefresh: Refresh? = null
+
+    private class Refresh(var silent: Boolean) {
+        var started = false
+        lateinit var completion: Deferred<Unit>
+    }
 
     /** 首页提醒的自动同步每个模型实例（≈ 每个登录会话）最多一次。 */
     private var autoSyncRequested = false
@@ -52,42 +66,58 @@ class LibraryModel(
      * 首次进入页面时同步一次；已经拿到过用户信息或完成过一次同步就不重复请求。
      * 首次失败后再次进入页面允许重试（失败不会被永久记住）。
      */
-    suspend fun initialize() = accountWork.inAccount { initializeInAccount() }
-
-    private suspend fun initializeInAccount() {
-        if (state.value.user != null || state.value.lastSyncEpochSeconds != null) return
-        mutex.withLock {
-            if (state.value.user != null || state.value.lastSyncEpochSeconds != null) return@withLock
-            loadAll(silent = true)
-        }
+    suspend fun initialize() = requestRefresh(silent = true) {
+        state.value.user == null && state.value.lastSyncEpochSeconds == null
     }
 
     /**
      * 首页/磁贴提醒用：每个会话只自动同步一次，之后的提醒刷新交给页面内刷新。
      * 页面已经同步过时直接跳过，避免同一会话重复握手。
      */
-    suspend fun refreshIfNeeded() = accountWork.inAccount { refreshIfNeededInAccount() }
-
-    private suspend fun refreshIfNeededInAccount() {
-        if (autoSyncRequested) return
-        mutex.withLock {
-            if (autoSyncRequested) return@withLock
+    suspend fun refreshIfNeeded() = requestRefresh(silent = true) {
+        if (autoSyncRequested) {
+            false
+        } else {
             autoSyncRequested = true
-            if (state.value.user != null) return@withLock
-            loadAll(silent = true)
+            state.value.user == null
         }
     }
 
     /**
      * 用户主动刷新（按钮/重试）。
      *
-     * @param silent 静默同步（首页提醒/首次进入）失败时只记 [LibraryUiState.failure]，
-     *   不覆盖已有消息；用户主动刷新失败则把失败文案放进 message 供页面提示。
+     * @param silent 静默同步保留原有消息；主动刷新清掉旧消息，失败统一通过 [LibraryUiState.failure] 提示。
      */
-    suspend fun refresh(silent: Boolean = false) = accountWork.inAccount { refreshInAccount(silent = silent) }
+    suspend fun refresh(silent: Boolean = false) = requestRefresh(silent)
 
-    private suspend fun refreshInAccount(silent: Boolean = false) {
-        mutex.withLock { loadAll(silent = silent) }
+    private suspend fun requestRefresh(
+        silent: Boolean,
+        shouldRefresh: () -> Boolean = { true },
+    ) = accountWork.inAccount {
+        coroutineScope {
+            val completion = refreshLock.withLock {
+                if (!shouldRefresh()) return@withLock null
+                val active = inFlightRefresh
+                if (active != null && !active.completion.isCompleted) {
+                    if (!silent && active.silent) {
+                        active.silent = false
+                        if (active.started) {
+                            val current = state.value
+                            mutableState.value = current.copy(refreshing = !current.loading, message = null)
+                        }
+                    }
+                    return@withLock active.completion
+                }
+                val next = Refresh(silent)
+                // 先登记请求，再启动协程；续借继续与整轮查询共用原有的互斥锁。
+                next.completion = (refreshScope ?: this).async(start = CoroutineStart.LAZY) {
+                    mutex.withLock { loadAll(next) }
+                }
+                inFlightRefresh = next
+                next.completion
+            }
+            if (completion != null) completion.await()
+        }
     }
 
     /** 切换 tab 不联网；历史数据在 [loadAll] 中与当前借阅一起拉取。 */
@@ -212,51 +242,58 @@ class LibraryModel(
      * 依次拉取用户信息、当前借阅、借阅历史；三步全部成功才算刷新完成。
      * 失败时保留旧数据（不清空 loans/history），避免页面闪空。
      */
-    private suspend fun loadAll(silent: Boolean) {
-        val before = mutableState.value
-        val firstLoad = before.user == null
-        mutableState.value = before.copy(
-            loading = firstLoad,
-            refreshing = !firstLoad && !silent,
-            failure = null,
-            message = if (silent) before.message else null,
-        )
+    private suspend fun loadAll(refresh: Refresh) {
+        refreshLock.withLock {
+            refresh.started = true
+            val before = state.value
+            val firstLoad = before.user == null
+            mutableState.value = before.copy(
+                loading = firstLoad,
+                refreshing = !firstLoad && !refresh.silent,
+                failure = null,
+                message = if (refresh.silent) before.message else null,
+            )
+        }
         try {
             val user = repository.loadUser()
             val loansPage = repository.loadLoans(page = 1, rows = LIBRARY_PAGE_SIZE)
             val historyPage = repository.loadHistory(page = 1, rows = LIBRARY_PAGE_SIZE)
             val syncAt = clock.now().epochSeconds
-            val current = mutableState.value
             val loanIds = loansPage.loans.mapTo(mutableSetOf(), LibraryLoan::loanId)
-            mutableState.value = current.copy(
-                loading = false,
-                refreshing = false,
-                user = user,
-                loans = loansPage.loans,
-                loansTotal = loansPage.total,
-                history = historyPage.loans,
-                historyTotal = historyPage.total,
-                historyHasMore = historyPage.hasMore,
-                // 刷新后已不再借出的书要从选择里摘掉，避免续借到过期 id。
-                selectedLoanIds = current.selectedLoanIds.filterTo(mutableSetOf(), loanIds::contains),
-                failure = null,
-                message = if (silent) current.message else null,
-                lastSyncEpochSeconds = syncAt,
-            )
+            finishRefresh(refresh) {
+                copy(
+                    loading = false,
+                    refreshing = false,
+                    user = user,
+                    loans = loansPage.loans,
+                    loansTotal = loansPage.total,
+                    history = historyPage.loans,
+                    historyTotal = historyPage.total,
+                    historyHasMore = historyPage.hasMore,
+                    // 刷新后已不再借出的书要从选择里摘掉，避免续借到过期 id。
+                    selectedLoanIds = selectedLoanIds.filterTo(mutableSetOf(), loanIds::contains),
+                    failure = null,
+                    message = if (refresh.silent) message else null,
+                    lastSyncEpochSeconds = syncAt,
+                )
+            }
             publishReminder(loansPage.loans)
         } catch (e: CancellationException) {
             // 取消也要结束加载态，否则页面停在进度条上；取消信号本身必须继续抛。
-            mutableState.value = mutableState.value.copy(loading = false, refreshing = false)
+            finishRefresh(refresh) { copy(loading = false, refreshing = false) }
             throw e
         } catch (e: Exception) {
             val failure = e.asLibraryFailure()
-            mutableState.value = mutableState.value.copy(
-                loading = false,
-                refreshing = false,
-                failure = failure,
-                // silent 同步不覆盖页面已有消息；用户主动刷新开始时已清空 message，失败只走红色横幅。
-                message = mutableState.value.message,
-            )
+            finishRefresh(refresh) { copy(loading = false, refreshing = false, failure = failure) }
+        }
+    }
+
+    private fun finishRefresh(refresh: Refresh, update: LibraryUiState.() -> LibraryUiState) {
+        refreshLock.withLock {
+            if (inFlightRefresh === refresh) {
+                inFlightRefresh = null
+                mutableState.value = state.value.update()
+            }
         }
     }
 

@@ -198,6 +198,7 @@ class AppDataGraph(
     private val classroomTransport = createSchoolHttpTransport()
     val classroomRepository = DefaultClassroomRepository(
         remote = SchoolClassroomRemoteDataSource(team.bjtuss.bjtuselfservice.shared.runtime.AccountSchoolTransport(classroomTransport, accountWork)),
+        refreshScope = accountWork.scope(refreshDispatcher),
     )
     val classroomModel = ClassroomScreenModel(classroomRepository,
         accountWork = accountWork,
@@ -210,6 +211,7 @@ class AppDataGraph(
             courseScheduleModel.state.value.currentWeek.takeIf { it > 0 } ?: 1
         },
         accountWork = accountWork,
+        refreshScope = accountWork.scope(refreshDispatcher),
     )
     val settingsModel = SettingsScreenModel(
         initialPreferences = appPreferences.copy(
@@ -235,8 +237,10 @@ class AppDataGraph(
         checkReleaseFromSource = { source -> AppUpdateChecker.fetchLatest(this.transport, source) },
         accountWork = accountWork,
     )
-    val mailboxModel = MailboxScreenModel(this.transport,
+    val mailboxModel = MailboxScreenModel(
+        transport = this.transport,
         accountWork = accountWork,
+        refreshScope = accountWork.scope(refreshDispatcher),
     )
     // 各学校业务会话的 Cookie 有不同生命周期。保留当前登录凭据的内存引用，
     // 让刷新发现会话过期时可以在 App 内自动恢复 CAS/教务链路，
@@ -253,6 +257,7 @@ class AppDataGraph(
         repository = coursewareRepository,
         reauthenticate = sessionRecovery::attempt,
         accountWork = accountWork,
+        refreshScope = accountWork.scope(refreshDispatcher),
     )
     /** 页面模型的作用域；Android 下载执行器另外由应用按账号持有，不随 [close] 销毁。 */
     private val playbackScope = accountWork.scope(kotlinx.coroutines.Dispatchers.Main)
@@ -302,17 +307,20 @@ class AppDataGraph(
         filterStore = team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentFilterStore(this.cacheStore, accountScope, "phyvlab"),
         accountWork = accountWork,
     )
+    private val experimentRefreshScope = accountWork.scope(refreshDispatcher)
     val physicsLabModel = team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabModel(
         accountScope, this.cacheStore, securityCoordinator.physicsLabVault(accountScope),
         team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabRemote(this.transport),
         changeRecorder = physicsLabChangeRecorder(homeChangeFeed),
         accountWork = accountWork,
+        refreshScope = experimentRefreshScope,
     )
     val physicsDemoModel = team.bjtuss.bjtuselfservice.shared.feature.phydemo.PhysicsDemoModel(
         accountScope, this.cacheStore, securityCoordinator.physicsDemoVault(accountScope),
         team.bjtuss.bjtuselfservice.shared.feature.phydemo.PhysicsDemoRemote(this.transport),
         changeRecorder = physicsDemoChangeRecorder(homeChangeFeed),
         accountWork = accountWork,
+        refreshScope = experimentRefreshScope,
     )
     val homeStatusRepository = DefaultHomeStatusRepository(
         accountScope = accountScope,
@@ -326,6 +334,7 @@ class AppDataGraph(
         securityCoordinator.citelVault(accountScope), team.bjtuss.bjtuselfservice.shared.feature.citel.CitelRemote(this.transport),
         changeRecorder = citelChangeRecorder(homeChangeFeed),
         accountWork = accountWork,
+        refreshScope = accountWork.scope(refreshDispatcher),
     )
 
     /** 本机 CLI 与远程同步共用的作业详情入口。 */
