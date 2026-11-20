@@ -484,15 +484,13 @@ class PlaybackTaskManagerTest {
         val driver = app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver(app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver.IN_MEMORY)
         team.bjtuss.bjtuselfservice.shared.cache.db.CacheDatabaseSql.Schema.create(driver).value
         val cache = team.bjtuss.bjtuselfservice.shared.cache.CacheStore(driver)
-        val recoveryGateway = object : FileGateway by gateway, PlaybackRecoveryProvider {
-            override val playbackRecovery = object : PlaybackRecoveryAccess {
-                override fun retainedManager(accountScope: String): PlaybackTaskManager {
-                    assertEquals("fixture-student", accountScope)
-                    return manager
-                }
-                override fun storeFor(accountScope: String): PlaybackTaskStore = error("不能重建任务存储")
-                override suspend fun restoreDestination(token: String, displayName: String): StreamingDestinationResult = error("不能重建保存目标")
+        val recovery = object : PlaybackRecoveryAccess {
+            override fun retainedManager(accountScope: String): PlaybackTaskManager {
+                assertEquals("fixture-student", accountScope)
+                return manager
             }
+            override fun storeFor(accountScope: String): PlaybackTaskStore = error("不能重建任务存储")
+            override suspend fun restoreDestination(token: String, displayName: String): StreamingDestinationResult = error("不能重建保存目标")
         }
         val preferences = object : team.bjtuss.bjtuselfservice.shared.security.AccountPreferences {
             override suspend fun shouldRememberCredentials() = false
@@ -506,7 +504,8 @@ class PlaybackTaskManagerTest {
             team.bjtuss.bjtuselfservice.shared.cache.AppPreferences(), { true },
             team.bjtuss.bjtuselfservice.shared.security.AccountSecurityCoordinator(
                 team.bjtuss.bjtuselfservice.shared.security.AccountSecurityStore(null, preferences)),
-            team.bjtuss.bjtuselfservice.shared.auth.UnavailableCaptchaRecognizer, { null }, recoveryGateway, {}, Dispatchers.Default,
+            team.bjtuss.bjtuselfservice.shared.auth.UnavailableCaptchaRecognizer, { null }, gateway, {}, Dispatchers.Default,
+            playbackRecovery = recovery,
         )
         try {
             val detail = detail()

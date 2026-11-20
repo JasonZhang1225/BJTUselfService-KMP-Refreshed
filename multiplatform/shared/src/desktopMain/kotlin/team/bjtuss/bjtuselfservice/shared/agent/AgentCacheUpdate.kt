@@ -174,6 +174,10 @@ internal fun runHeadless(
         try {
             runBlocking {
                 val security = securityFactory()
+                val cleanupPending = runCatching {
+                    team.bjtuss.bjtuselfservice.shared.cleanup.VaultCleanupJournal(security.cleanupJournalVault).load().isNotEmpty()
+                }.getOrDefault(true)
+                if (cleanupPending) return@runBlocking fail("账号本地清理尚未完成，请先打开 App 重试清理。", AgentExit.LOGIN_FAILED)
                 // 只读：未勾选“记住密码”时不登录，也不清除任何凭据（App 的 restore() 会清，这里不能用）。
                 if (!security.preferences.shouldRememberCredentials()) {
                     return@runBlocking fail("App 没有记住密码，命令行无法自动登录。请在 App 登录时勾选“记住密码”，或直接在 App 里操作。", AgentExit.LOGIN_FAILED)

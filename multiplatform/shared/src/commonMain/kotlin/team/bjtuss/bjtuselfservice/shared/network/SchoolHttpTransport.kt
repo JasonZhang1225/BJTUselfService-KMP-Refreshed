@@ -144,6 +144,9 @@ fun SchoolHttpResponse.looksLikeSessionExpired(): Boolean {
 }
 
 interface SchoolHttpTransport {
+    /** Releases the clients owned by this transport. */
+    fun close() = Unit
+
     /**
      * 会话相关请求（CAS / aa / 智慧平台等）。实现应串行化，保护共享 Cookie jar。
      */

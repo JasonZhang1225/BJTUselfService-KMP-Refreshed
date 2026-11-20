@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.shell
 
+import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedContent
@@ -120,7 +123,9 @@ internal fun DestinationPage(
     val onNativeActionChanged = ui.chrome.onNativeActionChanged
     var partialSyncFailureDialogItems by ui.view.partialSyncFailureDialogItems
     val assignmentCompletionStore = ui.chrome.assignmentCompletionStore
-    val staggeredClassTimes = ui.data.staggeredClassTimes
+    val staggeredClassTimes by remember(ui.session) {
+        ui.session.settingsModel.state.map { it.preferences.staggeredSecondSlot }.distinctUntilChanged()
+    }.collectAsState(initial = ui.session.settingsModel.state.value.preferences.staggeredSecondSlot)
     val refresh: () -> Unit = ui.actions::refresh
     val effectiveRefreshAction = refreshAction ?: refresh
     // iOS 内容视口延伸到屏幕底，底部净空仅交给滚动内容末尾消费。

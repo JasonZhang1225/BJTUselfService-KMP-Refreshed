@@ -16,7 +16,7 @@ final class NativeNavigationController: UINavigationController, UINavigationCont
         interactivePopGestureRecognizer?.isEnabled = viewControllers.count > 1
     }
 
-    init(offlineSession: AuthenticatedSession? = nil) {
+    init(offlineSession: AuthenticatedSession? = nil, runtimeOwner: IosAppRuntimeOwner? = nil) {
         super.init(nibName: nil, bundle: nil)
         delegate = self
         view.backgroundColor = appBackgroundUIColor
@@ -41,7 +41,8 @@ final class NativeNavigationController: UINavigationController, UINavigationCont
                 self?.openNativeRoute(routeId)
             })
         } else {
-        rootController = MainViewControllerKt.NativeMainViewController(
+        guard let runtimeOwner else { preconditionFailure("A production root requires its application runtime") }
+        rootController = runtimeOwner.mainViewController(
             onAuthenticatedSessionChanged: { [weak self] session in
                 self?.authenticatedSession = session
                 if session == nil, (self?.viewControllers.count ?? 0) > 1 {
@@ -113,6 +114,7 @@ final class NativeNavigationController: UINavigationController, UINavigationCont
         didShow viewController: UIViewController,
         animated: Bool
     ) {
+        authenticatedSession?.reportActivePage(routeId: viewController.restorationIdentifier)
         // push/pop 动画结束后再同步开关，避免根页仍能半截手势卡住导航栈。
         updateInteractivePopEnabled()
         // 部分系统版本在 didShow 后会把 delegate 重置；每次确认仍由本类接管。

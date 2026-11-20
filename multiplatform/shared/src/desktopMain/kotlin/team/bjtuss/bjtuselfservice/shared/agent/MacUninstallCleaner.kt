@@ -41,6 +41,12 @@ class MacUninstallCleaner internal constructor(
         appendLine(if (bundle != null) "- 最后将当前 App 移到废纸篓：${bundle.absolutePath}（可恢复）" else "- 未识别当前 App 包，执行清理前会拒绝；请经 App 安装包启动器运行。")
     }
 
+    override suspend fun clearSettings(removeAgent: Boolean): Boolean = withContext(Dispatchers.IO) {
+        var ok = runCatching { removePreferences() }.isSuccess
+        if (removeAgent && runCatching { require(integration().uninstall() is AgentInstallResult.Done) }.isFailure) ok = false
+        ok
+    }
+
     override suspend fun clearLocalData(cache: CacheStore, removeAgent: Boolean): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             cache.clearAll()

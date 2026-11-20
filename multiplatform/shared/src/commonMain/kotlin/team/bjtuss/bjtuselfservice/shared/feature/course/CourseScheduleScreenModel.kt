@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.course
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -268,8 +271,9 @@ class CourseScheduleScreenModel(
     },
     /** 拿到当前学期校历后回调，供离线读取方（AI Agent 命令行）换算日期；写入方自行去重。 */
     private val onCurrentAcademicWeeks: ((List<OccupancyWeekDate>) -> Unit)? = null,
+    private val accountWork: AccountWork? = null,
 ) {
-    private val mutableState = MutableStateFlow(
+    private val mutableState = accountWork.accountState(
         CourseScheduleUiState(
             todayDate = todayProvider(),
             // 没有校历源时不存在“待确认”状态，避免首页一直停在加载占位。
@@ -296,7 +300,9 @@ class CourseScheduleScreenModel(
      * @param refreshFromNetwork false：只读缓存（页面打开即可）；true：登录成功后的自动同步（可重试）。
      * 两阶段可分别调用，且顺序无关：先缓存后网络，或直接网络（内部仍会先灌缓存）。
      */
-    suspend fun initialize(refreshFromNetwork: Boolean = true) {
+    suspend fun initialize(refreshFromNetwork: Boolean = true) = accountWork.inAccount { initializeInAccount(refreshFromNetwork = refreshFromNetwork) }
+
+    private suspend fun initializeInAccount(refreshFromNetwork: Boolean = true) {
         if (!cacheLoaded) {
             cacheLoaded = true
             val cached = runCatching(repository::load).getOrNull()
@@ -331,7 +337,9 @@ class CourseScheduleScreenModel(
     /**
      * 手动刷新：单次请求。自动同步请用 [refreshWithRetry] 或 [initialize]。
      */
-    suspend fun refresh() {
+    suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
+
+    private suspend fun refreshInAccount() {
         if (refreshInFlight) return
         refreshInFlight = true
         val before = mutableState.value
@@ -372,6 +380,11 @@ class CourseScheduleScreenModel(
      * 用于登录后自动同步：中间失败不长期停留，最后一次失败才保留 failure 横幅。
      */
     suspend fun refreshWithRetry(
+        maxAttempts: Int = AUTO_SYNC_MAX_ATTEMPTS,
+        delayMillis: Long = AUTO_SYNC_RETRY_DELAY_MILLIS,
+    ) = accountWork.inAccount { refreshWithRetryInAccount(maxAttempts = maxAttempts, delayMillis = delayMillis) }
+
+    private suspend fun refreshWithRetryInAccount(
         maxAttempts: Int = AUTO_SYNC_MAX_ATTEMPTS,
         delayMillis: Long = AUTO_SYNC_RETRY_DELAY_MILLIS,
     ) {
@@ -532,7 +545,9 @@ class CourseScheduleScreenModel(
      * 不再打一次网络。上次失败或从未成功时重新请求；仍然没有当前学期映射则记 [CourseScheduleUiState.calendarFailed]，
      * 方便首页刷新重试，而不是把「课表已有缓存」显示成校历完成。
      */
-    suspend fun ensureCalendarLoaded() {
+    suspend fun ensureCalendarLoaded() = accountWork.inAccount { ensureCalendarLoadedInAccount() }
+
+    private suspend fun ensureCalendarLoadedInAccount() {
         val calendarRepository = calendarRepository ?: return
         if (calendarLoaded && mutableState.value.weekResolved) return
         calendarMutex.withLock {

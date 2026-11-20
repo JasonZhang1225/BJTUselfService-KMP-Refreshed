@@ -19,18 +19,19 @@ internal fun ShellOverlays(
     forcedRouteId: String?,
 ) {
     val session = ui.session
+    val data = rememberShellData(session, ui.sessionRecoveryInProgress, overlays = true)
     val settingsModel = session.settingsModel
-    val settingsState = ui.data.settingsState
+    val settingsState = data.settingsState
     val gradeModel = session.gradeModel
-    val gradeState = ui.data.gradeState
+    val gradeState = data.gradeState
 
     val phyVlabModel = session.phyVlabModel
     val scope = ui.scope
-    val citelState = ui.data.citelState
+    val citelState = data.citelState
     val entryLoggingIn = ui.entryLoggingIn
-    val homeSyncInProgress = ui.data.homeSyncInProgress
-    val homeSyncFailureItems = ui.data.homeSyncFailureItems
-    val homeSyncItems = ui.data.homeSyncItems
+    val homeSyncInProgress = data.homeSyncInProgress
+    val homeSyncFailureItems = data.homeSyncFailureItems
+    val homeSyncItems = data.homeSyncItems
     val navigateToSection: (AppSection) -> Unit = ui.actions::navigateToSection
     val refresh: () -> Unit = ui.actions::refresh
     val openPhyVlabCaptcha: (Boolean) -> Unit = ui.actions::openPhyVlabCaptcha

@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.homework
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -90,8 +93,9 @@ class HomeworkScreenModel(
     private val nowProvider: (() -> LocalDateTime)? = null,
     private val filterStore: HomeworkFilterPreferencesStore? = null,
     private val timeZoneProvider: () -> TimeZone = { timeZone ?: displayTimeZone() },
+    private val accountWork: AccountWork? = null,
 ) {
-    private val mutableState = MutableStateFlow(
+    private val mutableState = accountWork.accountState(
         HomeworkUiState().withCurrentTime(),
     )
     val state: StateFlow<HomeworkUiState> = mutableState.asStateFlow()
@@ -116,7 +120,9 @@ class HomeworkScreenModel(
     /**
      * @param refreshFromNetwork false 只读缓存；true 在登录成功后由 shell 触发自动同步。
      */
-    suspend fun initialize(refreshFromNetwork: Boolean = true) {
+    suspend fun initialize(refreshFromNetwork: Boolean = true) = accountWork.inAccount { initializeInAccount(refreshFromNetwork = refreshFromNetwork) }
+
+    private suspend fun initializeInAccount(refreshFromNetwork: Boolean = true) {
         updateTime()
         if (!cacheLoaded) {
             cacheLoaded = true
@@ -144,7 +150,9 @@ class HomeworkScreenModel(
         }
     }
 
-    suspend fun refresh() {
+    suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
+
+    private suspend fun refreshInAccount() {
         if (!refreshMutex.tryLock()) return
         try {
             performRefresh()
@@ -186,6 +194,11 @@ class HomeworkScreenModel(
      * 用于登录后自动同步：中间失败不长期停留，最后一次失败才保留 failure 横幅。
      */
     suspend fun refreshWithRetry(
+        maxAttempts: Int = HOMEWORK_AUTO_SYNC_MAX_ATTEMPTS,
+        delayMillis: Long = HOMEWORK_AUTO_SYNC_RETRY_DELAY_MILLIS,
+    ) = accountWork.inAccount { refreshWithRetryInAccount(maxAttempts = maxAttempts, delayMillis = delayMillis) }
+
+    private suspend fun refreshWithRetryInAccount(
         maxAttempts: Int = HOMEWORK_AUTO_SYNC_MAX_ATTEMPTS,
         delayMillis: Long = HOMEWORK_AUTO_SYNC_RETRY_DELAY_MILLIS,
     ) {
@@ -335,7 +348,9 @@ class HomeworkScreenModel(
         )
     }
 
-    suspend fun showDetails(homeworkKey: String) {
+    suspend fun showDetails(homeworkKey: String) = accountWork.inAccount { showDetailsInAccount(homeworkKey = homeworkKey) }
+
+    private suspend fun showDetailsInAccount(homeworkKey: String) {
         val item = mutableState.value.homework.firstOrNull { it.stableKey() == homeworkKey } ?: return
         selectHomework(homeworkKey)
         when (val result = repository.loadDetail(item)) {
@@ -375,6 +390,10 @@ class HomeworkScreenModel(
 
     suspend fun downloadTeacherAttachment(
         attachmentId: Int,
+    ): HomeworkOperationResult<FileContent> = accountWork.inAccount { downloadTeacherAttachmentInAccount(attachmentId = attachmentId) }
+
+    private suspend fun downloadTeacherAttachmentInAccount(
+        attachmentId: Int,
     ): HomeworkOperationResult<FileContent> {
         val state = mutableState.value
         val homework = state.selectedHomework
@@ -391,6 +410,10 @@ class HomeworkScreenModel(
 
     suspend fun downloadSubmittedAttachment(
         attachmentId: String,
+    ): HomeworkOperationResult<FileContent> = accountWork.inAccount { downloadSubmittedAttachmentInAccount(attachmentId = attachmentId) }
+
+    private suspend fun downloadSubmittedAttachmentInAccount(
+        attachmentId: String,
     ): HomeworkOperationResult<FileContent> {
         val state = mutableState.value
         val attachment = state.submittedAttachments.firstOrNull { it.id == attachmentId }
@@ -404,6 +427,11 @@ class HomeworkScreenModel(
     }
 
     suspend fun submitHomework(
+        content: String,
+        files: List<FileContent>,
+    ): HomeworkOperationResult<Unit> = accountWork.inAccount { submitHomeworkInAccount(content = content, files = files) }
+
+    private suspend fun submitHomeworkInAccount(
         content: String,
         files: List<FileContent>,
     ): HomeworkOperationResult<Unit> {

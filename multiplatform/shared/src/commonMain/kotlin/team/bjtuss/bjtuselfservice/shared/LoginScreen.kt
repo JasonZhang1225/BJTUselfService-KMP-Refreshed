@@ -39,13 +39,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -140,21 +138,26 @@ import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
-import team.bjtuss.bjtuselfservice.shared.feature.shell.rememberAuthenticatedSession
+import team.bjtuss.bjtuselfservice.shared.runtime.bindAuthenticatedSession
+import androidx.compose.runtime.collectAsState
+import team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryAccess
 import team.bjtuss.bjtuselfservice.shared.files.FileGateway
 import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
-import team.bjtuss.bjtuselfservice.shared.network.createSchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.update.AppUpdateChecker
-import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityCoordinator
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityStore
 import team.bjtuss.bjtuselfservice.shared.security.CredentialRestoreResult
 import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
 import team.bjtuss.bjtuselfservice.shared.webview.clearSchoolWebViewData
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertAction
+import team.bjtuss.bjtuselfservice.shared.runtime.AppRuntime
+import team.bjtuss.bjtuselfservice.shared.runtime.accountCommit
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 
 @Composable
 fun LoginRoute(
+    runtime: AppRuntime,
     platform: PlatformInfo,
     windowClass: WindowClass,
     accountSecurityStore: AccountSecurityStore,
@@ -172,54 +175,70 @@ fun LoginRoute(
     onOpenNativeRoute: (String) -> Unit,
     onOpenExternalUrl: (String) -> Unit,
     onAuthenticatedSessionChanged: (AuthenticatedSession?) -> Unit,
+    playbackRecovery: PlaybackRecoveryAccess? = null,
 ) {
-    val transport = remember {
-        lazy(LazyThreadSafetyMode.NONE) { createSchoolHttpTransport() }
-    }
-    val protocol = remember {
-        lazy(LazyThreadSafetyMode.NONE) {
-            SchoolLoginProtocol(transport.value)
-        }
-    }
-    val securityCoordinator = remember(accountSecurityStore) {
-        AccountSecurityCoordinator(accountSecurityStore)
-    }
-    val scope = rememberCoroutineScope()
-    var state by remember { mutableStateOf<LoginState>(LoginState.SignedOut) }
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var captchaAnswer by remember { mutableStateOf("") }
-    var rememberCredentials by remember {
-        mutableStateOf(securityCoordinator.canStoreCredentials)
-    }
-    var storageReady by remember { mutableStateOf(false) }
-    var logoutCleanupPending by remember { mutableStateOf(false) }
-    var storageMessage by remember { mutableStateOf<String?>(null) }
-    var postLoginStorageFailure by remember { mutableStateOf<String?>(null) }
-    var automationMessage by remember { mutableStateOf<String?>(null) }
-    var manualDialogChallenge by remember { mutableStateOf<CaptchaChallenge?>(null) }
-    var manualDialogMessage by remember { mutableStateOf<String?>(null) }
-    // 静默入场状态：账号之前登录过时，自动登录期间直接用缓存档案渲染主界面。
-    var autoEntryProfile by remember { mutableStateOf<StudentProfile?>(null) }
-    var silentAutoLogin by remember { mutableStateOf(false) }
-    var autoLoginFailureAttempts by remember { mutableStateOf<Int?>(null) }
+    val login = remember(runtime) { runtime.loginContext(accountSecurityStore) }
+    val transport = login.transport
+    val protocol = login.protocol
+    val securityCoordinator = login.securityCoordinator
+    val scope = login.scope
+    var state by login.state
+    var username by login.username
+    var password by login.password
+    var captchaAnswer by login.captchaAnswer
+    var rememberCredentials by login.rememberCredentials
+    var storageReady by login.storageReady
+    var logoutCleanupPending by login.logoutCleanupPending
+    var storageMessage by login.storageMessage
+    var postLoginStorageFailure by login.postLoginStorageFailure
+    var automationMessage by login.automationMessage
+    var manualDialogChallenge by login.manualDialogChallenge
+    var manualDialogMessage by login.manualDialogMessage
+    var autoEntryProfile by login.autoEntryProfile
+    var silentAutoLogin by login.silentAutoLogin
+    var autoLoginFailureAttempts by login.autoLoginFailureAttempts
     val cacheStore = cacheStoreHandle.store
+    val publishSession by rememberUpdatedState(onAuthenticatedSessionChanged)
+    LaunchedEffect(runtime) {
+        runtime.session.collect { publishSession(it) }
+    }
+
+    suspend fun preparePendingCleanup(): Boolean {
+        val ready = runtime.ensureCleanupReady(cacheStoreHandle.state != CacheOpenState.UNAVAILABLE)
+        val report = runtime.cleanupCoordinator.lastReport.value
+        if (!ready) {
+            storageMessage = report?.failureLabels?.joinToString(separator = "、", prefix = "会话已退出，但", postfix = "清除失败。")
+            automationMessage = null
+            state = LoginState.SignedOut
+        } else if (report?.request?.operation in setOf(
+                team.bjtuss.bjtuselfservice.shared.cleanup.CleanupOperation.ALL_LOCAL_DATA,
+                team.bjtuss.bjtuselfservice.shared.cleanup.CleanupOperation.PREPARE_UNINSTALL,
+            ) && report?.localDataCleared == true) {
+            runCatching { cacheStore.preferences() }.getOrNull()?.let { restored ->
+                if (restored != appPreferences) onPreferencesChanged(restored)
+            }
+        }
+        return ready
+    }
 
     suspend fun finishLogin(
         profile: StudentProfile,
         credentials: Credentials,
         persistCredentials: Boolean,
     ): LoginState {
+        currentCoroutineContext().ensureActive()
         val linking = LoginState.LinkingAcademicSystem(profile)
         state = linking
         // 教务关联失败不阻止进入：MIS、邮箱、物理在线等仍可用；课表/成绩/考试保留缓存，
         // 在同步详情里就地显示失败，之后刷新会经 SchoolSessionRecovery 重新关联。
         protocol.value.linkAcademicSystem()
+        currentCoroutineContext().ensureActive()
         val cacheReady = runCatching {
-            cacheStore.claimLegacyAccountData(profile.studentId)
+            accountCommit { cacheStore.claimLegacyAccountData(profile.studentId) }
         }.isSuccess
         // 缓存档案快照：下次冷启动在自动登录完成前先用它渲染主界面。
-        runCatching { cacheStore.saveCachedProfile(profile) }
+        runCatching { accountCommit { cacheStore.saveCachedProfile(profile) } }
+        currentCoroutineContext().ensureActive()
         val stored = if (credentials.isValid) {
             securityCoordinator.persistAfterLogin(
                 credentials = credentials,
@@ -228,6 +247,7 @@ fun LoginRoute(
         } else {
             true
         }
+        currentCoroutineContext().ensureActive()
         postLoginStorageFailure = if (!stored && persistCredentials && credentials.isValid) {
             if (platform.family == PlatformFamily.IOS) {
                 "当前 iOS 安装包无法访问系统 Keychain，登录信息没有保存。请使用已签名的设备或模拟器运行；应用不会改用明文存储。"
@@ -243,6 +263,7 @@ fun LoginRoute(
             persistCredentials && credentials.isValid -> "登录信息已保存到系统安全存储。"
             else -> null
         }
+        login.publishAccount(profile, entryLoggingIn = false, credentials = credentials)
         return LoginState.SignedIn(profile)
     }
 
@@ -252,12 +273,14 @@ fun LoginRoute(
         messageOnSuccess: String? = null,
         failureWithoutCaptcha: LoginFailure = LoginFailure.MALFORMED_RESPONSE,
     ): LoginState {
+        currentCoroutineContext().ensureActive()
         val previousChallenge = manualDialogChallenge
         val result = try {
             protocol.value.requestCaptchaChallenge(credentials.username)
         } catch (_: Exception) {
             ChallengeResult.Failed(LoginFailure.NETWORK)
         }
+        currentCoroutineContext().ensureActive()
         return when (result) {
             is ChallengeResult.SessionActive -> {
                 manualDialogChallenge = null
@@ -292,16 +315,20 @@ fun LoginRoute(
         credentials: Credentials,
         persistCredentials: Boolean,
     ): LoginState {
+        currentCoroutineContext().ensureActive()
+        if (!preparePendingCleanup()) return LoginState.SignedOut
         manualDialogChallenge = null
         manualDialogMessage = null
         captchaAnswer = ""
         state = LoginState.CheckingSession
         automationMessage = "正在检查登录，正在自动登录"
+        val attemptContext = currentCoroutineContext()
         val automaticResult = try {
             AutomaticLoginCoordinator(
                 gateway = protocol.value,
                 captchaRecognizer = captchaRecognizer,
             ).login(credentials) { _, _ ->
+                attemptContext.ensureActive()
                 automationMessage = "正在检查登录状态…"
             }
         } catch (error: CancellationException) {
@@ -309,6 +336,7 @@ fun LoginRoute(
         } catch (_: Exception) {
             null
         }
+        currentCoroutineContext().ensureActive()
         val nextState = when (automaticResult) {
             is AutomaticLoginResult.SessionActive -> finishLogin(
                 profile = automaticResult.profile,
@@ -350,6 +378,7 @@ fun LoginRoute(
             }
         }
         // 静默入场时主界面可见：若用户在登录途中已退出，保留退出状态，不要用登录结果覆盖。
+        currentCoroutineContext().ensureActive()
         val appliedState = if (state is LoginState.SignedOut && nextState !is LoginState.SignedOut) {
             LoginState.SignedOut
         } else {
@@ -381,50 +410,12 @@ fun LoginRoute(
         dismissPlatformKeyboard()
         state = LoginState.CheckingSession
         automationMessage = "正在检查登录，正在自动登录"
-        scope.launch {
+        login.launch {
             performAutomaticLogin(credentials, rememberCredentials)
         }
     }
 
-    LaunchedEffect(securityCoordinator, captchaRecognizer) {
-        val restoredCredentials = when (val restored = securityCoordinator.restore()) {
-            CredentialRestoreResult.Empty,
-            CredentialRestoreResult.Unavailable,
-            -> null
-            CredentialRestoreResult.Failed -> {
-                storageMessage = "无法读取已保存的登录信息，已恢复为手动登录。"
-                null
-            }
-            is CredentialRestoreResult.Restored -> {
-                username = restored.credentials.username
-                password = restored.credentials.password
-                rememberCredentials = true
-                restored.credentials
-            }
-        }
-        when (cacheStoreHandle.state) {
-            CacheOpenState.RECOVERED_AFTER_RESET -> {
-                storageMessage = "本地缓存损坏，已安全重建。"
-            }
-            CacheOpenState.MIGRATED_TO_ENCRYPTED -> {
-                storageMessage = "本地缓存已升级为加密格式，请重新同步离线数据和设置。"
-            }
-            CacheOpenState.UNAVAILABLE -> {
-                storageMessage = "本地数据暂时无法读取，原文件已保留。"
-            }
-            CacheOpenState.OPENED -> Unit
-        }
-        storageReady = true
 
-        if (restoredCredentials != null) {
-            // 这个账号之前登录过：跳过登录页直接进主界面，顶栏先显示“登录中”。
-            autoEntryProfile = runCatching {
-                cacheStore.cachedProfile(restoredCredentials.username)
-            }.getOrNull()
-            silentAutoLogin = autoEntryProfile != null
-            performAutomaticLogin(restoredCredentials, persistCredentials = true)
-        }
-    }
 
     fun submitManualCaptcha(challenge: CaptchaChallenge) {
         if (
@@ -440,9 +431,12 @@ fun LoginRoute(
         }
         manualDialogMessage = null
         state = LoginState.SubmittingCredentials
-        scope.launch {
+        login.launch {
+            if (!preparePendingCleanup()) return@launch
             state = try {
-                when (val result = protocol.value.authenticateMis(credentials, challenge, captchaAnswer.trim())) {
+                val result = protocol.value.authenticateMis(credentials, challenge, captchaAnswer.trim())
+                currentCoroutineContext().ensureActive()
+                when (result) {
                     is AuthenticationResult.Failed -> requestManualChallenge(
                         credentials = credentials,
                         persistCredentials = rememberCredentials,
@@ -481,7 +475,7 @@ fun LoginRoute(
         }
         manualDialogMessage = null
         state = LoginState.CheckingSession
-        scope.launch {
+        login.launch {
             state = requestManualChallenge(
                 credentials = credentials,
                 persistCredentials = rememberCredentials,
@@ -491,8 +485,12 @@ fun LoginRoute(
 
     fun logout(accountScope: String, fullWipe: Boolean = false) {
         if (logoutCleanupPending) return
+        val account = runtime.currentAccount ?: return
+        if (account.accountScope != accountScope.trim()) return
         logoutCleanupPending = true
-        val currentProtocol = if (protocol.isInitialized()) protocol.value else null
+        val authentication = login.stopAuthentication()
+        val previousCleanup = if (fullWipe) runtime.takeCompletedCleanup(account) else null
+        runtime.endAccount(account)
         username = ""
         password = ""
         captchaAnswer = ""
@@ -507,31 +505,13 @@ fun LoginRoute(
         postLoginStorageFailure = null
         state = reduceLoginState(state, LoginEvent.Logout)
         // 退出后桌面小组件不能继续展示上一个账号的课表。
-        team.bjtuss.bjtuselfservice.shared.feature.widget.writeCourseWidgetSnapshot(null)
         scope.launch {
-            // CAS 请求需要当前 Cookie，但不应阻塞本机敏感数据清理；并发执行，
-            // 最后再汇总服务端结果供用户查看。
             try {
-                val serverLogout = async {
-                    runCatching { currentProtocol?.logout() ?: true }.getOrDefault(false)
-                }
-                val webDataCleared = runCatching { clearSchoolWebViewData() }.getOrDefault(false)
-                val secureCleared = runCatching {
-                    if (fullWipe) securityCoordinator.purge() else securityCoordinator.clear()
-                }.getOrDefault(false)
-                val phyVlabSessionCleared = accountScope.isBlank() || runCatching {
-                    securityCoordinator.phyVlabSessionVault(accountScope)?.clear()
-                }.isSuccess
-                val cacheCleared = accountScope.isBlank() || runCatching {
-                    cacheStore.clearAccount(accountScope)
-                }.isSuccess
-                val serverSessionCleared = serverLogout.await()
-                val failures = buildList {
-                    if (!serverSessionCleared) add("学校服务端会话")
-                    if (!webDataCleared) add("网页会话")
-                    if (!secureCleared || !phyVlabSessionCleared) add("系统安全存储")
-                    if (!cacheCleared) add("本地缓存")
-                }
+                authentication.join()
+                val report = previousCleanup ?: runtime.cleanup(account,
+                    if (fullWipe) team.bjtuss.bjtuselfservice.shared.cleanup.CleanupOperation.ALL_LOCAL_DATA
+                    else team.bjtuss.bjtuselfservice.shared.cleanup.CleanupOperation.SIGN_OUT)
+                val failures = report.failureLabels
                 storageMessage = failures.takeIf(List<String>::isNotEmpty)
                     ?.joinToString(separator = "、", prefix = "会话已退出，但", postfix = "清除失败。")
             } finally {
@@ -540,59 +520,115 @@ fun LoginRoute(
         }
     }
 
+    SideEffect {
+        runtime.currentAccount?.rebindCallbacks(
+            onPreferencesChanged = onPreferencesChanged,
+            onLogout = { accountScope -> logout(accountScope) },
+            onPurgeLogout = { accountScope -> logout(accountScope, fullWipe = true) },
+        )
+        login.bindAccountPublisher { profile, entryLoggingIn, credentials ->
+            bindAuthenticatedSession(
+                runtime = runtime,
+                profile = profile,
+                entryLoggingIn = entryLoggingIn,
+                transport = transport.value,
+                loginProtocol = protocol.value,
+                cacheStore = cacheStore,
+                platform = platform,
+                appPreferences = appPreferences,
+                onPreferencesChanged = onPreferencesChanged,
+                securityCoordinator = securityCoordinator,
+                captchaRecognizer = captchaRecognizer,
+                username = credentials.username,
+                password = credentials.password,
+                fileGateway = fileGateway,
+                playbackRecovery = playbackRecovery,
+                directoryGateway = directoryGateway,
+                systemCalendarGateway = systemCalendarGateway,
+                onLogout = { accountScope -> logout(accountScope) },
+                onPurgeLogout = { accountScope -> logout(accountScope, fullWipe = true) },
+            )
+        }
+        login.startOnce {
+            if (!preparePendingCleanup()) { storageReady = true; return@startOnce }
+            val restored = securityCoordinator.restore()
+            currentCoroutineContext().ensureActive()
+            val restoredCredentials = when (restored) {
+                CredentialRestoreResult.Empty,
+                CredentialRestoreResult.Unavailable,
+                -> null
+                CredentialRestoreResult.Failed -> {
+                    storageMessage = "无法读取已保存的登录信息，已恢复为手动登录。"
+                    null
+                }
+                is CredentialRestoreResult.Restored -> {
+                    username = restored.credentials.username
+                    password = restored.credentials.password
+                    rememberCredentials = true
+                    restored.credentials
+                }
+            }
+            when (cacheStoreHandle.state) {
+                CacheOpenState.RECOVERED_AFTER_RESET -> {
+                    storageMessage = "本地缓存损坏，已安全重建。"
+                }
+                CacheOpenState.MIGRATED_TO_ENCRYPTED -> {
+                    storageMessage = "本地缓存已升级为加密格式，请重新同步离线数据和设置。"
+                }
+                CacheOpenState.UNAVAILABLE -> {
+                    storageMessage = "本地数据暂时无法读取，原文件已保留。"
+                }
+                CacheOpenState.OPENED -> Unit
+            }
+            storageReady = true
+
+            if (restoredCredentials != null) {
+                // 这个账号之前登录过：跳过登录页直接进主界面，顶栏先显示“登录中”。
+                autoEntryProfile = runCatching {
+                    cacheStore.cachedProfile(restoredCredentials.username)
+                }.getOrNull()
+                silentAutoLogin = autoEntryProfile != null
+                autoEntryProfile?.let { login.publishAccount(it, entryLoggingIn = true, credentials = restoredCredentials) }
+                performAutomaticLogin(restoredCredentials, persistCredentials = true)
+            }
+        }
+    }
+    val runtimeSession by runtime.session.collectAsState()
+
     // 凭据恢复完成前不渲染任何内容：否则静默入场时登录页会先闪一帧。
     if (!storageReady) return
-
-    // 静默入场且自动登录失败：在主界面上弹引导弹窗，确认后回到登录页。
-    val failureAttempts = autoLoginFailureAttempts
-    if (failureAttempts != null && autoEntryProfile != null) {
-        fun returnToLoginAfterAutomaticFailure() {
-            autoLoginFailureAttempts = null
-            autoEntryProfile = null
-            silentAutoLogin = false
-            state = LoginState.SignedOut
-        }
-        AppleAlert(
-            title = "自动登录失败",
-            message = if (failureAttempts > 0) {
-                "自动登录未完成，可能需要验证码、检查账号密码或恢复网络。" +
-                    "为避免重复提交密码，已停止自动登录。\n\n请确认账号密码及网络状态，再到登录页主动登录。"
-            } else {
-                "自动登录时网络连接失败。请回到登录页检查网络后重新登录。"
-            },
-            actions = listOf(AppleAlertAction("返回登录页", onClick = ::returnToLoginAfterAutomaticFailure)),
-            onDismissRequest = ::returnToLoginAfterAutomaticFailure,
-        )
-    }
 
     val signedIn = state as? LoginState.SignedIn
     // 静默入场：自动登录完成前，用缓存档案先把主界面渲染出来。
     val shellProfile = signedIn?.profile ?: autoEntryProfile
-    if (shellProfile != null && protocol.isInitialized()) {
-        val authenticatedSession = rememberAuthenticatedSession(
-            profile = shellProfile,
-            entryLoggingIn = silentAutoLogin && signedIn == null,
-            transport = transport.value,
-            loginProtocol = protocol.value,
-            cacheStore = cacheStore,
-            platform = platform,
-            appPreferences = appPreferences,
-            onPreferencesChanged = onPreferencesChanged,
-            securityCoordinator = securityCoordinator,
-            captchaRecognizer = captchaRecognizer,
-            username = username,
-            password = password,
-            fileGateway = fileGateway,
-            directoryGateway = directoryGateway,
-            systemCalendarGateway = systemCalendarGateway,
-            onLogout = { accountScope -> logout(accountScope) },
-            onPurgeLogout = { accountScope -> logout(accountScope, fullWipe = true) },
-        )
+    if (shellProfile != null && protocol.isInitialized() && runtimeSession != null) {
+        val authenticatedSession = checkNotNull(runtimeSession)
+        // 静默入场且自动登录失败：在主界面上弹引导弹窗，确认后回到登录页。
+        val failureAttempts = autoLoginFailureAttempts
+        if (failureAttempts != null && autoEntryProfile != null) {
+            val failedAccount = checkNotNull(runtime.currentAccount)
+            fun returnToLoginAfterAutomaticFailure() {
+                runtime.endAccount(failedAccount) {
+                    autoLoginFailureAttempts = null
+                    autoEntryProfile = null
+                    silentAutoLogin = false
+                    state = LoginState.SignedOut
+                }
+            }
+            AppleAlert(
+                title = "自动登录失败",
+                message = if (failureAttempts > 0) {
+                    "自动登录未完成，可能需要验证码、检查账号密码或恢复网络。" +
+                        "为避免重复提交密码，已停止自动登录。\n\n请确认账号密码及网络状态，再到登录页主动登录。"
+                } else {
+                    "自动登录时网络连接失败。请回到登录页检查网络后重新登录。"
+                },
+                actions = listOf(AppleAlertAction("返回登录页", onClick = ::returnToLoginAfterAutomaticFailure)),
+                onDismissRequest = ::returnToLoginAfterAutomaticFailure,
+            )
+        }
         SideEffect {
             onAuthenticatedSessionChanged(authenticatedSession)
-        }
-        DisposableEffect(onAuthenticatedSessionChanged) {
-            onDispose { onAuthenticatedSessionChanged(null) }
         }
         if (nativeTabBarEnabled) {
             // M17 原生 tab 壳：一级入口各由宿主的一个独立 Compose 目的地承载。
@@ -645,7 +681,7 @@ fun LoginRoute(
             onPasswordChange = { password = it },
             onRememberCredentialsChange = { enabled ->
                 rememberCredentials = enabled
-                scope.launch {
+                login.launch {
                     if (!securityCoordinator.setRememberCredentials(enabled)) {
                         storageMessage = if (enabled) {
                             "无法更新系统安全存储设置。"

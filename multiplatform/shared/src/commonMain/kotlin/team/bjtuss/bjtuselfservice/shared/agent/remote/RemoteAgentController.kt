@@ -1,5 +1,11 @@
 package team.bjtuss.bjtuselfservice.shared.agent.remote
 
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountCommit
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlin.random.Random
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
@@ -59,6 +65,8 @@ class AppSessionRemoteExecutor(
 ) : RemoteRefreshExecutor {
     private fun readySession(): AuthenticatedSession? =
         sessionProvider()?.takeIf { !it.entryLoggingIn && it.refreshCoordinator?.isClosed == false }
+
+    override fun currentAccountWork() = readySession()?.accountWork
 
     override fun currentAccountScope(): String? = readySession()?.profile?.studentId
 
@@ -189,6 +197,9 @@ class RemoteAgentController(
     private val random: Random = Random.Default,
     secondMillis: Long = 1_000,
 ) {
+    internal var cleanupCoordinator = team.bjtuss.bjtuselfservice.shared.cleanup.AccountCleanupCoordinator()
+    val cleanupReport get() = cleanupCoordinator.lastReport
+
     private val configState = MutableStateFlow(store.loadConfig())
     val config: StateFlow<RemoteAgentConfig> = configState.asStateFlow()
 
@@ -222,15 +233,25 @@ class RemoteAgentController(
     fun followAppRefreshes(sessions: Flow<AuthenticatedSession?>) {
         if (mobile) return
         scope.launch {
-            sessions.flatMapLatest { it?.refreshCoordinator?.completed ?: emptyFlow() }.collect { report ->
+            sessions.flatMapLatest { session ->
+                session?.refreshCoordinator?.completed?.map { session.accountWork to it } ?: emptyFlow()
+            }.collect { (owner, report) ->
                 if (report.origin == RefreshOrigin.APP && !configState.value.backgroundSync) {
-                    runCatching { uploadAfterRefresh(report) }
+                    runCatching { uploadOwnedReport(owner, report) }
                 }
             }
         }
     }
 
     /** App 完成一次刷新后调用：用这次刷新的逐源结果生成并上传快照（未开启或未配对时直接跳过）。 */
+    internal suspend fun uploadOwnedReport(owner: team.bjtuss.bjtuselfservice.shared.runtime.AccountWork?, report: RefreshReport) {
+        try {
+            owner.inAccount { uploadAfterRefresh(report) }
+        } catch (cancelled: CancellationException) {
+            if (owner == null || owner.isActive || !currentCoroutineContext().isActive) throw cancelled
+        }
+    }
+
     suspend fun uploadAfterRefresh(report: RefreshReport): RemoteUploadOutcome =
         runner.runUploadCycle(refreshFirst = false, remote = false, report = report)
 
@@ -244,7 +265,9 @@ class RemoteAgentController(
     }
 
     /** 完整配对信息包含地址、一次性码与 Site 授权；敏感材料只存系统安全存储。 */
-    suspend fun pair(pairingInfo: String, scopes: Set<RemoteScope>, consent: Boolean): String? {
+    suspend fun pair(pairingInfo: String, scopes: Set<RemoteScope>, consent: Boolean): String? = executor.currentAccountWork().inAccount { pairInAccount(pairingInfo = pairingInfo, scopes = scopes, consent = consent) }
+
+    private suspend fun pairInAccount(pairingInfo: String, scopes: Set<RemoteScope>, consent: Boolean): String? {
         val info = runCatching { parseRemotePairingInfo(pairingInfo.trim(), clock()) }.getOrNull()
             ?: return "配对信息无效或已过期，请登录 Site 重新生成并复制完整长码（bjtuss-pair-v1:…），无需填写地址。"
         val url = info.siteUrl
@@ -265,9 +288,11 @@ class RemoteAgentController(
                 scopes = wireScopes,
                 deviceKind = host?.deviceKind ?: RemoteDeviceKind.DESKTOP,
             ))
+            currentCoroutineContext().ensureActive()
             when (response) {
                 is RemoteCall.Ok -> {
                     secrets.saveDeviceToken(response.value.deviceToken)
+                    accountCommit {
                     store.resetBinding()
                     cachedClient = null
                     update {
@@ -275,6 +300,7 @@ class RemoteAgentController(
                             accountScope = account, scopes = wireScopes, consentAtEpochSeconds = clock(), scopesRevision = response.value.scopesRevision)
                     }
                     runner.clearStopped()
+                    }
                     null
                 }
                 is RemoteCall.Failure -> when (response.code) {
@@ -294,12 +320,36 @@ class RemoteAgentController(
     }
 
     /** 解除绑定：只清本机令牌与绑定；云端数据请在 Site 上撤销设备/清除（电脑离线时云端无法即时得知）。 */
-    suspend fun unpair(): Boolean {
-        update { it.unpaired() }
-        store.resetBinding()
+    suspend fun unpair(): Boolean = executor.currentAccountWork().inAccount { unpairInAccount() }
+
+    private suspend fun unpairInAccount(): Boolean {
+        val report = cleanupCoordinator.execute(
+            team.bjtuss.bjtuselfservice.shared.cleanup.CleanupRequest(team.bjtuss.bjtuselfservice.shared.cleanup.CleanupOperation.REMOTE_UNPAIR, configState.value.accountScope ?: "remote-agent"),
+            mapOf(
+                team.bjtuss.bjtuselfservice.shared.cleanup.CleanupStep.STOP_WORK to { stopCleanupWork(); true },
+                team.bjtuss.bjtuselfservice.shared.cleanup.CleanupStep.REMOTE_TOKENS to { clearCleanupSecrets(); true },
+                team.bjtuss.bjtuselfservice.shared.cleanup.CleanupStep.REMOTE_RECORDS to { clearCleanupRecords(); true },
+            ),
+            team.bjtuss.bjtuselfservice.shared.cleanup.CleanupContext(
+                team.bjtuss.bjtuselfservice.shared.cleanup.CleanupInventory(ownsRemote = true, remoteBindingId = configState.value.accountBindingId)),
+        )
+        return report.succeeded
+    }
+
+    fun ownsCleanup(accountScope: String, all: Boolean): Boolean = all || configState.value.accountScope.let { it == null || it == accountScope }
+    suspend fun stopCleanupWork() = runner.stopAndJoin()
+    suspend fun clearCleanupSecrets() = secrets.clear()
+
+    internal fun clearCleanupRecords(cache: CacheStore? = null, all: Boolean = false) {
+        val target = cache?.let(::RemoteAgentStore) ?: store
+        val next = if (all) RemoteAgentConfig() else configState.value.withoutAccountData()
+        target.resetBinding()
+        target.saveConfig(next)
+        configState.value = next
         cachedClient = null
-        runner.clearStopped()
-        return runCatching { secrets.clear() }.isSuccess
+        runner.resetAfterCleanup()
+        // Remain idle while unpaired, but keep the application's scheduler available for a later pairing.
+        start()
     }
 
     fun setEnabled(enabled: Boolean) {
@@ -316,10 +366,14 @@ class RemoteAgentController(
     }
 
     /** 改上云范围：本地立即生效，并尽快告诉 Site（离线时等下一次快照替换）。 */
-    suspend fun setScopes(scopes: Set<RemoteScope>): String? {
+    suspend fun setScopes(scopes: Set<RemoteScope>): String? = executor.currentAccountWork().inAccount { setScopesInAccount(scopes = scopes) }
+
+    private suspend fun setScopesInAccount(scopes: Set<RemoteScope>): String? {
         if (scopes.isEmpty()) return "至少保留一类数据；不想上传请关闭远程同步。"
-        val next = update { it.copy(scopes = RemoteScope.entries.filter { s -> s in scopes }.map { s -> s.wire }, scopesRevision = it.scopesRevision + 1) }
-        store.savePending(null)
+        val next = accountCommit {
+            update { it.copy(scopes = RemoteScope.entries.filter { s -> s in scopes }.map { s -> s.wire }, scopesRevision = it.scopesRevision + 1) }
+                .also { store.savePending(null) }
+        }
         val api = client() ?: return null
         return when (val result = api.putScopes(next.scopes, next.scopesRevision)) {
             is RemoteCall.Ok -> null

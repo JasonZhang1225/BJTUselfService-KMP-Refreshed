@@ -6,6 +6,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
@@ -20,6 +23,37 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 
 class AppRefreshCoordinatorTest {
+    @Test
+    fun stopAndJoinWaitsForSourceCancellationFinalizer() = runBlocking<Unit> {
+        val entered = CompletableDeferred<Unit>()
+        val finalizing = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val adapter = object : RefreshSourceAdapter {
+            override val source = RefreshSource.COURSES
+            override val usesSchoolSession = false
+            override suspend fun availability() = RefreshAvailability.ENABLED
+            override suspend fun refresh() {
+                try { entered.complete(Unit); awaitCancellation() }
+                finally { withContext(NonCancellable) { finalizing.complete(Unit); finish.await() } }
+            }
+            override fun sessionExpired() = false
+            override fun outcome() = RefreshSourceResult(source, RefreshStatus.SUCCESS)
+            override fun fetchedAtEpochSeconds(): Long? = null
+        }
+        val coordinator = coordinator(listOf(adapter))
+        val refresh = async { coordinator.refresh(RefreshRequest(sources = setOf(RefreshSource.COURSES), origin = RefreshOrigin.APP)) }
+        try {
+            entered.await()
+            val stopped = async { coordinator.stopAndJoin() }
+            finalizing.await()
+            assertFalse(stopped.isCompleted)
+            finish.complete(Unit)
+            stopped.await()
+            assertTrue(coordinator.isClosed)
+            assertEquals(RefreshStatus.FAILED, refresh.await().results.single().status)
+        } finally { finish.complete(Unit); coordinator.stopAndJoin(); refresh.await() }
+    }
+
     private class FakeAdapter(
         override val source: RefreshSource,
         override val usesSchoolSession: Boolean = true,

@@ -7,6 +7,16 @@ import UIKit
 // 或 M10 回退壳。壳控制器只做宿主装配，不画业务界面。
 
 private final class LiquidGlassShellController: UIViewController {
+    private let runtimeOwner: IosAppRuntimeOwner
+
+    init(runtimeOwner: IosAppRuntimeOwner) {
+        self.runtimeOwner = runtimeOwner
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
     private var authenticatedSession: AuthenticatedSession?
     private var tabController: (UIViewController & NativeTabsHosting)?
     private var appActiveObserver: NSObjectProtocol?
@@ -15,7 +25,7 @@ private final class LiquidGlassShellController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = UIColor(appBackgroundColor)
-        let root = MainViewControllerKt.NativeMainViewController(
+        let root = runtimeOwner.mainViewController(
             onAuthenticatedSessionChanged: { [weak self] session in
                 self?.handle(session: session)
             },
@@ -83,10 +93,20 @@ private final class LiquidGlassShellController: UIViewController {
 #if DEBUG
 /// Uses the production navigation containers with an isolated, synthetic session.
 private final class OfflineLayoutShellController: UIViewController {
+    private let runtimeOwner: IosAppRuntimeOwner
+
+    init(runtimeOwner: IosAppRuntimeOwner) {
+        self.runtimeOwner = runtimeOwner
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
     private var bootstrap: UIViewController?
     override func viewDidLoad() {
         super.viewDidLoad()
-        let bootstrap = OfflineLayoutProbeKt.OfflineLayoutBootstrap { [weak self] session in
+        let bootstrap = OfflineLayoutProbeKt.OfflineLayoutBootstrap(owner: runtimeOwner) { [weak self] session in
             DispatchQueue.main.async { self?.show(session) }
         }
         self.bootstrap = bootstrap
@@ -117,10 +137,12 @@ private final class OfflineLayoutShellController: UIViewController {
 #endif
 
 struct ComposeView: UIViewControllerRepresentable {
+    let runtimeOwner: IosAppRuntimeOwner
+
     func makeUIViewController(context: Context) -> UIViewController {
 #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--layout-smoke") {
-            return OfflineLayoutShellController()
+            return OfflineLayoutShellController(runtimeOwner: runtimeOwner)
         }
         if ProcessInfo.processInfo.arguments.contains("--courseware-picker-smoke") {
             return CoursewarePickerProbeViewControllerKt.CoursewarePickerProbeViewController()
@@ -146,9 +168,9 @@ struct ComposeView: UIViewControllerRepresentable {
         // 只接管 iPhone 紧凑端：iPad/宽窗口继续走共享三栏 NavDisplay 路径。用 idiom 而不是
         // size class 判定，是因为 size class 会随旋转变化，而壳层只能在装配时选一次。
         if #available(iOS 26.0, *), UIDevice.current.userInterfaceIdiom == .phone {
-            return LiquidGlassShellController()
+            return LiquidGlassShellController(runtimeOwner: runtimeOwner)
         }
-        return NativeNavigationController()
+        return NativeNavigationController(runtimeOwner: runtimeOwner)
     }
 
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
@@ -156,12 +178,14 @@ struct ComposeView: UIViewControllerRepresentable {
 }
 
 struct ContentView: View {
+    let runtimeOwner: IosAppRuntimeOwner
+
     var body: some View {
         ZStack {
             // Keep the hosting surface continuous behind every system area.
             appBackgroundColor
                 .ignoresSafeArea()
-            ComposeView()
+            ComposeView(runtimeOwner: runtimeOwner)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 // Keep the Compose host at a stable full-screen size on every edge. A pushed
                 // destination must also cover the status-bar region, or a native push transition

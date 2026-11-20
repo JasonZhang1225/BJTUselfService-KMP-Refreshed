@@ -73,7 +73,7 @@ class PlaybackVisualTestActivity : ComponentActivity() {
         }
         // 使用生产保存面板、可持久化 URI、任务存储和前台服务；仅标题是虚构数据。
         val gateway = AndroidFileGateway(this)
-        val manager = (gateway.playbackRecovery as AndroidPlaybackRecovery).managerFor("visual-test", testTransport)
+        val manager = AndroidPlaybackRecovery(applicationContext).managerFor("visual-test", testTransport)
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2102)
         }

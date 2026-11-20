@@ -1,5 +1,9 @@
 package team.bjtuss.bjtuselfservice.shared.feature.shell
 
+import androidx.compose.runtime.collectAsState
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import androidx.compose.runtime.getValue
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.LinearEasing
@@ -48,13 +52,17 @@ internal fun ShellLayout(ui: ShellUi) {
     val backStack = navigator.backStack
     val currentRoute = navigator.currentRoute
     val section = navigator.sectionFor(currentRoute)
-    val compactBottomNavSections = remember(ui.data.settingsState.preferences) {
-        bottomNavSections(ui.data.settingsState.preferences)
-    }
-    val phyVlabEnabled = ui.data.phyVlabEnabled
+    val preferences by remember(session) { session.settingsModel.state.map { it.preferences }.distinctUntilChanged() }
+        .collectAsState(initial = session.settingsModel.state.value.preferences)
+    val compactBottomNavSections = remember(preferences) { bottomNavSections(preferences) }
+    val phyVlabEnabled = preferences.isPhyVlabEnabled
     val compactBottomBarOverlayPadding = ui.compactBottomBarOverlayPadding
     val useNativeSecondaryRoutes = navigator.useNativeSecondaryRoutes
-    val mailboxReady = ui.data.mailboxReadyState
+    val mailboxState = if (navigator.sectionFor(currentRoute) == AppSection.MAILBOX) {
+        val state by session.mailboxModel.state.collectAsState()
+        state
+    } else null
+    val mailboxReady = mailboxState as? team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxUiState.Ready
     val mailboxInlineDetail = mailboxBackTarget(
         useNativeSecondaryRoutes = useNativeSecondaryRoutes,
         hasSelectedMessage = mailboxReady?.selectedMessage != null,

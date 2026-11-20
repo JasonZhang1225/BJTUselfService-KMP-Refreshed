@@ -1,5 +1,9 @@
 package team.bjtuss.bjtuselfservice.shared.auth
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
+
 /**
  * 在业务请求发现 CAS/教务会话过期时，复用当前进程中的凭据恢复学校会话。
  *
@@ -11,8 +15,11 @@ class SchoolSessionRecovery(
     private val protocol: SchoolLoginProtocol,
     private val captchaRecognizer: CaptchaRecognizer,
     private val credentialsProvider: () -> Credentials?,
+    private val accountWork: AccountWork? = null,
 ) {
-    suspend fun attempt(): Boolean {
+    suspend fun attempt(): Boolean = accountWork.inAccount { attemptInAccount() }
+
+    private suspend fun attemptInAccount(): Boolean {
         val credentials = credentialsProvider()?.takeIf { it.isValid } ?: return false
         val gateway = object : LoginAutomationGateway {
             override suspend fun requestCaptchaChallenge(studentId: String): ChallengeResult =

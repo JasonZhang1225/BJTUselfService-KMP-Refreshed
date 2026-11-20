@@ -15,6 +15,7 @@ internal const val LEGACY_PRIMARY_ACCOUNT = "primary"
 internal object MacOsSecretKeys {
     const val CREDENTIALS = "credentials"
     const val CACHE_KEY = "cache-key"
+    const val CLEANUP_JOURNAL = "cleanup-journal"
 
     fun physicsLab(accountScope: String): String = "physicslab:$accountScope"
     fun citel(accountScope: String): String = "citel:$accountScope"
@@ -60,10 +61,10 @@ internal class MacOsSecretBag(
         Unit
     }
 
-    /** Live settings wipe keeps only the encryption key for the already-open empty database. */
+    /** Live settings wipe retains the open database key and unfinished cleanup intent. */
     fun clearPersonalData() = synchronized(lock) {
         val map = loadMap()
-        persist(map.filterKeys { it == MacOsSecretKeys.CACHE_KEY })
+        persist(map.filterKeys { it == MacOsSecretKeys.CACHE_KEY || it == MacOsSecretKeys.CLEANUP_JOURNAL })
     }
 
     fun clearAll() = synchronized(lock) {

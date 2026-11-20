@@ -188,10 +188,17 @@ class PlaybackTaskManager(
     private val cleaning = MutableStateFlow<Set<String>>(emptySet())
     private val recordVersion = MutableStateFlow(0L)
     private val persistenceMutex = Mutex()
+    private val cleanupMutex = Mutex()
     private val initialized = CompletableDeferred<Unit>()
     private val workRoot get() = taskStore?.workRoot ?: MediaWorkDirectory.root
     private var persistenceAvailable = true
     private var historyLoaded = false
+
+    internal fun cleanupInventory(): Pair<Set<String>, Set<String>> {
+        val ids = tasks.value.map { it.id }.filter { it.matches(Regex("t[0-9]+-[0-9]+")) }.toSet()
+        val destinations = requests.value.values.flatMap { request -> request.destinations.mapNotNull { it.recoveryToken } }.toSet()
+        return ids to destinations
+    }
 
     val canComposite: Boolean get() = compositor().isAvailable
 
@@ -336,6 +343,45 @@ class PlaybackTaskManager(
         persistNow()
     }
 
+    /** Quiesces execution before deletion. Pause preserves selected destinations and work files. */
+    suspend fun stopAccountWorkAndJoin() = withContext(NonCancellable) {
+        initialized.await()
+        val running = jobs.value
+        running.forEach { (id, job) -> stops.update { it + (id to Stop.PAUSE) }; job.cancel() }
+        running.values.forEach { it.join() }
+    }
+
+    /** Deletes application history/work only; committed user exports are never aborted. */
+    suspend fun clearAccountData(allLocalData: Boolean = false): Boolean = withContext(NonCancellable) {
+        initialized.await()
+        if (!persistenceAvailable) return@withContext false
+        stopAccountWorkAndJoin()
+        var ok = true
+        for (task in mutableTasks.value.toList()) {
+            if (!cleanupAndUpdate(task.id, removeWhenDone = true, preserveExports = true)) ok = false
+        }
+        if (runCatching { persistNow() }.isFailure) ok = false
+        if (ok && mutableTasks.value.isEmpty()) {
+            if (taskStore != null || allLocalData) {
+                if (runCatching { MediaWorkDirectory.purgeStale(workRoot = workRoot) }.isFailure) ok = false
+            } else if (kotlinx.io.files.SystemFileSystem.exists(workRoot) && kotlinx.io.files.SystemFileSystem.list(workRoot).isNotEmpty()) {
+                // A legacy shared root cannot prove which account owns an unrecorded directory.
+                ok = false
+            }
+        }
+        ok && mutableTasks.value.isEmpty()
+    }
+
+    suspend fun clearStaleTemporaryFiles(): Boolean {
+        initialized.await()
+        if (!persistenceAvailable) return false
+        return runCatching {
+            val retained = requests.value.keys + storedRequests.value.keys
+            mutableTasks.value.filter { it.phase in setOf(PlaybackTaskPhase.DONE, PlaybackTaskPhase.CANCELLED) &&
+                !it.cleanupPending && it.id !in retained }.forEach { MediaWorkDirectory.forTask(it.id, workRoot).deleteAll() }
+        }.isSuccess
+    }
+
     /** 暂停后保留输入；非渐进合成从头重新编码，渐进合成从已提交分段恢复。 */
     fun pause(id: String) {
         val task = tasks.value.firstOrNull { it.id == id } ?: return
@@ -407,22 +453,26 @@ class PlaybackTaskManager(
         registered.complete(Unit)
     }
 
-    private suspend fun discard(id: String, request: Request): Boolean = withContext(NonCancellable) {
+    private suspend fun discard(id: String, request: Request, preserveExports: Boolean = false): Boolean = withContext(NonCancellable) {
         var success = true
         request.destinations.forEachIndexed { index, destination ->
-            if (!request.committed[index] && runCatching { destination.abortForCleanup() }.isFailure) success = false
+            if (!request.committed[index] && runCatching {
+                if (!preserveExports || (!destination.recoveredOutputMayBeCommitted && !destination.isRecoveryCommitAmbiguous())) destination.abortForCleanup()
+            }.isFailure) success = false
         }
         if (runCatching { MediaWorkDirectory.forTask(id, workRoot).deleteAll() }.isFailure) success = false
         if (success) MediaWorkDirectory.markFinished(id)
         success
     }
 
-    private suspend fun discardStored(id: String, task: PlaybackTask, saved: StoredPlaybackRequest?): Boolean = withContext(NonCancellable) {
+    private suspend fun discardStored(id: String, task: PlaybackTask, saved: StoredPlaybackRequest?, preserveExports: Boolean = false): Boolean = withContext(NonCancellable) {
         var success = true
         saved?.destinations?.forEachIndexed { index, token ->
             if (task.phase != PlaybackTaskPhase.DONE && saved.committed.getOrNull(index) != true) {
                 val destination = runCatching { token?.let { restoreDestination?.invoke(it, task.outputs.getOrNull(index) ?: "") } }.getOrNull()
-                if (destination !is StreamingDestinationResult.Opened || runCatching { destination.destination.abortForCleanup() }.isFailure) success = false
+                if (destination !is StreamingDestinationResult.Opened || runCatching {
+                    if (!preserveExports || (!destination.destination.recoveredOutputMayBeCommitted && !destination.destination.isRecoveryCommitAmbiguous())) destination.destination.abortForCleanup()
+                }.isFailure) success = false
             }
         }
         if (runCatching { MediaWorkDirectory.forTask(id, workRoot).deleteAll() }.isFailure) success = false
@@ -438,14 +488,14 @@ class PlaybackTaskManager(
         }
     }
 
-    private suspend fun cleanupAndUpdate(id: String, removeWhenDone: Boolean): Boolean = withContext(NonCancellable) {
+    private suspend fun cleanupAndUpdate(id: String, removeWhenDone: Boolean, preserveExports: Boolean = false): Boolean = withContext(NonCancellable) { cleanupMutex.withLock {
         val task = tasks.value.firstOrNull { it.id == id } ?: return@withContext true
         val request = requests.value[id]
         if (request != null) rememberRequest(id, request)
         update(id) { it.copy(cleanupPending = true, canResume = false, message = "正在清理临时文件。") }
         // 删除前持久化意图和所有权；否则异常退出后无法安全定位目标目录中的临时文件。
         val recorded = runCatching { persistNow() }.isSuccess
-        val cleaned = recorded && if (request != null) discard(id, request) else discardStored(id, task, storedRequests.value[id])
+        val cleaned = recorded && if (request != null) discard(id, request, preserveExports) else discardStored(id, task, storedRequests.value[id], preserveExports)
         if (cleaned) {
             requests.update { it - id }
             storedRequests.update { it - id }
@@ -463,7 +513,7 @@ class PlaybackTaskManager(
             message = "部分临时文件或清理记录未能处理，请检查磁盘空间和权限后点“移除”重试。") }
         runCatching { persistNow() }
         cleaned
-    }
+    } }
 
     private suspend fun run(
         id: String,

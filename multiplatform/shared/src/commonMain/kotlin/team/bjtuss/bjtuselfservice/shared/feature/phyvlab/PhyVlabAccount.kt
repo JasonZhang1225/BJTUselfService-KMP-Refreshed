@@ -1,5 +1,9 @@
 package team.bjtuss.bjtuselfservice.shared.feature.phyvlab
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
+
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,17 +47,20 @@ class PhyVlabAccountModel(
     private val scope: String,
     private val cache: CacheStore,
     private val vault: CredentialVault?,
-    /** 用给定账号登录物理在线；由会话协议提供，校验成功即建立了 MoodleSession。 */
     private val rememberSession: suspend (String) -> Unit = {},
     private val clearSession: suspend () -> Unit = {},
+    private val accountWork: AccountWork? = null,
+    /** 用给定账号登录物理在线；由会话协议提供，校验成功即建立了 MoodleSession。 */
     private val signIn: suspend (Credentials) -> PhyVlabSessionResult,
 ) {
-    private val mutableState = MutableStateFlow(PhyVlabAccountState(username = scope))
+    private val mutableState = accountWork.accountState(PhyVlabAccountState(username = scope))
     val state = mutableState.asStateFlow()
     private val mutex = Mutex()
     private var initialized = false
 
-    suspend fun initialize() = mutex.withLock {
+    suspend fun initialize() = accountWork.inAccount { initializeInAccount() }
+
+    private suspend fun initializeInAccount() = mutex.withLock {
         if (initialized) return@withLock
         val configured = cache.metadata(scope, CONFIGURED_KEY) != "false"
         val creds = try {
@@ -75,7 +82,9 @@ class PhyVlabAccountModel(
     }
 
     /** 会话协议在 MoodleSession 缺失时读取；未配置或读取失败返回 null。 */
-    suspend fun credentials(): Credentials? {
+    suspend fun credentials(): Credentials? = accountWork.inAccount { credentialsInAccount() }
+
+    private suspend fun credentialsInAccount(): Credentials? {
         initialize()
         if (!state.value.configured) return null
         return try {
@@ -113,10 +122,14 @@ class PhyVlabAccountModel(
     }
 
     suspend fun configure(username: String, password: String): Boolean =
-        configureWithOutcome(username, password, showCaptchaError = true) == ConfigureOutcome.Saved
+        accountWork.inAccount {
+            configureWithOutcome(username, password, showCaptchaError = true) == ConfigureOutcome.Saved
+        }
 
     internal suspend fun configureOrRequireCaptcha(username: String, password: String): ConfigureOutcome =
-        configureWithOutcome(username, password, showCaptchaError = false)
+        accountWork.inAccount {
+            configureWithOutcome(username, password, showCaptchaError = false)
+        }
 
     private suspend fun configureWithOutcome(
         username: String,
@@ -151,7 +164,7 @@ class PhyVlabAccountModel(
     }
 
     internal suspend fun saveVerifiedConfiguration(creds: Credentials): Boolean =
-        saveConfiguration(creds) {}
+        accountWork.inAccount { saveConfiguration(creds) {} }
 
     internal fun showError(message: String) {
         mutableState.value = state.value.copy(failed = true, message = message)
@@ -195,7 +208,11 @@ class PhyVlabAccountModel(
             }
         }
 
-    internal suspend fun clearSessionForTesting(): Boolean = mutex.withLock {
+    internal suspend fun clearSessionForTesting(): Boolean = accountWork.inAccount {
+        clearTestSessionInAccount()
+    }
+
+    private suspend fun clearTestSessionInAccount(): Boolean = mutex.withLock {
         try {
             clearSession()
             mutableState.value = state.value.copy(
@@ -211,7 +228,11 @@ class PhyVlabAccountModel(
         }
     }
 
-    suspend fun clearConfiguration() {
+    suspend fun clearConfiguration() = accountWork.inAccount {
+        clearConfigurationInAccount()
+    }
+
+    private suspend fun clearConfigurationInAccount() {
         initialize()
         mutex.withLock {
             try {

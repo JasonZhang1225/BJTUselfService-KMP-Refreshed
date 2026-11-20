@@ -51,7 +51,7 @@ fun main(args: Array<String>) {
         true, streams, streams.map { it.kind }, "")
     val recovery = WindowsPlaybackRecovery(File(root, "state"))
     val manager = recovery.retainedManager("ui-test-account")
-    val gateway = object : FileGateway by WindowsFileGateway(recoveryRoot = File(root, "state")) {
+    val gateway = object : FileGateway by WindowsFileGateway() {
         override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
             val target = File(root, "visual-result.mp4")
             val temporary = Files.createTempFile(root.toPath(), ".bjtu-save-", ".tmp")

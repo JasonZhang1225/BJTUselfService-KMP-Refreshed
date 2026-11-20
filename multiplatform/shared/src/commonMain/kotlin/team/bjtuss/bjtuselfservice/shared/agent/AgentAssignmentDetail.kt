@@ -1,5 +1,9 @@
 package team.bjtuss.bjtuselfservice.shared.agent
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
+
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlinx.serialization.Serializable
@@ -94,6 +98,7 @@ class AgentAssignmentDetailService(
     private val homework: HomeworkRepository,
     private val backends: AgentDetailBackends,
     private val now: () -> Long = { Clock.System.now().epochSeconds },
+    private val accountWork: AccountWork? = null,
 ) {
     fun cached(): Map<String, AgentAssignmentDetail> = loadAgentAssignmentDetails(cache, account)
 
@@ -108,7 +113,9 @@ class AgentAssignmentDetailService(
     }
 
     /** 联网取一项详情并写缓存；失败抛 [AgentDetailException]，旧缓存保留。 */
-    suspend fun refresh(id: String, live: Boolean = true): AgentAssignmentDetail {
+    suspend fun refresh(id: String, live: Boolean = true): AgentAssignmentDetail = accountWork.inAccount { refreshInAccount(id = id, live = live) }
+
+    private suspend fun refreshInAccount(id: String, live: Boolean = true): AgentAssignmentDetail {
         val detail = fetch(id, live)
         val existing = cached()
         save(existing + (id to mergeKnownAttachmentSizes(existing[id], detail)))
@@ -116,7 +123,9 @@ class AgentAssignmentDetailService(
     }
 
     /** 同步时补未交作业的详情：单项失败不影响其他项，也不影响快照上传。 */
-    suspend fun refreshPending(ids: List<String>): Int {
+    suspend fun refreshPending(ids: List<String>): Int = accountWork.inAccount { refreshPendingInAccount(ids = ids) }
+
+    private suspend fun refreshPendingInAccount(ids: List<String>): Int {
         val existing = cached().toMutableMap()
         val cutoff = now() - DETAIL_FRESH_SECONDS
         val retryAfter = runCatching { detailJson.decodeFromString<Map<String, Long>>(cache.metadata(account, DETAIL_RETRY_KEY).orEmpty()) }.getOrDefault(emptyMap()).toMutableMap()
@@ -152,7 +161,9 @@ class AgentAssignmentDetailService(
         if (kept.size != existing.size) save(kept)
     }
 
-    suspend fun attachment(id: String, attachmentId: String): FileContent {
+    suspend fun attachment(id: String, attachmentId: String): FileContent = accountWork.inAccount { attachmentInAccount(id = id, attachmentId = attachmentId) }
+
+    private suspend fun attachmentInAccount(id: String, attachmentId: String): FileContent {
         val (source, number) = splitId(id)
         return when (source) {
             "course_platform" -> {

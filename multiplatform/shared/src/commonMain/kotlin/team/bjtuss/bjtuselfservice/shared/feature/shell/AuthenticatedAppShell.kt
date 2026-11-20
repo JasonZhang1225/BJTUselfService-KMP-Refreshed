@@ -3,15 +3,17 @@ package team.bjtuss.bjtuselfservice.shared.feature.shell
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.material3.ExperimentalMaterial3Api
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import team.bjtuss.bjtuselfservice.shared.PlatformInfo
@@ -52,22 +54,27 @@ fun AuthenticatedAppShell(
 ) {
     val hostState = nativeHostState ?: remember { NativeHostState() }
     val settingsModel = session.settingsModel
-    val settingsState by settingsModel.state.collectAsState()
+    val preferences by remember(session) { settingsModel.state.map { it.preferences }.distinctUntilChanged() }
+        .collectAsState(initial = settingsModel.state.value.preferences)
     val entryLoggingIn = session.entryLoggingIn
-    var sessionRecoveryInProgress by remember(session) { mutableStateOf(false) }
+    val accountRecoveryInProgress by (session.refreshService?.recoveryInProgress
+        ?: remember(session) { kotlinx.coroutines.flow.MutableStateFlow(false) }).collectAsState()
+    val globalRecoveryInProgress by (session.refreshCoordinator?.recoveryInProgress
+        ?: remember(session) { kotlinx.coroutines.flow.MutableStateFlow(false) }).collectAsState()
+    val sessionRecoveryInProgress = accountRecoveryInProgress || globalRecoveryInProgress
     val scope = rememberCoroutineScope()
     val view = rememberShellViewState(session)
 
-    // 导航、刷新、账号任务、页面数据彼此解耦；壳层只把装配结果交给布局。
+    val tabItemsChanged by androidx.compose.runtime.rememberUpdatedState(onNativeTabItemsChanged)
+
+    // 导航栈与平台回调属于当前宿主；旋转/展开只更新环境，不重建返回栈。
     val navigator = rememberShellNavigator(
         platform, scope, forcedRouteId, onOpenNativeRoute, onSelectNativeTab, onCloseNativeRoute,
         nativeNavigationEnabled, nativeTabBarEnabled, windowClass,
     )
-    val refresher = remember(session, scope) {
-        ShellRefresher(session, scope) { sessionRecoveryInProgress = it }
-    }
+    val refresher = remember(session) { ShellRefresher(session) }
     val compactBottomBarOverlayPadding = if (nativeTabBarEnabled) {
-        // 底栏换成系统玻璃 TabBar，真实高度由宿主在布局时上报。
+        // 底栏换成系统玻璃 TabBar：宿主是全出血的，真实高度由宿主写进 hostState。
         maxOf(
             WindowInsets.bottomSystemBars.asPaddingValues().calculateBottomPadding(),
             hostState.glassTabBarBottomInsetDp.dp,
@@ -77,11 +84,9 @@ fun AuthenticatedAppShell(
     } else {
         80.dp + WindowInsets.bottomSystemBars.asPaddingValues().calculateBottomPadding()
     }
-    val data = rememberShellData(session, sessionRecoveryInProgress)
-    val latestData by rememberUpdatedState(data)
     val actions = remember(navigator, refresher, view) {
         ShellActions(session, navigator, scope, refresher, view = view) {
-            refresher.refresh(navigator.sectionFor(navigator.currentRoute), navigator.currentRoute, latestData)
+            refresher.refresh(navigator.sectionFor(navigator.currentRoute), navigator.currentRoute)
         }
     }
     val fileGateway = fileGatewayOverride ?: session.fileGateway
@@ -92,13 +97,13 @@ fun AuthenticatedAppShell(
         compactBottomBarOverlayPadding = compactBottomBarOverlayPadding,
         nativeNavigationEnabled = nativeNavigationEnabled,
         useNativeTitleBar = useNativeTitleBar,
+        nativeHostState = hostState,
         popBackStack = navigator::pop,
         onNativeTitleChanged = onNativeTitleChanged,
         onNativeActionChanged = onNativeActionChanged,
         onOpenExternalUrl = onOpenExternalUrl,
         fileGateway = fileGateway,
         directoryGateway = directoryGateway,
-        nativeHostState = hostState,
         systemCalendarGateway = session.systemCalendarGateway,
         assignmentCompletionStore = session.assignmentCompletionStore,
     )
@@ -106,20 +111,18 @@ fun AuthenticatedAppShell(
         session = session,
         platform = platform,
         navigator = navigator,
-        data = data,
         actions = actions,
         view = view,
         chrome = chrome,
         scope = scope,
     )
 
-    val compactBottomNavSections = remember(settingsState.preferences) {
-        bottomNavSections(settingsState.preferences)
+    val compactBottomNavSections = remember(preferences) {
+        bottomNavSections(preferences)
     }
-    val tabItemsChanged by rememberUpdatedState(onNativeTabItemsChanged)
     if (nativeTabBarEnabled) {
         // 底栏由 UIKit 装配，Compose 侧的入口集合变化必须显式回推给宿主，否则切换「物理在线」底栏不动。
-        LaunchedEffect(compactBottomNavSections) {
+        LaunchedEffect(session, compactBottomNavSections) {
             tabItemsChanged(nativeTabItems(session).map { it.routeId })
         }
     }
@@ -149,12 +152,11 @@ fun AuthenticatedAppShell(
         }
     }
 
-    // 账号级任务（启动同步、前台/空闲补刷、作业时钟）集中在 ShellAccountTasks；
-    // 小组件发布集中在 ShellCourseWidgetPublisher。壳层只负责装配与布局。
-    ShellAccountTasks(
-        session, data, forcedRouteId, nativeTabBarEnabled, refresher, navigator.currentRoute,
-    ) { sessionRecoveryInProgress = it }
-    ShellCourseWidgetPublisher(session, data, forcedRouteId, nativeTabBarEnabled)
+    // Only navigation data crosses into the account; automatic jobs are started by AppRuntime.
+    SideEffect {
+        if (forcedRouteId == null) session.reportRootPage(navigator.currentRoute)
+    }
+
 
     CompositionLocalProvider(LocalShellUi provides ui) {
         ShellOverlays(ui, forcedRouteId)

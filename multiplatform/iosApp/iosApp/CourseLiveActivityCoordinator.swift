@@ -43,6 +43,7 @@ final class CourseLiveActivityCoordinator {
     private var observers: [NSObjectProtocol] = []
     private var watchedActivities = Set<String>()
     private var boundaryTimer: Timer?
+    private var clearingAccountData = false
     private var reconciling = false
     private var pendingReconcile = false
     /// 卡片开启时带来的内容；快照里找不到这一项时兜底（不持久化）。
@@ -153,11 +154,33 @@ final class CourseLiveActivityCoordinator {
 
     // MARK: 对齐期望状态
 
+    func clearAccountData(allLocalData: Bool) async -> Bool {
+        clearingAccountData = true
+        boundaryTimer?.invalidate()
+        boundaryTimer = nil
+        // Let an already-issued ActivityKit operation settle before removing its results.
+        while reconciling { await Task.yield() }
+        manualFallback = nil
+        for activity in Activity<CourseLiveActivityAttributes>.activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+        for key in [dismissedKey, manualKey, scheduledKey, scheduledAppearKey, CourseLiveActivityBridge.activeIdKey] {
+            defaults.removeObject(forKey: key)
+        }
+        if allLocalData { defaults.removeObject(forKey: CourseLiveActivityBridge.leadMinutesKey) }
+        pendingReconcile = false
+        watchedActivities.removeAll()
+        clearingAccountData = false
+        publishStatus()
+        return Activity<CourseLiveActivityAttributes>.activities.allSatisfy { $0.activityState == .ended || $0.activityState == .dismissed }
+    }
+
     func reconcileSoon() {
         Task { @MainActor in await reconcile() }
     }
 
     func reconcile() async {
+        guard !clearingAccountData else { return }
         // 等待 ActivityKit 时可能重入；合并成一轮跑完。
         if reconciling {
             pendingReconcile = true
@@ -167,8 +190,9 @@ final class CourseLiveActivityCoordinator {
         repeat {
             pendingReconcile = false
             await reconcileOnce()
-        } while pendingReconcile
+        } while pendingReconcile && !clearingAccountData
         reconciling = false
+        guard !clearingAccountData else { return }
         publishStatus()
         armBoundaryTimer()
     }

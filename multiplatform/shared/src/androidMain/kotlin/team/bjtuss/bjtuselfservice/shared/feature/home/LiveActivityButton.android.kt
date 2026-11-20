@@ -42,6 +42,8 @@ data class AndroidLiveActivityStatus(
  * 命令与 iOS 相同：start 立即显示、arm 恢复课前自动显示、lead 只换了提前时间、stop 关闭。
  */
 interface AndroidLiveActivityHost {
+    fun clearAccountData(allLocalData: Boolean): Boolean = true
+
     /** 系统不支持实时动态（Android 16 以下）时为 null，不显示按钮。 */
     val status: StateFlow<AndroidLiveActivityStatus?>
     fun command(action: String, target: LiveActivityTarget)
@@ -168,3 +170,5 @@ private fun isWithinLeadWindow(target: LiveActivityTarget, leadMinutes: Int): Bo
     val minute = now.hour * 60 + now.minute
     return minute >= target.startMinute - leadMinutes
 }
+
+internal fun clearAndroidLiveActivityData(all: Boolean): Boolean = liveActivityHost?.clearAccountData(all) ?: true

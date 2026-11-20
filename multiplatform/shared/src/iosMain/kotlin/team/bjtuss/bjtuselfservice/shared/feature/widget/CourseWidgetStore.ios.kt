@@ -2,6 +2,8 @@ package team.bjtuss.bjtuselfservice.shared.feature.widget
 
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
 import platform.Foundation.NSBundle
 import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
@@ -55,7 +57,11 @@ internal actual fun writeCourseWidgetSnapshot(json: String?) {
         return
     }
     lastWrittenJson = json
-    NSNotificationCenter.defaultCenter.postNotificationName(COURSE_WIDGET_DID_CHANGE_NOTIFICATION, `object` = null)
+    // The data commit may hold the account barrier on a worker. Never synchronously wait for
+    // a main-queue observer while main is revoking that barrier during sign-out.
+    dispatch_async(dispatch_get_main_queue()) {
+        NSNotificationCenter.defaultCenter.postNotificationName(COURSE_WIDGET_DID_CHANGE_NOTIFICATION, `object` = null)
+    }
 }
 
 /** 依次尝试描述文件里以原名开头的 App Group 和原名本身，返回第一个可访问的共享容器。 */
@@ -88,4 +94,12 @@ internal fun courseWidgetGroupsFromProfile(bundlePath: String): List<String> {
     return groups.filterIsInstance<String>().filter {
         it == COURSE_WIDGET_APP_GROUP || it.startsWith("$COURSE_WIDGET_APP_GROUP.")
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+internal fun clearIosCourseWidgetSnapshot(): Boolean {
+    writeCourseWidgetSnapshot(null)
+    val container = cachedContainer ?: resolveCourseWidgetContainer() ?: return false
+    val path = container.URLByAppendingPathComponent(COURSE_WIDGET_FILE_NAME)?.path ?: return false
+    return !NSFileManager.defaultManager.fileExistsAtPath(path)
 }

@@ -18,7 +18,7 @@ import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
 /**
  * 一次登录态下页面可以读取的全部上下文。
  *
- * 分组是有意为之：页面数据 [data]、动作 [actions]、页面局部交互 [view]、
+ * 目的地分别读取展示数据，动作 [actions] 和页面局部交互 [view] 由当前宿主装配。
  * 原生壳/窗口信息 [chrome]。壳层只负责装配这几组对象，不再直接理解业务状态。
  */
 @Stable
@@ -26,7 +26,6 @@ internal class ShellUi(
     val session: AuthenticatedSession,
     val platform: PlatformInfo,
     val navigator: ShellNavigator,
-    val data: ShellData,
     val actions: ShellActions,
     val view: ShellViewState,
     val chrome: ShellChrome,

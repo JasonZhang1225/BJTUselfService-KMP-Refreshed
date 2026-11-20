@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.grade
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import androidx.compose.runtime.Immutable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -153,8 +156,9 @@ internal const val PROGRAM_ENSURE_RETRY_DELAY_MILLIS = 700L
 class GradeScreenModel(
     private val repository: GradeRepository,
     private val changeRecorder: DataChangeRecorder<Grade>? = null,
+    private val accountWork: AccountWork? = null,
 ) {
-    private val mutableState = MutableStateFlow(GradeUiState())
+    private val mutableState = accountWork.accountState(GradeUiState())
     val state: StateFlow<GradeUiState> = mutableState.asStateFlow()
 
     private var cacheLoaded = false
@@ -165,7 +169,9 @@ class GradeScreenModel(
     /**
      * @param refreshFromNetwork false 只读缓存；true 在登录成功后由 shell 触发自动同步。
      */
-    suspend fun initialize(refreshFromNetwork: Boolean = true) {
+    suspend fun initialize(refreshFromNetwork: Boolean = true) = accountWork.inAccount { initializeInAccount(refreshFromNetwork = refreshFromNetwork) }
+
+    private suspend fun initializeInAccount(refreshFromNetwork: Boolean = true) {
         if (!cacheLoaded) {
             cacheLoaded = true
             val cached = runCatching(repository::load).getOrNull()
@@ -204,6 +210,11 @@ class GradeScreenModel(
     suspend fun refreshWithRetry(
         maxAttempts: Int = GRADE_AUTO_SYNC_MAX_ATTEMPTS,
         delayMillis: Long = GRADE_AUTO_SYNC_RETRY_DELAY_MILLIS,
+    ) = accountWork.inAccount { refreshWithRetryInAccount(maxAttempts = maxAttempts, delayMillis = delayMillis) }
+
+    private suspend fun refreshWithRetryInAccount(
+        maxAttempts: Int = GRADE_AUTO_SYNC_MAX_ATTEMPTS,
+        delayMillis: Long = GRADE_AUTO_SYNC_RETRY_DELAY_MILLIS,
     ) {
         require(maxAttempts >= 1)
         repeat(maxAttempts) { index ->
@@ -213,7 +224,9 @@ class GradeScreenModel(
         }
     }
 
-    suspend fun refresh() {
+    suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
+
+    private suspend fun refreshInAccount() {
         if (refreshInFlight) return
         refreshInFlight = true
         val before = mutableState.value
@@ -262,6 +275,11 @@ class GradeScreenModel(
      * 已有映射或正在拉取时直接返回。
      */
     suspend fun ensureProgramCourseTypes(
+        maxAttempts: Int = PROGRAM_ENSURE_MAX_ATTEMPTS,
+        delayMillis: Long = PROGRAM_ENSURE_RETRY_DELAY_MILLIS,
+    ) = accountWork.inAccount { ensureProgramCourseTypesInAccount(maxAttempts = maxAttempts, delayMillis = delayMillis) }
+
+    private suspend fun ensureProgramCourseTypesInAccount(
         maxAttempts: Int = PROGRAM_ENSURE_MAX_ATTEMPTS,
         delayMillis: Long = PROGRAM_ENSURE_RETRY_DELAY_MILLIS,
     ) {
