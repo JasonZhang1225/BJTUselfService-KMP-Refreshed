@@ -174,7 +174,6 @@ class SchoolPhyVlabRemoteDataSource(
         val finalResponse = response ?: network()
         if (!isAllowedAttachmentUrl(finalResponse.finalUrl)) sessionExpired()
         if (finalResponse.statusCode !in 200..299) network()
-        if ("/login/index.php" in finalResponse.finalUrl) sessionExpired()
         if (finalResponse.body.isEmpty()) parse()
         return FileContent(attachment.fileName,
             finalResponse.headers.entries.firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }?.value?.firstOrNull()
@@ -191,6 +190,9 @@ class SchoolPhyVlabRemoteDataSource(
             location.startsWith("/") -> "${SchoolEndpoints.PHYVLAB_ORIGIN}$location"
             location.startsWith("?") -> current.substringBefore('?') + location
             else -> current.substringBeforeLast('/') + "/" + location
+        }
+        if (candidate.substringBefore('?').substringBefore('#') == "${SchoolEndpoints.PHYVLAB_ORIGIN}/login/index.php") {
+            sessionExpired()
         }
         return candidate.takeIf(::isAllowedAttachmentUrl)
     }

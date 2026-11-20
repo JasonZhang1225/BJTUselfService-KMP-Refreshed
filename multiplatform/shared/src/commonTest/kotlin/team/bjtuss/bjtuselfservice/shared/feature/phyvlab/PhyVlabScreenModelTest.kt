@@ -416,6 +416,41 @@ class PhyVlabScreenModelTest {
     }
 
     @Test
+    fun postLoginRefreshRetriesUntilCoursesAndActivitiesSucceed() = runBlocking {
+        val course = PhyVlabCourse(72, "测试课程", "", 0, "https://phyvlab.bjtu.edu.cn/course/view.php?id=72")
+        val assignment = activity(course, 7)
+        var courseReads = 0
+        var activityReads = 0
+        val repository = object : PhyVlabRepository by FailingRepository {
+            override suspend fun fetchCourses(): PhyVlabCoursesResult =
+                if (++courseReads == 1) PhyVlabCoursesResult.Failure(PhyVlabSyncFailure.NETWORK)
+                else PhyVlabCoursesResult.Success(listOf(course))
+
+            override suspend fun fetchCourseActivities(course: PhyVlabCourse): PhyVlabActivitiesResult =
+                if (++activityReads == 1) PhyVlabActivitiesResult.Failure(PhyVlabSyncFailure.NETWORK)
+                else PhyVlabActivitiesResult.Success(listOf(assignment))
+        }
+        val model = PhyVlabScreenModel(repository, PhyVlabSessionProtocol(AuthenticatedTransport))
+
+        model.sessionChanged()
+        model.refresh()
+        assertEquals(1, courseReads)
+        assertEquals(PhyVlabSyncFailure.NETWORK, model.state.value.failure)
+
+        model.refreshAfterLogin()
+        assertEquals(1, activityReads)
+        assertEquals(PhyVlabSyncFailure.NETWORK, model.state.value.failure)
+
+        model.refreshAfterLogin()
+        assertEquals(listOf(assignment), model.state.value.activities)
+        assertNull(model.state.value.failure)
+
+        model.refreshAfterLogin()
+        assertEquals(3, courseReads)
+        assertEquals(2, activityReads)
+    }
+
+    @Test
     fun agentDetailAndAttachmentKeepCaptchaReasonWithoutRetryingBlockedBatch() = runBlocking {
         val transport = AgentLoginTransport()
         val model = PhyVlabScreenModel(

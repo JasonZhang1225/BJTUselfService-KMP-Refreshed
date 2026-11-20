@@ -8,6 +8,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
+import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
@@ -47,6 +48,28 @@ class PhyVlabRemoteDataSourceTest {
             SchoolPhyVlabRemoteDataSource(transport).fetchCourses()
         }
         assertEquals(PhyVlabRemoteFailure.SESSION_EXPIRED, error.reason)
+    }
+
+    @Test
+    fun classifiesAttachmentRedirectsWithoutRequestingLoginOrOtherUnlistedPages() = runBlocking {
+        val origin = "https://phyvlab.bjtu.edu.cn"
+        val attachment = PhyVlabAttachment("report.pdf", "$origin/pluginfile.php/17/report.pdf")
+        val redirects = mapOf(
+            "/login/index.php" to PhyVlabRemoteFailure.SESSION_EXPIRED,
+            "$origin/login/index.php?redirect=0" to PhyVlabRemoteFailure.SESSION_EXPIRED,
+            "https://example.com/login/index.php" to PhyVlabRemoteFailure.NETWORK,
+            "/course/view.php?id=72" to PhyVlabRemoteFailure.NETWORK,
+        )
+        for ((location, reason) in redirects) {
+            val transport = QueueTransport(
+                SchoolHttpResponse(303, attachment.url, headers = mapOf("Location" to listOf(location))),
+            )
+            val error = assertFailsWith<PhyVlabRemoteException> {
+                SchoolPhyVlabRemoteDataSource(transport).downloadAttachment(attachment)
+            }
+            assertEquals(reason, error.reason, location)
+            assertEquals(attachment.url, transport.requests.single().url)
+        }
     }
 
     @Test

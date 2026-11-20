@@ -194,7 +194,8 @@ class PhyVlabScreenModel(
             mutableState.value = mutableState.value.copy(isLoading = true, failure = null, failureDetail = null,
                 accountLoginRequired = false, accountRejected = false, captchaRequired = false,
             )
-            when (val session = sessionProtocol.establishSession { refreshedLoginGeneration = it }) {
+            var establishedLoginGeneration: Long? = null
+            when (val session = sessionProtocol.establishSession { establishedLoginGeneration = it }) {
                 is PhyVlabSessionResult.Failed -> {
                     phyVlabDebug("session failed reason=${session.reason} detail=${session.detail ?: "none"}")
                     if (session.reason == PhyVlabRemoteFailure.SESSION_EXPIRED &&
@@ -312,7 +313,10 @@ class PhyVlabScreenModel(
                 failureDetail = null,
             )
             lastRequestedMonthSeconds = monthStart
-            if (!activityFetchFailed) persistCache(syncedAt)
+            if (!activityFetchFailed) {
+                persistCache(syncedAt)
+                establishedLoginGeneration?.let { refreshedLoginGeneration = it }
+            }
             phyVlabDebug(
                 "refresh data courses=${courses.size} activities=${activitiesByCourse.values.sumOf { it.size }} " +
                     "events=${scheduleEvents.size}",
