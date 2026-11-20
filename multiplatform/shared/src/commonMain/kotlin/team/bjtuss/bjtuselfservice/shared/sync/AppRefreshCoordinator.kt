@@ -22,6 +22,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.Volatile
 import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountMutationLock
+import team.bjtuss.bjtuselfservice.shared.runtime.RefreshSessionProbe
 
 /**
  * 一个数据源的刷新适配：把现有 ScreenModel/Repository 的刷新动作与结果状态翻译成统一报告。
@@ -121,12 +123,18 @@ class AppRefreshCoordinator(
      * 刷新 [request] 中的来源并等待结果。不支持的来源记为跳过。
      * 调用方取消只停止等待；共享的在途刷新继续运行，直至完成或 [close]。
      */
-    suspend fun refresh(request: RefreshRequest): RefreshReport = refresh(request, probeSession)
+    suspend fun refresh(request: RefreshRequest): RefreshReport = refresh(request, probeSession, sessionProbeLease = null)
+
+    internal suspend fun refresh(
+        request: RefreshRequest,
+        sessionProbe: RefreshSessionProbe,
+    ): RefreshReport = refresh(request, probeSession, sessionProbe::acquire)
 
     internal suspend fun refresh(
         request: RefreshRequest,
         sessionProbe: (suspend () -> Boolean)?,
-    ): RefreshReport = runRefresh(request, sessionProbe)
+        sessionProbeLease: (() -> RefreshSessionProbe.Lease)? = null,
+    ): RefreshReport = runRefresh(request, sessionProbe, sessionProbeLease = sessionProbeLease)
 
     internal fun enqueuePhyVlabAfterLogin(refresh: suspend () -> Unit) {
         scope.launch { refreshPhyVlabAfterLogin(refresh) }
@@ -143,6 +151,7 @@ class AppRefreshCoordinator(
     private suspend fun runRefresh(
         request: RefreshRequest,
         sessionProbe: (suspend () -> Boolean)?,
+        sessionProbeLease: (() -> RefreshSessionProbe.Lease)? = null,
         followUp: (suspend () -> Unit)? = null,
     ): RefreshReport {
         val startedAt = nowEpochSeconds()
@@ -152,7 +161,16 @@ class AppRefreshCoordinator(
                 if (closed) return@withLock emptyMap()
                 val missing = requested.filter { it in adapterBySource && it !in inFlight }
                 val existing = requested.mapNotNull { source -> inFlight[source]?.let { source to it } }.toMap()
-                existing + if (missing.isEmpty()) emptyMap() else startBatch(missing, request.forceReauthenticate, sessionProbe)
+                existing + if (missing.isEmpty()) {
+                    emptyMap()
+                } else {
+                    startBatch(
+                        missing,
+                        request.forceReauthenticate,
+                        sessionProbe,
+                        sessionProbeLease = sessionProbeLease,
+                    )
+                }
             }
         } else {
             val source = RefreshSource.PHYVLAB
@@ -191,7 +209,7 @@ class AppRefreshCoordinator(
                     val followUp = object : RefreshSourceAdapter by adapter {
                         override suspend fun refresh() = refreshAfterLogin()
                     }
-                    return startBatch(listOf(source), false, null, followUp).getValue(source)
+                    return startBatch(listOf(source), false, null, overrideAdapter = followUp).getValue(source)
                 }
             }
             try {
@@ -219,18 +237,36 @@ class AppRefreshCoordinator(
         sources: List<RefreshSource>,
         forceReauthenticate: Boolean,
         sessionProbe: (suspend () -> Boolean)?,
+        sessionProbeLease: (() -> RefreshSessionProbe.Lease)? = null,
         overrideAdapter: RefreshSourceAdapter? = null,
     ): Map<RefreshSource, Deferred<RefreshSourceResult>> {
+        val lease = if (forceReauthenticate) null else sessionProbeLease?.invoke()
+        val effectiveProbe = lease?.verify ?: sessionProbe
         val session = SessionRefreshCoordinator(
             reauthenticate = reauthenticate,
-            probeSession = sessionProbe,
+            probeSession = effectiveProbe,
             onRecoveryStateChanged = { active -> recoveryState.value = active },
         )
         // 显式“先登录再刷新”：整批共享一次恢复，失败则整批不访问学校（与旧 refreshGlobal 一致）。
         val preflight: Deferred<Boolean>? = if (forceReauthenticate) {
             scope.async { session.recoverBeforeRefresh() }
         } else null
-        return sources.associateWith { source ->
+        var remaining = sources.size
+        val finished = BooleanArray(sources.size)
+        val releaseLock = AccountMutationLock()
+        fun releaseSlot(index: Int) {
+            if (lease == null) return
+            val releaseNow = releaseLock.withLock {
+                if (finished[index]) {
+                    false
+                } else {
+                    finished[index] = true
+                    --remaining == 0
+                }
+            }
+            if (releaseNow) lease.release()
+        }
+        return sources.withIndex().associate { (index, source) ->
             val adapter = overrideAdapter ?: adapterBySource.getValue(source)
             val result = CompletableDeferred<RefreshSourceResult>()
             inFlight[source] = result
@@ -244,18 +280,23 @@ class AppRefreshCoordinator(
                         runSource(adapter, session)
                     }
                 } catch (error: CancellationException) {
-                    runningSources.update { it - source }
                     mutex.withLock { if (inFlight[source] === result) inFlight.remove(source) }
+                    releaseSlot(index)
+                    runningSources.update { it - source }
                     result.cancel(error)
                     throw error
                 }
-                runningSources.update { it - source }
                 mutex.withLock { if (inFlight[source] === result) inFlight.remove(source) }
+                releaseSlot(index)
+                runningSources.update { it - source }
                 result.complete(outcome)
             }
             // close() 与本批启动交错时，协程可能来不及开始就被取消：不让等待方永远挂起。
-            job.invokeOnCompletion { cause -> if (!result.isCompleted) result.cancel(CancellationException("refresh cancelled", cause)) }
-            result
+            job.invokeOnCompletion { cause ->
+                if (!result.isCompleted) result.cancel(CancellationException("refresh cancelled", cause))
+                releaseSlot(index)
+            }
+            source to result
         }
     }
 

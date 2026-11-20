@@ -10,9 +10,12 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.datetime.LocalDate
@@ -94,63 +97,86 @@ class LibraryModel(
         silent: Boolean,
         shouldRefresh: () -> Boolean = { true },
     ) = accountWork.inAccount {
-        coroutineScope {
-            val completion = refreshLock.withLock {
-                if (!shouldRefresh()) return@withLock null
-                val active = inFlightRefresh
-                if (active != null && !active.completion.isCompleted) {
-                    if (!silent && active.silent) {
-                        active.silent = false
-                        if (active.started) {
-                            val current = state.value
-                            mutableState.value = current.copy(refreshing = !current.loading, message = null)
-                        }
+        var checked = false
+        while (true) {
+            val restarted = coroutineScope {
+                val completion = refreshLock.withLock {
+                    if (!checked) {
+                        checked = true
+                        if (!shouldRefresh()) return@withLock null
                     }
-                    return@withLock active.completion
+                    val active = inFlightRefresh
+                    if (active != null && !active.completion.isCompleted) {
+                        if (!silent && active.silent) {
+                            active.silent = false
+                            if (active.started) {
+                                mutableState.update { current ->
+                                    current.copy(refreshing = !current.loading, message = null)
+                                }
+                            }
+                        }
+                        return@withLock active.completion
+                    }
+                    val next = Refresh(silent)
+                    // 先登记请求，再启动协程；续借继续与整轮查询共用原有的互斥锁。
+                    next.completion = (refreshScope ?: this).async(start = CoroutineStart.LAZY) {
+                        mutex.withLock { loadAll(next) }
+                    }
+                    inFlightRefresh = next
+                    next.completion
+                } ?: return@coroutineScope false
+                try {
+                    completion.await()
+                    false
+                } catch (error: CancellationException) {
+                    if (refreshScope != null || !currentCoroutineContext().isActive) throw error
+                    refreshLock.withLock {
+                        if (inFlightRefresh?.completion === completion) inFlightRefresh = null
+                    }
+                    true
                 }
-                val next = Refresh(silent)
-                // 先登记请求，再启动协程；续借继续与整轮查询共用原有的互斥锁。
-                next.completion = (refreshScope ?: this).async(start = CoroutineStart.LAZY) {
-                    mutex.withLock { loadAll(next) }
-                }
-                inFlightRefresh = next
-                next.completion
             }
-            if (completion != null) completion.await()
+            if (!restarted) return@inAccount
         }
     }
 
     /** 切换 tab 不联网；历史数据在 [loadAll] 中与当前借阅一起拉取。 */
     fun updateTab(tab: LibraryTab) {
-        if (state.value.tab == tab) return
-        mutableState.value = state.value.copy(tab = tab)
+        mutableState.update { current -> if (current.tab == tab) current else current.copy(tab = tab) }
     }
 
     /** 只有「当前借阅」里的书能被勾选；历史记录不能续借。 */
     fun toggleSelect(loanId: Long) {
-        val current = state.value
-        if (current.loans.none { it.loanId == loanId }) return
-        val selected = current.selectedLoanIds.toMutableSet().apply {
-            if (!add(loanId)) remove(loanId)
+        mutableState.update { current ->
+            if (current.loans.none { it.loanId == loanId }) current
+            else {
+                val selected = current.selectedLoanIds.toMutableSet().apply {
+                    if (!add(loanId)) remove(loanId)
+                }
+                current.copy(selectedLoanIds = selected)
+            }
         }
-        mutableState.value = current.copy(selectedLoanIds = selected)
     }
 
     /** 当前借阅全选/全不选切换。 */
     fun selectAllVisible() {
-        val current = state.value
-        if (current.loans.isEmpty()) return
-        val next = if (current.allVisibleSelected) {
-            emptySet()
-        } else {
-            current.loans.mapTo(mutableSetOf(), LibraryLoan::loanId)
+        mutableState.update { current ->
+            if (current.loans.isEmpty()) current
+            else {
+                val next = if (current.allVisibleSelected) {
+                    emptySet()
+                } else {
+                    current.loans.mapTo(mutableSetOf(), LibraryLoan::loanId)
+                }
+                current.copy(selectedLoanIds = next)
+            }
         }
-        mutableState.value = current.copy(selectedLoanIds = next)
     }
 
     fun clearSelection() {
-        if (state.value.selectedLoanIds.isEmpty()) return
-        mutableState.value = state.value.copy(selectedLoanIds = emptySet())
+        mutableState.update { current ->
+            if (current.selectedLoanIds.isEmpty()) current else current.copy(selectedLoanIds = emptySet())
+        }
     }
 
     /**
@@ -168,20 +194,22 @@ class LibraryModel(
             if (current.renewing) return@withLock
             val user = current.user
             if (user == null) {
-                mutableState.value = current.copy(message = "请先同步图书馆信息后再续借。")
+                mutableState.update { it.copy(message = "请先同步图书馆信息后再续借。") }
                 return@withLock
             }
             if (user.isFrozen) {
-                mutableState.value = current.copy(message = "借阅卡已冻结，冻结状态无法续借，请联系图书馆。")
+                mutableState.update { it.copy(message = "借阅卡已冻结，冻结状态无法续借，请联系图书馆。") }
                 return@withLock
             }
             val ids = current.selectedLoans.map(LibraryLoan::loanId)
             if (ids.isEmpty()) {
-                mutableState.value = current.copy(message = "请先选择要续借的图书。")
+                mutableState.update { it.copy(message = "请先选择要续借的图书。") }
                 return@withLock
             }
 
-            mutableState.value = current.copy(renewing = true, failure = null, renewResult = null, message = null)
+            mutableState.update {
+                it.copy(renewing = true, failure = null, renewResult = null, message = null)
+            }
             try {
                 val result = repository.renew(ids)
                 val message = when {
@@ -190,44 +218,49 @@ class LibraryModel(
                     result.anySucceeded -> "成功续借 ${result.renewed} 本，失败 ${result.failed} 本"
                     else -> "续借失败，${result.failed} 本图书未续借成功"
                 }
-                mutableState.value = mutableState.value.copy(
-                    renewing = false,
-                    renewResult = result.takeIf { it.attempted > 0 },
-                    message = message,
-                    // 全部失败时同时给出失败横幅文案；部分失败只弹结果对话框，不重复亮红条。
-                    failure = if (result.renewed == 0 && result.failed > 0) {
-                        LibraryFailure(LibraryFailureKind.SERVER, detail = result.failureReasons.firstOrNull())
-                    } else {
-                        null
-                    },
-                    selectedLoanIds = if (result.anySucceeded) emptySet() else mutableState.value.selectedLoanIds,
-                )
+                mutableState.update { latest ->
+                    latest.copy(
+                        renewing = false,
+                        renewResult = result.takeIf { it.attempted > 0 },
+                        message = message,
+                        // 全部失败时同时给出失败横幅文案；部分失败只弹结果对话框，不重复亮红条。
+                        failure = if (result.renewed == 0 && result.failed > 0) {
+                            LibraryFailure(LibraryFailureKind.SERVER, detail = result.failureReasons.firstOrNull())
+                        } else {
+                            null
+                        },
+                        selectedLoanIds = if (result.anySucceeded) emptySet() else latest.selectedLoanIds,
+                    )
+                }
                 if (result.anySucceeded) reloadLoansAfterRenew()
             } catch (e: CancellationException) {
-                mutableState.value = mutableState.value.copy(renewing = false)
+                mutableState.update { it.copy(renewing = false) }
                 throw e
             } catch (e: Exception) {
                 val failure = e.asLibraryFailure()
-                mutableState.value = mutableState.value.copy(renewing = false, failure = failure)
+                mutableState.update { it.copy(renewing = false, failure = failure) }
             }
         }
     }
 
     /** 结果对话框关闭后清掉本轮续借结果。 */
     fun consumeRenewResult() {
-        if (state.value.renewResult == null) return
-        mutableState.value = state.value.copy(renewResult = null)
+        mutableState.update { current ->
+            if (current.renewResult == null) current else current.copy(renewResult = null)
+        }
     }
 
     /** 页面内消息条关闭。 */
     fun consumeMessage() {
-        if (state.value.message == null) return
-        mutableState.value = state.value.copy(message = null)
+        mutableState.update { current ->
+            if (current.message == null) current else current.copy(message = null)
+        }
     }
 
     fun dismissFailure() {
-        if (state.value.failure == null) return
-        mutableState.value = state.value.copy(failure = null)
+        mutableState.update { current ->
+            if (current.failure == null) current else current.copy(failure = null)
+        }
     }
 
     /** 失败卡片上的重试：先清掉旧失败，再走一次用户主动刷新。 */
@@ -245,14 +278,15 @@ class LibraryModel(
     private suspend fun loadAll(refresh: Refresh) {
         refreshLock.withLock {
             refresh.started = true
-            val before = state.value
-            val firstLoad = before.user == null
-            mutableState.value = before.copy(
-                loading = firstLoad,
-                refreshing = !firstLoad && !refresh.silent,
-                failure = null,
-                message = if (refresh.silent) before.message else null,
-            )
+            mutableState.update { before ->
+                val firstLoad = before.user == null
+                before.copy(
+                    loading = firstLoad,
+                    refreshing = !firstLoad && !refresh.silent,
+                    failure = null,
+                    message = if (refresh.silent) before.message else null,
+                )
+            }
         }
         try {
             val user = repository.loadUser()
@@ -292,7 +326,7 @@ class LibraryModel(
         refreshLock.withLock {
             if (inFlightRefresh === refresh) {
                 inFlightRefresh = null
-                mutableState.value = state.value.update()
+                mutableState.update(update)
             }
         }
     }
@@ -301,20 +335,23 @@ class LibraryModel(
     private suspend fun reloadLoansAfterRenew() {
         try {
             val page = repository.loadLoans(page = 1, rows = LIBRARY_PAGE_SIZE)
-            val current = mutableState.value
             val loanIds = page.loans.mapTo(mutableSetOf(), LibraryLoan::loanId)
-            mutableState.value = current.copy(
-                loans = page.loans,
-                loansTotal = page.total,
-                selectedLoanIds = current.selectedLoanIds.filterTo(mutableSetOf(), loanIds::contains),
-                lastSyncEpochSeconds = clock.now().epochSeconds,
-            )
+            val syncAt = clock.now().epochSeconds
+            mutableState.update { current ->
+                current.copy(
+                    loans = page.loans,
+                    loansTotal = page.total,
+                    selectedLoanIds = current.selectedLoanIds.filterTo(mutableSetOf(), loanIds::contains),
+                    lastSyncEpochSeconds = syncAt,
+                )
+            }
             publishReminder(page.loans)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             // 续借本身已经成功，列表刷新失败只提示，不回滚结果对话框。
-            mutableState.value = mutableState.value.copy(failure = e.asLibraryFailure())
+            val failure = e.asLibraryFailure()
+            mutableState.update { it.copy(failure = failure) }
         }
     }
 

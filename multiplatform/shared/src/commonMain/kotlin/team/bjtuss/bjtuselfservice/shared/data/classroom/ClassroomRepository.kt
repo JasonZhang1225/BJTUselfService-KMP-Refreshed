@@ -6,6 +6,8 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomBuildingInfo
@@ -38,23 +40,39 @@ class DefaultClassroomRepository(
 
     private val requestsLock = AccountMutationLock()
     private val inFlight = mutableMapOf<String, Deferred<ClassroomFetchResult>>()
-    private val requestMutex = Mutex()
+    private val buildingMutexes = mutableMapOf<String, Mutex>()
 
-    override suspend fun fetchBuildingInfo(buildingName: String): ClassroomFetchResult = coroutineScope {
-        val request = requestsLock.withLock {
-            val active = inFlight[buildingName]?.takeUnless { it.isCompleted }
-            active ?: (refreshScope ?: this).async(start = CoroutineStart.LAZY) {
-                requestMutex.withLock { loadBuildingInfo(buildingName) }
-            }.also { pending ->
-                inFlight[buildingName] = pending
-                pending.invokeOnCompletion {
-                    requestsLock.withLock {
-                        if (inFlight[buildingName] === pending) inFlight.remove(buildingName)
+    override suspend fun fetchBuildingInfo(buildingName: String): ClassroomFetchResult {
+        while (true) {
+            val result = coroutineScope {
+                val buildingMutex = requestsLock.withLock {
+                    buildingMutexes.getOrPut(buildingName) { Mutex() }
+                }
+                val request = requestsLock.withLock {
+                    val active = inFlight[buildingName]?.takeUnless { it.isCompleted }
+                    active ?: (refreshScope ?: this).async(start = CoroutineStart.LAZY) {
+                        buildingMutex.withLock { loadBuildingInfo(buildingName) }
+                    }.also { pending ->
+                        inFlight[buildingName] = pending
+                        pending.invokeOnCompletion {
+                            requestsLock.withLock {
+                                if (inFlight[buildingName] === pending) inFlight.remove(buildingName)
+                            }
+                        }
                     }
                 }
+                try {
+                    request.await()
+                } catch (error: CancellationException) {
+                    if (refreshScope != null || !currentCoroutineContext().isActive) throw error
+                    requestsLock.withLock {
+                        if (inFlight[buildingName] === request) inFlight.remove(buildingName)
+                    }
+                    null
+                }
             }
+            if (result != null) return result
         }
-        request.await()
     }
 
     private suspend fun loadBuildingInfo(buildingName: String): ClassroomFetchResult = try {

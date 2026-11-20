@@ -15,16 +15,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -35,11 +39,25 @@ import kotlinx.coroutines.launch
 import team.bjtuss.bjtuselfservice.shared.LocalReduceMotion
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
+/** Keep the saved position on entry. Only a filter, sort or search change starts a new list. */
+@Composable
+internal fun ResetAssignmentScrollOnFilterChange(state: LazyListState, vararg filters: Any?) {
+    val currentFilters = filters.toList()
+    val previousFilters = remember(state) { mutableStateOf(currentFilters) }
+    LaunchedEffect(state, currentFilters) {
+        if (previousFilters.value != currentFilters) {
+            state.scrollToItem(0)
+            previousFilters.value = currentFilters
+        }
+    }
+}
+
 /** The overlay belongs to the list pane, including in a list/detail layout. */
 @Composable
 internal fun AssignmentListWithScrollToTop(
     state: LazyListState,
     modifier: Modifier = Modifier,
+    bottomAction: (@Composable (Modifier) -> Unit)? = null,
     content: @Composable (Modifier, Dp) -> Unit,
 ) {
     val visible by remember(state) {
@@ -57,16 +75,27 @@ internal fun AssignmentListWithScrollToTop(
     val undo = LocalAssignmentCompletionStore.current?.undo?.collectAsState()?.value
     // The existing undo capsule is drawn by the shell above this page. Leave room
     // for its touch target and scaled text while it is on screen.
-    val undoClearance = if (undo != null) 64.dp * maxOf(1f, LocalDensity.current.fontScale) else 0.dp
-
+    val density = LocalDensity.current
+    val undoClearance = if (undo != null) 64.dp * maxOf(1f, density.fontScale) else 0.dp
+    val actionBottomGap = 10.dp
+    var actionHeight by remember { mutableStateOf(0.dp) }
+    val actionClearance = if (bottomAction != null) actionHeight + actionBottomGap else 0.dp
+    val overlayOffset = undoClearance + actionClearance
     Box(modifier) {
         // Reserve space at the end of the content, keeping the scrolling viewport
         // full height so it continues behind the system bars.
-        content(Modifier.fillMaxSize(), 48.dp + undoClearance)
+        content(Modifier.fillMaxSize(), 48.dp + overlayOffset)
+        if (bottomAction != null) {
+            bottomAction(
+                Modifier.align(Alignment.BottomCenter)
+                    .padding(bottom = bottomClearance + undoClearance + actionBottomGap)
+                    .onSizeChanged { actionHeight = with(density) { it.height.toDp() } },
+            )
+        }
         AnimatedVisibility(
             visible = visible,
             modifier = Modifier.align(Alignment.BottomEnd)
-                .padding(end = 12.dp, bottom = 12.dp + bottomClearance + undoClearance),
+                .padding(end = 12.dp, bottom = 12.dp + bottomClearance + overlayOffset),
             enter = fadeIn(tween(150)),
             exit = fadeOut(tween(150)),
         ) {

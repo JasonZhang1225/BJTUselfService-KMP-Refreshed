@@ -328,8 +328,7 @@ internal fun ShellDestination(
                     onClearChangeDomain = { domain -> scope.launch { homeChangeFeed.clear(domain) } },
                     onOpenChangeDomain = { domain ->
                         if (domain == HomeChangeDomain.PHYSICS_DEMO) {
-                            if (useNativeSecondaryRoutes) onOpenNativeRoute(PHYSICS_DEMO_ROUTE_ID)
-                            else backStack.add(PhysicsDemoRoute)
+                            navigator.pushOrOpen(PhysicsDemoRoute, PHYSICS_DEMO_ROUTE_ID)
                         } else navigateToSection(domain.toAppSection())
                     },
                     modifier = Modifier.fillMaxSize(),
@@ -477,7 +476,7 @@ internal fun ShellDestination(
                         else -> CITEL_DETAIL_ROUTE_ID
                     }
                     if (!expanded) {
-                        if (useNativeSecondaryRoutes) onOpenNativeRoute(routeId) else backStack.add(detailRoute)
+                        navigator.pushOrOpen(detailRoute, routeId)
                     }
                 }, onRefreshSource = { source -> refreshAssignmentSource(source) },
                 showSyncDetails = aggregateSyncDialogVisible, onDismissSyncDetails = { aggregateSyncDialogVisible = false },
@@ -811,17 +810,14 @@ internal fun ShellDestination(
                 physicsDemoEnabled = physicsDemoState.enabled,
                 onPhysicsDemoEnabled = { enabled -> scope.launch { session.physicsDemoModel?.setEnabled(enabled) } },
                 onPhysicsDemoSettings = {
-                    if (useNativeSecondaryRoutes) onOpenNativeRoute(PHYSICS_DEMO_SETTINGS_ROUTE_ID)
-                    else backStack.add(PhysicsDemoSettingsRoute)
+                    navigator.pushOrOpen(PhysicsDemoSettingsRoute, PHYSICS_DEMO_SETTINGS_ROUTE_ID)
                 },
                 citelConfigured = citelState.configured,
                 onPhysicsLabSettings = {
-                    if (useNativeSecondaryRoutes) onOpenNativeRoute(PHYSICS_LAB_SETTINGS_ROUTE_ID)
-                    else backStack.add(PhysicsLabSettingsRoute)
+                    navigator.pushOrOpen(PhysicsLabSettingsRoute, PHYSICS_LAB_SETTINGS_ROUTE_ID)
                 },
                 onCitelSettings = {
-                    if (useNativeSecondaryRoutes) onOpenNativeRoute(CITEL_SETTINGS_ROUTE_ID)
-                    else backStack.add(CitelSettingsRoute)
+                    navigator.pushOrOpen(CitelSettingsRoute, CITEL_SETTINGS_ROUTE_ID)
                 },
             )
         }
@@ -967,7 +963,26 @@ internal fun ShellDestination(
         ) {
             CompositionLocalProvider(team.bjtuss.bjtuselfservice.shared.feature.settings.LocalRemoteAgentController provides remoteAgent) {
                 team.bjtuss.bjtuselfservice.shared.feature.settings.AiAssistantSettingsScreen(
-                    settingsModel, platform, Modifier.fillMaxSize())
+                    settingsModel, platform, Modifier.fillMaxSize(),
+                    onOpenCitelCache = if (citelEnabled && citelState.enabled) ({
+                        navigator.pushOrOpen(CitelBatchCacheRoute, CITEL_BATCH_CACHE_ROUTE_ID)
+                    }) else null,
+                )
+            }
+        }
+        CitelBatchCacheRoute -> DestinationPage(
+            title = nativeRouteTitle(CITEL_BATCH_CACHE_ROUTE_ID),
+            expanded = expanded,
+            refreshable = citelEnabled && citelState.enabled && !entryLoggingIn,
+            isRefreshing = citelState.refreshing,
+            showBack = true,
+            modifier = modifier,
+            scrollUnderTopBar = true,
+        ) {
+            session.citelModel?.let { model ->
+                team.bjtuss.bjtuselfservice.shared.feature.citel.CitelBatchCacheScreen(
+                    model, Modifier.fillMaxSize(), holdNetwork = entryLoggingIn,
+                )
             }
         }
         PhysicsDemoSettingsRoute -> DestinationPage(
@@ -1090,14 +1105,12 @@ internal fun ShellDestination(
                 agentPluginTitle = team.bjtuss.bjtuselfservice.shared.feature.settings.agentPluginTitle(platform),
                 onOpenAgentPlugins = if (settingsState.preferences.isAgentPluginEnabled &&
                     (platform.family == PlatformFamily.MacOS || remoteAgent != null)) ({
-                    if (useNativeSecondaryRoutes) onOpenNativeRoute(AI_ASSISTANT_SETTINGS_ROUTE_ID)
-                    else backStack.add(AiAssistantSettingsRoute)
+                    navigator.pushOrOpen(AiAssistantSettingsRoute, AI_ASSISTANT_SETTINGS_ROUTE_ID)
                 }) else null,
                 preferences = settingsState.preferences,
                 physicsLabModel = session.physicsLabModel,
                 onOpenPhysicsDemo = session.physicsDemoModel?.takeIf { physicsDemoState.enabled }?.let { {
-                    if (useNativeSecondaryRoutes) onOpenNativeRoute(PHYSICS_DEMO_ROUTE_ID)
-                    else backStack.add(PhysicsDemoRoute)
+                    navigator.pushOrOpen(PhysicsDemoRoute, PHYSICS_DEMO_ROUTE_ID)
                 } },
                 onOpenSection = { target -> navigateToSection(target) },
                 modifier = Modifier.fillMaxSize(),

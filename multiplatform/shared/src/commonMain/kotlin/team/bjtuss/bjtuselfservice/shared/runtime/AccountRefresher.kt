@@ -60,10 +60,7 @@ internal class AccountRefresher(
                 if (forceReauthenticate) {
                     refreshCoordinator.refresh(request)
                 } else {
-                    homeAndGradesProbe.use { probe ->
-                        if (probe == null) refreshCoordinator.refresh(request)
-                        else refreshCoordinator.refresh(request, probe)
-                    }
+                    refreshCoordinator.refresh(request, homeAndGradesProbe)
                 }
             }
             // 图书馆与学校业务会话独立、不在公共刷新协调器里：全局刷新时一并重取借阅（失败保留旧数据）。

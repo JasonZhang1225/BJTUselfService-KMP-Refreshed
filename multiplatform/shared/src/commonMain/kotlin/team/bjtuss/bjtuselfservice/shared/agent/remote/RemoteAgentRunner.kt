@@ -427,7 +427,7 @@ class RemoteAgentRunner(
     /** 一次轮询；成功返回 null，失败返回原因。领到的任务在独立协程里执行，不阻塞下一次轮询。 */
     internal suspend fun pollOnce(taskScope: CoroutineScope? = null): RemoteCall.Failure? {
         val api = client() ?: return RemoteCall.Failure(RemoteFailureKind.UNAUTHORIZED, "not_paired")
-        return when (val result = api.poll()) {
+        return when (val result = api.poll(configFlow.value.pollIntervalSeconds)) {
             is RemoteCall.Ok -> {
                 val now = clock()
                 // 在线时间本地也只粗粒度记录（约每分钟）。

@@ -1,9 +1,14 @@
 package team.bjtuss.bjtuselfservice.shared.feature.classroomoccupancy
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -17,6 +22,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyKin
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancySemester
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.SLOT_TIME_RANGES
+import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
 
 class ClassroomOccupancyScreenModelTest {
     @Test
@@ -382,6 +388,116 @@ class ClassroomOccupancyScreenModelTest {
         assertEquals(ClassroomOccupancySyncFailure.NETWORK, retried.reason)
     }
 
+    @Test
+    fun weekSwitchQueryCompletedDuringMisProbeIsReusedByRefreshWithSession() = runBlocking {
+        val queryEntered = CompletableDeferred<Unit>()
+        val releaseQuery = CompletableDeferred<Unit>()
+        val probeEntered = CompletableDeferred<Unit>()
+        val releaseProbe = CompletableDeferred<Unit>()
+        val repository = FakeRepository(rooms = listOf(sampleRoom()))
+        repository.onFetch = { week, _, _ ->
+            if (week == 9) {
+                queryEntered.complete(Unit)
+                releaseQuery.await()
+            }
+        }
+        val model = ClassroomOccupancyScreenModel(repository, currentWeekProvider = { 8 })
+        model.initialize()
+        model.selectBuilding(OCCUPANCY_BUILDINGS[2])
+
+        val weekSwitch = launch { model.selectWeek(9) }
+        withTimeout(5_000) { queryEntered.await() }
+
+        var probes = 0
+        val session = SessionRefreshCoordinator(
+            reauthenticate = { true },
+            probeSession = {
+                probes++
+                probeEntered.complete(Unit)
+                releaseProbe.await()
+                true
+            },
+        )
+        val refresh = launch(start = CoroutineStart.UNDISPATCHED) { model.refreshWithSession(session) }
+        withTimeout(5_000) { probeEntered.await() }
+
+        // 切周查询在 MIS 探测期间完成并离开在途表，随后的页面刷新仍应复用该结果。
+        releaseQuery.complete(Unit)
+        withTimeout(5_000) { weekSwitch.join() }
+        assertEquals(1, repository.calls.size)
+
+        releaseProbe.complete(Unit)
+        withTimeout(5_000) { refresh.join() }
+
+        assertEquals(1, probes)
+        assertEquals(listOf<Triple<Int, String, String?>>(Triple(9, "1", null)), repository.calls)
+        val loaded = assertIs<ClassroomOccupancyQueryState.Loaded>(model.state.value.queryState)
+        assertFalse(loaded.refreshing)
+    }
+
+    @Test
+    fun sessionExpiredWhileShowingCachedRoomsTriggersRecoveryAndRetry() = runBlocking {
+        val repository = FakeRepository(rooms = listOf(sampleRoom()))
+        val model = ClassroomOccupancyScreenModel(repository, currentWeekProvider = { 8 })
+        model.initialize()
+        model.selectBuilding(OCCUPANCY_BUILDINGS[2])
+        model.refresh()
+
+        var recoveries = 0
+        repository.failure = ClassroomOccupancySyncFailure.SESSION_EXPIRED
+        val session = SessionRefreshCoordinator(
+            reauthenticate = {
+                recoveries++
+                repository.failure = null
+                true
+            },
+            probeSession = { true },
+        )
+        model.refreshWithSession(session)
+
+        assertEquals(1, recoveries)
+        assertEquals(3, repository.calls.size)
+        val loaded = assertIs<ClassroomOccupancyQueryState.Loaded>(model.state.value.queryState)
+        assertFalse(loaded.refreshing)
+        assertEquals("SY101", loaded.rooms.single().room)
+    }
+
+    @Test
+    fun switchingBuildingDuringMisProbeDoesNotSkipQueryOnReturn() = runBlocking {
+        val probeEntered = CompletableDeferred<Unit>()
+        val releaseProbe = CompletableDeferred<Unit>()
+        val repository = FakeRepository(rooms = listOf(sampleRoom()))
+        val model = ClassroomOccupancyScreenModel(repository, currentWeekProvider = { 8 })
+        model.initialize()
+        model.selectBuilding(OCCUPANCY_BUILDINGS[2])
+
+        val session = SessionRefreshCoordinator(
+            reauthenticate = { true },
+            probeSession = {
+                probeEntered.complete(Unit)
+                releaseProbe.await()
+                true
+            },
+        )
+        val refresh = launch(start = CoroutineStart.UNDISPATCHED) { model.refreshWithSession(session) }
+        withTimeout(5_000) { probeEntered.await() }
+
+        // 先在同一楼完成一次查询（写下 lastCompletedQuery），随后切到另一楼再切回（清回 Idle）。
+        model.selectWeek(9)
+        assertIs<ClassroomOccupancyQueryState.Loaded>(model.state.value.queryState)
+        model.selectBuilding(OCCUPANCY_BUILDINGS[3])
+        model.selectBuilding(OCCUPANCY_BUILDINGS[2])
+        assertEquals(ClassroomOccupancyQueryState.Idle, model.state.value.queryState)
+
+        releaseProbe.complete(Unit)
+        withTimeout(5_000) { refresh.join() }
+
+        val loaded = assertIs<ClassroomOccupancyQueryState.Loaded>(model.state.value.queryState)
+        assertEquals(2, repository.calls.size)
+        assertEquals(Triple(9, "1", null), repository.calls.last())
+        assertEquals("SY101", loaded.rooms.single().room)
+    }
+
     private class FakeRepository(
         private val rooms: List<ClassroomOccupancy> = emptyList(),
         var failure: ClassroomOccupancySyncFailure? = null,
@@ -393,6 +509,7 @@ class ClassroomOccupancyScreenModelTest {
     ) : ClassroomOccupancyRepository {
         val calls = mutableListOf<Triple<Int, String, String?>>()
         var weekDatesFetches = 0
+        var onFetch: (suspend (Int, String, String?) -> Unit)? = null
 
         override suspend fun fetchOccupancy(
             week: Int,
@@ -400,6 +517,7 @@ class ClassroomOccupancyScreenModelTest {
             semesterId: String?,
         ): ClassroomOccupancyResult {
             calls += Triple(week, buildingId, semesterId)
+            onFetch?.invoke(week, buildingId, semesterId)
             return failure?.let(ClassroomOccupancyResult::Failure)
                 ?: ClassroomOccupancyResult.Success(rooms, occupancySemesterOptions)
         }

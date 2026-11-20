@@ -67,6 +67,7 @@ class CitelRemote(private val transport: SchoolHttpTransport) : CitelDataSource 
                     courseTasks.map { task -> async {
                         val result = results[task.id]
                         val indexed = if (result != null) task.copy(status = result.status, submitted = result.accepted,
+                            programmingSubmitCount = result.submitCount,
                             openTime = result.times[0], discountTime = result.times[1], dueTime = result.times[2], allowLate = result.allowLate) else task
                         val detailPage = page(task.url, credentials)
                         parseOffMain { parseCitelTaskDetail(detailPage.bodyText(), indexed) }

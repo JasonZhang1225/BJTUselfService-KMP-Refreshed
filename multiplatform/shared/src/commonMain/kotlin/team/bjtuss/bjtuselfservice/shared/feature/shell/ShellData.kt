@@ -157,14 +157,14 @@ internal fun shellPresentationKey(state: AccountPageState, route: AppRoute?, ove
         AppSection.HOMEWORK, HomeworkDetailRoute -> input.homeworkState
         AppSection.ASSIGNMENTS -> listOf(input.homeworkState, input.phyVlabState, input.citelState, state.assignments)
         AppSection.PHYVLAB, PhyVlabDetailRoute, PhyVlabSettingsRoute -> input.phyVlabState
-        AppSection.CITEL, CitelDetailRoute, CitelSettingsRoute -> input.citelState
+        AppSection.CITEL, CitelDetailRoute, CitelSettingsRoute, CitelBatchCacheRoute, AiAssistantSettingsRoute -> input.citelState
         AppSection.PHYSICS_LAB, PhysicsLabSettingsRoute -> input.physicsLabState
         PhysicsDemoRoute, PhysicsDemoSettingsRoute -> input.physicsDemoState
         AppSection.LIBRARY -> listOf(input.libraryState, state.home.libraryReminder)
         AppSection.COURSEWARE, AppSection.PLAYBACK, PlaybackDetailRoute,
         AppSection.CLASSROOMS, ClassroomDetailRoute, AppSection.CLASSROOM_OCCUPANCY, ClassroomOccupancyDetailRoute,
         AppSection.MAILBOX, MailboxDetailRoute, MailboxComposeRoute, AppSection.CALENDAR,
-        AppSection.REPORT_CARD_DOWNLOAD, AppSection.CHANGELOG, AiAssistantSettingsRoute -> Unit
+        AppSection.REPORT_CARD_DOWNLOAD, AppSection.CHANGELOG -> Unit
         else -> state
     }
     return common + selected

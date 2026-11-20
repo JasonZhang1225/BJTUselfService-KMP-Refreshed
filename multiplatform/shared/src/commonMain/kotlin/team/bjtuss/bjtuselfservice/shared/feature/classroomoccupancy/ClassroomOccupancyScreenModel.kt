@@ -11,9 +11,11 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -118,9 +120,14 @@ class ClassroomOccupancyScreenModel(
     private val queryLock = AccountMutationLock()
     private val inFlightQueries = mutableMapOf<Query, QueryRun>()
     private val pageRefreshes = mutableMapOf<Query?, Deferred<Unit>>()
-    private var lastCompletedQuery: Pair<Query, Int>? = null
+    private var lastCompletedQuery: CompletedQuery? = null
+    private var lastQueryFailure: ClassroomOccupancySyncFailure? = null
 
     private data class Query(val buildingId: String, val week: Int, val semesterId: String?)
+
+    private data class CompletedQuery(val conditions: Query, val token: Int)
+
+    private data class ReuseWindow(val afterToken: Int, val inFlightToken: Int?)
 
     private class QueryRun(var token: Int, var previousRooms: List<ClassroomOccupancy>?) {
         lateinit var completion: Deferred<Unit>
@@ -185,48 +192,70 @@ class ClassroomOccupancyScreenModel(
 
     private suspend fun selectWeekInAccount(week: Int) {
         val clamped = week.coerceIn(MIN_WEEK, MAX_WEEK)
-        val current = mutableState.value
-        if (clamped == current.selectedWeek && current.selectedNonTeachingWeekStart == null) return
-        mutableState.value = current.copy(
-            selectedWeek = clamped,
-            selectedNonTeachingWeekStart = null,
-        )
-        query()
+        val changed = queryLock.withLock {
+            val current = mutableState.value
+            if (clamped == current.selectedWeek && current.selectedNonTeachingWeekStart == null) {
+                false
+            } else {
+                mutableState.value = current.copy(
+                    selectedWeek = clamped,
+                    selectedNonTeachingWeekStart = null,
+                )
+                true
+            }
+        }
+        if (changed) query()
     }
 
     /** 选择校历中明确留出的自然周；这类周没有可发送给 room_view 的教学周编号。 */
     fun selectNonTeachingWeek(startDate: LocalDate) {
-        val current = mutableState.value
-        if (current.selectedNonTeachingWeekStart == startDate) return
-        mutableState.value = current.copy(
-            selectedWeek = 0,
-            selectedNonTeachingWeekStart = startDate,
-            queryState = ClassroomOccupancyQueryState.Idle,
-        )
+        queryLock.withLock {
+            val current = mutableState.value
+            if (current.selectedNonTeachingWeekStart == startDate) return@withLock
+            lastCompletedQuery = null
+            lastQueryFailure = null
+            mutableState.value = current.copy(
+                selectedWeek = 0,
+                selectedNonTeachingWeekStart = startDate,
+                queryState = ClassroomOccupancyQueryState.Idle,
+            )
+        }
     }
 
     fun selectBuilding(building: OccupancyBuilding) {
-        if (building == mutableState.value.selectedBuilding) return
-        mutableState.value = mutableState.value.copy(
-            selectedBuilding = building,
-            people = emptyList(),
-            peopleLoading = false,
-            peopleSnapshotRange = "",
-            queryState = ClassroomOccupancyQueryState.Idle,
-        )
+        queryLock.withLock {
+            if (building == mutableState.value.selectedBuilding) return@withLock
+            lastCompletedQuery = null
+            lastQueryFailure = null
+            mutableState.value = mutableState.value.copy(
+                selectedBuilding = building,
+                people = emptyList(),
+                peopleLoading = false,
+                peopleSnapshotRange = "",
+                queryState = ClassroomOccupancyQueryState.Idle,
+            )
+        }
     }
 
     suspend fun selectSemester(semester: OccupancySemester?) = accountWork.inAccount { selectSemesterInAccount(semester = semester) }
 
     private suspend fun selectSemesterInAccount(semester: OccupancySemester?) {
-        if (semester == mutableState.value.selectedSemester) return
-        mutableState.value = mutableState.value.copy(
-            selectedSemester = semester,
-            selectedWeek = mutableState.value.selectedWeek.coerceIn(MIN_WEEK, semesterMaxWeek(semester)),
-            selectedNonTeachingWeekStart = null,
-            queryState = ClassroomOccupancyQueryState.Idle,
-        )
-        query()
+        val changed = queryLock.withLock {
+            if (semester == mutableState.value.selectedSemester) {
+                false
+            } else {
+                lastCompletedQuery = null
+                lastQueryFailure = null
+                mutableState.value = mutableState.value.copy(
+                    selectedSemester = semester,
+                    selectedWeek = mutableState.value.selectedWeek.coerceIn(MIN_WEEK, semesterMaxWeek(semester)),
+                    selectedNonTeachingWeekStart = null,
+                    queryState = ClassroomOccupancyQueryState.Idle,
+                )
+                true
+            }
+        }
+        if (changed) query()
     }
 
     fun selectWeekday(weekday: Int) {
@@ -313,34 +342,54 @@ class ClassroomOccupancyScreenModel(
     suspend fun refresh() = accountWork.inAccount { query() }
 
     internal suspend fun refreshWithSession(session: SessionRefreshCoordinator) = accountWork.inAccount {
-        coroutineScope {
-            val refresh = queryLock.withLock {
-                val conditions = state.value.queryConditions()
-                val active = pageRefreshes[conditions]?.takeUnless { it.isCompleted }
-                val startedAfter = queryToken
-                active ?: (refreshScope ?: this).async(start = CoroutineStart.LAZY) {
-                    var reuseAfter: Int? = startedAfter
-                    session.run(
-                        operation = {
-                            val after = reuseAfter
-                            reuseAfter = null
-                            query(reuseAfter = after)
-                        },
-                        sessionExpired = {
-                            (state.value.queryState as? ClassroomOccupancyQueryState.Failed)
-                                ?.reason == ClassroomOccupancySyncFailure.SESSION_EXPIRED
+        while (true) {
+            val restarted = coroutineScope {
+                val refresh = queryLock.withLock {
+                    val conditions = state.value.queryConditions()
+                    val active = pageRefreshes[conditions]?.takeUnless { it.isCompleted }
+                    val startedWindow = ReuseWindow(
+                        afterToken = queryToken,
+                        inFlightToken = conditions?.let {
+                            inFlightQueries[it]?.takeUnless { run -> run.completion.isCompleted }?.token
                         },
                     )
-                }.also { pending ->
-                    pageRefreshes[conditions] = pending
-                    pending.invokeOnCompletion {
-                        queryLock.withLock {
-                            if (pageRefreshes[conditions] === pending) pageRefreshes.remove(conditions)
+                    active ?: (refreshScope ?: this).async(start = CoroutineStart.LAZY) {
+                        var pendingReuse: ReuseWindow? = startedWindow
+                        session.run(
+                            operation = {
+                                val window = pendingReuse
+                                pendingReuse = null
+                                query(reuseWindow = window)
+                            },
+                            sessionExpired = {
+                                queryLock.withLock {
+                                    lastQueryFailure == ClassroomOccupancySyncFailure.SESSION_EXPIRED ||
+                                        (state.value.queryState as? ClassroomOccupancyQueryState.Failed)
+                                            ?.reason == ClassroomOccupancySyncFailure.SESSION_EXPIRED
+                                }
+                            },
+                        )
+                    }.also { pending ->
+                        pageRefreshes[conditions] = pending
+                        pending.invokeOnCompletion {
+                            queryLock.withLock {
+                                if (pageRefreshes[conditions] === pending) pageRefreshes.remove(conditions)
+                            }
                         }
                     }
                 }
+                try {
+                    refresh.await()
+                    false
+                } catch (error: CancellationException) {
+                    if (refreshScope != null || !currentCoroutineContext().isActive) throw error
+                    queryLock.withLock {
+                        pageRefreshes.entries.removeAll { it.value === refresh }
+                    }
+                    true
+                }
             }
-            refresh.await()
+            if (!restarted) return@inAccount
         }
     }
 
@@ -364,37 +413,67 @@ class ClassroomOccupancyScreenModel(
      * Token 丢弃过期响应；12s 超时必清进度。
      * 不在网络调用外包 Mutex：持锁等待会把切周卡死，且取消等锁时易留下 refreshing=true。
      */
-    private suspend fun query(reuseAfter: Int? = null) = coroutineScope {
-        val completion = queryLock.withLock {
-            val current = state.value
-            val conditions = current.queryConditions() ?: return@withLock null
-            // A filter action can complete the same query while the page refresh is checking MIS.
-            if (reuseAfter != null && queryToken > reuseAfter && lastCompletedQuery == (conditions to queryToken)) {
-                return@withLock null
-            }
-            val token = ++queryToken
-            val previousRooms = (current.queryState as? ClassroomOccupancyQueryState.Loaded)?.rooms
-            markQueryStarted(previousRooms)
-            val active = inFlightQueries[conditions]?.takeUnless { it.completion.isCompleted }
-            if (active != null) {
-                active.token = token
-                active.previousRooms = previousRooms
-                return@withLock active.completion
-            }
-            val next = QueryRun(token, previousRooms)
-            next.completion = (refreshScope ?: this).async(start = CoroutineStart.LAZY) {
-                runQuery(conditions, next)
-            }
-            inFlightQueries[conditions] = next
-            next.completion.invokeOnCompletion {
-                queryLock.withLock {
-                    if (inFlightQueries[conditions] === next) inFlightQueries.remove(conditions)
+    private suspend fun query(reuseWindow: ReuseWindow? = null) {
+        var activeReuse = reuseWindow
+        while (true) {
+            val restarted = coroutineScope {
+                val completion = queryLock.withLock {
+                    val current = state.value
+                    val conditions = current.queryConditions() ?: return@withLock null
+                    val completed = lastCompletedQuery
+                    val hasCompletedState = when (val queryState = current.queryState) {
+                        is ClassroomOccupancyQueryState.Loaded -> !queryState.refreshing
+                        is ClassroomOccupancyQueryState.Failed -> true
+                        ClassroomOccupancyQueryState.Idle, ClassroomOccupancyQueryState.Loading -> false
+                    }
+                    val window = activeReuse
+                    activeReuse = null
+                    // A filter action can complete (or already be running) the same query while MIS is checked.
+                    if (window != null &&
+                        hasCompletedState &&
+                        completed != null &&
+                        completed.conditions == conditions &&
+                        completed.token == queryToken &&
+                        (completed.token > window.afterToken || completed.token == window.inFlightToken)
+                    ) {
+                        return@withLock null
+                    }
+                    val token = ++queryToken
+                    val previousRooms = (current.queryState as? ClassroomOccupancyQueryState.Loaded)?.rooms
+                    lastCompletedQuery = null
+                    lastQueryFailure = null
+                    markQueryStarted(previousRooms)
+                    val active = inFlightQueries[conditions]?.takeUnless { it.completion.isCompleted }
+                    if (active != null) {
+                        active.token = token
+                        active.previousRooms = previousRooms
+                        return@withLock active.completion
+                    }
+                    val next = QueryRun(token, previousRooms)
+                    next.completion = (refreshScope ?: this).async(start = CoroutineStart.LAZY) {
+                        runQuery(conditions, next)
+                    }
+                    inFlightQueries[conditions] = next
+                    next.completion.invokeOnCompletion {
+                        queryLock.withLock {
+                            if (inFlightQueries[conditions] === next) inFlightQueries.remove(conditions)
+                        }
+                    }
+                    next.completion
+                } ?: return@coroutineScope false
+                try {
+                    completion.await()
+                    false
+                } catch (error: CancellationException) {
+                    if (refreshScope != null || !currentCoroutineContext().isActive) throw error
+                    queryLock.withLock {
+                        inFlightQueries.entries.removeAll { it.value.completion === completion }
+                    }
+                    true
                 }
             }
-            next.completion
+            if (!restarted) return
         }
-        completion?.await()
-        Unit
     }
 
     private suspend fun runQuery(conditions: Query, query: QueryRun) {
@@ -403,13 +482,17 @@ class ClassroomOccupancyScreenModel(
             queryLock.withLock {
                 if (inFlightQueries[conditions] === query) inFlightQueries.remove(conditions)
                 if (query.token == queryToken && state.value.queryConditions() == conditions) {
-                    lastCompletedQuery = conditions to query.token
+                    lastCompletedQuery = CompletedQuery(conditions, query.token)
+                    lastQueryFailure = (result as? ClassroomOccupancyResult.Failure)?.reason
                     finishQuery(query.previousRooms, result)
                 }
             }
         } catch (error: CancellationException) {
             queryLock.withLock {
+                if (inFlightQueries[conditions] === query) inFlightQueries.remove(conditions)
                 if (query.token == queryToken && state.value.queryConditions() == conditions) {
+                    lastCompletedQuery = null
+                    lastQueryFailure = null
                     restoreAfterCancel(query.previousRooms)
                 }
             }

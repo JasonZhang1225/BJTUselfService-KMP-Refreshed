@@ -1,8 +1,14 @@
 package team.bjtuss.bjtuselfservice.shared.feature.mailbox
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
 import team.bjtuss.bjtuselfservice.shared.data.mailbox.MailboxRemoteDataSource
 import team.bjtuss.bjtuselfservice.shared.data.mailbox.MailboxRemoteException
 import team.bjtuss.bjtuselfservice.shared.data.mailbox.MailboxRemoteFailure
@@ -12,6 +18,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailComposeDraft
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailMessage
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailboxPage
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailSummary
+import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
@@ -530,17 +537,321 @@ class MailboxScreenModelTest {
             assertFalse(reloaded.isMessageLoading)
         }
     }
+
+    @Test
+    fun cancelledInitializeDoesNotLeaveLoadingStuckOrSkipRefreshWithSession() = runBlocking {
+        val summary = sampleSummary("m-init", "收件箱邮件")
+        val initEntered = CompletableDeferred<Unit>()
+        val probeEntered = CompletableDeferred<Unit>()
+        val releaseProbe = CompletableDeferred<Unit>()
+        var listCalls = 0
+        val remote = FakeMailboxRemote(
+            page = MailboxPage(totalCount = 1, messages = listOf(summary)),
+            detail = summary.toDetail(),
+            listBlock = {
+                if (++listCalls == 1) {
+                    initEntered.complete(Unit)
+                    awaitCancellation()
+                }
+            },
+        )
+        val model = MailboxScreenModel(
+            transport = CookieTransport(listOf(SchoolSessionCookie("session", "secret"))),
+            remote = remote,
+        )
+
+        val initJob = launch { model.initialize() }
+        withTimeout(5_000) { initEntered.await() }
+
+        val session = SessionRefreshCoordinator(
+            reauthenticate = { true },
+            probeSession = {
+                probeEntered.complete(Unit)
+                releaseProbe.await()
+                true
+            },
+        )
+        val refreshJob = launch(start = CoroutineStart.UNDISPATCHED) { model.refreshWithSession(session) }
+        withTimeout(5_000) { probeEntered.await() }
+
+        initJob.cancelAndJoin()
+        val pausedState = assertIs<MailboxUiState.Ready>(model.state.value)
+        assertFalse(pausedState.isListLoading)
+
+        releaseProbe.complete(Unit)
+        withTimeout(5_000) { refreshJob.join() }
+
+        val ready = assertIs<MailboxUiState.Ready>(model.state.value)
+        assertFalse(ready.isListLoading)
+        assertEquals(listOf(summary), ready.messages)
+        assertEquals(2, listCalls)
+    }
+
+    @Test
+    fun cancellationDuringCookieLookupPropagatesAndRestoresIdleState() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val model = MailboxScreenModel(
+            transport = CookieTransport(
+                onCookies = {
+                    entered.complete(Unit)
+                    awaitCancellation()
+                },
+            ),
+            remote = FakeMailboxRemote(
+                page = MailboxPage(totalCount = 0, messages = emptyList()),
+                detail = emptyDetail(),
+            ),
+        )
+
+        val job = launch { model.refresh() }
+        withTimeout(5_000) { entered.await() }
+        job.cancelAndJoin()
+
+        assertEquals(MailboxUiState.Idle, model.state.value)
+    }
+
+    @Test
+    fun sessionRecoveryPreservesSelectedNonInboxFolder() = runBlocking {
+        val sentSummary = sampleSummary("m-sent", "已发送邮件").copy(folderId = 3)
+        var hasMailboxCookie = true
+        val remote = FakeMailboxRemote(
+            page = MailboxPage(totalCount = 1, messages = listOf(sentSummary)),
+            detail = sentSummary.toDetail(),
+        )
+        val model = MailboxScreenModel(
+            transport = CookieTransport(
+                onCookies = {
+                    if (hasMailboxCookie) listOf(SchoolSessionCookie("session", "secret")) else emptyList()
+                },
+            ),
+            remote = remote,
+        )
+        model.initialize()
+        model.selectFolder(3)
+
+        hasMailboxCookie = false
+        var recoveries = 0
+        val session = SessionRefreshCoordinator(
+            reauthenticate = {
+                recoveries++
+                hasMailboxCookie = true
+                true
+            },
+            probeSession = { true },
+        )
+        model.refreshWithSession(session)
+
+        assertEquals(1, recoveries)
+        val ready = assertIs<MailboxUiState.Ready>(model.state.value)
+        assertEquals(3, ready.selectedFolderId)
+        assertEquals(3, remote.requestedFolderIds.last())
+    }
+
+    @Test
+    fun refreshWithSessionJoiningCoordinatorlessRefreshRecoversAndRetries() = runBlocking {
+        val summary = sampleSummary("m-join", "恢复后的邮件")
+        val cookiesEntered = CompletableDeferred<Unit>()
+        val releaseCookies = CompletableDeferred<Unit>()
+        var cookieCalls = 0
+        var recovered = false
+        val remote = FakeMailboxRemote(
+            page = MailboxPage(totalCount = 1, messages = listOf(summary)),
+            detail = summary.toDetail(),
+        )
+        val model = MailboxScreenModel(
+            transport = CookieTransport(
+                onCookies = {
+                    if (++cookieCalls == 1) {
+                        cookiesEntered.complete(Unit)
+                        releaseCookies.await()
+                    }
+                    if (recovered) listOf(SchoolSessionCookie("session", "secret")) else emptyList()
+                },
+            ),
+            remote = remote,
+        )
+
+        val manualNoSession = launch { model.refresh() }
+        withTimeout(5_000) { cookiesEntered.await() }
+
+        var recoveries = 0
+        val session = SessionRefreshCoordinator(
+            reauthenticate = {
+                recoveries++
+                recovered = true
+                true
+            },
+            probeSession = { true },
+        )
+        val joinedWithSession = launch(start = CoroutineStart.UNDISPATCHED) {
+            model.refreshWithSession(session)
+        }
+        releaseCookies.complete(Unit)
+        withTimeout(5_000) {
+            manualNoSession.join()
+            joinedWithSession.join()
+        }
+
+        assertEquals(1, recoveries)
+        val ready = assertIs<MailboxUiState.Ready>(model.state.value)
+        assertEquals(listOf(summary), ready.messages)
+    }
+
+    @Test
+    fun multipleJoinedRefreshWithSessionCallersAwaitSharedRecoveryEvenIfFirstJoinerCancels() = runBlocking {
+        val account = AccountWork()
+        try {
+            val summary = sampleSummary("m-multi-join", "共享恢复邮件")
+            val cookiesEntered = CompletableDeferred<Unit>()
+            val releaseCookies = CompletableDeferred<Unit>()
+            val recoveryEntered = CompletableDeferred<Unit>()
+            val releaseRecovery = CompletableDeferred<Unit>()
+            var cookieCalls = 0
+            var recovered = false
+            val remote = FakeMailboxRemote(
+                page = MailboxPage(totalCount = 1, messages = listOf(summary)),
+                detail = summary.toDetail(),
+            )
+            val model = MailboxScreenModel(
+                transport = CookieTransport(
+                    onCookies = {
+                        if (++cookieCalls == 1) {
+                            cookiesEntered.complete(Unit)
+                            releaseCookies.await()
+                        }
+                        if (recovered) listOf(SchoolSessionCookie("session", "secret")) else emptyList()
+                    },
+                ),
+                remote = remote,
+                accountWork = account,
+                refreshScope = account.scope(Dispatchers.Default),
+            )
+
+            val manualNoSession = launch { model.refresh() }
+            withTimeout(5_000) { cookiesEntered.await() }
+
+            var recoveries = 0
+            val firstSession = SessionRefreshCoordinator(
+                reauthenticate = {
+                    recoveries++
+                    recoveryEntered.complete(Unit)
+                    releaseRecovery.await()
+                    recovered = true
+                    true
+                },
+                probeSession = { true },
+            )
+            val secondSession = SessionRefreshCoordinator(
+                reauthenticate = {
+                    recoveries++
+                    true
+                },
+                probeSession = { true },
+            )
+
+            val firstJoiner = launch(start = CoroutineStart.UNDISPATCHED) {
+                model.refreshWithSession(firstSession)
+            }
+            val secondJoiner = launch(start = CoroutineStart.UNDISPATCHED) {
+                model.refreshWithSession(secondSession)
+            }
+            releaseCookies.complete(Unit)
+            withTimeout(5_000) { recoveryEntered.await() }
+
+            firstJoiner.cancelAndJoin()
+            assertFalse(secondJoiner.isCompleted)
+
+            releaseRecovery.complete(Unit)
+            withTimeout(5_000) {
+                manualNoSession.join()
+                secondJoiner.join()
+            }
+
+            assertEquals(1, recoveries)
+            val ready = assertIs<MailboxUiState.Ready>(model.state.value)
+            assertEquals(listOf(summary), ready.messages)
+        } finally {
+            account.stop()
+            account.join()
+        }
+    }
+
+    @Test
+    fun folderSwitchAfterFirstLoadInvalidatesReuseForPendingRefreshWithSession() = runBlocking {
+        val summary = sampleSummary("m-reselect", "收件箱新邮件")
+        val initListEntered = CompletableDeferred<Unit>()
+        val releaseInitList = CompletableDeferred<Unit>()
+        val probeEntered = CompletableDeferred<Unit>()
+        val releaseProbe = CompletableDeferred<Unit>()
+        val cancelableInboxReloadEntered = CompletableDeferred<Unit>()
+        var listCalls = 0
+        val remote = FakeMailboxRemote(
+            page = MailboxPage(totalCount = 1, messages = listOf(summary)),
+            detail = summary.toDetail(),
+            listBlock = {
+                when (++listCalls) {
+                    1 -> {
+                        initListEntered.complete(Unit)
+                        releaseInitList.await()
+                    }
+                    3 -> {
+                        cancelableInboxReloadEntered.complete(Unit)
+                        awaitCancellation()
+                    }
+                }
+            },
+        )
+        val model = MailboxScreenModel(
+            transport = CookieTransport(listOf(SchoolSessionCookie("session", "secret"))),
+            remote = remote,
+        )
+
+        val initJob = launch { model.initialize() }
+        withTimeout(5_000) { initListEntered.await() }
+
+        val session = SessionRefreshCoordinator(
+            reauthenticate = { true },
+            probeSession = {
+                probeEntered.complete(Unit)
+                releaseProbe.await()
+                true
+            },
+        )
+        val refreshJob = launch(start = CoroutineStart.UNDISPATCHED) { model.refreshWithSession(session) }
+        withTimeout(5_000) { probeEntered.await() }
+
+        releaseInitList.complete(Unit)
+        withTimeout(5_000) { initJob.join() }
+
+        // 先切到已发送，再切回收件箱并在列表拉取阶段取消，确保收件箱列表已被清空。
+        model.selectFolder(3)
+        val returnToInbox = launch { model.selectFolder(1) }
+        withTimeout(5_000) { cancelableInboxReloadEntered.await() }
+        returnToInbox.cancelAndJoin()
+        val cleared = assertIs<MailboxUiState.Ready>(model.state.value)
+        assertEquals(1, cleared.selectedFolderId)
+        assertTrue(cleared.messages.isEmpty())
+
+        releaseProbe.complete(Unit)
+        withTimeout(5_000) { refreshJob.join() }
+
+        val reloaded = assertIs<MailboxUiState.Ready>(model.state.value)
+        assertEquals(1, reloaded.selectedFolderId)
+        assertEquals(listOf(summary), reloaded.messages)
+        assertEquals(4, listCalls)
+    }
 }
 
 private class CookieTransport(
     private val cookies: List<SchoolSessionCookie> = emptyList(),
     private val failure: Boolean = false,
+    private val onCookies: (suspend () -> List<SchoolSessionCookie>)? = null,
 ) : SchoolHttpTransport {
     override suspend fun execute(request: SchoolHttpRequest) = SchoolHttpResponse(200, request.url)
 
     override suspend fun sessionCookiesFor(url: String): List<SchoolSessionCookie> {
         if (failure) error("cookie storage")
-        return cookies
+        return onCookies?.invoke() ?: cookies
     }
 
     override fun clearSession() = Unit
@@ -552,6 +863,7 @@ private class FakeMailboxRemote(
     private val nextPage: MailboxPage? = null,
     private val details: Map<String, MailMessage> = emptyMap(),
     private val readBlock: suspend (String) -> Unit = {},
+    private val listBlock: suspend (Int) -> Unit = {},
     private val attachmentBlock: suspend (String, String) -> MailAttachmentContent = { _, _ ->
         MailAttachmentContent(byteArrayOf(1, 2, 3), "application/pdf")
     },
@@ -566,6 +878,7 @@ private class FakeMailboxRemote(
         descending: Boolean,
     ): MailboxPage {
         requestedFolderIds += folderId
+        listBlock(folderId)
         return if (start > 0 && nextPage != null) nextPage else page
     }
 

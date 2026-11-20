@@ -1,10 +1,12 @@
 package team.bjtuss.bjtuselfservice.shared.feature.shell
 
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -65,8 +67,8 @@ internal class ShellNavigator(
      * 窗口宽度与“是否由原生宿主承载导航”会随旋转/展开变化，但返回栈不能重建。
      * 壳层每次组合把最新环境写进来，路由判断只读当前值。
      */
-    var nativeNavigationEnabled: Boolean = initialNativeNavigationEnabled
-    var windowClass: WindowClass = initialWindowClass
+    var nativeNavigationEnabled: Boolean by mutableStateOf(initialNativeNavigationEnabled)
+    var windowClass: WindowClass by mutableStateOf(initialWindowClass)
 
     /** 宽屏（平板横屏/全屏、macOS）：二级页留在壳内；已由原生宿主持有的页面继续走宿主路由。 */
     val useNativeSecondaryRoutes: Boolean
@@ -83,7 +85,7 @@ internal class ShellNavigator(
         PhyVlabDetailRoute -> AppSection.PHYVLAB
         CitelDetailRoute -> AppSection.CITEL
         PlaybackDetailRoute -> AppSection.PLAYBACK
-        CitelSettingsRoute -> AppSection.CITEL
+        CitelSettingsRoute, CitelBatchCacheRoute -> AppSection.CITEL
         MailboxDetailRoute -> AppSection.MAILBOX
         MailboxComposeRoute -> AppSection.MAILBOX
         PhysicsLabSettingsRoute -> AppSection.PHYSICS_LAB

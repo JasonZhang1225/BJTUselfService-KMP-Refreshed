@@ -235,6 +235,69 @@ class LibraryModelTest {
     }
 
     @Test
+    fun cancellingSilentCallerWithoutRefreshScopeLetsManualCallerComplete() = runBlocking {
+        val fake = FakeLibraryRepository()
+        val model = libraryModel(fake)
+        val firstEntered = CompletableDeferred<Unit>()
+        var attempts = 0
+        fake.beforeLoadUser = {
+            if (++attempts == 1) {
+                firstEntered.complete(Unit)
+                awaitCancellation()
+            }
+        }
+
+        val silent = launch { model.refresh(silent = true) }
+        withTimeout(5_000) { firstEntered.await() }
+        val manual = launch(start = CoroutineStart.UNDISPATCHED) { model.refresh() }
+        silent.cancelAndJoin()
+        withTimeout(5_000) { manual.join() }
+
+        assertEquals(2, attempts)
+        assertNotNull(model.state.value.user)
+        assertFalse(model.state.value.loading)
+        assertFalse(model.state.value.refreshing)
+        assertNull(model.state.value.failure)
+    }
+
+    @Test
+    fun concurrentUiMutationsSurviveBackgroundRefreshCompletion() = runBlocking {
+        val account = AccountWork()
+        try {
+            val fake = FakeLibraryRepository()
+            val model = LibraryModel(
+                repository = fake,
+                clock = FixedClock(testNow),
+                timeZone = TimeZone.UTC,
+                accountWork = account,
+                refreshScope = account.scope(Dispatchers.Default),
+            )
+            model.refresh()
+
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            fake.beforeLoadUser = {
+                entered.complete(Unit)
+                release.await()
+            }
+            val backgroundRefresh = launch { model.refresh(silent = true) }
+            withTimeout(5_000) { entered.await() }
+
+            model.updateTab(LibraryTab.HISTORY)
+            model.toggleSelect(1L)
+
+            release.complete(Unit)
+            withTimeout(5_000) { backgroundRefresh.join() }
+
+            assertEquals(LibraryTab.HISTORY, model.state.value.tab)
+            assertEquals(setOf(1L), model.state.value.selectedLoanIds)
+        } finally {
+            account.stop()
+            account.join()
+        }
+    }
+
+    @Test
     fun selectionTogglesSelectAllAndClears() = runBlocking {
         val model = libraryModel(FakeLibraryRepository())
         model.refresh()

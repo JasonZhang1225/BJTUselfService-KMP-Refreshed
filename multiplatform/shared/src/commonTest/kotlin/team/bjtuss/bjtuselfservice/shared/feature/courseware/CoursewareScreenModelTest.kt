@@ -4,9 +4,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -398,6 +402,100 @@ class CoursewareScreenModelTest {
         assertEquals(0, probes)
         assertEquals(CoursewareContentSource.NETWORK, model.state.value.source)
         assertEquals(null, model.state.value.failure)
+    }
+
+    @Test
+    fun manualRefreshJoiningExpiredFirstLoadWithPartialCacheRecoversOnce() = runBlocking {
+        val firstStarted = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        val full = snapshot()
+        val unloadedCoursesSnapshot = full.copy(
+            courses = full.courses.map { it.copy(children = emptyList(), childrenLoaded = false) },
+        )
+        var reads = 0
+        var rootLoads = 0
+        var recoveries = 0
+        val repository = object : CoursewareRepository by FakeRepository(unloadedCoursesSnapshot, full) {
+            override suspend fun refresh(): CoursewareRefreshResult {
+                if (++reads == 1) {
+                    firstStarted.complete(Unit)
+                    releaseFirst.await()
+                    return CoursewareRefreshResult.Failure(unloadedCoursesSnapshot, CoursewareSyncFailure.SESSION_EXPIRED)
+                }
+                return CoursewareRefreshResult.Success(full)
+            }
+
+            override suspend fun loadCoursesConcurrently(
+                snapshot: CoursewareSnapshot,
+                courseIds: List<Int>,
+                concurrency: Int,
+            ): CoursewareOperationResult<CoursewareSnapshot> {
+                rootLoads++
+                return if (rootLoads == 1) {
+                    // 模拟会话过期时补拉顶层目录返回通用网络错误，不能掩盖目录请求的 SESSION_EXPIRED。
+                    CoursewareOperationResult.Failure(CoursewareSyncFailure.NETWORK)
+                } else {
+                    CoursewareOperationResult.Success(full)
+                }
+            }
+        }
+        val model = CoursewareScreenModel(repository)
+        val initial = async { model.initialize() }
+        withTimeout(5_000) { firstStarted.await() }
+        val session = SessionRefreshCoordinator(
+            reauthenticate = { recoveries++; true },
+            probeSession = { true },
+        )
+        val manual = async(start = CoroutineStart.UNDISPATCHED) { model.refreshWithSession(session) }
+        assertFalse(manual.isCompleted)
+        releaseFirst.complete(Unit)
+        withTimeout(5_000) {
+            initial.await()
+            manual.await()
+        }
+
+        assertEquals(2, reads)
+        assertEquals(1, recoveries)
+        assertEquals(CoursewareContentSource.NETWORK, model.state.value.source)
+        assertEquals(null, model.state.value.failure)
+    }
+
+    @Test
+    fun scopedWaiterCancellationDoesNotCancelSharedRefresh() = runBlocking {
+        val account = AccountWork()
+        try {
+            val firstStarted = CompletableDeferred<Unit>()
+            val releaseFirst = CompletableDeferred<Unit>()
+            var reads = 0
+            val full = snapshot()
+            val repository = object : CoursewareRepository by FakeRepository(full, full) {
+                override suspend fun refresh(): CoursewareRefreshResult {
+                    if (++reads == 1) {
+                        firstStarted.complete(Unit)
+                        releaseFirst.await()
+                    }
+                    return CoursewareRefreshResult.Success(full)
+                }
+            }
+            val model = CoursewareScreenModel(
+                repository = repository,
+                accountWork = account,
+                refreshScope = account.scope(Dispatchers.Unconfined),
+            )
+            val first = launch { model.initialize() }
+            withTimeout(5_000) { firstStarted.await() }
+            val second = launch(start = CoroutineStart.UNDISPATCHED) { model.refresh() }
+            first.cancelAndJoin()
+            releaseFirst.complete(Unit)
+            withTimeout(5_000) { second.join() }
+
+            assertEquals(1, reads)
+            assertEquals(CoursewareContentSource.NETWORK, model.state.value.source)
+            assertEquals(null, model.state.value.failure)
+        } finally {
+            account.stop()
+            account.join()
+        }
     }
 
     @Test

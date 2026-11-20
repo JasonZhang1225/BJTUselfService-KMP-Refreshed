@@ -16,6 +16,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.settings.SettingsWorkspace
 import team.bjtuss.bjtuselfservice.shared.files.*
 import team.bjtuss.bjtuselfservice.shared.update.AppUpdateChecker
 
+private enum class AgentSmokePage { Detail, Cache, Settings }
+
 /** Native desktop UI verification with in-memory fixtures; never touches accounts or school network. */
 @Composable
 fun DesktopAgentUiSmoke() {
@@ -28,7 +30,10 @@ fun DesktopAgentUiSmoke() {
     val task = remember { CitelTask(1, 1, "测试课程", "顺序表练习（测试题）", "$CITEL_BASE/mod/programming/view.php?id=1", true) }
     val model = remember {
         CitelModel("fixture", cache, null, object : CitelDataSource {
-            override suspend fun fetch(credentials: Credentials) = listOf(task)
+            override suspend fun fetch(credentials: Credentials) = listOf(
+                task,
+                task.copy(id = 2, title = "链表练习（测试题）", url = "$CITEL_BASE/mod/programming/view.php?id=2"),
+            )
             override suspend fun programmingStatus(credentials: Credentials, task: CitelTask) =
                 CitelProgrammingResult("AC", true, emptyList(), false)
             override suspend fun problem(credentials: Credentials, task: CitelTask, withResults: Boolean) =
@@ -37,19 +42,28 @@ fun DesktopAgentUiSmoke() {
         })
     }
     val settings = remember { SettingsScreenModel(AppPreferences(), { true }, { true }, { true }, { AppUpdateChecker.Result.Unavailable }, prepareUninstall = { true }) }
-    var showSettings by remember { mutableStateOf(false) }
+    var page by remember { mutableStateOf(AgentSmokePage.Detail) }
     var dark by remember { mutableStateOf(false) }
-    LaunchedEffect(model) { model.configure("fixture", "fixture", false, true); model.showTask(task) }
+    LaunchedEffect(model) {
+        model.configure("fixture", "fixture", false, true)
+        model.remoteProblem(task.id, fetch = true)
+        model.showTask(task)
+    }
     PlatformAppTheme(useDarkTheme = dark, dynamicColorEnabled = false) {
         Surface(Modifier.fillMaxSize()) {
             Column {
                 Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { showSettings = false }) { Text("CITEL 测试页") }
-                    TextButton(onClick = { showSettings = true }) { Text("设置测试页") }
+                    TextButton(onClick = { page = AgentSmokePage.Detail }) { Text("CITEL 测试页") }
+                    TextButton(onClick = { page = AgentSmokePage.Cache }) { Text("题面缓存测试") }
+                    TextButton(onClick = { page = AgentSmokePage.Settings }) { Text("设置测试页") }
                     TextButton(onClick = { dark = !dark }) { Text(if (dark) "浅色" else "深色") }
                 }
-                if (showSettings) SettingsWorkspace(settings,"测试账号",currentPlatform(),expanded = false,onLogout = {},modifier = Modifier.weight(1f))
-                else CitelDetailWorkspace(model,UnavailableFileGateway,{},modifier = Modifier.weight(1f))
+                when (page) {
+                    AgentSmokePage.Detail -> CitelDetailWorkspace(model, UnavailableFileGateway, {}, modifier = Modifier.weight(1f))
+                    AgentSmokePage.Cache -> CitelBatchCacheScreen(model, Modifier.weight(1f))
+                    AgentSmokePage.Settings -> SettingsWorkspace(settings, "测试账号", currentPlatform(),
+                        expanded = false, onLogout = {}, modifier = Modifier.weight(1f))
+                }
             }
         }
     }

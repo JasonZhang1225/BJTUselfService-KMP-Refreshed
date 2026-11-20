@@ -13,6 +13,8 @@ import team.bjtuss.bjtuselfservice.shared.domain.grade.Grade
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AggregateAssignmentFilters
 import team.bjtuss.bjtuselfservice.shared.feature.citel.CitelTask
+import team.bjtuss.bjtuselfservice.shared.feature.citel.citelProblem
+import team.bjtuss.bjtuselfservice.shared.feature.citel.citelProblemMarkdown
 import team.bjtuss.bjtuselfservice.shared.feature.course.cachedAcademicWeeks
 import team.bjtuss.bjtuselfservice.shared.feature.course.inferAcademicWeeks
 import team.bjtuss.bjtuselfservice.shared.feature.phydemo.PhysicsDemoBooking
@@ -75,6 +77,23 @@ fun loadAgentSnapshot(cache: CacheStore, studentId: String, today: LocalDate): A
     val physicsDemos = if (cache.metadata(studentId, "phydemo.configured") == "true" &&
         cache.metadata(studentId, "phydemo.enabled") == "true"
     ) decodeOrNull<List<PhysicsDemoBooking>>(cache.metadata(studentId, "phydemo.results")) else null
+    val citelTasks = if (preferences.isCitelEnabled) {
+        decodeOrNull<List<CitelTask>>(cache.metadata(studentId, "citel.tasks")).orEmpty()
+    } else emptyList()
+    val details = loadAgentAssignmentDetails(cache, studentId).toMutableMap()
+    val citelUsername = cache.metadata(studentId, "citel.username")?.takeIf(String::isNotBlank) ?: studentId
+    for (task in citelTasks) {
+        if (!task.programming) continue
+        val id = "citel:${task.id}"
+        val detail = details[id]
+        if (!detail?.content.isNullOrBlank()) continue
+        val cached = cache.citelProblem(studentId, citelUsername, task.id) ?: continue
+        if (cached.problem.statementHtml.isBlank()) continue
+        val publicProblem = cached.problem.copy(cases = cached.problem.publicCases, withResults = false)
+        val content = citelProblemMarkdown(task, cached.copy(problem = publicProblem))
+        details[id] = detail?.copy(content = content)
+            ?: AgentAssignmentDetail(id, content, fetchedAt = cached.fetchedAt)
+    }
     return AgentSnapshot(
         studentId = studentId,
         profileName = cache.cachedProfile(studentId)?.name,
@@ -89,9 +108,9 @@ fun loadAgentSnapshot(cache: CacheStore, studentId: String, today: LocalDate): A
         phyVlab = if (preferences.isPhyVlabEnabled) {
             cache.metadata(studentId, PHYVLAB_SNAPSHOT_KEY)?.let(::decodePhyVlabCache)
         } else null,
-        citelTasks = if (preferences.isCitelEnabled) decodeOrNull<List<CitelTask>>(cache.metadata(studentId, "citel.tasks")).orEmpty() else emptyList(),
+        citelTasks = citelTasks,
         citelLastSync = cache.metadata(studentId, "citel.lastSync"),
-        assignmentDetails = loadAgentAssignmentDetails(cache, studentId),
+        assignmentDetails = details,
         physicsLabs = physicsLabs,
         physicsDemos = physicsDemos,
         assignmentFilters = decodeOrNull<AggregateAssignmentFilters>(cache.metadata(studentId, "assignment.aggregate.filters"))

@@ -216,6 +216,10 @@ internal fun ShellLayout(ui: ShellUi) {
                             usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family),
                         )
                     }
+                    entry<CitelBatchCacheRoute> {
+                        ShellDestination(ui, route = CitelBatchCacheRoute, expanded = false, modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family))
+                    }
                     entry<AiAssistantSettingsRoute> {
                         ShellDestination(ui, route = AiAssistantSettingsRoute, expanded = false, modifier = Modifier.fillMaxSize(),
                             usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family))
@@ -472,6 +476,10 @@ internal fun ShellLayout(ui: ShellUi) {
                             modifier = Modifier.fillMaxSize(),
                             usesLegacySmartTransport = false,
                         )
+                    }
+                    entry<CitelBatchCacheRoute> {
+                        ShellDestination(ui, route = CitelBatchCacheRoute, expanded = false, modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = false)
                     }
                     entry<AiAssistantSettingsRoute> {
                         ShellDestination(ui, route = AiAssistantSettingsRoute, expanded = false, modifier = Modifier.fillMaxSize(),

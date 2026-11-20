@@ -118,6 +118,40 @@ class CitelTest {
         } finally { cache.close() }
     }
 
+    @Test fun cancellingStartupCallerWithoutScopeLetsManualRefreshComplete() = runBlocking {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        CacheDatabaseSql.Schema.create(driver)
+        val cache = CacheStore(driver)
+        try {
+            val entered = CompletableDeferred<Unit>()
+            val task = CitelTask(1, 1, "Fixture course", "Fixture task", "", false)
+            var calls = 0
+            val remote = object : CitelDataSource {
+                override suspend fun fetch(credentials: Credentials): List<CitelTask> {
+                    if (++calls == 1) {
+                        entered.complete(Unit)
+                        kotlinx.coroutines.awaitCancellation()
+                    }
+                    return listOf(task)
+                }
+            }
+            val model = CitelModel("fixture", cache, MemoryVault(), remote)
+            model.saveAccount("fixture", "fixture", true)
+            model.setEnabled(true)
+
+            val startup = launch { model.refreshForAppEntry(0) }
+            withTimeout(5_000) { entered.await() }
+            val manual = launch(start = CoroutineStart.UNDISPATCHED) { model.refresh() }
+            startup.cancelAndJoin()
+            withTimeout(5_000) { manual.join() }
+
+            assertEquals(2, calls)
+            assertEquals(listOf(task), model.state.value.tasks)
+            assertFalse(model.state.value.refreshing)
+            assertFalse(model.state.value.failed)
+        } finally { cache.close() }
+    }
+
     @Test fun saveAndSyncReportsFailureAndKeepsFeatureSwitchOff() = runBlocking {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         CacheDatabaseSql.Schema.create(driver)

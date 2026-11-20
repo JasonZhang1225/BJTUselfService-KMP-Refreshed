@@ -1,8 +1,12 @@
 # Gitee Release 镜像与验收
 
-GitHub 是发行事实来源。`kmp-package.yml` 的 `release` 任务成功后，通过 `needs: release` 调用独立的 `.github/workflows/gitee-release-mirror.yml`，同步当前标签、Release 标题/说明、pre-release 属性和 APK / IPA / DMG / MSI。自动调用传 `best_effort: true`，镜像任务允许失败，不改变 GitHub Release 或原打包成功状态；镜像失败单独写 warning 与 Job Summary。debug / alpha / beta 仍只打包。不会创建新的正式版本。
+GitHub 是发行事实来源。`kmp-package.yml` 的 `release` 任务成功后，通过 `needs: release` 调用独立的 `.github/workflows/gitee-release-mirror.yml`，同步当前标签、Release 标题/说明、pre-release 属性和 APK / IPA / DMG / MSI。自动调用传 `best_effort: true`，镜像任务允许失败，不改变 GitHub Release 或原打包成功状态；镜像失败单独写 warning 与 Job Summary。独立运行镜像工作流只同步已有版本。
 
 ## 触发方式
+
+- 在 GitHub Releases 页面手动发布，即使同时新建 `v*` 标签，也无需运行打包和镜像工作流。正式版本标签应指向包含当前工作流的提交。
+- 推送 `debug-*` 标签自动生成 Actions 产物。手动打包可在 **KMP package** 选择分支或标签运行，`publish_release` 默认关闭。
+- 需要由 CI 发布时，先准备正式标签和对应的 `docs/releases/<tag>.md`，再运行 `gh workflow run kmp-package.yml --ref <tag> -f publish_release=true`。四端成功后发布 GitHub Release，再同步 Gitee。alpha / beta 标签只保留 Actions 产物。
 
 使用 [GitHub 官方支持的 reusable workflow](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows)：自动调用与手动重试共用一份实现。不直接监听 `release: published`，因为现有发布任务使用 `GITHUB_TOKEN`，它创建的 Release 通常[不会触发新的事件工作流](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)。显式依赖发布任务可以确保四端附件和说明已经发布成功，也不需要额外 GitHub PAT 或 Actions 写权限。
 
