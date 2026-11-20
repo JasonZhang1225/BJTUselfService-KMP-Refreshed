@@ -15,9 +15,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -34,6 +36,19 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import team.bjtuss.bjtuselfservice.shared.LocalReduceMotion
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
+
+/** Keep the saved position on entry. Only a filter, sort or search change starts a new list. */
+@Composable
+internal fun ResetAssignmentScrollOnFilterChange(state: LazyListState, vararg filters: Any?) {
+    val currentFilters = filters.toList()
+    val previousFilters = remember(state) { mutableStateOf(currentFilters) }
+    LaunchedEffect(state, currentFilters) {
+        if (previousFilters.value != currentFilters) {
+            state.scrollToItem(0)
+            previousFilters.value = currentFilters
+        }
+    }
+}
 
 /** The overlay belongs to the list pane, including in a list/detail layout. */
 @Composable

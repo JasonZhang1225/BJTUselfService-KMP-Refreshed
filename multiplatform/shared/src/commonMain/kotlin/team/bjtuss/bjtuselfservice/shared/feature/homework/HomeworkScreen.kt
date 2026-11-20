@@ -23,6 +23,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.assignment.pickFeedback
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.dropFeedback
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.assignmentCompletionState
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentListWithScrollToTop
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.ResetAssignmentScrollOnFilterChange
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCompletionFeedback
 import androidx.compose.runtime.CompositionLocalProvider
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.LocalAssignmentSwipeToIgnore
@@ -866,9 +867,9 @@ private fun HomeworkScrollableContent(
     // CompositionLocal 不能在 LazyColumn 的 DSL 作用域里读，提到可组合上下文。
     val topClearance = LocalTopBarClearance.current
     // 真实偏移上报给壳层算玻璃浓度（手势累加会漂，读列表状态不会）。
-    LaunchedEffect(state.sortOrder, state.hideExpired, state.hideSubmitted, state.selectedCourses, searchActive, query) {
-        listState.scrollToItem(0)
-    }
+    ResetAssignmentScrollOnFilterChange(
+        listState, state.sortOrder, state.hideExpired, state.hideSubmitted, state.selectedCourses, searchActive, query,
+    )
     AssignmentListWithScrollToTop(listState, modifier) { scrollModifier, overlayClearance ->
         TopScrollLazyColumn(
             state = listState,

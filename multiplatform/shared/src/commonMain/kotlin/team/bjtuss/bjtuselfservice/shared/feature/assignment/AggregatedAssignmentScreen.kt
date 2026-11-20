@@ -56,7 +56,7 @@ internal fun AggregatedAssignmentWorkspace(
     val results = if (searchActive) searchAggregateAssignments(assignments, query, filters.sortOrder) else emptyList()
     LaunchedEffect(Unit) { onInitialize() }
     LaunchedEffect(Unit) { while (true) { now = Clock.System.now().epochSeconds; delay(30_000) } }
-    LaunchedEffect(filters, searchActive, query) { list.scrollToItem(0) }
+    ResetAssignmentScrollOnFilterChange(list, filters, searchActive, query)
     val dueSoon = visible.count { !it.submitted && it.dueTime?.let { time -> time in now..(now + 48 * 3600) } == true }
     val subtitle = (if (dueSoon > 0) "未来 48 小时内有 $dueSoon 项未提交" else "未来 48 小时内暂无临近截止项") +
         if (filters.active) " · 已筛选" else ""
