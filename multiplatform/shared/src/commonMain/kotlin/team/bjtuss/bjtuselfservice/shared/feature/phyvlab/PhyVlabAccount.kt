@@ -50,6 +50,8 @@ class PhyVlabAccountModel(
     private val rememberSession: suspend (String) -> Unit = {},
     private val clearSession: suspend () -> Unit = {},
     private val accountWork: AccountWork? = null,
+    private val loginMutex: Mutex = Mutex(),
+    private val onSessionChanged: () -> Unit = {},
     /** 用给定账号登录物理在线；由会话协议提供，校验成功即建立了 MoodleSession。 */
     private val signIn: suspend (Credentials) -> PhyVlabSessionResult,
 ) {
@@ -96,7 +98,7 @@ class PhyVlabAccountModel(
         }
     }
 
-    internal suspend fun configurationCredentials(username: String, password: String): Credentials? {
+    private suspend fun configurationCredentials(username: String, password: String): Credentials? {
         initialize()
         return try {
             val storage = vault ?: throw PhyVlabAccountFailure("当前平台安全存储不可用。")
@@ -123,12 +125,12 @@ class PhyVlabAccountModel(
 
     suspend fun configure(username: String, password: String): Boolean =
         accountWork.inAccount {
-            configureWithOutcome(username, password, showCaptchaError = true) == ConfigureOutcome.Saved
+            loginMutex.withLock { configureWithOutcome(username, password, showCaptchaError = true) == ConfigureOutcome.Saved }
         }
 
     internal suspend fun configureOrRequireCaptcha(username: String, password: String): ConfigureOutcome =
         accountWork.inAccount {
-            configureWithOutcome(username, password, showCaptchaError = false)
+            loginMutex.withLock { configureWithOutcome(username, password, showCaptchaError = false) }
         }
 
     private suspend fun configureWithOutcome(
@@ -194,6 +196,7 @@ class PhyVlabAccountModel(
                 }
                 rememberSession(creds.username)
                 mutableState.value = PhyVlabAccountState(creds.username, configured = true, message = "已登录物理在线并保存账号。")
+                onSessionChanged()
                 true
             } catch (_: TimeoutCancellationException) {
                 showError("连接物理在线超时，请稍后重试。")
@@ -209,12 +212,13 @@ class PhyVlabAccountModel(
         }
 
     internal suspend fun clearSessionForTesting(): Boolean = accountWork.inAccount {
-        clearTestSessionInAccount()
+        loginMutex.withLock { clearTestSessionInAccount() }
     }
 
     private suspend fun clearTestSessionInAccount(): Boolean = mutex.withLock {
         try {
             clearSession()
+            onSessionChanged()
             mutableState.value = state.value.copy(
                 failed = false,
                 message = "已退出本机物理在线会话。账号已保留，可重新验证。",
@@ -229,7 +233,7 @@ class PhyVlabAccountModel(
     }
 
     suspend fun clearConfiguration() = accountWork.inAccount {
-        clearConfigurationInAccount()
+        loginMutex.withLock { clearConfigurationInAccount() }
     }
 
     private suspend fun clearConfigurationInAccount() {
@@ -266,6 +270,8 @@ private fun phyVlabAccountDebug(result: PhyVlabSessionResult.Failed) {
 internal fun PhyVlabAccountSettingsScreen(
     model: PhyVlabAccountModel,
     prepareManualLogin: suspend () -> PhyVlabManualLogin,
+    runInAccount: suspend (suspend () -> Unit) -> Unit,
+    submitManualLogin: suspend (suspend () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
     onAccountSaved: () -> Unit = {},
     onTestSessionCleared: () -> Unit = {},
@@ -326,14 +332,15 @@ internal fun PhyVlabAccountSettingsScreen(
         PhyVlabCaptchaSheet(
             account = account,
             prepare = prepareManualLogin,
+            runInAccount = runInAccount,
+            submit = submitManualLogin,
             onSuccess = {
-                if (!model.saveVerifiedConfiguration(account)) false
-                else {
-                    accountToVerify = null
-                    password = ""
-                    onAccountSaved()
-                    true
-                }
+                model.saveVerifiedConfiguration(account)
+            },
+            onCompleted = {
+                accountToVerify = null
+                password = ""
+                onAccountSaved()
             },
             onRejected = { model.showError("物理在线账号或密码错误，请检查后重试。") },
             onDismiss = { accountToVerify = null },

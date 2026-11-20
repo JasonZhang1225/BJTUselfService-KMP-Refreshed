@@ -211,7 +211,11 @@ class AgentHomeworkExecutor(
                 student = AgentHomeworkStudent(profile.studentId, profile.name),
             ))
         } catch (error: AgentDetailException) {
-            stop(if (error.code == "not_found") AgentHomeworkFailureCode.NOT_FOUND else AgentHomeworkFailureCode.NETWORK, error.message.orEmpty())
+            val code = when (error.code) {
+                AgentHomeworkFailureCode.NOT_FOUND, AGENT_PHYVLAB_CAPTCHA_REQUIRED -> error.code
+                else -> AgentHomeworkFailureCode.NETWORK
+            }
+            stop(code, error.message.orEmpty())
         }
     }
 
@@ -478,7 +482,7 @@ internal fun AgentHomeworkOutcome.toOutput(options: AgentHomeworkCommand, execut
     is AgentHomeworkOutcome.Failed -> failureOutput(options, code, message, when (code) {
         AgentHomeworkFailureCode.NOT_FOUND -> AgentExit.NO_DATA
         AgentHomeworkFailureCode.ALREADY_SUBMITTED -> AgentExit.SUBMIT_BLOCKED
-        AgentHomeworkFailureCode.SESSION_EXPIRED, RefreshIpcCode.NOT_SIGNED_IN -> AgentExit.LOGIN_FAILED
+        AgentHomeworkFailureCode.SESSION_EXPIRED, RefreshIpcCode.NOT_SIGNED_IN, AGENT_PHYVLAB_CAPTCHA_REQUIRED -> AgentExit.LOGIN_FAILED
         RefreshIpcCode.TIMEOUT -> AgentExit.REFRESH_PENDING
         else -> AgentExit.PARTIAL
     })

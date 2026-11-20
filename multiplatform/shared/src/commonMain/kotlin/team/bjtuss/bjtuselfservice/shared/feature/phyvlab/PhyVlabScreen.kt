@@ -656,7 +656,7 @@ private fun PhyVlabAssignmentDetailContent(
                         when (it) {
                             PhyVlabSyncFailure.NETWORK -> "详情读取失败，请检查网络。"
                             PhyVlabSyncFailure.PARSE -> "详情页面结构变化，暂时无法读取。"
-                            PhyVlabSyncFailure.SESSION_EXPIRED -> "物理在线会话已失效，请点击右上角刷新重试登录。"
+                            PhyVlabSyncFailure.SESSION_EXPIRED, PhyVlabSyncFailure.CAPTCHA_REQUIRED -> "物理在线会话已失效，请点击右上角刷新重试登录。"
                         },
                         modifier = Modifier.weight(1f),
                         color = MaterialTheme.colorScheme.onErrorContainer,
@@ -931,7 +931,7 @@ private fun PhyVlabFailureBanner(
                     "失败原因：${when (failure) {
                         PhyVlabSyncFailure.NETWORK -> "网络问题。请确认已连接到校园网。"
                         PhyVlabSyncFailure.PARSE -> "页面结构变化，暂时无法读取。"
-                        PhyVlabSyncFailure.SESSION_EXPIRED -> "会话失效，请点击右上角刷新重试登录。"
+                        PhyVlabSyncFailure.SESSION_EXPIRED, PhyVlabSyncFailure.CAPTCHA_REQUIRED -> "会话失效，请点击右上角刷新重试登录。"
                     }}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer,

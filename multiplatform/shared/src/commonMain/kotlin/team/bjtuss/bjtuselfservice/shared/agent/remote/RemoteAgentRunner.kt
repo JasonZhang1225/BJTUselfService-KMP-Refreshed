@@ -27,6 +27,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import team.bjtuss.bjtuselfservice.shared.agent.AGENT_PHYVLAB_CAPTCHA_REQUIRED
+import team.bjtuss.bjtuselfservice.shared.agent.AgentDetailException
 import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshReport
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshStatus
@@ -405,11 +407,14 @@ class RemoteAgentRunner(
         }
     }
 
-    private suspend fun uploadAttachment(api: RemoteSiteClient, ref: RemoteAttachmentRef): Boolean {
+    private suspend fun uploadAttachment(api: RemoteSiteClient, ref: RemoteAttachmentRef, reportCaptcha: Boolean = false): Boolean {
         val file = try {
             executor.readAttachment(ref) ?: return false
         } catch (cancel: CancellationException) {
             throw cancel
+        } catch (error: AgentDetailException) {
+            if (reportCaptcha && error.code == AGENT_PHYVLAB_CAPTCHA_REQUIRED) throw error
+            return false
         } catch (_: Exception) {
             return false
         }
@@ -558,9 +563,20 @@ class RemoteAgentRunner(
                     executor.currentAccountScope() != current.accountScope || !current.scopeSet.containsAll(config.scopeSet)) {
                     return@withLeaseRenewal failed(RemoteErrorCode.SCOPE_DENIED, "查询期间绑定或数据范围已变化，请重新查询")
                 }
-                val online = result.uploads.filter { uploadAttachment(api, it) }.map { it.attachmentId }
-                val body = if (result.uploads.isEmpty()) result.result else JsonObject(result.result + ("onlineAttachmentIds" to JsonArray(online.map(::JsonPrimitive))))
-                RemoteStoredResult(task.requestId, clock(), result.status, body, result.error)
+                val online = mutableListOf<JsonPrimitive>()
+                var attachmentError: RemoteError? = null
+                try {
+                    for (attachment in result.uploads) {
+                        if (uploadAttachment(api, attachment, reportCaptcha = true)) {
+                            online += JsonPrimitive(attachment.attachmentId)
+                        }
+                    }
+                } catch (error: AgentDetailException) {
+                    attachmentError = RemoteError(error.code, error.message)
+                }
+                val body = if (result.uploads.isEmpty()) result.result else JsonObject(result.result + ("onlineAttachmentIds" to JsonArray(online)))
+                val status = if (attachmentError == null) result.status else RemoteTaskStatus.PARTIAL
+                RemoteStoredResult(task.requestId, clock(), status, body, result.error ?: attachmentError)
             }
             else -> failed(RemoteErrorCode.UNSUPPORTED_OPERATION, "电脑端暂不支持该操作：${task.operation.take(32)}")
         }

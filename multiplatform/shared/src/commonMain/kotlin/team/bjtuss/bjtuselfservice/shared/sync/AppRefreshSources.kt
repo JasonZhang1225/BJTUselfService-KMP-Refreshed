@@ -194,6 +194,8 @@ fun appRefreshAdapters(models: AppRefreshModels): List<RefreshSourceAdapter> = w
             override fun outcome(): RefreshSourceResult {
                 val state = phyVlabModel.state.value
                 return when {
+                    state.captchaRequired -> RefreshSourceResult(source, RefreshStatus.NEEDS_USER_ACTION,
+                        "captcha_required", "请完成物理在线的人机验证。")
                     state.accountLoginRequired -> RefreshSourceResult(source, RefreshStatus.NEEDS_USER_ACTION,
                         RefreshReason.NOT_CONFIGURED, state.failureDetail ?: "请在设置中配置或检查物理在线账号。")
                     state.failure != null -> RefreshSourceResult(source, RefreshStatus.FAILED,

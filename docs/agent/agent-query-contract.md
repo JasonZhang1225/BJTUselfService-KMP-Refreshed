@@ -60,6 +60,12 @@
 
 每项：`id`（`course_platform:…`/`phyvlab:…`/`citel:…`）、`source`、`sourceLabel`、`course`、`title`、`status`（`pending` 未交未截止、`overdue` 已截止未交、`submitted`；查询参数 `status` 默认 `all`，全部列出）、`statusLabel`、`due`、`dueDate`、`remaining`（仅 pending），以及按来源出现的 `open`、`type`、`judgeStatus`、`score`、`discountFrom`、`discount`、`allowLate`、`submittedCount`、`totalCount`、`enrollment`、`matchedBooking`；`detail=true` 时附 `content`、`url` 及可选 `attachments`（元素含 `id`、`name`，可选 `sizeBytes`；未获取详情或无附件时不返回）。
 
+### 作业详情和附件的验证码反馈
+
+本机 CLI 执行 `homework show`（包括带 `--out` 下载老师附件）时，物理在线要求验证会返回 `code: "captcha_required"`，退出码为 3。请在 App 内完成物理在线验证码验证后重试。
+
+远程 `request_assignment_detail` 通过 `get_request_result` 返回任务结果。详情受阻时任务状态为 `failed`，`result.error.code` 为 `captcha_required`。详情已取得、附件受阻时，状态为 `partial`，`result.data` 保留作业详情及 `onlineAttachmentIds`（已上传的附件 ID），`result.error.code` 同样为 `captcha_required`。用户完成验证后，使用新的 `idempotencyKey` 发起查询。
+
 ### 日期规则（只在电脑端换算一次）
 
 - 所有时间都是北京时间文字，例如 `2026-10-25（周日）24:00`。

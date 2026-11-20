@@ -24,6 +24,7 @@ import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.*
 import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
 import team.bjtuss.bjtuselfservice.shared.agent.AGENT_ATTACHMENT_ONLINE_LIMIT_BYTES
+import team.bjtuss.bjtuselfservice.shared.agent.AGENT_PHYVLAB_CAPTCHA_REQUIRED
 import team.bjtuss.bjtuselfservice.shared.agent.AGENT_TIME_ZONE
 import team.bjtuss.bjtuselfservice.shared.agent.AgentAssignmentData
 import team.bjtuss.bjtuselfservice.shared.agent.AgentAssignmentDetail
@@ -76,7 +77,10 @@ class AppSessionRemoteExecutor(
     }
 
     override suspend fun query(task: RemoteTask, scopes: Set<RemoteScope>): RemoteQueryOutcome {
-        fun failure(code: String) = RemoteQueryOutcome(RemoteTaskStatus.FAILED, JsonObject(emptyMap()), RemoteError(code, "无法完成查询，请检查授权、账号或在 App 中处理"))
+        fun failure(code: String, message: String? = null) = RemoteQueryOutcome(
+            RemoteTaskStatus.FAILED, JsonObject(emptyMap()),
+            RemoteError(code, message ?: "无法完成查询，请检查授权、账号或在 App 中处理"),
+        )
         val session = readySession() ?: return failure("not_signed_in")
         val account = session.profile.studentId
         try {
@@ -99,7 +103,7 @@ class AppSessionRemoteExecutor(
                 val detail = try {
                     service.refresh(id)
                 } catch (error: AgentDetailException) {
-                    return failure(error.code)
+                    return failure(error.code, error.message.takeIf { error.code == AGENT_PHYVLAB_CAPTCHA_REQUIRED })
                 }
                 if (currentAccountScope() != account) return failure("account_mismatch")
                 return RemoteQueryOutcome(RemoteTaskStatus.SUCCEEDED,

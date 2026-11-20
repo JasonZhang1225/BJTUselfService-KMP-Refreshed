@@ -11,8 +11,10 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabActivitiesResult
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabAssignmentDetailResult
+import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabAttachmentResult
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabCacheSnapshot
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabCachedAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabCoursesResult
@@ -23,10 +25,12 @@ import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSessionProtocol
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSubmissionResult
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
+import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
 import team.bjtuss.bjtuselfservice.shared.files.FileContent
+import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
@@ -359,7 +363,7 @@ class PhyVlabScreenModelTest {
     }
 
     @Test
-    fun refreshWaitingRunsSecondPassAfterBusyRefreshFinishes() = runBlocking {
+    fun concurrentPostLoginRefreshesReadTheNewSessionOnce() = runBlocking {
         val firstEntered = CompletableDeferred<Unit>()
         val releaseFirst = CompletableDeferred<Unit>()
         var authenticated = false
@@ -392,13 +396,78 @@ class PhyVlabScreenModelTest {
         withTimeout(5_000) { firstEntered.await() }
 
         authenticated = true
-        val afterAuth = async(Dispatchers.Default) { model.refreshWaiting() }
+        model.sessionChanged()
+        val afterAuth = async(Dispatchers.Default) { model.refreshAfterLogin() }
+        val concurrentAfterAuth = async(Dispatchers.Default) { model.refreshAfterLogin() }
+        withTimeout(5_000) { model.refresh() }
         releaseFirst.complete(Unit)
-        withTimeout(5_000) { first.await(); afterAuth.await() }
+        withTimeout(5_000) { first.await(); afterAuth.await(); concurrentAfterAuth.await() }
 
         assertEquals(2, calls)
         assertEquals(courses, model.state.value.courses)
         assertFalse(model.state.value.accountLoginRequired)
+
+        // A normal refresh already read the next verified session before its follow-up arrived.
+        model.sessionChanged()
+        model.refresh()
+        assertEquals(3, calls)
+        model.refreshAfterLogin()
+        assertEquals(3, calls)
+    }
+
+    @Test
+    fun agentDetailAndAttachmentKeepCaptchaReasonWithoutRetryingBlockedBatch() = runBlocking {
+        val transport = AgentLoginTransport()
+        val model = PhyVlabScreenModel(
+            FailingRepository, PhyVlabSessionProtocol(transport) { Credentials("test-user", "test-password") },
+        )
+        val course = PhyVlabCourse(72, "测试课程", "", 0, "https://phyvlab.bjtu.edu.cn/course/view.php?id=72")
+        val attachment = PhyVlabAttachment("老师附件.pdf", "https://phyvlab.bjtu.edu.cn/pluginfile.php/test")
+        val before = model.state.value
+        model.beginAgentDetailBatch()
+        try {
+            assertEquals(PhyVlabAssignmentDetailResult.Failure(PhyVlabSyncFailure.CAPTCHA_REQUIRED), model.fetchDetailForAgent(activity(course, 7)))
+            assertEquals(PhyVlabAttachmentResult.Failure(PhyVlabSyncFailure.CAPTCHA_REQUIRED), model.downloadAttachmentForAgent(attachment))
+            assertEquals(listOf(SchoolHttpMethod.GET), transport.methods)
+            assertEquals(before, model.state.value)
+        } finally {
+            model.endAgentDetailBatch()
+        }
+        assertEquals(PhyVlabAttachmentResult.Failure(PhyVlabSyncFailure.CAPTCHA_REQUIRED), model.downloadAttachmentForAgent(attachment))
+        assertEquals(listOf(SchoolHttpMethod.GET, SchoolHttpMethod.GET), transport.methods)
+    }
+
+    @Test
+    fun agentAttachmentReportsCaptchaEncounteredWhileRecoveringExpiredSession() = runBlocking {
+        val transport = AgentLoginTransport(authenticatedOnce = true)
+        var downloads = 0
+        val repository = object : PhyVlabRepository by FailingRepository {
+            override suspend fun downloadAttachment(attachment: PhyVlabAttachment): PhyVlabAttachmentResult {
+                downloads++
+                return PhyVlabAttachmentResult.Failure(PhyVlabSyncFailure.SESSION_EXPIRED)
+            }
+        }
+        val model = PhyVlabScreenModel(repository, PhyVlabSessionProtocol(transport) { Credentials("test-user", "test-password") })
+        val attachment = PhyVlabAttachment("老师附件.pdf", "https://phyvlab.bjtu.edu.cn/pluginfile.php/test")
+
+        assertEquals(PhyVlabAttachmentResult.Failure(PhyVlabSyncFailure.CAPTCHA_REQUIRED), model.downloadAttachmentForAgent(attachment))
+        assertEquals(1, downloads)
+        assertEquals(listOf(SchoolHttpMethod.GET, SchoolHttpMethod.GET), transport.methods)
+    }
+
+    private class AgentLoginTransport(private val authenticatedOnce: Boolean = false) : SchoolHttpTransport {
+        val methods = mutableListOf<SchoolHttpMethod>()
+
+        override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse {
+            methods += request.method
+            return if (authenticatedOnce && methods.size == 1) AuthenticatedTransport.execute(request) else SchoolHttpResponse(
+                statusCode = 200,
+                finalUrl = request.url,
+                body = "<form id='login'><div id='aliyun-captcha-element'></div></form>".encodeToByteArray(),
+            )
+        }
+
+        override fun clearSession() = Unit
     }
 
     private fun activity(course: PhyVlabCourse, id: Int) = PhyVlabActivity(

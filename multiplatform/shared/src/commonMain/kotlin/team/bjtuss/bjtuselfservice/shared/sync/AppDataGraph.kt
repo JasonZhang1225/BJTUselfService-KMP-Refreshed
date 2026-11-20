@@ -292,10 +292,12 @@ class AppDataGraph(
     )
     val phyVlabAccountModel = team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabAccountModel(
         accountScope, this.cacheStore, securityCoordinator.phyVlabVault(accountScope),
-        signIn = phyVlabSessionProtocol::signInWith,
+        signIn = phyVlabSessionProtocol::verifyConfiguration,
         rememberSession = phyVlabSessionProtocol::rememberCurrentSession,
         clearSession = phyVlabSessionProtocol::clearRememberedSession,
         accountWork = accountWork,
+        loginMutex = phyVlabSessionProtocol.loginMutex,
+        onSessionChanged = phyVlabSessionProtocol::markSessionChanged,
     ).also { phyVlabAccountHolder[0] = it }
     val phyVlabLocalDataSource = CacheStorePhyVlabLocalDataSource(this.cacheStore)
     val phyVlabModel = PhyVlabScreenModel(

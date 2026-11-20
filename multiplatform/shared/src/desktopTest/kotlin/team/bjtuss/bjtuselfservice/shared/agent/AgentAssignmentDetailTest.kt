@@ -6,8 +6,10 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
 import team.bjtuss.bjtuselfservice.shared.cache.JvmAesCacheValueProtector
 import team.bjtuss.bjtuselfservice.shared.cache.openDesktopCacheStore
 import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkDetailResult
@@ -35,7 +37,8 @@ class AgentAssignmentDetailTest {
     private var now = 1_800_000_000L
     private val url = "https://phyvlab.bjtu.edu.cn/pluginfile.php/1/mod_assign/intro/模板.docx"
     private var detailCalls = 0
-    private var failDetail = false
+    private var detailFailure: PhyVlabSyncFailure? = null
+    private var attachmentFailure: PhyVlabSyncFailure? = null
 
     private val repository = object : HomeworkRepository {
         override fun load() = HomeworkSnapshot(listOf(Homework(id = 7, upId = 107, idSnId = null, score = "", userId = 1, courseId = 2, courseName = "课",
@@ -57,11 +60,14 @@ class AgentAssignmentDetailTest {
         phyVlabActivities = { listOf(activity) },
         phyVlabDetail = {
             detailCalls++
-            if (failDetail) PhyVlabAssignmentDetailResult.Failure(PhyVlabSyncFailure.NETWORK)
-            else PhyVlabAssignmentDetailResult.Success(PhyVlabAssignmentDetail(description = "完成 5.1、5.2 题",
+            detailFailure?.let { PhyVlabAssignmentDetailResult.Failure(it) }
+                ?: PhyVlabAssignmentDetailResult.Success(PhyVlabAssignmentDetail(description = "完成 5.1、5.2 题",
                 submittedFiles = listOf(PhyVlabSubmissionFile("我的.pdf")), attachments = listOf(PhyVlabAttachment("模板.docx", url))))
         },
-        phyVlabDownload = { PhyVlabAttachmentResult.Success(FileContent(it.fileName, "application/octet-stream", byteArrayOf(9))) },
+        phyVlabDownload = { attachment ->
+            attachmentFailure?.let { PhyVlabAttachmentResult.Failure(it) }
+                ?: PhyVlabAttachmentResult.Success(FileContent(attachment.fileName, "application/octet-stream", byteArrayOf(9)))
+        },
         citelProblem = { id, live -> "题面 $id live=$live".takeIf { id == 5 } },
     ), now = { now })
 
@@ -105,6 +111,38 @@ class AgentAssignmentDetailTest {
     }
 
     @Test
+    fun captchaFeedbackPreservesCachedDetailAndReachesCliForDetailAndAttachment() = runBlocking {
+        val id = "phyvlab:3689"
+        val cached = service.refresh(id)
+        val cli = AgentHomeworkExecutor(
+            repository, StudentProfile("测试姓名", "20990001", "本科生", "测试院系"), null,
+            refreshHomework = { error("物理在线详情不刷新课程平台") }, details = service,
+        )
+        val message = "请在 App 内完成物理在线验证码验证后重试。"
+        val show = AgentHomeworkRequest("show", 3689, source = "phyvlab")
+
+        detailFailure = PhyVlabSyncFailure.CAPTCHA_REQUIRED
+        val detailError = assertFailsWith<AgentDetailException> { service.refresh(id) }
+        assertEquals("captcha_required", detailError.code)
+        assertEquals(message, detailError.message)
+        assertEquals(AgentHomeworkOutcome.Failed("captcha_required", message), cli.run(show))
+        assertEquals(cached, service.cached()[id])
+
+        detailFailure = null
+        attachmentFailure = PhyVlabSyncFailure.CAPTCHA_REQUIRED
+        val attachmentError = assertFailsWith<AgentDetailException> { service.attachment(id, cached.attachments.single().id) }
+        assertEquals("captcha_required", attachmentError.code)
+        assertEquals(message, attachmentError.message)
+        val out = directory.resolve("captcha-blocked-attachments")
+        val request = show.copy(outDir = out.path)
+        val failure = assertIs<AgentHomeworkOutcome.Failed>(cli.run(request))
+        assertEquals(AgentHomeworkOutcome.Failed("captcha_required", message), failure)
+        assertEquals(AgentExit.LOGIN_FAILED, failure.toOutput(AgentHomeworkCommand(request, json = true), "app").exitCode)
+        assertTrue(!out.exists())
+        assertEquals(cached, service.cached()[id])
+    }
+
+    @Test
     fun freshDetailsAreNotRefetchedEveryCycle() = runBlocking {
         service.refreshPending(listOf("phyvlab:3689"))
         service.refreshPending(listOf("phyvlab:3689"))
@@ -117,7 +155,8 @@ class AgentAssignmentDetailTest {
     @Test
     fun oneFailureKeepsOtherDetailsAndOldCache() = runBlocking {
         service.refresh("phyvlab:3689")
-        failDetail = true
+        detailFailure = PhyVlabSyncFailure.NETWORK
+        assertEquals("network", assertFailsWith<AgentDetailException> { service.refresh("phyvlab:3689") }.code)
         now += 25 * 3600
         assertEquals(1, service.refreshPending(listOf("phyvlab:3689", "course_platform:7")))
         assertEquals("完成 5.1、5.2 题", service.cached()["phyvlab:3689"]!!.content, "失败保留旧详情")

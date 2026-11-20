@@ -15,6 +15,7 @@ import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkOperationResult
 import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkRepository
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabAssignmentDetailResult
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabAttachmentResult
+import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSyncFailure
 import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAttachment
@@ -71,6 +72,8 @@ internal fun agentStableId(value: String): String {
     }
     return hash.toULong().toString(16).padStart(16, '0')
 }
+
+internal const val AGENT_PHYVLAB_CAPTCHA_REQUIRED = "captcha_required"
 
 class AgentDetailException(val code: String, message: String) : Exception(message)
 
@@ -181,7 +184,7 @@ class AgentAssignmentDetailService(
                 val attachment = detail.attachments.firstOrNull { agentStableId(it.url) == attachmentId } ?: missing()
                 when (val result = download(attachment)) {
                     is PhyVlabAttachmentResult.Success -> result.file
-                    is PhyVlabAttachmentResult.Failure -> network("下载附件")
+                    is PhyVlabAttachmentResult.Failure -> phyVlabFailure(result.reason, "下载附件")
                 }
             }
             else -> throw AgentDetailException("not_supported", "这个来源没有可下载的附件。")
@@ -229,8 +232,15 @@ class AgentAssignmentDetailService(
         val activity = backends.phyVlabActivities().firstOrNull { it.id == activityId } ?: missing()
         when (val result = load(activity)) {
             is PhyVlabAssignmentDetailResult.Success -> result.detail
-            is PhyVlabAssignmentDetailResult.Failure -> network("读取作业详情")
+            is PhyVlabAssignmentDetailResult.Failure -> phyVlabFailure(result.reason, "读取作业详情")
         }
+    }
+
+    private fun phyVlabFailure(reason: PhyVlabSyncFailure, action: String): Nothing {
+        if (reason == PhyVlabSyncFailure.CAPTCHA_REQUIRED) {
+            throw AgentDetailException(AGENT_PHYVLAB_CAPTCHA_REQUIRED, "请在 App 内完成物理在线验证码验证后重试。")
+        }
+        network(action)
     }
 
     private fun text(html: String) = plainText(html).take(MAX_DETAIL_CONTENT_CHARS).ifBlank { null }

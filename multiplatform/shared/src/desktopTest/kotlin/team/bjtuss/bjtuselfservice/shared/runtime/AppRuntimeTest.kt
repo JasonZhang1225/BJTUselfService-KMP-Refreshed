@@ -8,6 +8,8 @@ import androidx.compose.ui.ImageComposeScene
 import java.nio.file.Files
 import javax.swing.SwingUtilities
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -22,6 +24,7 @@ import kotlinx.io.files.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertFalse
 import kotlin.test.assertNotSame
 import kotlin.test.assertNotNull
@@ -567,6 +570,8 @@ class AppRuntimeTest {
         assertTrue(cache.accountScopes().isEmpty())
         assertEquals(AppPreferences(), cache.preferences())
         assertTrue("lab:fixture-b" in clearedVaults)
+        assertTrue("vlab:fixture-a.moodle-session" in clearedVaults)
+        assertTrue("vlab:fixture-b.moodle-session" in clearedVaults)
         assertTrue("device:false" in platformCalls)
         assertTrue("presentation:true" in platformCalls)
     } }
@@ -592,6 +597,7 @@ class AppRuntimeTest {
         assertTrue(runtime.endAccount(account))
 
         val report = runtime.cleanup(account, CleanupOperation.SIGN_OUT)
+        assertTrue("vlab:fixture-a" in clearedVaults)
 
         assertEquals(listOf("系统安全存储"), report.failureLabels)
         assertNull(runtime.takeCompletedCleanup(account))
@@ -635,6 +641,46 @@ class AppRuntimeTest {
     } }
 
     @Test
+    fun switchingAccountCancelsOldPhysicalOnlineAttemptBeforeItCanCommit() = withFixture { runBlocking {
+        val old = bind("fixture-a")
+        val model = old.graph.phyVlabModel
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val finished = CompletableDeferred<Unit>()
+        var committed = false
+        val attempt = async(start = CoroutineStart.UNDISPATCHED) {
+            runCatching {
+                model.runManualLogin {
+                    try {
+                        entered.complete(Unit)
+                        withContext(NonCancellable) { release.await() }
+                        model.submitManualLogin {
+                            model.rememberManualSession("fixture-lab")
+                            model.sessionChanged()
+                            old.refreshService.refreshPhyVlabAfterAccountSaved()
+                            committed = true
+                        }
+                    } finally {
+                        finished.complete(Unit)
+                    }
+                }
+            }
+        }
+        withTimeout(5_000) { entered.await() }
+        val next = try {
+            bind("fixture-b")
+        } finally {
+            release.complete(Unit)
+        }
+        withTimeout(5_000) {
+            assertIs<CancellationException>(attempt.await().exceptionOrNull())
+            finished.await()
+        }
+        assertFalse(committed)
+        assertSame(next, runtime.currentAccount)
+    } }
+
+    @Test
     fun uninstallHandoffBelongsToTheSessionThatPreparedIt() = withFixture { runBlocking {
         requestHandler = { SchoolHttpResponse(200, it.url) }
         val old = bind("fixture-a")
@@ -648,6 +694,7 @@ class AppRuntimeTest {
         assertEquals(1, purgedLogoutCalls)
         val report = assertNotNull(runtime.cleanupCoordinator.lastReport.value)
         assertTrue(report.succeeded)
+        assertTrue("vlab:fixture-a.moodle-session" in clearedVaults)
         assertEquals(CleanupOperation.PREPARE_UNINSTALL, report.request.operation)
 
         assertTrue(runtime.endAccount(old))

@@ -987,7 +987,11 @@ internal fun ShellDestination(
         ) {
             session.phyVlabAccountModel?.let {
                 team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabAccountSettingsScreen(
-                    it, phyVlabModel::prepareManualLogin, Modifier.fillMaxSize(),
+                    model = it,
+                    prepareManualLogin = phyVlabModel::prepareManualLogin,
+                    runInAccount = phyVlabModel::runManualLogin,
+                    submitManualLogin = phyVlabModel::submitManualLogin,
+                    modifier = Modifier.fillMaxSize(),
                     onAccountSaved = {
                         settingsModel.setPhyVlabEnabled(true)
                         refreshPhyVlabAfterLogin()
