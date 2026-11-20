@@ -1274,3 +1274,10 @@
 - 原因/决策：解决 ChatGPT 远程查询物理在线只有标题和截止时间、缺少题面与附件的问题，以及桌面端快速拖放上传和本机 Agent 受控交作业需求。PR #98 合并时因目标分支未切回 `main` 先合入了 `#97` 分支，随后由同一提交 `d2e12747` 创建 PR #99 合入 `main` 并删除旧分支。
 - 验证：macOS DMG 本地安装实测文件拖放与 CLI `homework show/submit` 通过；Codex 与 CodeRabbit 在 #97、#98 上的审查问题（串行提交、无窗口缓存初始化、物理在线草稿/CITEL 提交状态判定、分块流式限流、重定向白名单校验等）全部修复并回归通过；`kmp-security-check` 6 项检查全绿。
 - 未验证：Windows 实机文件拖放；物理在线真实页面老师附件解析（受学校登录变更阻塞）；私人远程 Site 重新部署与 D1 迁移 `0003` 的线上实测。
+
+## 2026-11-20 2.0.1-KMP 正式发布（Build 46，直接推送 main）
+
+- 改动：发布提交 `43aaf0bc` 与正式标签 `v2.0.1-KMP`。Android/macOS/Windows 对学校缺失中间证书启用三层自动补链，继续使用系统证书链与域名校验。登录页增加版本信息、仓库入口和未登录更新检查。私人 Site 模板、应用内更新日志和文档对齐正式版本。
+- 发布：GitHub Actions `44734983730` 四端打包及 GitHub Release 成功，实际附件标识 `build157.1`。Gitee 自动同步上传 APK 后在 IPA 上传超时，本机从 GitHub 下载 IPA 并复用 Downloads 中的 DMG/MSI 补传。匿名下载四个 Gitee 附件的字节内容与 GitHub SHA-256 一致。仓库和两边 Release Notes 均写入四端直链。
+- 验证：`python3 scripts/sync-bundled-changelog.py --check`、Site 模板 `npm test`（86 项）、镜像脚本单测（16 项）。本地此前执行的 `:shared:desktopTest` 共 1619 项（1618 通过，1 跳过），Android Debug 与 macOS、Windows、iOS 两个目标的 Kotlin 编译通过。正式包由 Actions 生成。
+- 未验证：未安装本次正式包实测。本地 iOS 签名模拟器构建在用户明确要求后取消，模拟器已关闭，未安装或启动 App。

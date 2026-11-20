@@ -1,26 +1,10 @@
 # BJTUselfService 实时工作记忆
 
 > **当前状态（2026-11-20）**
-> - **当前分支**：`fix/bjtu-tls-chain-and-login-update`（从最新 `origin/main` `667ffe5b` 切出），正在准备直接推送 main 并发布正式版。
-> - **源码版本**：`2.0.1-KMP` / Build 46（发布说明 `docs/releases/v2.0.1-KMP.md`；iOS 与桌面安装器数值版本 `2.0.1`；上个正式标签：`v2.0.0-KMP` / Build 45）。
+> - **当前分支**：`fix/bjtu-tls-chain-and-login-update`；发布提交 `43aaf0bc` 已直接推送 `origin/main`，后续提交同步双平台实测下载链接。
+> - **源码版本**：`2.0.1-KMP` / Build 46（发布说明 `docs/releases/v2.0.1-KMP.md`；iOS 与桌面安装器数值版本 `2.0.1`；正式标签 `v2.0.1-KMP` 已在 GitHub 与 Gitee 发布，四端安装包均可公开下载）。
 > - **远端活跃分支**：`main`、`feat/mac-swift`（macOS 原生 SwiftUI 探索）。
-> - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（PR #68–#99）及架构拆分、账号生命周期收口、CITEL 批量缓存与远端轮询、物理在线验证码补刷与 2.0.1 文档对齐（PR #102–#111）均已合入或移入 `history_full.md`。
-
----
-
-## 进行中：缺失中间证书三层自动补链与登录页检查更新（分支 `fix/bjtu-tls-chain-and-login-update`）
-
-- **三层安全自动补链**：学校 2026-11-17 换发 `*.bjtu.edu.cn` 后，`mis.bjtu.edu.cn` 与 `mail.bjtu.edu.cn` 漏发中间证书 `GeoTrust G2 TLS CN RSA4096 SHA256 2022 CA1`（SHA-256 `05:DC:9E:DC:0F:DD:FA:97:5A:14:32:EF:80:6E:C7:80:07:8B:53:62:AD:45:AF:76:DB:15:C9:07:63:0D:B2:5D`）。在 `mediaJvmMain/network/SchoolTlsTrustManager.kt`、`KtorEngine.desktop.kt`、`KtorEngine.android.kt` 及 `androidApp/proguard-rules.pro` 落地三层自动补链，始终委托系统默认 `X509TrustManager` 与域名校验，不加入 TrustAnchor、不放宽 TLS 校验：
-  1. 内置上述 GeoTrust 官方中间证书 + 会话期间同校证书链被动学习内存缓存（0ms）；
-  2. 同校公开 HTTPS 节点（`sso.bjtu.edu.cn`、`aa.bjtu.edu.cn`）纯 HTTPS 探测自动学习新中间证书；
-  3. 仅在学校叶证书失败且前两层未果时，按受限 AIA (`1.3.6.1.5.5.7.1.1`) 动态拉取公开非敏感 CA 中间证书（禁 IP 字面量、DNS 全公网校验、禁重定向、≤ 64 KiB、3 秒超时、5 分钟失败冷却）。**安全登记**：桌面端支持公开 CA 证书的 `http://`/`https://` AIA，Android 保持 `network_security_config.xml` 全局 `cleartextTrafficPermitted="false"` 仅允许 `https://` AIA（常规靠第 1/2 层纯 HTTPS 补链）。
-- **未登录检查更新与登录页入口**：新增 `AppUpdateCoordinator.kt`，在 `LoginRuntimeContext`、`SettingsScreenModel`、`AppDataGraph`、`AccountSession`、`LoginAccountBinding` 间共享更新检查并去重（并在 `!runtime.cleanupBlocksLogin` 时不触发网络）；抽出 `VersionAndProjectContent` 供 `SettingsScreen` 与 `LoginScreen` 的 `AppleSheet` 复用，登录页底部/左侧新增「版本 v2.0.1-KMP」「检查更新」「GitHub」「Gitee」入口。
-- **发布说明与文档**：补全 `docs/releases/v2.0.1-KMP.md` 证书故障与登录页更新说明、更新 `README.md`，并执行 `sync-bundled-changelog.py` 同步 `BundledChangelog.kt`。
-- **验证状态**：
-  - 实网桌面端匿名握手：`mis`、`mail`、`cas`、`sso`、`aa` 均 HTTP 200/302；空内置列表中独立关闭别层后，第 2 层与第 3 层均实网通过 `mis.bjtu.edu.cn`（TLSv1.3）和 `mail.bjtu.edu.cn`（TLSv1.2）。
-  - Android 平板（`6c5a737e`）：安装第一版 Debug APK（`versionCode=46`）后用户实测确认可以登录。
-  - 三层补链 + 文档同步后最终验证：`sync-bundled-changelog.py --check` 通过；`:shared:desktopTest` 全量 **1619 项（1618 通过、0 失败、1 项跳过）**；`:shared:compileKotlinIosArm64`、`:shared:compileKotlinIosSimulatorArm64`、`:desktopApp:compileKotlin`、`:windowsApp:compileKotlinWindows`、`:androidApp:assembleDebug` 均通过；`LoginScreenRenderTest` 已在 `.artifacts/login-update-check/` 渲染 3 组截图并目视确认。
-  - **未验证边界**：三层补链升级版尚未重打 Release APK 或重装平板实测；Android R8 Release 混淆路径、iOS 模拟器 `AppleSheet` 实机目视、Windows 实机运行未在本轮执行。
+> - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（PR #68–#99）及架构拆分、账号生命周期收口、CITEL 批量缓存与远端轮询、物理在线验证码补刷与 2.0.1 文档对齐（PR #102–#111）及 2.0.1 正式版的 TLS 自动补链与未登录检查更新均已移入 `history_full.md`。
 
 ---
 
