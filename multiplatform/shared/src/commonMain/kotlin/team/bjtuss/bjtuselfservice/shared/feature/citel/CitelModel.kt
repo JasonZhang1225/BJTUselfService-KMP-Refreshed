@@ -360,6 +360,45 @@ class CitelModel(
         }
     }
 
+    internal suspend fun updateCachedProblem(expected: CitelCachedProblem): String? {
+        initialize()
+        return mutex.withLock {
+            if (!isCurrentCacheEntry(expected)) return@withLock "题面缓存已变更，请重试。"
+            val task = state.value.tasks.firstOrNull { it.id == expected.moduleId && it.programming }
+                ?: return@withLock "作业列表已变更，请刷新后重试。"
+            try {
+                downloadProblem(task, loginCredentials())
+                null
+            } catch (e: TimeoutCancellationException) {
+                "更新超时，已保留原缓存。"
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                (e as? CitelFailure)?.userMessage ?: "更新失败，已保留原缓存。"
+            }
+        }
+    }
+
+    internal suspend fun deleteCachedProblem(expected: CitelCachedProblem): String? {
+        initialize()
+        return mutex.withLock {
+            if (!isCurrentCacheEntry(expected)) return@withLock "题面缓存已变更，请重试。"
+            try {
+                cache.deleteCitelProblem(scope, expected.moduleId)
+                mutableState.value = state.value.copy(problems = state.value.problems - expected.moduleId)
+                null
+            } catch (e: Exception) {
+                "删除本地缓存失败，请重试。"
+            }
+        }
+    }
+
+    // 操作绑定到界面显示的缓存版本，避免账号切换或其他更新后继续执行旧的确认。
+    private fun isCurrentCacheEntry(expected: CitelCachedProblem): Boolean {
+        val current = state.value
+        return current.enabled && current.username == expected.username && current.problems[expected.moduleId] === expected
+    }
+
     private suspend fun downloadProblem(task: CitelTask, login: Credentials): CitelCachedProblem {
         val problem = withTimeout(180_000) { remote.problem(login, task, withResults = true) }
         val cached = CitelCachedProblem(login.username, task.id, Clock.System.now().epochSeconds, problem)

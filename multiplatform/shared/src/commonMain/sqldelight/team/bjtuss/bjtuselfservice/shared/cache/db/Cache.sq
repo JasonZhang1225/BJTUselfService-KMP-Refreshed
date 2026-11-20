@@ -225,6 +225,9 @@ SELECT value FROM cache_metadata WHERE account_scope = ? AND cache_key = ?;
 putMetadata:
 INSERT OR REPLACE INTO cache_metadata(account_scope, cache_key, value) VALUES (?, ?, ?);
 
+deleteMetadata:
+DELETE FROM cache_metadata WHERE account_scope = ? AND cache_key = ?;
+
 deleteMetadataByAccount:
 DELETE FROM cache_metadata WHERE account_scope = ?;
 

@@ -3,9 +3,10 @@ package team.bjtuss.bjtuselfservice.shared.feature.citel
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,6 +19,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -36,11 +38,16 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AppleSegmentedControl
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlert
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertAction
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertRole
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleMenuOption
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleMenuPickerCard
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
+
+private data class CitelCacheActionFeedback(val taskId: Int, val message: String, val failed: Boolean)
 
 @Composable
 internal fun CitelBatchCacheScreen(
@@ -53,7 +60,25 @@ internal fun CitelBatchCacheScreen(
     var submissionIndex by rememberSaveable(state.username) { mutableStateOf(0) }
     var busy by remember(model) { mutableStateOf(false) }
     var result by remember(model, state.username) { mutableStateOf<CitelBatchCacheResult?>(null) }
+    var pendingDeletion by remember(model, state.username) { mutableStateOf<Pair<CitelTask, CitelCachedProblem>?>(null) }
+    var activeTaskId by remember(model) { mutableStateOf<Int?>(null) }
+    var actionFeedback by remember(model, state.username) { mutableStateOf<CitelCacheActionFeedback?>(null) }
     val scope = rememberCoroutineScope()
+
+    fun runCacheAction(taskId: Int, successMessage: String, operation: suspend () -> String?) {
+        if (activeTaskId != null || busy) return
+        activeTaskId = taskId
+        result = null
+        actionFeedback = null
+        scope.launch {
+            try {
+                val error = operation()
+                actionFeedback = CitelCacheActionFeedback(taskId, error ?: successMessage, error != null)
+            } finally {
+                activeTaskId = null
+            }
+        }
+    }
     val listState = rememberLazyListState()
 
     val courses = remember(state.tasks) {
@@ -61,10 +86,13 @@ internal fun CitelBatchCacheScreen(
     }
     val courseId = courseKey.toIntOrNull()?.takeIf { courses.containsKey(it) }
     val submission = CitelProblemSubmission.entries[submissionIndex]
-    val missing = remember(state.tasks, state.problems, courseId, submission) {
-        state.missingProblems(courseId, submission)
+    val problems = state.problems
+    val (missing, cached) = remember(state.tasks, problems, courseId, submission) {
+        state.filteredProgrammingTasks(courseId, submission).partition { it.id !in problems }
     }
-    val groups = remember(missing) { missing.groupBy { it.courseId } }
+    val missingByCourse = remember(missing) { missing.groupBy { it.courseId } }
+    val cachedByCourse = remember(cached) { cached.groupBy { it.courseId } }
+    val canManageCache = !busy && activeTaskId == null && pendingDeletion == null && !state.refreshing
 
     LaunchedEffect(courseId, submission) { listState.scrollToItem(0) }
 
@@ -127,10 +155,12 @@ internal fun CitelBatchCacheScreen(
                                 color = MaterialTheme.colorScheme.error)
                         }
                         Button(
-                            enabled = !busy && !state.refreshing && !holdNetwork && missing.isNotEmpty(),
+                            enabled = canManageCache && !holdNetwork && missing.isNotEmpty(),
                             onClick = {
+                                if (busy || activeTaskId != null || pendingDeletion != null) return@Button
                                 busy = true
                                 result = null
+                                actionFeedback = null
                                 scope.launch {
                                     try {
                                         result = model.cacheMissingProblems(courseId, submission)
@@ -166,18 +196,51 @@ internal fun CitelBatchCacheScreen(
                         }
                     }
                 }
-                groups.forEach { (id, tasks) ->
-                    item(key = "course-$id") {
+                missingByCourse.forEach { (id, tasks) ->
+                    item(key = "missing-course-$id") {
                         Text("${courses[id].orEmpty()} · 未缓存 ${tasks.size} 题",
                             style = MaterialTheme.typography.titleSmall)
                     }
                     items(tasks, key = { it.id }) { task ->
-                        Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(task.title, style = MaterialTheme.typography.bodyLarge)
-                                Text(if (task.hasProgrammingSubmission) "已提交" else "未提交",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        CitelCacheTaskCard(task) {
+                            CitelCacheActionMessage(task, actionFeedback)
+                        }
+                    }
+                }
+                item(key = "cached-header") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("当前筛选已缓存 ${cached.size} 题", style = MaterialTheme.typography.titleMedium)
+                        if (cached.isEmpty()) {
+                            Text("当前筛选没有已缓存的题目。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                cachedByCourse.forEach { (id, tasks) ->
+                    item(key = "cached-course-$id") {
+                        Text("${courses[id].orEmpty()} · 已缓存 ${tasks.size} 题",
+                            style = MaterialTheme.typography.titleSmall)
+                    }
+                    items(tasks, key = { it.id }) { task ->
+                        val entry = problems.getValue(task.id)
+                        CitelCacheTaskCard(task) {
+                            Text("缓存时间 ${citelDateText(entry.fetchedAt)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            CitelCacheActionMessage(task, actionFeedback)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(
+                                    enabled = canManageCache && !holdNetwork,
+                                    onClick = {
+                                        runCacheAction(task.id, "题面缓存已更新。") { model.updateCachedProblem(entry) }
+                                    },
+                                ) { Text(if (activeTaskId == task.id) "正在处理…" else "更新") }
+                                TextButton(
+                                    enabled = canManageCache,
+                                    onClick = { pendingDeletion = task to entry },
+                                ) {
+                                    Text("删除", color = if (canManageCache) MaterialTheme.colorScheme.error
+                                        else MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
                         }
                     }
@@ -185,4 +248,40 @@ internal fun CitelBatchCacheScreen(
             }
         }
     }
+
+    pendingDeletion?.let { (task, entry) ->
+        AppleAlert(
+            title = "删除题面缓存",
+            message = "删除「${task.title}」的本地题面和用例缓存？删除后可重新拉取。",
+            actions = listOf(
+                AppleAlertAction("取消", AppleAlertRole.Cancel) { pendingDeletion = null },
+                AppleAlertAction("删除缓存", AppleAlertRole.Destructive) {
+                    pendingDeletion = null
+                    runCacheAction(task.id, "已删除本地题面缓存。") { model.deleteCachedProblem(entry) }
+                },
+            ),
+            onDismissRequest = { pendingDeletion = null },
+        )
+    }
+}
+
+@Composable
+private fun CitelCacheTaskCard(task: CitelTask, content: @Composable ColumnScope.() -> Unit) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(task.title, style = MaterialTheme.typography.bodyLarge)
+            Text(if (task.hasProgrammingSubmission) "已提交" else "未提交",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun CitelCacheActionMessage(task: CitelTask, feedback: CitelCacheActionFeedback?) {
+    if (feedback?.taskId != task.id) return
+    Text(feedback.message, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        style = MaterialTheme.typography.bodySmall,
+        color = if (feedback.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
 }

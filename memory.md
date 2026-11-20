@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > **当前状态（2026-11-20）**
-> - **当前分支**：`feat/citel-batch-cache`，基于已快进至 `e8e44f34` 的本地 `main`（与 `origin/main` 一致）。CITEL 批量缓存由本分支交付。
+> - **当前分支**：`feat/citel-batch-cache`，基于已快进至 `e8e44f34` 的本地 `main`（与 `origin/main` 一致）。CITEL 批量缓存已推送至 `bd2e1876` 并触发 CI #155，已缓存题目管理在同一分支继续开发。
 > - **源码版本**：`2.0.0-KMP` / Build 45。
 > - **本地分支整理**：已删除合入 `main` 的 `chore/docs-cleanup`、`feat/phyvlab-auto-captcha`、`fix/phyvlab-manual-captcha`。原两个物理在线工作树已切换为 detached HEAD，保留原提交和未提交文件。
 > - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（课程回放、macOS/Windows 硬件合成、作业忽略与筛选拆分、全应用设备时区、离线更新日志、`DESIGN.md` / `AppleAlert` / `AppleMenuPickerCard`、物理实验 IP 备用路径、上传文件拖放、本机 CLI 交作业、统一作业详情与远程增量同步等，PR #68–#99）均已移入 `history_full.md`。
@@ -13,9 +13,9 @@
 - CITEL 启用后，可从「Agent 和 ChatGPT 插件」进入题面缓存页，按课程和实际提交状态筛选，查看剩余题数并批量下载题面及用例到本机。
 - 复用现有账号缓存与详情下载路径，批次逐题落盘，跳过已有缓存。单题失败可重试，明确登录失败结束当前批次。
 - 脱敏用例覆盖筛选、跳过缓存、部分失败后的重试、重新初始化后的缓存恢复及 Android 原生路由。`:shared:desktopTest` 共 1461 项，0 失败、1 跳过。`:androidApp:assembleDebug`、`:desktopApp:compileKotlin`、`:windowsApp:compileKotlinWindows`、`:shared:compileKotlinIosArm64`、`:shared:compileKotlinIosSimulatorArm64` 均通过。
-- 桌面渲染已目视检查窄屏深色 1.5 倍字体、宽屏浅色和空状态。iOS arm64 签名模拟器构建及 `codesign --verify --deep --strict` 通过，iPhone 17 Pro 与 iPhone Air 模拟器均在安装离线测试包时超时。iOS 页面、玻璃滚动及真实 CITEL 账号未实测。
-
-- CI 打包使用本分支的 `KMP package` 手动入口，生成 Android、iOS、macOS 和 Windows Actions 产物。
+- 桌面渲染已目视检查窄屏深色 1.5 倍字体、宽屏浅色和空状态。iOS arm64 签名模拟器构建及 `codesign --verify --deep --strict` 通过，iPhone 17 Pro 与 iPhone Air 模拟器均在安装离线测试包时超时。模拟器阶段未完成 iOS 目视验收。用户随后在 Mac 和 iPhone 验证了 CI #155 的批量缓存功能。
+- 本轮新增同一筛选条件下的已缓存题目列表、缓存时间、逐题更新和确认删除。更新失败保留原题面，删除后题目回到未缓存列表。
+- 本轮仅在 Mac 本地验证。`:shared:desktopTest` 共 1462 项，0 失败、1 跳过。`:desktopApp:packageDmg`、DMG 校验和包内 App 签名验证通过。已在打包 App 的离线测试页验证窄/宽窗口、浅/深色、更新、取消删除、确认删除、重新拉取和计数变化。产物在 `.artifacts/citel-cache-management/BJTUselfServiceKMP-CITEL-cache-macOS-arm64.dmg`。
 
 ## 进行中 / 待处理：物理在线相关检查
 

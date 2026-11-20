@@ -16,12 +16,13 @@ internal enum class CitelProblemSubmission(val label: String) {
 internal val CitelTask.hasProgrammingSubmission: Boolean
     get() = isCitelAccepted(status) || (programmingSubmitCount?.let { it > 0 } ?: status.isNotBlank())
 
+internal fun CitelState.filteredProgrammingTasks(courseId: Int?, submission: CitelProblemSubmission): List<CitelTask> =
+    tasks.filter { it.programming && (courseId == null || it.courseId == courseId) && submission.matches(it) }
+
 internal fun CitelState.missingProblems(
     courseId: Int? = null,
     submission: CitelProblemSubmission = CitelProblemSubmission.ALL,
-): List<CitelTask> = tasks.filter {
-    it.programming && it.id !in problems && (courseId == null || it.courseId == courseId) && submission.matches(it)
-}
+): List<CitelTask> = filteredProgrammingTasks(courseId, submission).filterNot { it.id in problems }
 
 internal data class CitelBatchCacheResult(
     val saved: Int = 0,
