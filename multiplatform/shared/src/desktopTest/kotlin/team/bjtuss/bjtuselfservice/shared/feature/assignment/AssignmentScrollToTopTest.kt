@@ -29,7 +29,7 @@ import kotlin.test.*
 import team.bjtuss.bjtuselfservice.shared.LocalReduceMotion
 import team.bjtuss.bjtuselfservice.shared.PlatformAppTheme
 import team.bjtuss.bjtuselfservice.shared.feature.shell.*
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
 
 class AssignmentScrollToTopTest {
     @Test fun thresholdTracksViewportAndNativeScrollingAndClickReachesTheFirstItem() = SwingUtilities.invokeAndWait {
@@ -141,7 +141,7 @@ class AssignmentScrollToTopTest {
                         Surface(Modifier.fillMaxSize()) {
                             AggregatedAssignmentWorkspace(assignments, emptyList(), null, {}, {}, {}, false, {},
                                 modifier = Modifier.fillMaxSize(), expanded = expanded,
-                                fileGateway = UnavailableHomeworkFileGateway, markdown = { "" }, detailContent = {})
+                                fileGateway = UnavailableFileGateway, markdown = { "" }, detailContent = {})
                         }
                     }
                 }
@@ -230,7 +230,7 @@ class AssignmentScrollToTopTest {
                         LocalNativeScrollControllerReporter provides { controller = it }) {
                         Surface(Modifier.fillMaxSize()) {
                             AggregatedAssignmentWorkspace(assignments, emptyList(), null, {}, {}, {}, false, {},
-                                fileGateway = UnavailableHomeworkFileGateway, markdown = { "" }, detailContent = {})
+                                fileGateway = UnavailableFileGateway, markdown = { "" }, detailContent = {})
                         }
                     }
                 }

@@ -18,7 +18,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetScrollContentPadding
@@ -92,7 +92,7 @@ fun AssignmentUploadNote(text: String) {
  */
 @Composable
 fun AssignmentUploadFiles(
-    pending: List<HomeworkFileContent>,
+    pending: List<FileContent>,
     busy: Boolean,
     pickEnabled: Boolean,
     onPick: () -> Unit,
@@ -101,7 +101,7 @@ fun AssignmentUploadFiles(
     removed: Set<String> = emptySet(),
     onToggleExisting: (String) -> Unit = {},
     singleFile: Boolean = false,
-    onDrop: ((HomeworkFilePickResult) -> Unit)? = null,
+    onDrop: ((FilePickResult) -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     var dropHovered by remember { mutableStateOf(false) }
@@ -250,22 +250,22 @@ fun AssignmentUploadAction(label: String, busyLabel: String, busy: Boolean, enab
 }
 
 /** 选择失败的就地说明：选择器打不开与文件读不出来分开说。 */
-fun HomeworkFilePickResult.Failed.pickFeedback(): String = when (reason) {
-    HomeworkFileGatewayFailure.UNAVAILABLE -> "暂时无法打开文件选择器，请稍后重试。"
-    HomeworkFileGatewayFailure.PERMISSION_DENIED -> "没有读取所选文件的权限，请换一个位置的文件。"
-    HomeworkFileGatewayFailure.IO -> "无法读取所选文件，请重新选择。"
+fun FilePickResult.Failed.pickFeedback(): String = when (reason) {
+    FileGatewayFailure.UNAVAILABLE -> "暂时无法打开文件选择器，请稍后重试。"
+    FileGatewayFailure.PERMISSION_DENIED -> "没有读取所选文件的权限，请换一个位置的文件。"
+    FileGatewayFailure.IO -> "无法读取所选文件，请重新选择。"
 }
 
 const val UPLOAD_TOO_LARGE_FEEDBACK = "文件太大了：一次最多添加 200 MB，请压缩或分开添加。"
 
 /** 拖放失败的就地说明：拖入的是文件夹，或文件读不出来。 */
-fun HomeworkFilePickResult.Failed.dropFeedback(): String = when (reason) {
-    HomeworkFileGatewayFailure.PERMISSION_DENIED -> "没有读取拖入文件的权限，请换一个位置的文件。"
+fun FilePickResult.Failed.dropFeedback(): String = when (reason) {
+    FileGatewayFailure.PERMISSION_DENIED -> "没有读取拖入文件的权限，请换一个位置的文件。"
     else -> "无法读取拖入的内容。文件夹不能直接提交，请压缩成一个文件后再拖入。"
 }
 
 /** 同名文件以后选的为准，避免同一份作业重复上传。 */
-fun mergePickedFiles(current: List<HomeworkFileContent>, picked: List<HomeworkFileContent>): List<HomeworkFileContent> {
+fun mergePickedFiles(current: List<FileContent>, picked: List<FileContent>): List<FileContent> {
     val latest = picked.distinctBy { it.fileName }
     return current.filter { old -> latest.none { it.fileName == old.fileName } } + latest
 }
@@ -280,17 +280,17 @@ fun formatUploadSize(bytes: Long): String = when {
 /** Moodle 可编辑附件（物理在线、CITEL）。远端附件在点保存之前只是标记，原提交不会即时改变。 */
 @Composable
 fun AssignmentFilesEditor(
-    existing: List<String>, fileGateway: HomeworkFileGateway, busy: Boolean,
+    existing: List<String>, fileGateway: FileGateway, busy: Boolean,
     note: String, saveLabel: String,
-    onSave: (List<HomeworkFileContent>, Set<String>) -> Unit,
+    onSave: (List<FileContent>, Set<String>) -> Unit,
     revision: Long = 0,
     singleFile: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
-    var added by remember(existing, revision) { mutableStateOf<List<HomeworkFileContent>>(emptyList()) }
+    var added by remember(existing, revision) { mutableStateOf<List<FileContent>>(emptyList()) }
     var removed by remember(existing, revision) { mutableStateOf<Set<String>>(emptySet()) }
     var feedback by remember { mutableStateOf<String?>(null) }
-    fun addFiles(files: List<HomeworkFileContent>) {
+    fun addFiles(files: List<FileContent>) {
         added = if (singleFile) listOf(files.last()) else mergePickedFiles(added, files)
         feedback = null
     }
@@ -302,10 +302,10 @@ fun AssignmentFilesEditor(
         onPick = {
             scope.launch {
                 when (val picked = fileGateway.pickFiles()) {
-                    HomeworkFilePickResult.Cancelled -> Unit
-                    HomeworkFilePickResult.TooLarge -> feedback = UPLOAD_TOO_LARGE_FEEDBACK
-                    is HomeworkFilePickResult.Failed -> feedback = picked.pickFeedback()
-                    is HomeworkFilePickResult.Selected -> addFiles(picked.files)
+                    FilePickResult.Cancelled -> Unit
+                    FilePickResult.TooLarge -> feedback = UPLOAD_TOO_LARGE_FEEDBACK
+                    is FilePickResult.Failed -> feedback = picked.pickFeedback()
+                    is FilePickResult.Selected -> addFiles(picked.files)
                 }
             }
         },
@@ -316,10 +316,10 @@ fun AssignmentFilesEditor(
         singleFile = singleFile,
         onDrop = { dropped ->
             when (dropped) {
-                HomeworkFilePickResult.Cancelled -> Unit
-                HomeworkFilePickResult.TooLarge -> feedback = UPLOAD_TOO_LARGE_FEEDBACK
-                is HomeworkFilePickResult.Failed -> feedback = dropped.dropFeedback()
-                is HomeworkFilePickResult.Selected -> addFiles(dropped.files)
+                FilePickResult.Cancelled -> Unit
+                FilePickResult.TooLarge -> feedback = UPLOAD_TOO_LARGE_FEEDBACK
+                is FilePickResult.Failed -> feedback = dropped.dropFeedback()
+                is FilePickResult.Selected -> addFiles(dropped.files)
             }
         },
     )

@@ -24,6 +24,14 @@ class IndependentAccountNativeRouteTest {
     }
 
     @Test
+    fun citelBatchCacheCanOpenFromAgentSettingsInNativeNavigation() {
+        assertTrue(isNativeDetailRoute(AI_ASSISTANT_SETTINGS_ROUTE_ID))
+        assertTrue(isNativeDetailRoute(CITEL_BATCH_CACHE_ROUTE_ID))
+        assertEquals(CitelBatchCacheRoute, CITEL_BATCH_CACHE_ROUTE_ID.toAppRoute())
+        assertEquals("CITEL 题面缓存", nativeRouteTitle(CITEL_BATCH_CACHE_ROUTE_ID))
+    }
+
+    @Test
     fun physicsDemoQueryCanOpenInAnAndroidActivity() {
         assertEquals(PhysicsDemoRoute, PHYSICS_DEMO_ROUTE_ID.toAppRoute())
         assertTrue(isNativeDetailRoute(PHYSICS_DEMO_ROUTE_ID))

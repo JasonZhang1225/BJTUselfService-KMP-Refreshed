@@ -1,6 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared
 
 import androidx.compose.ui.window.ComposeUIViewController
+import kotlin.native.ref.WeakReference
+import team.bjtuss.bjtuselfservice.shared.runtime.AppRuntime
 import androidx.compose.ui.ExperimentalComposeUiApi
 import platform.CoreGraphics.CGRectMake
 import platform.UIKit.UIViewController
@@ -9,17 +11,50 @@ import platform.WebKit.WKWebViewConfiguration
 import platform.WebKit.WKWebsiteDataStore
 import team.bjtuss.bjtuselfservice.shared.cache.createAppleCacheStore
 import team.bjtuss.bjtuselfservice.shared.security.createAppleAccountSecurityStore
-import team.bjtuss.bjtuselfservice.shared.files.IosHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.IosFileGateway
+import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeHostState
 import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeBarAction
 import team.bjtuss.bjtuselfservice.shared.calendar.IosSystemCalendarGateway
+
+/** Owned by the SwiftUI application, independently of any root controller or native navigation stack. */
+class IosAppRuntimeOwner {
+    internal val securityStore by lazy { createAppleAccountSecurityStore(accessibleAfterFirstUnlock = true) }
+    private val cacheStorage = lazy { createAppleCacheStore() }
+    internal val cacheStore get() = cacheStorage.value
+    internal val runtime = AppRuntime()
+    private var closed = false
+
+    fun setSystemCleanupHandler(handler: (String, (String) -> Unit) -> Unit) {
+        team.bjtuss.bjtuselfservice.shared.cleanup.installIosCleanupHandler(handler)
+    }
+
+    fun mainViewController(
+        onAuthenticatedSessionChanged: (AuthenticatedSession?) -> Unit,
+        onOpenNativeRoute: (String) -> Unit,
+        nativeTabBarEnabled: Boolean,
+    ): UIViewController = createMainViewController(
+        nativeNavigationEnabled = true,
+        nativeTabBarEnabled = nativeTabBarEnabled,
+        onAuthenticatedSessionChanged = onAuthenticatedSessionChanged,
+        onOpenNativeRoute = onOpenNativeRoute,
+        owner = this,
+    )
+
+    fun close() {
+        if (closed) return
+        closed = true
+        runtime.close { if (cacheStorage.isInitialized()) cacheStore.store.close() }
+    }
+}
 
 // 预热 WebKit：首次创建 WKWebView 要启动 WebContent 进程并初始化渲染子系统（主线程，秒级），
 // 若等到进入邮箱页才创建会卡住主线程和进页转场动画。保留引用让进程池常驻。
 private var prewarmedWebView: WKWebView? = null
 
 @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
-fun MainViewController(): UIViewController = run {
+fun MainViewController(owner: IosAppRuntimeOwner): UIViewController = run {
     createMainViewController(
+        owner = owner,
         nativeNavigationEnabled = false,
         nativeTabBarEnabled = false,
         onAuthenticatedSessionChanged = {},
@@ -34,10 +69,12 @@ fun MainViewController(): UIViewController = run {
  * Swift 的 UITabBarController 逐 tab 承载；false 时保持 M10 行为，根组合自带壳层与自绘底栏。
  */
 fun NativeMainViewController(
+    owner: IosAppRuntimeOwner,
     onAuthenticatedSessionChanged: (AuthenticatedSession?) -> Unit,
     onOpenNativeRoute: (String) -> Unit,
     nativeTabBarEnabled: Boolean = false,
 ): UIViewController = createMainViewController(
+    owner = owner,
     nativeNavigationEnabled = true,
     nativeTabBarEnabled = nativeTabBarEnabled,
     onAuthenticatedSessionChanged = onAuthenticatedSessionChanged,
@@ -53,6 +90,7 @@ fun NativeMainViewController(
 fun NativeDestinationViewController(
     session: AuthenticatedSession,
     routeId: String,
+    nativeHostState: NativeHostState,
     useNativeTitleBar: Boolean,
     onOpenNativeRoute: (String) -> Unit,
     onCloseNativeRoute: () -> Unit,
@@ -62,6 +100,7 @@ fun NativeDestinationViewController(
 ): UIViewController = createDestinationViewController(
     session = session,
     routeId = routeId,
+    nativeHostState = nativeHostState,
     nativeTabBarEnabled = false,
     useNativeTitleBar = useNativeTitleBar,
     onOpenNativeRoute = onOpenNativeRoute,
@@ -79,14 +118,17 @@ fun NativeDestinationViewController(
 fun NativeTabRootViewController(
     session: AuthenticatedSession,
     routeId: String,
+    nativeHostState: NativeHostState,
     onOpenNativeRoute: (String) -> Unit,
     onCloseNativeRoute: () -> Unit,
     onTitleChanged: (String) -> Unit = {},
     onActionChanged: (NativeBarAction?) -> Unit = {},
     onSelectNativeTab: (String) -> Unit = {},
+    onTabItemsChanged: (List<String>) -> Unit = {},
 ): UIViewController = createDestinationViewController(
     session = session,
     routeId = routeId,
+    nativeHostState = nativeHostState,
     nativeTabBarEnabled = true,
     useNativeTitleBar = true,
     onOpenNativeRoute = onOpenNativeRoute,
@@ -94,12 +136,14 @@ fun NativeTabRootViewController(
     onTitleChanged = onTitleChanged,
     onActionChanged = onActionChanged,
     onSelectNativeTab = onSelectNativeTab,
+    onTabItemsChanged = onTabItemsChanged,
 )
 
 @OptIn(ExperimentalComposeUiApi::class)
 private fun createDestinationViewController(
     session: AuthenticatedSession,
     routeId: String,
+    nativeHostState: NativeHostState,
     nativeTabBarEnabled: Boolean,
     useNativeTitleBar: Boolean,
     onOpenNativeRoute: (String) -> Unit,
@@ -107,9 +151,10 @@ private fun createDestinationViewController(
     onTitleChanged: (String) -> Unit,
     onActionChanged: (NativeBarAction?) -> Unit = {},
     onSelectNativeTab: (String) -> Unit,
+    onTabItemsChanged: (List<String>) -> Unit = {},
 ): UIViewController {
     lateinit var controller: UIViewController
-    val homeworkFileGateway = IosHomeworkFileGateway { controller }
+    val fileGateway = IosFileGateway { controller }
     val nativeSheetPresenter = IosNativeSheetPresenter { controller }
     controller = ComposeUIViewController(
         configure = { opaque = false },
@@ -117,14 +162,16 @@ private fun createDestinationViewController(
         AuthenticatedDestinationApp(
             session = session,
             routeId = routeId,
-            homeworkFileGateway = homeworkFileGateway,
-            coursewareDirectoryGateway = homeworkFileGateway,
+            nativeHostState = nativeHostState,
+            fileGateway = fileGateway,
+            directoryGateway = fileGateway,
             nativeTabBarEnabled = nativeTabBarEnabled,
             useNativeTitleBar = useNativeTitleBar,
             nativeSheetPresenter = nativeSheetPresenter,
             onOpenNativeRoute = onOpenNativeRoute,
             onCloseNativeRoute = onCloseNativeRoute,
             onSelectNativeTab = onSelectNativeTab,
+            onNativeTabItemsChanged = onTabItemsChanged,
             onNativeTitleChanged = onTitleChanged,
             onNativeActionChanged = onActionChanged,
         )
@@ -132,12 +179,17 @@ private fun createDestinationViewController(
     return controller
 }
 
-@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, ExperimentalComposeUiApi::class)
+@OptIn(
+    kotlinx.cinterop.ExperimentalForeignApi::class,
+    ExperimentalComposeUiApi::class,
+    kotlin.experimental.ExperimentalNativeApi::class,
+)
 private fun createMainViewController(
     nativeNavigationEnabled: Boolean,
     nativeTabBarEnabled: Boolean,
     onAuthenticatedSessionChanged: (AuthenticatedSession?) -> Unit,
     onOpenNativeRoute: (String) -> Unit,
+    owner: IosAppRuntimeOwner,
 ): UIViewController = run {
     if (prewarmedWebView == null) {
         val configuration = WKWebViewConfiguration().apply {
@@ -148,20 +200,20 @@ private fun createMainViewController(
             configuration = configuration,
         )
     }
-    val accountSecurityStore = createAppleAccountSecurityStore(accessibleAfterFirstUnlock = true)
-    val cacheStoreHandle = createAppleCacheStore()
-    lateinit var controller: UIViewController
-    val homeworkFileGateway = IosHomeworkFileGateway { controller }
+    val runtimeOwner = owner
+    lateinit var weakController: WeakReference<UIViewController>
+    val fileGateway = IosFileGateway { checkNotNull(weakController.get()) { "Root controller is unavailable" } }
     val systemCalendarGateway = IosSystemCalendarGateway()
-    val nativeSheetPresenter = IosNativeSheetPresenter { controller }
-    controller = ComposeUIViewController(
+    val nativeSheetPresenter = IosNativeSheetPresenter { checkNotNull(weakController.get()) { "Root controller is unavailable" } }
+    val controller = ComposeUIViewController(
         configure = { opaque = false },
     ) {
         App(
-            accountSecurityStore = accountSecurityStore,
-            cacheStoreHandle = cacheStoreHandle,
-            homeworkFileGateway = homeworkFileGateway,
-            coursewareDirectoryGateway = homeworkFileGateway,
+            appRuntime = runtimeOwner.runtime,
+            accountSecurityStore = runtimeOwner.securityStore,
+            cacheStoreHandle = runtimeOwner.cacheStore,
+            fileGateway = fileGateway,
+            directoryGateway = fileGateway,
             systemCalendarGateway = systemCalendarGateway,
             nativeNavigationEnabled = nativeNavigationEnabled,
             nativeTabBarEnabled = nativeTabBarEnabled,
@@ -170,5 +222,6 @@ private fun createMainViewController(
             onAuthenticatedSessionChanged = onAuthenticatedSessionChanged,
         )
     }
+    weakController = WeakReference(controller)
     controller
 }

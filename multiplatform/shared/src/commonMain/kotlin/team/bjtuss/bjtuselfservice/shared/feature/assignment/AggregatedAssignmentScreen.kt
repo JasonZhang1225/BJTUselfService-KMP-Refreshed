@@ -6,7 +6,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import kotlinx.coroutines.launch
 import team.bjtuss.bjtuselfservice.shared.files.*
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -35,7 +35,7 @@ internal fun AggregatedAssignmentWorkspace(
     onOpen: (AggregatedAssignment) -> Unit, onRefreshSource: (AssignmentSource) -> Unit,
     showSyncDetails: Boolean, onDismissSyncDetails: () -> Unit, modifier: Modifier = Modifier,
     expanded: Boolean = false,
-    fileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     markdown: (AggregatedAssignment) -> String,
     detailContent: @Composable (AggregatedAssignment) -> Unit,
     search: PageSearchState? = null,
@@ -56,7 +56,7 @@ internal fun AggregatedAssignmentWorkspace(
     val results = if (searchActive) searchAggregateAssignments(assignments, query, filters.sortOrder) else emptyList()
     LaunchedEffect(Unit) { onInitialize() }
     LaunchedEffect(Unit) { while (true) { now = Clock.System.now().epochSeconds; delay(30_000) } }
-    LaunchedEffect(filters, searchActive, query) { list.scrollToItem(0) }
+    ResetAssignmentScrollOnFilterChange(list, filters, searchActive, query)
     val dueSoon = visible.count { !it.submitted && it.dueTime?.let { time -> time in now..(now + 48 * 3600) } == true }
     val subtitle = (if (dueSoon > 0) "未来 48 小时内有 $dueSoon 项未提交" else "未来 48 小时内暂无临近截止项") +
         if (filters.active) " · 已筛选" else ""
@@ -221,7 +221,7 @@ internal fun AssignmentSyncDetails(
 /** Shared desktop detail frame and export actions for all three assignment sources. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AssignmentDetailPane(item: AggregatedAssignment?, gateway: HomeworkFileGateway,
+private fun AssignmentDetailPane(item: AggregatedAssignment?, gateway: FileGateway,
     markdown: String?, modifier: Modifier, content: @Composable () -> Unit) {
     Surface(modifier, shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
         if (item == null) Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -236,7 +236,7 @@ private fun AssignmentDetailPane(item: AggregatedAssignment?, gateway: HomeworkF
 /** 宽屏详情框架和手机独立详情页共用导出与忽略入口；按钮在窄屏或大字号下自动换行。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun AssignmentMarkdownActions(item: AggregatedAssignment, gateway: HomeworkFileGateway,
+internal fun AssignmentMarkdownActions(item: AggregatedAssignment, gateway: FileGateway,
     markdown: String, modifier: Modifier = Modifier, showHeading: Boolean = false) {
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
@@ -253,12 +253,12 @@ internal fun AssignmentMarkdownActions(item: AggregatedAssignment, gateway: Home
                     feedback = null
                     try {
                         val title = item.homework?.title ?: item.physical?.title ?: item.citel?.title.orEmpty()
-                        val result = gateway.saveFile(HomeworkFileContent(safeExportFileName("${item.courseName}-$title.md"),
+                        val result = gateway.saveFile(FileContent(safeExportFileName("${item.courseName}-$title.md"),
                             "text/markdown", markdown.encodeToByteArray()))
                         feedback = when (result) {
-                            HomeworkFileSaveResult.Saved -> "Markdown 已保存"
-                            HomeworkFileSaveResult.Cancelled -> null
-                            is HomeworkFileSaveResult.Failed -> "无法保存 Markdown，请重试。"
+                            FileSaveResult.Saved -> "Markdown 已保存"
+                            FileSaveResult.Cancelled -> null
+                            is FileSaveResult.Failed -> "无法保存 Markdown，请重试。"
                         }
                     } finally { saving = false }
                 }

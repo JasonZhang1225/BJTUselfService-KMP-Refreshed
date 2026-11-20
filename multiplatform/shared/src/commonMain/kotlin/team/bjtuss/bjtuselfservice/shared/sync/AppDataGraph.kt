@@ -71,8 +71,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.otherfunction.OtherFunctionScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.settings.SettingsScreenModel
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.network.createSchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityCoordinator
@@ -82,15 +82,15 @@ import team.bjtuss.bjtuselfservice.shared.update.AppUpdateChecker
 /**
  * 已登录账号的业务组合根（普通 Kotlin，不依赖 Compose）。
  *
- * App 会话（[team.bjtuss.bjtuselfservice.shared.feature.shell.rememberAuthenticatedSession]）与无窗口宿主
+ * App 会话（[team.bjtuss.bjtuselfservice.shared.runtime.bindAuthenticatedSession]）与无窗口宿主
  * 都用它装配同一套 Repository/ScreenModel 和 [refreshCoordinator]，不复制第二套同步协议。
  * 构造本身不访问网络；[close] 取消在途刷新（退出登录、切换账号、宿主结束）。
  */
 class AppDataGraph(
     val profile: StudentProfile,
-    val transport: SchoolHttpTransport,
+    transport: SchoolHttpTransport,
     val loginProtocol: SchoolLoginProtocol,
-    val cacheStore: CacheStore,
+    cacheStore: CacheStore,
     platformFamily: PlatformFamily,
     appPreferences: AppPreferences,
     onPreferencesChanged: (AppPreferences) -> Boolean,
@@ -98,90 +98,110 @@ class AppDataGraph(
     captchaRecognizer: CaptchaRecognizer,
     /** 当前内存中的登录凭据；会话过期时用于在 App 内自动恢复。 */
     credentialsProvider: () -> Credentials?,
-    homeworkFileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     onPurgeLogout: (String) -> Unit,
     /** 刷新协调器的调度器：App 用主线程（与旧壳层刷新一致），无窗口宿主用后台线程。 */
     refreshDispatcher: CoroutineDispatcher,
     nowEpochSeconds: () -> Long = { kotlin.time.Clock.System.now().epochSeconds },
+    val accountWork: team.bjtuss.bjtuselfservice.shared.runtime.AccountWork = team.bjtuss.bjtuselfservice.shared.runtime.AccountWork(),
+    private val entryWork: team.bjtuss.bjtuselfservice.shared.runtime.AccountWork? = null,
+    private val onCleanup: (suspend (team.bjtuss.bjtuselfservice.shared.cleanup.CleanupOperation) -> team.bjtuss.bjtuselfservice.shared.cleanup.CleanupReport)? = null,
+    private val playbackRecovery: team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryAccess? = null,
 ) {
+    private val appCacheStore = cacheStore
+    internal val cleanupCache get() = appCacheStore
+    private val fallbackCleanupCoordinator = team.bjtuss.bjtuselfservice.shared.cleanup.AccountCleanupCoordinator()
+    val cacheStore = appCacheStore.guardedBy(accountWork)
+    val transport: SchoolHttpTransport = team.bjtuss.bjtuselfservice.shared.runtime.AccountSchoolTransport(transport, accountWork)
     val accountScope: String = profile.studentId
-    val assignmentCompletionStore = team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCompletionStore(cacheStore, accountScope)
+    val assignmentCompletionStore = team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentCompletionStore(this.cacheStore, accountScope, accountWork.scope(kotlinx.coroutines.Dispatchers.Default), accountWork)
 
     private val smartPlatformEndpoint = smartPlatformEndpointFor(platformFamily)
-    val homeChangeFeed = CacheStoreHomeChangeFeedRepository(accountScope, cacheStore)
+    val homeChangeFeed = CacheStoreHomeChangeFeedRepository(accountScope, this.cacheStore)
     val gradeRepository = DefaultGradeRepository(
         accountScope = accountScope,
-        local = CacheStoreGradeLocalDataSource(cacheStore),
-        remote = SchoolGradeRemoteDataSource(transport),
-        programRemote = SchoolTrainingProgramRemoteDataSource(transport),
-        onSynced = { cacheStore.markSynced(accountScope, SyncSource.GRADES, kotlin.time.Clock.System.now().epochSeconds) },
+        local = CacheStoreGradeLocalDataSource(this.cacheStore),
+        remote = SchoolGradeRemoteDataSource(this.transport),
+        programRemote = SchoolTrainingProgramRemoteDataSource(this.transport),
+        onSynced = { this.cacheStore.markSynced(accountScope, SyncSource.GRADES, kotlin.time.Clock.System.now().epochSeconds) },
     )
-    val gradeModel = GradeScreenModel(gradeRepository, gradeChangeRecorder(homeChangeFeed))
+    val gradeModel = GradeScreenModel(gradeRepository, gradeChangeRecorder(homeChangeFeed),
+        accountWork = accountWork,
+    )
     // M11/M12 共用同一校历与学期来源：避免课表日期跳转再建一套 bksy 请求。
     val classroomOccupancyRepository = DefaultClassroomOccupancyRepository(
-        remote = SchoolClassroomOccupancyRemoteDataSource(transport),
+        remote = SchoolClassroomOccupancyRemoteDataSource(this.transport),
     )
     val courseScheduleRepository = DefaultCourseScheduleRepository(
         accountScope = accountScope,
-        local = CacheStoreCourseScheduleLocalDataSource(cacheStore),
+        local = CacheStoreCourseScheduleLocalDataSource(this.cacheStore),
         remote = SchoolCourseScheduleRemoteDataSource(
-            transport = transport,
+            transport = this.transport,
             endpoint = smartPlatformEndpoint,
         ),
-        onSynced = { cacheStore.markSynced(accountScope, SyncSource.COURSES, kotlin.time.Clock.System.now().epochSeconds) },
+        onSynced = { this.cacheStore.markSynced(accountScope, SyncSource.COURSES, kotlin.time.Clock.System.now().epochSeconds) },
     )
     val courseScheduleModel = CourseScheduleScreenModel(
         repository = courseScheduleRepository,
         changeRecorder = courseChangeRecorder(homeChangeFeed),
         calendarRepository = classroomOccupancyRepository,
         onCurrentAcademicWeeks = { weeks ->
-            cacheStore.saveAcademicWeeksIfChanged(accountScope, weeks)
+            this.cacheStore.saveAcademicWeeksIfChanged(accountScope, weeks)
         },
+        accountWork = accountWork,
     )
     val examScheduleRepository = DefaultExamScheduleRepository(
         accountScope = accountScope,
-        local = CacheStoreExamScheduleLocalDataSource(cacheStore),
-        remote = SchoolExamScheduleRemoteDataSource(transport),
-        onSynced = { cacheStore.markSynced(accountScope, SyncSource.EXAMS, kotlin.time.Clock.System.now().epochSeconds) },
+        local = CacheStoreExamScheduleLocalDataSource(this.cacheStore),
+        remote = SchoolExamScheduleRemoteDataSource(this.transport),
+        onSynced = { this.cacheStore.markSynced(accountScope, SyncSource.EXAMS, kotlin.time.Clock.System.now().epochSeconds) },
     )
-    val examScheduleModel = ExamScheduleScreenModel(examScheduleRepository, examChangeRecorder(homeChangeFeed))
+    val examScheduleModel = ExamScheduleScreenModel(examScheduleRepository, examChangeRecorder(homeChangeFeed),
+        accountWork = accountWork,
+    )
     val homeworkRepository = DefaultHomeworkRepository(
         accountScope = accountScope,
-        local = CacheStoreHomeworkLocalDataSource(cacheStore),
+        local = CacheStoreHomeworkLocalDataSource(this.cacheStore),
         remote = SchoolHomeworkRemoteDataSource(
-            transport = transport,
+            transport = this.transport,
             endpoint = smartPlatformEndpoint,
         ),
-        onSynced = { cacheStore.markSynced(accountScope, SyncSource.HOMEWORK, kotlin.time.Clock.System.now().epochSeconds) },
+        onSynced = { this.cacheStore.markSynced(accountScope, SyncSource.HOMEWORK, kotlin.time.Clock.System.now().epochSeconds) },
     )
     val homeworkModel = HomeworkScreenModel(
         homeworkRepository,
         homeworkChangeRecorder(homeChangeFeed),
         filterStore = object : HomeworkFilterPreferencesStore {
             override fun load(): HomeworkFilterPreferences =
-                cacheStore.homeworkFilter(accountScope)
+                this@AppDataGraph.cacheStore.homeworkFilter(accountScope)
 
             override fun save(preferences: HomeworkFilterPreferences) {
-                cacheStore.saveHomeworkFilter(accountScope, preferences)
+                this@AppDataGraph.cacheStore.saveHomeworkFilter(accountScope, preferences)
             }
         },
+        accountWork = accountWork,
     )
     val coursewareRepository = DefaultCoursewareRepository(
         accountScope = accountScope,
-        local = CacheStoreCoursewareLocalDataSource(cacheStore),
+        local = CacheStoreCoursewareLocalDataSource(this.cacheStore),
         remote = SchoolCoursewareRemoteDataSource(
-            transport = transport,
+            transport = this.transport,
             endpoint = smartPlatformEndpoint,
         ),
     )
     val otherFunctionRepository = DefaultOtherFunctionRepository(
-        remote = SchoolOtherFunctionRemoteDataSource(transport),
+        remote = SchoolOtherFunctionRemoteDataSource(this.transport),
     )
-    val otherFunctionModel = OtherFunctionScreenModel(otherFunctionRepository, homeworkFileGateway)
+    val otherFunctionModel = OtherFunctionScreenModel(otherFunctionRepository, fileGateway,
+        accountWork = accountWork,
+    )
+    private val classroomTransport = createSchoolHttpTransport()
     val classroomRepository = DefaultClassroomRepository(
-        remote = SchoolClassroomRemoteDataSource(createSchoolHttpTransport()),
+        remote = SchoolClassroomRemoteDataSource(team.bjtuss.bjtuselfservice.shared.runtime.AccountSchoolTransport(classroomTransport, accountWork)),
     )
-    val classroomModel = ClassroomScreenModel(classroomRepository)
+    val classroomModel = ClassroomScreenModel(classroomRepository,
+        accountWork = accountWork,
+    )
     val classroomOccupancyModel = ClassroomOccupancyScreenModel(
         repository = classroomOccupancyRepository,
         peopleRepository = classroomRepository,
@@ -189,58 +209,35 @@ class AppDataGraph(
         currentWeekProvider = {
             courseScheduleModel.state.value.currentWeek.takeIf { it > 0 } ?: 1
         },
+        accountWork = accountWork,
     )
     val settingsModel = SettingsScreenModel(
         initialPreferences = appPreferences.copy(
             physicsLabEnabled = appPreferences.physicsLabEnabled
-                ?: (cacheStore.metadata(accountScope, "physicslab.enabled") == "true"),
-            citelEnabled = appPreferences.citelEnabled ?: (cacheStore.metadata(accountScope, "citel.enabled") == "true"),
+                ?: (this.cacheStore.metadata(accountScope, "physicslab.enabled") == "true"),
+            citelEnabled = appPreferences.citelEnabled ?: (this.cacheStore.metadata(accountScope, "citel.enabled") == "true"),
         ),
         persistPreferences = onPreferencesChanged,
         clearAccountCache = {
-            assignmentCompletionStore.clearWith { cacheStore.clearAccount(accountScope) }
+            performCleanup(team.bjtuss.bjtuselfservice.shared.cleanup.CleanupOperation.ACCOUNT_CACHE).succeeded
         },
         prepareUninstall = {
-            playbackTaskManager.cancelAllAndJoin()
-            val cleaner = team.bjtuss.bjtuselfservice.shared.feature.settings.platformLocalDataCleaner()
-            val wiped = cleaner?.clearLocalData(cacheStore, removeAgent = true) == true
-            if (wiped) onPurgeLogout(accountScope)
-            wiped
+            val report = performCleanup(team.bjtuss.bjtuselfservice.shared.cleanup.CleanupOperation.PREPARE_UNINSTALL)
+            if (report.accountWorkStopped) onPurgeLogout(accountScope)
+            report.succeeded
         },
         wipeAllLocalData = {
-            playbackTaskManager.cancelAllAndJoin()
-            val cleaner = team.bjtuss.bjtuselfservice.shared.feature.settings.platformLocalDataCleaner()
-            if (cleaner != null) {
-                val wiped = cleaner.clearLocalData(cacheStore)
-                if (wiped) onPurgeLogout(accountScope)
-                wiped
-            } else {
-                val labAccounts = (cacheStore.metadataAccountScopes("physicslab.configured") + accountScope).distinct()
-                val labCredentialsPurged = runCatching {
-                    labAccounts.forEach { securityCoordinator.physicsLabVault(it)?.clear() }
-                    (cacheStore.metadataAccountScopes("phydemo.configured") + accountScope).distinct()
-                        .forEach { securityCoordinator.physicsDemoVault(it)?.clear() }
-                    (cacheStore.metadataAccountScopes("phyvlab.configured") + accountScope).distinct()
-                        .forEach {
-                            securityCoordinator.phyVlabSessionVault(it)?.clear()
-                            securityCoordinator.phyVlabVault(it)?.clear()
-                        }
-                    (cacheStore.metadataAccountScopes("citel.username") + accountScope).distinct()
-                        .forEach { securityCoordinator.citelVault(it)?.clear() }
-                }.isSuccess
-                val cacheCleared = labCredentialsPurged && runCatching { cacheStore.clearAll() }.isSuccess
-                val credentialsPurged = securityCoordinator.purge()
-                val wiped = cacheCleared && credentialsPurged && labCredentialsPurged
-                // Stay signed out after a full wipe, or background sync could
-                // immediately recreate personal cache rows from this live session.
-                if (wiped) onPurgeLogout(accountScope)
-                wiped
-            }
+            val report = performCleanup(team.bjtuss.bjtuselfservice.shared.cleanup.CleanupOperation.ALL_LOCAL_DATA)
+            if (report.accountWorkStopped) onPurgeLogout(accountScope)
+            report.succeeded
         },
-        checkLatestRelease = { AppUpdateChecker.fetchLatest(transport) },
-        checkReleaseFromSource = { source -> AppUpdateChecker.fetchLatest(transport, source) },
+        checkLatestRelease = { AppUpdateChecker.fetchLatest(this.transport) },
+        checkReleaseFromSource = { source -> AppUpdateChecker.fetchLatest(this.transport, source) },
+        accountWork = accountWork,
     )
-    val mailboxModel = MailboxScreenModel(transport)
+    val mailboxModel = MailboxScreenModel(this.transport,
+        accountWork = accountWork,
+    )
     // 各学校业务会话的 Cookie 有不同生命周期。保留当前登录凭据的内存引用，
     // 让刷新发现会话过期时可以在 App 内自动恢复 CAS/教务链路，
     // 不把用户推到无法回传 Cookie 的系统浏览器。
@@ -250,20 +247,21 @@ class AppDataGraph(
         credentialsProvider = {
             credentialsProvider()?.takeIf(Credentials::isValid)
         },
+        accountWork = accountWork,
     )
     val coursewareModel = CoursewareScreenModel(
         repository = coursewareRepository,
         reauthenticate = sessionRecovery::attempt,
+        accountWork = accountWork,
     )
     /** 页面模型的作用域；Android 下载执行器另外由应用按账号持有，不随 [close] 销毁。 */
-    private val playbackScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
-    private val playbackRecovery = (homeworkFileGateway as? team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryProvider)?.playbackRecovery
+    private val playbackScope = accountWork.scope(kotlinx.coroutines.Dispatchers.Main)
     val playbackTaskManager = playbackRecovery?.retainedManager(accountScope) ?: team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackTaskManager(
         scope = playbackScope,
         downloader = team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader(
-            transport = transport,
-            segmentSource = team.bjtuss.bjtuselfservice.shared.data.courseware.platformBackgroundSegmentSource(transport)
-                ?: team.bjtuss.bjtuselfservice.shared.data.courseware.DirectHlsSegmentSource(transport),
+            transport = this.transport,
+            segmentSource = team.bjtuss.bjtuselfservice.shared.data.courseware.platformBackgroundSegmentSource(this.transport)
+                ?: team.bjtuss.bjtuselfservice.shared.data.courseware.DirectHlsSegmentSource(this.transport),
         ),
         compositor = { team.bjtuss.bjtuselfservice.shared.media.PlaybackPlatformHooks.effectiveCompositor },
         backgroundHost = { team.bjtuss.bjtuselfservice.shared.media.PlaybackPlatformHooks.backgroundHost },
@@ -276,54 +274,63 @@ class AppDataGraph(
         taskManager = playbackTaskManager,
         scope = playbackScope,
         reauthenticate = sessionRecovery::attempt,
+        accountWork = accountWork,
     )
-    val phyVlabRepository = DefaultPhyVlabRepository(SchoolPhyVlabRemoteDataSource(transport))
+    val phyVlabRepository = DefaultPhyVlabRepository(SchoolPhyVlabRemoteDataSource(this.transport))
     // 物理在线不再走学校统一认证：MoodleSession 缺失时用独立账号登录，账号由设置页保存。
     // 协议与账号模型互相引用（协议读账号、账号保存前用协议校验），用单元素持有者打破初始化环。
     private val phyVlabAccountHolder = arrayOfNulls<team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabAccountModel>(1)
     val phyVlabSessionProtocol = PhyVlabSessionProtocol(
-        transport,
+        this.transport,
         sessionVault = securityCoordinator.phyVlabSessionVault(accountScope),
         credentials = { phyVlabAccountHolder[0]?.credentials() },
     )
     val phyVlabAccountModel = team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabAccountModel(
-        accountScope, cacheStore, securityCoordinator.phyVlabVault(accountScope),
+        accountScope, this.cacheStore, securityCoordinator.phyVlabVault(accountScope),
         signIn = phyVlabSessionProtocol::signInWith,
         rememberSession = phyVlabSessionProtocol::rememberCurrentSession,
         clearSession = phyVlabSessionProtocol::clearRememberedSession,
+        accountWork = accountWork,
     ).also { phyVlabAccountHolder[0] = it }
-    val phyVlabLocalDataSource = CacheStorePhyVlabLocalDataSource(cacheStore)
+    val phyVlabLocalDataSource = CacheStorePhyVlabLocalDataSource(this.cacheStore)
     val phyVlabModel = PhyVlabScreenModel(
         repository = phyVlabRepository,
         sessionProtocol = phyVlabSessionProtocol,
         localDataSource = phyVlabLocalDataSource,
         changeRecorder = phyvlabChangeRecorder(homeChangeFeed),
         accountScope = accountScope,
-        filterStore = team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentFilterStore(cacheStore, accountScope, "phyvlab"),
+        filterStore = team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentFilterStore(this.cacheStore, accountScope, "phyvlab"),
+        accountWork = accountWork,
     )
     val physicsLabModel = team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabModel(
-        accountScope, cacheStore, securityCoordinator.physicsLabVault(accountScope),
-        team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabRemote(transport),
+        accountScope, this.cacheStore, securityCoordinator.physicsLabVault(accountScope),
+        team.bjtuss.bjtuselfservice.shared.feature.physicslab.PhysicsLabRemote(this.transport),
         changeRecorder = physicsLabChangeRecorder(homeChangeFeed),
+        accountWork = accountWork,
     )
     val physicsDemoModel = team.bjtuss.bjtuselfservice.shared.feature.phydemo.PhysicsDemoModel(
-        accountScope, cacheStore, securityCoordinator.physicsDemoVault(accountScope),
-        team.bjtuss.bjtuselfservice.shared.feature.phydemo.PhysicsDemoRemote(transport),
+        accountScope, this.cacheStore, securityCoordinator.physicsDemoVault(accountScope),
+        team.bjtuss.bjtuselfservice.shared.feature.phydemo.PhysicsDemoRemote(this.transport),
         changeRecorder = physicsDemoChangeRecorder(homeChangeFeed),
+        accountWork = accountWork,
     )
     val homeStatusRepository = DefaultHomeStatusRepository(
         accountScope = accountScope,
-        local = CacheStoreHomeStatusLocalDataSource(cacheStore),
-        remote = SchoolHomeStatusRemoteDataSource(transport),
+        local = CacheStoreHomeStatusLocalDataSource(this.cacheStore),
+        remote = SchoolHomeStatusRemoteDataSource(this.transport),
     )
-    val homeModel = HomeScreenModel(homeStatusRepository)
-    val citelModel = team.bjtuss.bjtuselfservice.shared.feature.citel.CitelModel(accountScope, cacheStore,
-        securityCoordinator.citelVault(accountScope), team.bjtuss.bjtuselfservice.shared.feature.citel.CitelRemote(transport),
-        changeRecorder = citelChangeRecorder(homeChangeFeed))
+    val homeModel = HomeScreenModel(homeStatusRepository,
+        accountWork = accountWork,
+    )
+    val citelModel = team.bjtuss.bjtuselfservice.shared.feature.citel.CitelModel(accountScope, this.cacheStore,
+        securityCoordinator.citelVault(accountScope), team.bjtuss.bjtuselfservice.shared.feature.citel.CitelRemote(this.transport),
+        changeRecorder = citelChangeRecorder(homeChangeFeed),
+        accountWork = accountWork,
+    )
 
     /** 本机 CLI 与远程同步共用的作业详情入口。 */
     val assignmentDetails = team.bjtuss.bjtuselfservice.shared.agent.AgentAssignmentDetailService(
-        accountScope, cacheStore, homeworkRepository,
+        accountScope, this.cacheStore, homeworkRepository,
         team.bjtuss.bjtuselfservice.shared.agent.AgentDetailBackends(
             phyVlabActivities = phyVlabModel::cachedActivitiesForAgent,
             phyVlabDetail = phyVlabModel::fetchDetailForAgent,
@@ -339,9 +346,10 @@ class AppDataGraph(
             beginDetailBatch = phyVlabModel::beginAgentDetailBatch,
             endDetailBatch = phyVlabModel::endAgentDetailBatch,
         ),
+        accountWork = accountWork,
     )
 
-    private val refreshScope = CoroutineScope(SupervisorJob() + refreshDispatcher)
+    private val refreshScope = accountWork.scope(refreshDispatcher)
 
     /** 全局刷新的唯一执行者：App 按钮、前台恢复、CLI 与远程任务都经由它。 */
     val refreshCoordinator: AppRefreshCoordinator = AppRefreshCoordinator(
@@ -349,7 +357,7 @@ class AppDataGraph(
         adapters = appRefreshAdapters(
             AppRefreshModels(
                 accountScope = accountScope,
-                cache = cacheStore,
+                cache = this.cacheStore,
                 homeModel = homeModel,
                 mailboxModel = mailboxModel,
                 homeworkModel = homeworkModel,
@@ -383,7 +391,26 @@ class AppDataGraph(
         citelModel.initialize()
     }
 
+    private suspend fun performCleanup(operation: team.bjtuss.bjtuselfservice.shared.cleanup.CleanupOperation): team.bjtuss.bjtuselfservice.shared.cleanup.CleanupReport {
+        onCleanup?.let { return it(operation) }
+        return team.bjtuss.bjtuselfservice.shared.cleanup.AccountCleanupService(
+            fallbackCleanupCoordinator, appCacheStore, securityCoordinator,
+            team.bjtuss.bjtuselfservice.shared.cleanup.platformCleanup(), this, null, playbackRecovery,
+            stopWork = { stopAndJoin() }, protocol = loginProtocol,
+        ).execute(operation)
+    }
+
+    suspend fun stopAndJoin(discardPlayback: Boolean = false) {
+        close()
+        accountWork.join()
+        entryWork?.join()
+        classroomTransport.close()
+        if (discardPlayback) playbackTaskManager.cancelAllAndJoin()
+    }
+
     fun close() {
+        entryWork?.stop()
+        accountWork.stop()
         assignmentCompletionStore.close()
         refreshCoordinator.close()
         playbackModel.close()

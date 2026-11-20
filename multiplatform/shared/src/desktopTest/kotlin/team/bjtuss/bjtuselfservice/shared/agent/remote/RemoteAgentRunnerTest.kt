@@ -15,6 +15,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CompletableDeferred
@@ -43,6 +46,10 @@ import team.bjtuss.bjtuselfservice.shared.sync.RefreshSourceResult
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshStatus
 
 internal class FakeSiteClient : RemoteSiteClient {
+    var pairGate: CompletableDeferred<Unit>? = null
+    var pairEntered: CompletableDeferred<Unit>? = null
+    var snapshotGate: CompletableDeferred<Unit>? = null
+    var snapshotEntered: CompletableDeferred<Unit>? = null
     val snapshots = CopyOnWriteArrayList<RemoteSnapshot>()
     val results = CopyOnWriteArrayList<Pair<String, RemoteTaskResult>>()
     val polls = AtomicInteger()
@@ -58,11 +65,13 @@ internal class FakeSiteClient : RemoteSiteClient {
 
     override suspend fun pair(request: RemotePairRequest): RemoteCall<RemotePairResponse> {
         lastPair = request
+        withContext(NonCancellable) { pairEntered?.complete(Unit); pairGate?.await() }
         return pairResponse
     }
 
     override suspend fun putSnapshot(snapshot: RemoteSnapshot): RemoteCall<RemoteSnapshotAck> {
         snapshotFailures.removeFirstOrNull()?.let { return it }
+        withContext(NonCancellable) { snapshotEntered?.complete(Unit); snapshotGate?.await() }
         snapshots += snapshot
         return RemoteCall.Ok(RemoteSnapshotAck(snapshot.snapshotId, snapshot.sequence, stored = true, duplicate = false))
     }
@@ -86,6 +95,9 @@ internal class FakeSiteClient : RemoteSiteClient {
 }
 
 internal class FakeExecutor(var account: String? = "20990001") : RemoteRefreshExecutor {
+    var work: AccountWork? = null
+    var refreshEntered: CompletableDeferred<Unit>? = null
+    override fun currentAccountWork() = work
     val refreshes = AtomicInteger()
     /** 非 null 时刷新挂起在这里，用来制造“刷新进行中又来一次轮询”的交错。 */
     @Volatile var gate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
@@ -98,6 +110,7 @@ internal class FakeExecutor(var account: String? = "20990001") : RemoteRefreshEx
     override suspend fun refreshAll(remote: Boolean): RefreshReport? {
         if (account == null) return null
         refreshes.incrementAndGet()
+        refreshEntered?.complete(Unit)
         gate?.await()
         origins += remote
         return RefreshReport(account!!, if (remote) RefreshOrigin.REMOTE else RefreshOrigin.SCHEDULED, 10, 20, listOf(
@@ -129,6 +142,49 @@ class RemoteAgentRunnerTest {
     fun cleanUp() {
         cache.close()
         directory.deleteRecursively()
+    }
+
+    @Test
+    fun accountCancellationKeepsTheOuterRunnerUsableForSameAccountRelogin() = runBlocking<Unit> {
+        val old = AccountWork()
+        val fresh = AccountWork()
+        executor.work = old
+        executor.gate = CompletableDeferred()
+        executor.refreshEntered = CompletableDeferred()
+        val cycle = async(Dispatchers.Default) { runner.runUploadCycle(refreshFirst = true, remote = false) }
+        try {
+            executor.refreshEntered!!.await()
+            old.stop(); old.join()
+            assertEquals(RemoteUploadOutcome.Skipped("account_changed"), cycle.await())
+            assertTrue(client.snapshots.isEmpty())
+            executor.work = fresh
+            executor.gate = null
+            assertIs<RemoteUploadOutcome.Uploaded>(runner.runUploadCycle(refreshFirst = true, remote = false))
+            assertEquals(1, client.snapshots.size)
+        } finally { old.stop(); fresh.stop(); old.join(); fresh.join(); cycle.join() }
+    }
+
+    @Test
+    fun lateUploadAcknowledgementCannotRecreateClearedLocalResults() = runBlocking<Unit> {
+        val old = AccountWork()
+        executor.work = old
+        client.snapshotEntered = CompletableDeferred()
+        client.snapshotGate = CompletableDeferred()
+        val cycle = async(Dispatchers.Default) { runner.runUploadCycle(refreshFirst = true, remote = false) }
+        try {
+            client.snapshotEntered!!.await()
+            old.stop()
+            val stopped = async { old.join() }
+            cache.clearAll()
+            cache.putSetting("fixture-new-session", "preserved")
+            assertFalse(stopped.isCompleted)
+            client.snapshotGate!!.complete(Unit)
+            stopped.await()
+            assertEquals(RemoteUploadOutcome.Skipped("account_changed"), cycle.await())
+            assertNull(store.loadPending())
+            assertNull(store.loadBaseline())
+            assertEquals("preserved", cache.setting("fixture-new-session"))
+        } finally { client.snapshotGate!!.complete(Unit); old.stop(); old.join(); cycle.join() }
     }
 
     @Test

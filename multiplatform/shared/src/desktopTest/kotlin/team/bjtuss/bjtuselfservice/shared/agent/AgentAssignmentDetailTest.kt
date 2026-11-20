@@ -22,7 +22,7 @@ import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkDetail
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.SubmittedHomeworkAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
@@ -45,9 +45,9 @@ class AgentAssignmentDetailTest {
             HomeworkDetail("<p>习题 3.1、3.2</p>", listOf(HomeworkAttachment(501, "要求.pdf", 2048, "/x"))))
         override suspend fun loadSubmittedAttachments(homework: Homework) = HomeworkOperationResult.Success(emptyList<SubmittedHomeworkAttachment>())
         override suspend fun downloadTeacherAttachment(homeworkId: Int, attachment: HomeworkAttachment) =
-            HomeworkOperationResult.Success(HomeworkFileContent(attachment.fileName, "application/pdf", byteArrayOf(homeworkId.toByte())))
+            HomeworkOperationResult.Success(FileContent(attachment.fileName, "application/pdf", byteArrayOf(homeworkId.toByte())))
         override suspend fun downloadSubmittedAttachment(attachment: SubmittedHomeworkAttachment) = HomeworkOperationResult.Failure(HomeworkSyncFailure.NETWORK)
-        override suspend fun submitHomework(homework: Homework, content: String, files: List<HomeworkFileContent>) = HomeworkOperationResult.Failure(HomeworkSyncFailure.NETWORK)
+        override suspend fun submitHomework(homework: Homework, content: String, files: List<FileContent>) = HomeworkOperationResult.Failure(HomeworkSyncFailure.NETWORK)
         override fun attachmentDownloadUrl(homeworkId: Int, attachmentId: Int) = ""
     }
 
@@ -61,7 +61,7 @@ class AgentAssignmentDetailTest {
             else PhyVlabAssignmentDetailResult.Success(PhyVlabAssignmentDetail(description = "完成 5.1、5.2 题",
                 submittedFiles = listOf(PhyVlabSubmissionFile("我的.pdf")), attachments = listOf(PhyVlabAttachment("模板.docx", url))))
         },
-        phyVlabDownload = { PhyVlabAttachmentResult.Success(HomeworkFileContent(it.fileName, "application/octet-stream", byteArrayOf(9))) },
+        phyVlabDownload = { PhyVlabAttachmentResult.Success(FileContent(it.fileName, "application/octet-stream", byteArrayOf(9))) },
         citelProblem = { id, live -> "题面 $id live=$live".takeIf { id == 5 } },
     ), now = { now })
 

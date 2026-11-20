@@ -1,5 +1,6 @@
 package team.bjtuss.bjtuselfservice.shared.agent.host
 
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
 import java.io.File
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
@@ -24,7 +25,7 @@ import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.auth.SchoolLoginProtocol
 import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityCoordinator
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityStore
@@ -121,8 +122,8 @@ internal class AppSessionIpcHandler(
         if (repository == null || coordinator == null) {
             return AgentHomeworkOutcome.Failed(RefreshIpcCode.NOT_SIGNED_IN, "App 会话尚未就绪。")
         }
-        return AgentHomeworkExecutor(repository, session.profile, session.reauthenticateSession,
-            refreshHomework = { coordinator.refreshHomework() }, details = session.assignmentDetails).run(request)
+        return session.accountWork.inAccount { AgentHomeworkExecutor(repository, session.profile, session.reauthenticateSession,
+            refreshHomework = { coordinator.refreshHomework() }, details = session.assignmentDetails).run(request) }
     }
 
     private suspend fun awaitReadySession(): AuthenticatedSession {
@@ -245,7 +246,7 @@ class HeadlessRefreshHost(private val deps: HeadlessRefreshDependencies) {
         } finally {
             graphReady.complete(null)
             runCatching { server?.close() }
-            graph?.close()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { graph?.stopAndJoin() }
         }
         return if (handedOff) result.copy(handedOff = true) else result
     }
@@ -264,7 +265,7 @@ class HeadlessRefreshHost(private val deps: HeadlessRefreshDependencies) {
             securityCoordinator = AccountSecurityCoordinator(deps.securityStore),
             captchaRecognizer = deps.captchaRecognizer,
             credentialsProvider = { deps.credentials },
-            homeworkFileGateway = UnavailableHomeworkFileGateway,
+            fileGateway = UnavailableFileGateway,
             onPurgeLogout = {},
             refreshDispatcher = Dispatchers.Default,
             nowEpochSeconds = { Clock.System.now().epochSeconds },

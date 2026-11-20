@@ -1,18 +1,23 @@
 # BJTUselfService 实时工作记忆
 
 > **当前状态（2026-11-20）**
-> - **当前分支**：`fix/remote-polling-and-citel-cache`，基于 `origin/main` `e8e44f34`，远端轮询和 CITEL 题面同步修复待 Draft PR 验证。
-> - **源码版本**：`2.0.0-KMP` / Build 45（最新已发布 Release：`v1.8.6-KMP` / Build 44）
-> - **远端活跃分支**：`main`、`feat/mac-swift`（macOS 原生 SwiftUI 探索）；原 `feat/homework-submit-cli-drop`、`feat/agent-assignment-detail` 已合入并删除。
-> - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（课程回放、macOS/Windows 硬件合成、作业忽略与筛选拆分、全应用设备时区、离线更新日志、`DESIGN.md` / `AppleAlert` / `AppleMenuPickerCard`、物理实验 IP 备用路径、上传文件拖放、本机 CLI 交作业、统一作业详情与远程增量同步等，PR #68–#99）均已移入 `history_full.md`。
+> - **当前分支**：`fix/remote-polling-and-citel-cache`（已合并含 PR #102–#106 的最新代码与修复），远端轮询、CITEL 题面快照与 2.0.1-Alpha 版本升级待验证。
+> - **源码版本**：`2.0.1-Alpha` / Build 46（发布说明草稿 `docs/releases/v2.0.1-KMP.md`；iOS 与桌面安装器数值版本 `2.0.1`；上个正式标签：`v2.0.0-KMP` / Build 45）。
+> - **远端活跃分支**：`main`、`feat/citel-batch-cache`（PR #106）、`fix/remote-polling-and-citel-cache`（PR #108）、`feat/mac-swift`（macOS 原生 SwiftUI 探索）。
+> - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（课程回放、macOS/Windows 硬件合成、作业忽略与筛选拆分、全应用设备时区、离线更新日志、`DESIGN.md` / `AppleAlert` / `AppleMenuPickerCard`、物理实验 IP 备用路径、上传文件拖放、本机 CLI 交作业、统一作业详情与远程增量同步等，PR #68–#99）及架构拆分与账号生命周期收口（PR #102–#105）均已合入或移入 `history_full.md`。
 
 ---
 
-## 进行中：远端轮询与 CITEL 题面快照
+## 进行中：远端轮询与 CITEL 题面快照（PR #108，含 2.0.1-Alpha / Build 46 版本更新）
 
-- Site 单独持久化任务轮询，MCP 据此决定是否入队和继续等待。手动上传快照仍然可读，设备有效执行租约仍可等待。
-- 作业快照可以直接读取同 CITEL 账号的本机题面缓存，绕开通用详情补齐的批次上限与退避。新增回归覆盖手动上传、轮询恢复/超时及账号隔离。
-- 本地 Site 测试 85 项通过，构建通过。当前环境无法连接 Gradle 分发站，Kotlin 回归由 PR CI 验证。原 Site 增量升级需补跑 `0004_device_polling.sql`。
+- Site 单独持久化任务轮询，MCP 据此决定是否入队和继续等待；`status()` 从全量有效设备计算活跃状态与逐源同步时间，不再受最近 20 条展示上限干扰；补充 MCP/Skill 对“仅查缓存”与“缺失 ≤ 5 MB 附件触发详情补全”的指引。
+- 作业快照可以直接读取同 CITEL 账号的本机题面缓存，绕开通用详情补齐的批次上限与退避。原 Site 增量升级需补跑 `0004_device_polling.sql`。
+- 本分支已合并 PR #106 并升级至 `2.0.1-Alpha` / Build 46，新增 `docs/releases/v2.0.1-KMP.md` 发布说明草稿并同步远程模板与内嵌更新日志。
+
+## 进行中：CITEL 题面批量缓存与窄窗口作业滚动（PR #106）
+
+- CITEL 启用后，可从「Agent 和 ChatGPT 插件」进入题面缓存页，按课程和实际提交状态筛选、批量拉取缺失题面，并对已缓存题目查看时间、逐题更新或确认删除；同步期间课程暂缺时保留已选课程并禁用误拉取，批量结果展示拉取范围标签。
+- 聚合作业与课程平台作业列表恢复 Navigation 3 保存的滚动位置，补充 `untilEpoch` 筛选切换回顶与回归测试；`KMP package` 仅自动响应 `debug-*` 标签，正式发版需手动指定 `publish_release=true`。
 
 ## 进行中 / 待处理：物理在线相关检查
 

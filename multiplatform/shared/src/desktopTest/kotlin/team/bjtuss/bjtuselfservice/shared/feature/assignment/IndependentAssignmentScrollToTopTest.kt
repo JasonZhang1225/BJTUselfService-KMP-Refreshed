@@ -1,12 +1,20 @@
 package team.bjtuss.bjtuselfservice.shared.feature.assignment
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.ui.NavDisplay
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -31,13 +39,13 @@ import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.cache.db.CacheDatabaseSql
 import team.bjtuss.bjtuselfservice.shared.data.homework.*
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.*
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.*
 import team.bjtuss.bjtuselfservice.shared.feature.citel.*
 import team.bjtuss.bjtuselfservice.shared.feature.homework.*
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.*
 import team.bjtuss.bjtuselfservice.shared.feature.shell.*
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
 import team.bjtuss.bjtuselfservice.shared.network.*
 
 class IndependentAssignmentScrollToTopTest {
@@ -75,6 +83,44 @@ class IndependentAssignmentScrollToTopTest {
         }
     }
 
+    @Test fun compactHomeworkAndAggregateRetainPositionWhenReturningFromDetails() = SwingUtilities.invokeAndWait {
+        for (source in listOf("homework", "aggregate")) {
+            Fixture(source, 60, Layout(390, 844, false, 1f), navigate = true).use { fixture ->
+                fixture.settle()
+                fixture.scroll(2400f)
+                fixture.settle()
+                val position = fixture.scrollPosition()
+                assertTrue(position > 0f, source)
+
+                fixture.openVisibleHomework()
+                fixture.settle()
+                assertNotNull(fixture.nodeWithText("返回作业列表"), source)
+                fixture.goBack()
+                fixture.settle()
+                assertEquals(position, fixture.scrollPosition(), 0.0001f, source)
+
+                fixture.search.activate()
+                fixture.search.update("阅读与思考")
+                fixture.settle()
+                assertEquals(0f, fixture.scrollPosition(), source)
+            }
+        }
+    }
+
+    @Test fun homeworkResetsScrollWhenChangingUntilEpochWithHideExpired() = SwingUtilities.invokeAndWait {
+        Fixture("homework", 60, Layout(390, 844, false, 1f), homeworkEndTime = "2099-12-31 23:59").use { fixture ->
+            fixture.setHomeworkDeadlineScope(hideExpired = true, untilEpoch = 4_102_500_000L)
+            fixture.settle()
+            fixture.scroll(2400f)
+            fixture.settle()
+            assertTrue(fixture.scrollPosition() > 0f)
+
+            fixture.setHomeworkDeadlineScope(hideExpired = true, untilEpoch = 4_102_600_000L)
+            fixture.settle()
+            assertEquals(0f, fixture.scrollPosition(), 0.0001f)
+        }
+    }
+
     @Test fun emptyAndShortIndependentListsDoNotShowTheButton() = SwingUtilities.invokeAndWait {
         for (source in listOf("homework", "phyvlab", "citel")) for (count in listOf(0, 1)) {
             Fixture(source, count, Layout(390, 844, false, 1f)).use { fixture ->
@@ -88,10 +134,22 @@ class IndependentAssignmentScrollToTopTest {
 
     private data class Layout(val width: Int, val height: Int, val dark: Boolean, val scale: Float)
 
-    private class Fixture(val source: String, count: Int, val layout: Layout) : AutoCloseable {
+    private class Fixture(
+        val source: String,
+        count: Int,
+        val layout: Layout,
+        private val navigate: Boolean = false,
+        homeworkEndTime: String? = null,
+    ) : AutoCloseable {
+        private val routes = mutableStateListOf("list")
+        val search = PageSearchState()
         private val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { CacheDatabaseSql.Schema.create(it) }
         private val cache = CacheStore(driver)
-        private val homework = (1..count).map { completionFixtureHomework().copy(upId = it, title = "阅读与思考 $it") }
+        private val homework = (1..count).map {
+            val base = completionFixtureHomework().copy(upId = it, title = "阅读与思考 $it")
+            if (homeworkEndTime != null) base.copy(endTime = homeworkEndTime) else base
+        }
+        private val aggregatedHomework = aggregateAssignments(homework, emptyList(), emptyList())
         private val activities = (1..count).map { completionFixturePhysical().copy(id = it, title = "实验准备 $it") }
         private val tasks = (1..count).map { completionFixtureCitel().copy(id = it, title = "课后练习 $it") }
         private val homeworkModel = HomeworkScreenModel(DefaultHomeworkRepository("scroll-fixture",
@@ -102,7 +160,7 @@ class IndependentAssignmentScrollToTopTest {
             override suspend fun fetchCourseActivities(course: PhyVlabCourse) = PhyVlabActivitiesResult.Success(activities)
             override suspend fun fetchEvents(monthTimestampSeconds: Long) = PhyVlabEventsResult.Success(emptyList())
             override suspend fun fetchAssignmentDetail(activity: PhyVlabActivity): PhyVlabAssignmentDetailResult = error("No detail request expected")
-            override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>): PhyVlabSubmissionResult = error("No submission allowed")
+            override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<FileContent>): PhyVlabSubmissionResult = error("No submission allowed")
         }, PhyVlabSessionProtocol(object : SchoolHttpTransport {
             override suspend fun execute(request: SchoolHttpRequest) = SchoolHttpResponse(200,
                 "https://phyvlab.bjtu.edu.cn/login/index.php", body = "<a href='/login/logout.php'>退出登录</a>".encodeToByteArray())
@@ -129,10 +187,29 @@ class IndependentAssignmentScrollToTopTest {
                     CompositionLocalProvider(LocalDensity provides density,
                         LocalTopBarClearance provides 112.dp, LocalBottomBarClearance provides 84.dp,
                         LocalNativeScrollControllerReporter provides { controller = it }) {
-                        Surface(Modifier.fillMaxSize()) { content() }
+                        Surface(Modifier.fillMaxSize()) { if (navigate) navigation() else content() }
                     }
                 }
             }
+        }
+
+        @Composable private fun navigation() {
+            NavDisplay(
+                backStack = routes,
+                onBack = ::goBack,
+                transitionSpec = { EnterTransition.None togetherWith ExitTransition.None },
+                popTransitionSpec = { EnterTransition.None togetherWith ExitTransition.None },
+                entryProvider = entryProvider {
+                    entry("list") { content() }
+                    entry("detail") { Button(onClick = ::goBack) { Text("返回作业列表") } }
+                },
+            )
+        }
+
+        fun goBack() { routes.removeAt(routes.lastIndex) }
+
+        fun setHomeworkDeadlineScope(hideExpired: Boolean, untilEpoch: Long?) {
+            homeworkModel.setDeadlineScope(hideExpired, untilEpoch)
         }
 
         @Composable private fun content() {
@@ -140,8 +217,14 @@ class IndependentAssignmentScrollToTopTest {
                 "homework" -> {
                     val state by homeworkModel.state.collectAsState()
                     HomeworkWorkspace(state, layout.width >= 600, model = homeworkModel,
-                        fileGateway = UnavailableHomeworkFileGateway, onRefresh = {}, onOpenDetail = {}, modifier = Modifier.fillMaxSize())
+                        fileGateway = UnavailableFileGateway, onRefresh = {},
+                        onOpenDetail = { if (navigate) routes.add("detail") }, modifier = Modifier.fillMaxSize(), search = search)
                 }
+                "aggregate" -> AggregatedAssignmentWorkspace(
+                    aggregatedHomework, emptyList(), null, {}, { routes.add("detail") }, {}, false, {},
+                    modifier = Modifier.fillMaxSize(), fileGateway = UnavailableFileGateway,
+                    markdown = { "" }, detailContent = {}, search = search,
+                )
                 "phyvlab" -> PhyVlabWorkspace(phyModel, showDetailSheet = false)
                 "citel" -> CitelWorkspace(citelModel, holdNetwork = true, onOpen = {}, showDetailSheet = false)
             }
@@ -152,6 +235,19 @@ class IndependentAssignmentScrollToTopTest {
             fun collect(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::collect)
             return scene.semanticsOwners.flatMap { collect(it.unmergedRootSemanticsNode) }
         }
+        fun nodeWithText(text: String) = nodes().firstOrNull { node ->
+            node.config.getOrNull(SemanticsProperties.Text)?.any { text in it.text } == true
+        }
+        fun openVisibleHomework() {
+            val title = assertNotNull(nodeWithText("阅读与思考"))
+            val action = generateSequence(title) { it.parent }.firstNotNullOfOrNull {
+                it.config.getOrNull(SemanticsActions.OnClick)?.action
+            }
+            assertTrue(assertNotNull(action).invoke())
+        }
+        fun scrollPosition() = nodes().maxOfOrNull {
+            it.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)?.value?.invoke() ?: 0f
+        } ?: 0f
         fun button() = nodes().firstOrNull { it.config.getOrNull(SemanticsProperties.ContentDescription)?.contains("回到顶部") == true }
         fun scroll(amount: Float) {
             val native = controller

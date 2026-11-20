@@ -222,8 +222,14 @@ SELECT account_scope FROM cache_metadata WHERE cache_key = ?;
 selectMetadata:
 SELECT value FROM cache_metadata WHERE account_scope = ? AND cache_key = ?;
 
+selectMetadataKeysByAccount:
+SELECT cache_key FROM cache_metadata WHERE account_scope = ?;
+
 putMetadata:
 INSERT OR REPLACE INTO cache_metadata(account_scope, cache_key, value) VALUES (?, ?, ?);
+
+deleteMetadata:
+DELETE FROM cache_metadata WHERE account_scope = ? AND cache_key = ?;
 
 deleteMetadataByAccount:
 DELETE FROM cache_metadata WHERE account_scope = ?;
@@ -260,3 +266,9 @@ DELETE FROM cache_metadata;
 
 deleteAllSettings:
 DELETE FROM app_setting;
+
+selectAllAccountScopes:
+SELECT account_scope FROM grade_cache UNION SELECT account_scope FROM course_cache
+UNION SELECT account_scope FROM exam_cache UNION SELECT account_scope FROM homework_cache
+UNION SELECT account_scope FROM grade_selection_cache UNION SELECT account_scope FROM program_course_type_cache
+UNION SELECT account_scope FROM cache_metadata;

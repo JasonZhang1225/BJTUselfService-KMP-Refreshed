@@ -31,10 +31,10 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareCourse
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNode
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareSnapshot
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackLesson
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FilePickResult
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
@@ -195,9 +195,9 @@ class PlaybackScreenModelTest {
         val requested: MutableList<Int> = Collections.synchronizedList(mutableListOf())
         override fun load(): CoursewareSnapshot = snapshot
         override suspend fun refresh(): CoursewareRefreshResult = CoursewareRefreshResult.Success(snapshot)
-        override suspend fun downloadResource(node: CoursewareNode): CoursewareOperationResult<HomeworkFileContent> =
+        override suspend fun downloadResource(node: CoursewareNode): CoursewareOperationResult<FileContent> =
             error("Not used")
-        override suspend fun downloadTeachingCalendar(course: CoursewareCourse): CoursewareOperationResult<HomeworkFileContent> =
+        override suspend fun downloadTeachingCalendar(course: CoursewareCourse): CoursewareOperationResult<FileContent> =
             error("Not used")
         override suspend fun loadPlaybackLessons(course: CoursewareCourse): CoursewareOperationResult<List<PlaybackLesson>> {
             requested += course.id
@@ -227,9 +227,9 @@ class PlaybackScreenModelTest {
         override fun clearSession() = Unit
     }
 
-    private object NoFileGateway : HomeworkFileGateway {
+    private object NoFileGateway : FileGateway {
         override val isAvailable = false
-        override suspend fun pickFiles() = HomeworkFilePickResult.Cancelled
-        override suspend fun saveFile(file: HomeworkFileContent) = HomeworkFileSaveResult.Cancelled
+        override suspend fun pickFiles() = FilePickResult.Cancelled
+        override suspend fun saveFile(file: FileContent) = FileSaveResult.Cancelled
     }
 }

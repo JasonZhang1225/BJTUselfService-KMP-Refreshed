@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.citel
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,7 +18,7 @@ import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
 import team.bjtuss.bjtuselfservice.shared.data.moodle.*
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.domain.change.recordSafely
 
@@ -50,11 +53,13 @@ class CitelModel(
     private val vault: CredentialVault?,
     private val remote: CitelDataSource,
     private val changeRecorder: DataChangeRecorder<CitelTask>? = null,
+    private val accountWork: AccountWork? = null,
 ) {
     private val filterStore = AssignmentFilterStore(cache, scope, "citel")
-    private val mutableState = MutableStateFlow(CitelState(username = scope, filters = filterStore.load()))
+    private val mutableState = accountWork.accountState(CitelState(username = scope, filters = filterStore.load()))
     val state = mutableState.asStateFlow()
     private val mutex = Mutex()
+    private val batchCacheMutex = Mutex()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private var initialized = false
     private var resetChangeBaseline = false
@@ -63,7 +68,9 @@ class CitelModel(
     private var lastAppEntryGeneration = -1L
     private var appSyncRunning = false
 
-    suspend fun refreshForAppEntry(generation: Long) {
+    suspend fun refreshForAppEntry(generation: Long) = accountWork.inAccount { refreshForAppEntryInAccount(generation = generation) }
+
+    private suspend fun refreshForAppEntryInAccount(generation: Long) {
         if (appSyncRunning || (appSyncStarted && generation <= lastAppEntryGeneration)) return
         initialize()
         if (!state.value.enabled || appSyncRunning || (appSyncStarted && generation <= lastAppEntryGeneration)) return
@@ -75,7 +82,9 @@ class CitelModel(
         } finally { appSyncRunning = false }
     }
 
-    suspend fun initialize() = mutex.withLock {
+    suspend fun initialize() = accountWork.inAccount { initializeInAccount() }
+
+    private suspend fun initializeInAccount() = mutex.withLock {
         if (initialized) return@withLock
         val rememberMarker = cache.metadata(scope, "citel.remember")
         credentials = try { if (rememberMarker != "false") vault?.load() else null }
@@ -102,7 +111,9 @@ class CitelModel(
     }
 
     /** 密码留空表示继续使用同一 CITEL 账号的凭据；新账号必须输入密码。 */
-    suspend fun setEnabled(enabled: Boolean) {
+    suspend fun setEnabled(enabled: Boolean) = accountWork.inAccount { setEnabledInAccount(enabled = enabled) }
+
+    private suspend fun setEnabledInAccount(enabled: Boolean) {
         initialize()
         mutex.withLock {
             if (enabled && !state.value.configured) return@withLock
@@ -113,20 +124,26 @@ class CitelModel(
     }
 
     /** 密码留空沿用同账号凭据，账号设置不再改变应用设置中的功能总开关。 */
-    suspend fun saveAccount(username: String, password: String, remember: Boolean) {
+    suspend fun saveAccount(username: String, password: String, remember: Boolean) = accountWork.inAccount { saveAccountInAccount(username = username, password = password, remember = remember) }
+
+    private suspend fun saveAccountInAccount(username: String, password: String, remember: Boolean) {
         initialize()
         configure(username, password, remember, state.value.enabled)
     }
 
     /** Account setup validates/syncs even when the feature switch is off, without enabling it. */
-    suspend fun saveAccountAndSync(username: String, password: String): Boolean {
+    suspend fun saveAccountAndSync(username: String, password: String): Boolean = accountWork.inAccount { saveAccountAndSyncInAccount(username = username, password = password) }
+
+    private suspend fun saveAccountAndSyncInAccount(username: String, password: String): Boolean {
         saveAccount(username, password, remember = true)
         if (state.value.failed || !state.value.configured) return false
         if (!state.value.enabled) refresh(includeDisabled = true)
         return !state.value.failed && state.value.configured
     }
 
-    suspend fun clearConfiguration(): Boolean {
+    suspend fun clearConfiguration(): Boolean = accountWork.inAccount { clearConfigurationInAccount() }
+
+    private suspend fun clearConfigurationInAccount(): Boolean {
         initialize()
         return mutex.withLock {
             try { vault?.clear() }
@@ -149,7 +166,9 @@ class CitelModel(
         }
     }
 
-    suspend fun configure(username: String, password: String, remember: Boolean, enabled: Boolean) {
+    suspend fun configure(username: String, password: String, remember: Boolean, enabled: Boolean) = accountWork.inAccount { configureInAccount(username = username, password = password, remember = remember, enabled = enabled) }
+
+    private suspend fun configureInAccount(username: String, password: String, remember: Boolean, enabled: Boolean) {
         initialize()
         val saved = mutex.withLock {
             try {
@@ -183,7 +202,9 @@ class CitelModel(
         if (saved && enabled) refresh()
     }
 
-    suspend fun refresh() {
+    suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
+
+    private suspend fun refreshInAccount() {
         refresh(includeDisabled = false)
     }
 
@@ -201,8 +222,12 @@ class CitelModel(
                 cache.putMetadata(scope, "citel.lastSync", time.toString())
                 // 内容没变就沿用旧列表实例：首页/聚合作业以它作 remember 键，等值的新实例会让每次重组都逐项比较。
                 val current = mutableState.value
+                val problems = if (tasks == current.tasks) current.problems else tasks.mapNotNull { task ->
+                    val cached = current.problems[task.id] ?: cache.citelProblem(scope, current.username, task.id)
+                    cached?.let { task.id to it }
+                }.toMap()
                 mutableState.value = current.copy(tasks = if (tasks == current.tasks) current.tasks else tasks,
-                    fromCache = false, lastSync = time, message = "已同步 ${tasks.size} 项作业。")
+                    problems = problems, fromCache = false, lastSync = time, message = "已同步 ${tasks.size} 项作业。")
                 changeRecorder.recordSafely(if (resetChangeBaseline) tasks else current.tasks, tasks)
                 resetChangeBaseline = false
             } catch (e: TimeoutCancellationException) {
@@ -223,7 +248,9 @@ class CitelModel(
     }
     fun dismissTask() { if (!state.value.submissionBusy) mutableState.value = state.value.copy(selectedTask = null, submission = null, programmingResult = null, programmingOptions = null, submissionMessage = null) }
     fun showTask(task: CitelTask) { mutableState.value = state.value.copy(problemMessage = null, selectedTask = task, submission = null, programmingResult = null, programmingPollingPaused = false, programmingOptions = null, submissionMessage = null) }
-    suspend fun selectTask(task: CitelTask) {
+    suspend fun selectTask(task: CitelTask) = accountWork.inAccount { selectTaskInAccount(task = task) }
+
+    private suspend fun selectTaskInAccount(task: CitelTask) {
         initialize()
         mutex.withLock {
             mutableState.value = state.value.copy(selectedTask = task, submission = null, programmingResult = null, programmingPollingPaused = false, programmingOptions = null, submissionMessage = null, submissionBusy = true)
@@ -245,7 +272,7 @@ class CitelModel(
     private suspend fun applyProgrammingResult(task: CitelTask, result: CitelProgrammingResult) {
         val before = state.value.tasks
         val updated = task.copy(status = if (result.testing && result.status.isBlank()) "WJ: Waiting" else result.status,
-            submitted = result.accepted)
+            submitted = result.accepted, programmingSubmitCount = result.submitCount)
         val tasks = state.value.tasks.map { if (it.id == task.id) updated else it }
         cache.putMetadata(scope, "citel.tasks", json.encodeToString(tasks))
         val selected = state.value.selectedTask?.id == task.id
@@ -255,7 +282,9 @@ class CitelModel(
     }
 
     /** Polls only the selected task; never sends a submission POST. False pauses automatic refresh after errors. */
-    suspend fun refreshProgrammingResult(taskId: Int): Boolean {
+    suspend fun refreshProgrammingResult(taskId: Int): Boolean = accountWork.inAccount { refreshProgrammingResultInAccount(taskId = taskId) }
+
+    private suspend fun refreshProgrammingResultInAccount(taskId: Int): Boolean {
         if (state.value.submissionBusy) return true
         return mutex.withLock {
             val task = state.value.selectedTask?.takeIf { it.id == taskId && it.programming } ?: return@withLock false
@@ -279,7 +308,9 @@ class CitelModel(
             }
         }
     }
-    suspend fun saveFiles(added: List<HomeworkFileContent>, removed: Set<String>) {
+    suspend fun saveFiles(added: List<FileContent>, removed: Set<String>) = accountWork.inAccount { saveFilesInAccount(added = added, removed = removed) }
+
+    private suspend fun saveFilesInAccount(added: List<FileContent>, removed: Set<String>) {
         if (state.value.submissionBusy) return
         mutex.withLock {
             val task = state.value.selectedTask ?: return@withLock
@@ -301,31 +332,135 @@ class CitelModel(
     }
     /** Deliberately separate from selectTask and ordinary synchronization. */
     /** 远程读取不改变详情页选择；只有显式授权才获取全文，与 UI 共用登录和互斥。 */
-    suspend fun remoteProblem(moduleId: Int, fetch: Boolean): CitelCachedProblem? {
+    suspend fun remoteProblem(moduleId: Int, fetch: Boolean): CitelCachedProblem? = accountWork.inAccount { remoteProblemInAccount(moduleId = moduleId, fetch = fetch) }
+
+    private suspend fun remoteProblemInAccount(moduleId: Int, fetch: Boolean): CitelCachedProblem? {
         initialize()
         return mutex.withLock {
             val task = state.value.tasks.firstOrNull { it.id == moduleId && it.programming } ?: return@withLock null
             if (!fetch) return@withLock cache.citelProblem(scope, state.value.username, moduleId)
-            val problem = withTimeout(180_000) { remote.problem(loginCredentials(), task, withResults = true) }
-            val cached = CitelCachedProblem(state.value.username, moduleId, Clock.System.now().epochSeconds, problem)
-            cache.saveCitelProblem(scope, cached)
-            mutableState.value = mutableState.value.copy(problems = state.value.problems + (moduleId to cached))
-            cached
+            downloadProblem(task, loginCredentials())
         }
     }
 
-    suspend fun fetchProblem() {
+    internal suspend fun cacheMissingProblems(
+        courseId: Int?,
+        submission: CitelProblemSubmission,
+    ): CitelBatchCacheResult = accountWork.inAccount {
+        cacheMissingProblemsInAccount(courseId = courseId, submission = submission)
+    }
+
+    private suspend fun cacheMissingProblemsInAccount(
+        courseId: Int?,
+        submission: CitelProblemSubmission,
+    ): CitelBatchCacheResult {
+        initialize()
+        if (!batchCacheMutex.tryLock()) return CitelBatchCacheResult(message = "正在拉取题面，请稍候。")
+        try {
+            val (login, tasks) = mutex.withLock {
+                val account = credentials?.takeIf { state.value.enabled }
+                    ?: return CitelBatchCacheResult(message = "请先启用 CITEL 并设置账号。")
+                account to state.value.missingProblems(courseId, submission)
+            }
+            var result = CitelBatchCacheResult()
+            for (task in tasks) {
+                mutex.withLock {
+                    val current = state.value
+                    if (!current.enabled || credentials !== login) {
+                        return result.copy(message = "CITEL 账号或启用状态已变更，拉取已停止。")
+                    }
+                    val latestTask = current.tasks.firstOrNull { it.id == task.id && it.programming }
+                        ?: return@withLock
+                    if (latestTask.id in current.problems || !submission.matches(latestTask) ||
+                        (courseId != null && latestTask.courseId != courseId)
+                    ) return@withLock
+                    try {
+                        downloadProblem(latestTask, login)
+                        result = result.copy(saved = result.saved + 1)
+                    } catch (e: TimeoutCancellationException) {
+                        result = result.recordFailure("题面获取超时，请重试。")
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        val failure = e as? CitelFailure
+                        val message = failure?.userMessage ?: "题面获取失败，请重试。"
+                        result = result.recordFailure(message)
+                        if (failure?.sessionExpired == true) return result.copy(message = message)
+                    }
+                }
+            }
+            return result
+        } finally {
+            batchCacheMutex.unlock()
+        }
+    }
+
+    internal suspend fun updateCachedProblem(expected: CitelCachedProblem): String? =
+        accountWork.inAccount { updateCachedProblemInAccount(expected) }
+
+    private suspend fun updateCachedProblemInAccount(expected: CitelCachedProblem): String? {
+        initialize()
+        return mutex.withLock {
+            if (!isCurrentCacheEntry(expected)) return@withLock "题面缓存已变更，请重试。"
+            val task = state.value.tasks.firstOrNull { it.id == expected.moduleId && it.programming }
+                ?: return@withLock "作业列表已变更，请刷新后重试。"
+            try {
+                downloadProblem(task, loginCredentials())
+                null
+            } catch (e: TimeoutCancellationException) {
+                "更新超时，已保留原缓存。"
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                (e as? CitelFailure)?.userMessage ?: "更新失败，已保留原缓存。"
+            }
+        }
+    }
+
+    internal suspend fun deleteCachedProblem(expected: CitelCachedProblem): String? =
+        accountWork.inAccount { deleteCachedProblemInAccount(expected) }
+
+    private suspend fun deleteCachedProblemInAccount(expected: CitelCachedProblem): String? {
+        initialize()
+        return mutex.withLock {
+            if (!isCurrentCacheEntry(expected)) return@withLock "题面缓存已变更，请重试。"
+            try {
+                cache.deleteCitelProblem(scope, expected.moduleId)
+                mutableState.value = state.value.copy(problems = state.value.problems - expected.moduleId)
+                null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                "删除本地缓存失败，请重试。"
+            }
+        }
+    }
+
+    // 操作绑定到界面显示的缓存版本，避免账号切换或其他更新后继续执行旧的确认。
+    private fun isCurrentCacheEntry(expected: CitelCachedProblem): Boolean {
+        val current = state.value
+        return current.enabled && current.username == expected.username && current.problems[expected.moduleId] === expected
+    }
+
+    private suspend fun downloadProblem(task: CitelTask, login: Credentials): CitelCachedProblem {
+        val problem = withTimeout(180_000) { remote.problem(login, task, withResults = true) }
+        val cached = CitelCachedProblem(login.username, task.id, Clock.System.now().epochSeconds, problem)
+        cache.saveCitelProblem(scope, cached)
+        mutableState.value = state.value.copy(problems = state.value.problems + (task.id to cached))
+        return cached
+    }
+
+    suspend fun fetchProblem() = accountWork.inAccount { fetchProblemInAccount() }
+
+    private suspend fun fetchProblemInAccount() {
         if (state.value.problemBusy) return
         initialize()
         mutex.withLock {
             val task = state.value.selectedTask?.takeIf { it.programming } ?: return@withLock
             mutableState.value = state.value.copy(problemBusy = true, problemMessage = null)
             try {
-                val problem = withTimeout(180_000) { remote.problem(loginCredentials(), task, withResults = true) }
-                val cached = CitelCachedProblem(state.value.username, task.id, Clock.System.now().epochSeconds, problem)
-                cache.saveCitelProblem(scope, cached)
-                mutableState.value = state.value.copy(problems = state.value.problems + (task.id to cached),
-                    problemMessage = "题目全文与用例已缓存，可离线复制或导出。")
+                downloadProblem(task, loginCredentials())
+                mutableState.value = state.value.copy(problemMessage = "题目全文与用例已缓存，可离线复制或导出。")
             } catch (e: TimeoutCancellationException) {
                 mutableState.value = state.value.copy(problemMessage = "获取全文超时，保留已缓存的题面。")
             } catch (e: CancellationException) { throw e
@@ -336,7 +471,9 @@ class CitelModel(
     }
 
     private fun loginCredentials(): Credentials = credentials ?: throw CitelFailure("请先设置 CITEL 账号和密码。")
-    suspend fun submitProgramming(files: List<HomeworkFileContent>, language: String) {
+    suspend fun submitProgramming(files: List<FileContent>, language: String) = accountWork.inAccount { submitProgrammingInAccount(files = files, language = language) }
+
+    private suspend fun submitProgrammingInAccount(files: List<FileContent>, language: String) {
         if (state.value.submissionBusy) return
         mutex.withLock {
             val task = state.value.selectedTask ?: return@withLock

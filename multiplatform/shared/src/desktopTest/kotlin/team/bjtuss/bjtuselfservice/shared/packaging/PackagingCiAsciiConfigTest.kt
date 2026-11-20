@@ -2,6 +2,7 @@ package team.bjtuss.bjtuselfservice.shared.packaging
 
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -27,13 +28,28 @@ class PackagingCiAsciiConfigTest {
     }
 
     @Test
-    fun debugTagsPackageWithoutGitHubRelease() {
-        val workflow = File(findRepoRoot(), ".github/workflows/kmp-package.yml").readText()
-        assertTrue("\"debug-*\"" in workflow)
-        assertTrue("startsWith(github.ref, 'refs/tags/v')" in workflow)
-        assertTrue("!startsWith(github.ref_name, 'debug-')" in workflow)
-        assertTrue("!contains(github.ref_name, 'alpha')" in workflow)
-        assertTrue("!contains(github.ref_name, 'beta')" in workflow)
+    fun debugTagsPackageAndOfficialReleaseRequiresAnExplicitDispatch() {
+        val root = findRepoRoot()
+        val packageWorkflow = root.resolve(".github/workflows/kmp-package.yml").readText()
+        val packageTriggers = packageWorkflow.substringAfter("\non:\n").substringBefore("\nconcurrency:")
+        val tagPush = packageTriggers.substringAfter("  push:").substringBefore("  workflow_dispatch:")
+        assertEquals(listOf("- \"debug-*\""), tagPush.lineSequence().map { it.trim() }.filter { it.startsWith("- ") }.toList())
+        assertFalse(packageTriggers.lineSequence().any { it.trim() == "release:" })
+        val publishInput = packageTriggers.substringAfter("      publish_release:").substringBefore("      mirror_tag:")
+        assertTrue("default: false" in publishInput && "type: boolean" in publishInput)
+        val release = packageWorkflow.substringAfter("\n  release:").substringBefore("\n  gitee-mirror:")
+        assertTrue("github.event_name == 'workflow_dispatch' && inputs.publish_release" in release)
+        assertTrue("startsWith(github.ref, 'refs/tags/v')" in release)
+        assertTrue("!contains(github.ref_name, 'alpha')" in release)
+        assertTrue("!contains(github.ref_name, 'beta')" in release)
+        val mirror = packageWorkflow.substringAfter("\n  gitee-mirror:")
+        assertTrue("needs: release" in mirror)
+        assertTrue("needs.release.result == 'success'" in mirror)
+        assertTrue("github.event_name == 'workflow_dispatch' && inputs.mirror_tag != ''" in mirror)
+
+        val mirrorWorkflow = root.resolve(".github/workflows/gitee-release-mirror.yml").readText()
+        val mirrorTriggers = mirrorWorkflow.substringAfter("\non:\n").substringBefore("\npermissions:")
+        assertFalse(mirrorTriggers.lineSequence().any { it.trim() == "release:" || it.trim() == "push:" })
     }
 
     @Test

@@ -36,6 +36,24 @@ class AndroidPlaybackRecovery(context: Context) : PlaybackRecoveryAccess {
     private companion object {
         val managers = mutableMapOf<String, PlaybackTaskManager>()
     }
+    override fun knownAccountScopes(): Set<String> = synchronized(managers) { managers.keys.toSet() }
+
+    override suspend fun clearUnregisteredAccountData(knownScopes: Set<String>): Boolean = withContext(Dispatchers.IO) {
+        val root = File(app.filesDir, "playback-tasks")
+        if (!root.exists()) return@withContext true
+        if (java.nio.file.Files.isSymbolicLink(root.toPath())) return@withContext false
+        val protected = (knownScopes + knownAccountScopes()).map { scope ->
+            MessageDigest.getInstance("SHA-256").digest(scope.toByteArray()).joinToString("") { "%02x".format(it) }
+        }.toSet()
+        var ok = true
+        for (directory in root.listFiles() ?: return@withContext false) {
+            if (directory.name in protected) continue
+            if (!directory.name.matches(Regex("[a-f0-9]{64}")) || java.nio.file.Files.isSymbolicLink(directory.toPath()) || !directory.isDirectory) { ok = false; continue }
+            if (!team.bjtuss.bjtuselfservice.shared.cleanup.clearStoredPlaybackData(AndroidPlaybackTaskStore(directory), ::restoreDestination)) ok = false
+        }
+        ok
+    }
+
     override fun storeFor(accountScope: String): PlaybackTaskStore {
         val owner = MessageDigest.getInstance("SHA-256").digest(accountScope.toByteArray()).joinToString("") { "%02x".format(it) }
         return AndroidPlaybackTaskStore(File(app.filesDir, "playback-tasks/$owner"))
@@ -43,11 +61,11 @@ class AndroidPlaybackRecovery(context: Context) : PlaybackRecoveryAccess {
 
     override suspend fun restoreDestination(token: String, displayName: String): StreamingDestinationResult = withContext(Dispatchers.IO) {
         val uri = runCatching { Uri.parse(token) }.getOrNull()
-        if (uri?.scheme != "content" || uri.query != null) return@withContext StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        if (uri?.scheme != "content" || uri.query != null) return@withContext StreamingDestinationResult.Failed(FileGatewayFailure.UNAVAILABLE)
         val granted = app.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isWritePermission }
-        if (!granted) return@withContext StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+        if (!granted) return@withContext StreamingDestinationResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
         // 保存时才打开并截断目标；重进 App 不会重写或删除用户文件。
-        StreamingDestinationResult.Opened(ContentStreamingDestination(app.contentResolver, uri, null, displayName))
+        StreamingDestinationResult.Opened(ContentStreamingDestination(app.contentResolver, uri, null, displayName, recoveredOutputMayBeCommitted = true))
     }
 }
 

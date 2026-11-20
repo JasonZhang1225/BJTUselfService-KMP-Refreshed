@@ -6,8 +6,9 @@ class BundledChangelogTest {
     @Test fun versionsRemainDistinctIncludingTestAndDebugBuilds() {
         val entries = BundledChangelog.entries
         assertEquals(entries.size, entries.map { it.tag }.distinct().size)
-        assertEquals("v2.0.0-KMP", entries.first().tag)
-        assertEquals("2.0.0-KMP", entries.first().label)
+        assertEquals("v2.0.1-KMP", entries.first().tag)
+        assertTrue(entries.first().label.contains("草稿"))
+        assertTrue(entries.any { it.tag == "v2.0.0-KMP" })
         assertTrue(entries.any { it.tag == "v1.8.6-KMP" })
         assertTrue(entries.any { it.tag == "v1.8.5-EmergencyFix2" })
     }
@@ -23,8 +24,8 @@ class BundledChangelogTest {
     }
 
     @Test fun boldLeadInBecomesItemTitle() {
-        val replay = BundledChangelog.entries.first().sections.first().items.first()
-        assertEquals("课程回放", replay.title)
-        assertFalse(replay.body.startsWith("课程回放"))
+        val latestFirst = BundledChangelog.entries.first().sections.first().items.first()
+        assertEquals("CITEL 题面批量缓存", latestFirst.title)
+        assertFalse(latestFirst.body.startsWith("CITEL 题面批量缓存"))
     }
 }

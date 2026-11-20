@@ -79,3 +79,24 @@ for (const platform of ['iOS', 'Android']) {
     assert.equal((await site.call('POST', '/api/v1/device/poll', { token: desktop.deviceToken })).body.task.requestId, task.requestId);
   });
 }
+
+test("status 在最近 20 条均为已撤销设备时仍纳入更早的活跃轮询电脑与快照", async t => {
+  const site = createSite(); t.after(() => site.env.DB.raw.close());
+  const desktop = await pairDevice(site, { deviceName: "早期轮询电脑" });
+  await site.call("PUT", "/api/v1/device/snapshot", {
+    token: desktop.deviceToken,
+    body: withHomework(snapshotFor(desktop), "仍在快照中的作业", 1792540800),
+  });
+  for (let i = 0; i < 20; i++) {
+    site.clock.now += 1;
+    const extra = await pairDevice(site, { deviceName: `临时已撤销设备-${i}` });
+    await site.call("POST", `/api/v1/owner/devices/${extra.deviceId}/revoke`, { owner: true });
+  }
+  await site.call("POST", "/api/v1/device/poll", { token: desktop.deviceToken, body: { pollIntervalSeconds: 5 } });
+  const status = (await site.call("GET", "/api/v1/owner/status", { owner: true })).body;
+  assert.equal(status.devices.length, 20);
+  assert.ok(status.devices.every(d => d.revokedAt !== null));
+  assert.equal(status.taskDeviceId, desktop.deviceId);
+  assert.equal(status.taskPollingAvailable, true);
+  assert.equal(status.snapshot?.sources?.homework?.fetchedAt, 1792540800);
+});

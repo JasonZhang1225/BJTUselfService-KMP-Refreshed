@@ -79,7 +79,7 @@ export const MCP_TOOLS = [
   },
   {
     name: "request_assignment_detail",
-    description: "让电脑联网读取一项作业的完整详情（题号、要求、附件），并把不超过 5 MB 的附件传到 Site。assignmentId 是 get_homework 的 id（course_platform:/phyvlab:/citel:）。先用 get_homework detail=true 看快照已有详情。正文缺失或截断、用户同意联网且电脑在轮询时才调用。",
+    description: "让电脑联网读取一项作业的完整详情（题号、要求、附件），并把不超过 5 MB 的附件传到 Site。assignmentId 是 get_homework 的 id（course_platform:/phyvlab:/citel:）。先用 get_homework detail=true 看快照已有详情。正文缺失或截断，或有不超过 5 MB 的附件尚未传到 Site 时，且用户同意联网、电脑在轮询时才调用。",
     inputSchema: schema({ assignmentId: { type: "string", pattern: "^(course_platform|phyvlab|citel):[1-9][0-9]{0,8}$" }, idempotencyKey }, ["assignmentId", "idempotencyKey"]),
   },
   {

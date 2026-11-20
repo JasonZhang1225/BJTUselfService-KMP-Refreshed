@@ -73,7 +73,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailComposeDraft
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailMessage
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailSummary
@@ -109,7 +109,7 @@ fun MailboxWorkspace(
     onOpenNativeDetail: (() -> Unit)? = null,
     onOpenNativeCompose: (() -> Unit)? = null,
     /** 附件预览/保存所用的系统文件能力；未提供时附件只显示元数据。 */
-    fileGateway: HomeworkFileGateway? = null,
+    fileGateway: FileGateway? = null,
     modifier: Modifier = Modifier,
 ) {
     val state by model.state.collectAsState()

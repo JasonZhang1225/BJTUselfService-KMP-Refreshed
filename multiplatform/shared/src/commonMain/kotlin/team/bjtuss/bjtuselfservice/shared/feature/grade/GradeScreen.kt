@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.grade
 
+import team.bjtuss.bjtuselfservice.shared.presentation.course.courseTypeColors
+
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
 import team.bjtuss.bjtuselfservice.shared.feature.common.WorkspaceEmptyState
@@ -129,9 +131,6 @@ import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareSyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.course.CourseScheduleSyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.exam.ExamScheduleSyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.classroomoccupancy.ClassroomOccupancySyncFailure
-import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleContentSource
-import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleScreenModel
-import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleWorkspace
 import team.bjtuss.bjtuselfservice.shared.feature.exam.ExamScheduleContentSource
 import team.bjtuss.bjtuselfservice.shared.feature.exam.ExamScheduleScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.exam.ExamScheduleWorkspace
@@ -177,8 +176,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.home.homeSyncDialogTitle
 import team.bjtuss.bjtuselfservice.shared.webview.openExternalUrl
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommand
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.domain.grade.CourseType
 import team.bjtuss.bjtuselfservice.shared.domain.grade.Grade
 import team.bjtuss.bjtuselfservice.shared.domain.grade.GradeInfoResult

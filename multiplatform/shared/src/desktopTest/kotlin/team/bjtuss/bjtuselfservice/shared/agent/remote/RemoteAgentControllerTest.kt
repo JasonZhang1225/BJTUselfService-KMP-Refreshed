@@ -14,6 +14,11 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
+import kotlin.test.assertIs
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -57,6 +62,52 @@ class RemoteAgentControllerTest {
         controller.close()
         cache.close()
         directory.deleteRecursively()
+    }
+
+    @Test
+    fun stoppedAccountCannotSaveALatePairingTokenAndNewLoginCanPair() = runBlocking<Unit> {
+        val old = AccountWork()
+        val fresh = AccountWork()
+        executor.work = old
+        client.pairEntered = CompletableDeferred()
+        client.pairGate = CompletableDeferred()
+        val pending = async(Dispatchers.Default) { runCatching {
+            controller.pair(pairingFixture("https://site.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, consent = true)
+        }.exceptionOrNull() }
+        try {
+            client.pairEntered!!.await()
+            old.stop()
+            val stopped = async { old.join() }
+            cache.clearAll()
+            cache.putSetting("fixture-new-login", "preserved")
+            assertFalse(stopped.isCompleted)
+            client.pairGate!!.complete(Unit)
+            stopped.await()
+            assertIs<CancellationException>(pending.await())
+            assertNull(secrets.token)
+            assertFalse(controller.config.value.runnable)
+            assertEquals("preserved", cache.setting("fixture-new-login"))
+            executor.work = fresh
+            client.pairGate = null
+            assertNull(controller.pair(pairingFixture("https://site.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, consent = true))
+            assertTrue(controller.config.value.runnable)
+        } finally { client.pairGate?.complete(Unit); old.stop(); fresh.stop(); old.join(); fresh.join(); pending.join() }
+    }
+
+    @Test
+    fun reportFromRetiredSessionCannotUploadThroughSameAccountNewSession() = runBlocking<Unit> {
+        val old = AccountWork()
+        val fresh = AccountWork()
+        executor.work = fresh
+        try {
+            assertNull(controller.pair(pairingFixture("https://site.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, consent = true))
+            val report = executor.refreshAll(remote = false)!!.copy(origin = team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin.APP)
+            old.stop()
+            controller.uploadOwnedReport(old, report)
+            assertTrue(client.snapshots.isEmpty())
+            controller.uploadOwnedReport(fresh, report)
+            assertEquals(1, client.snapshots.size)
+        } finally { old.stop(); fresh.stop(); old.join(); fresh.join() }
     }
 
     @Test
@@ -160,6 +211,19 @@ class RemoteAgentControllerTest {
         assertTrue("fixture input" in statement)
         assertFalse("fixture private" in statement)
         assertNull(items.getValue("citel:42").jsonObject["content"], "不上传其他 CITEL 账号的缓存")
+    }
+
+    @Test
+    fun unpairResetsInMemoryUploadHistoryAsWellAsStoredAccountResults() = runBlocking {
+        assertNull(controller.pair(pairingFixture("https://site.example", "ABCD2345", "fixture-access"), RemoteScope.DEFAULT, consent = true))
+        assertTrue(controller.uploadNow().startsWith("已上传"))
+        assertNotNull(controller.runner.status.value.lastUploadAt)
+        assertTrue(controller.unpair())
+        assertNull(controller.runner.status.value.lastUploadAt)
+        assertNull(controller.runner.status.value.lastRefreshAt)
+        assertEquals(0L, controller.runner.status.value.lastSequence)
+        assertTrue(RemoteAgentStore(cache).loadResults().isEmpty())
+        assertEquals(team.bjtuss.bjtuselfservice.shared.cleanup.CleanupOperation.REMOTE_UNPAIR, controller.cleanupReport.value!!.request.operation)
     }
 
     @Test

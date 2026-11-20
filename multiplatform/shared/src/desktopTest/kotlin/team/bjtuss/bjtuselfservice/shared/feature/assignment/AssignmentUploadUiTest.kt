@@ -13,12 +13,12 @@ import javax.swing.SwingUtilities
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import team.bjtuss.bjtuselfservice.shared.PlatformAppTheme
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileGatewayFailure
+import team.bjtuss.bjtuselfservice.shared.files.FilePickResult
 
 class AssignmentUploadUiTest {
-    private fun file(name: String, size: Int = 2048) = HomeworkFileContent(name, "application/octet-stream", ByteArray(size))
+    private fun file(name: String, size: Int = 2048) = FileContent(name, "application/octet-stream", ByteArray(size))
 
     @Test fun reselectingSameNameKeepsLatestFile() {
         val merged = mergePickedFiles(listOf(file("a.pdf", 1), file("b.docx")), listOf(file("a.pdf", 3), file("c.zip")))
@@ -28,9 +28,9 @@ class AssignmentUploadUiTest {
 
     @Test fun pickerUnavailableIsNotReportedAsUnreadableFile() {
         assertEquals("暂时无法打开文件选择器，请稍后重试。",
-            HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE).pickFeedback())
+            FilePickResult.Failed(FileGatewayFailure.UNAVAILABLE).pickFeedback())
         assertEquals("无法读取所选文件，请重新选择。",
-            HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.IO).pickFeedback())
+            FilePickResult.Failed(FileGatewayFailure.IO).pickFeedback())
     }
 
     @Test fun uploadSizeIsReadable() {

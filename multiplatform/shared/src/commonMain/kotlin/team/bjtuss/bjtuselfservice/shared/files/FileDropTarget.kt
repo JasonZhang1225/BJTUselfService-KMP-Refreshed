@@ -8,11 +8,11 @@ expect val fileDropSupported: Boolean
 
 /**
  * 接受从系统文件管理器拖入的文件。不支持的平台原样返回 this。
- * [onDrop] 收到读好的文件（与文件选择器同一种结果）；文件夹或读取失败时是 [HomeworkFilePickResult.Failed]。
+ * [onDrop] 收到读好的文件（与文件选择器同一种结果）；文件夹或读取失败时是 [FilePickResult.Failed]。
  */
 @Composable
 expect fun Modifier.fileDropTarget(
     enabled: Boolean,
     onHoverChange: (Boolean) -> Unit,
-    onDrop: (HomeworkFilePickResult) -> Unit,
+    onDrop: (FilePickResult) -> Unit,
 ): Modifier

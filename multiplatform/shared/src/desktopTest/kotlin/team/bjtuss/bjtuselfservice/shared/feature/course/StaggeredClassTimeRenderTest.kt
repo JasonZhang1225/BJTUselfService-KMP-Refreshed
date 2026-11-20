@@ -24,7 +24,7 @@ import team.bjtuss.bjtuselfservice.shared.data.course.CourseScheduleRepository
 import team.bjtuss.bjtuselfservice.shared.data.course.CourseScheduleSnapshot
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.course.Course
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
 
 /** 合成课表渲染错峰色块、按日列表与详情，图片写到 build/reports/staggered-class-time/ 供人工查看。 */
 class StaggeredClassTimeRenderTest {
@@ -69,7 +69,7 @@ class StaggeredClassTimeRenderTest {
                                         CourseScheduleUiState(courses = courses,
                                             academicWeeks = listOf(OccupancyWeekDate(7, "", "", date)),
                                             selectedWeek = 7, isLoading = false, currentWeek = 7, weekResolved = true),
-                                        emptyMap(), wide, model, UnavailableHomeworkFileGateway, UnavailableSystemCalendarGateway,
+                                        emptyMap(), wide, model, UnavailableFileGateway, UnavailableSystemCalendarGateway,
                                         showCalendarExportSheet = false, onDismissCalendarExport = {}, onRefresh = {},
                                         modifier = Modifier.fillMaxSize(),
                                     )
@@ -138,7 +138,7 @@ class StaggeredClassTimeRenderTest {
                                         CourseScheduleUiState(courses = courses, academicWeeks = weeks, selectedWeek = 5,
                                             selectedDay = if (page == "day-mixed") 0 else 1, isLoading = false, currentWeek = 5, weekResolved = true,
                                             compactViewMode = if (page.startsWith("day")) CourseCompactViewMode.DAY else CourseCompactViewMode.WEEK),
-                                        emptyMap(), false, model, UnavailableHomeworkFileGateway, UnavailableSystemCalendarGateway,
+                                        emptyMap(), false, model, UnavailableFileGateway, UnavailableSystemCalendarGateway,
                                         showCalendarExportSheet = false, onDismissCalendarExport = {}, onRefresh = {},
                                         modifier = Modifier.fillMaxSize(),
                                     )

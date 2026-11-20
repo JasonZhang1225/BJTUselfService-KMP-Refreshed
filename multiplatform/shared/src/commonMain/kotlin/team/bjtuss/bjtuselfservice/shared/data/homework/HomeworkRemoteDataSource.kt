@@ -16,7 +16,7 @@ import team.bjtuss.bjtuselfservice.shared.logging.AppLog
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkDetail
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.SubmittedHomeworkAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.homework.stableKey
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
@@ -81,14 +81,14 @@ interface HomeworkRemoteDataSource {
     suspend fun downloadTeacherAttachment(
         homeworkId: Int,
         attachment: HomeworkAttachment,
-    ): HomeworkFileContent
+    ): FileContent
     suspend fun downloadSubmittedAttachment(
         attachment: SubmittedHomeworkAttachment,
-    ): HomeworkFileContent
+    ): FileContent
     suspend fun submitHomework(
         homework: Homework,
         content: String,
-        files: List<HomeworkFileContent>,
+        files: List<FileContent>,
     )
     fun attachmentDownloadUrl(homeworkId: Int, attachmentId: Int): String
 }
@@ -201,7 +201,7 @@ class SchoolHomeworkRemoteDataSource(
     override suspend fun downloadTeacherAttachment(
         homeworkId: Int,
         attachment: HomeworkAttachment,
-    ): HomeworkFileContent {
+    ): FileContent {
         ensureInitialized()
         val response = smartGetUrl(attachmentDownloadUrl(homeworkId, attachment.id), largeTransfer = true)
         return response.toFileContent(attachment.fileName)
@@ -209,7 +209,7 @@ class SchoolHomeworkRemoteDataSource(
 
     override suspend fun downloadSubmittedAttachment(
         attachment: SubmittedHomeworkAttachment,
-    ): HomeworkFileContent {
+    ): FileContent {
         ensureInitialized()
         val response = smartGet(
             path = SUBMITTED_ATTACHMENT_PATH,
@@ -226,7 +226,7 @@ class SchoolHomeworkRemoteDataSource(
     override suspend fun submitHomework(
         homework: Homework,
         content: String,
-        files: List<HomeworkFileContent>,
+        files: List<FileContent>,
     ) {
         require(files.isNotEmpty()) { "At least one homework file is required" }
         ensureInitialized()
@@ -606,7 +606,7 @@ private fun Char.hexValueOrNull(): Int? = when (this) {
     else -> null
 }
 
-private fun SchoolHttpResponse.toFileContent(suggestedName: String): HomeworkFileContent {
+private fun SchoolHttpResponse.toFileContent(suggestedName: String): FileContent {
     if (body.isEmpty()) malformed()
     val contentType = headers.entries.firstOrNull { (name, _) ->
         name.equals("Content-Type", ignoreCase = true)
@@ -614,7 +614,7 @@ private fun SchoolHttpResponse.toFileContent(suggestedName: String): HomeworkFil
     // 存储路径也没有扩展名时，按服务端声明的类型补上，避免系统保存成无法打开的无后缀文件。
     val fileName = if ('.' in suggestedName) suggestedName else
         mimeExtensions[contentType.lowercase()]?.let { "$suggestedName.$it" } ?: suggestedName
-    return HomeworkFileContent(
+    return FileContent(
         fileName = fileName,
         contentType = contentType.ifBlank { "application/octet-stream" },
         bytes = body,

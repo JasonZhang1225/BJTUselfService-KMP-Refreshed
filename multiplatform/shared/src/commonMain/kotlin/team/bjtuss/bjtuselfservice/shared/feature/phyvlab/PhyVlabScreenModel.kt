@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.phyvlab
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,7 +37,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEventKind
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import kotlin.time.Clock
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentFilters
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentFilterStore
@@ -76,10 +79,20 @@ data class PhyVlabUiState(
     val captchaRequired: Boolean = false,
     val contentSource: PhyVlabContentSource = PhyVlabContentSource.NONE,
     val cachedAtEpochMillis: Long? = null,
+    /** Full account snapshot for cross-feature display; independent of the selected course/detail. */
+    val allActivities: List<PhyVlabActivity> = emptyList(),
 ) {
     val hasLoaded: Boolean
         get() = failure != null || courses.isNotEmpty() || selectedCourse != null || accountLoginRequired
 }
+
+internal val PhyVlabUiState.loginMessage: String?
+    get() = when {
+        captchaRequired -> PHYVLAB_CAPTCHA_REQUIRED_MESSAGE
+        accountRejected -> PHYVLAB_ACCOUNT_REJECTED_MESSAGE
+        accountLoginRequired -> "请在设置中配置或检查物理在线账号。"
+        else -> null
+    }
 
 class PhyVlabScreenModel(
     private val repository: PhyVlabRepository,
@@ -91,8 +104,9 @@ class PhyVlabScreenModel(
     accountScope: String? = null,
     private val nowProvider: () -> Instant = { Clock.System.now() },
     private val filterStore: AssignmentFilterStore? = null,
+    private val accountWork: AccountWork? = null,
 ) {
-    private val mutableState = MutableStateFlow(PhyVlabUiState(filters = filterStore?.load() ?: AssignmentFilters()))
+    private val mutableState = accountWork.accountState(PhyVlabUiState(filters = filterStore?.load() ?: AssignmentFilters()))
     val state: StateFlow<PhyVlabUiState> = mutableState.asStateFlow()
     private val refreshMutex = Mutex()
     private var preparedFinalization: Pair<Int, List<String>>? = null
@@ -112,7 +126,9 @@ class PhyVlabScreenModel(
      * 登录完成后的自动同步与用户进入物理在线页共用同一个请求入口。
      * 关闭自动同步时不预取网络；用户打开物理在线页仍会按需刷新。
      */
-    suspend fun initialize(refreshFromNetwork: Boolean = true) {
+    suspend fun initialize(refreshFromNetwork: Boolean = true) = accountWork.inAccount { initializeInAccount(refreshFromNetwork = refreshFromNetwork) }
+
+    private suspend fun initializeInAccount(refreshFromNetwork: Boolean = true) {
         loadCachedSnapshotIfNeeded()
         if (refreshFromNetwork && !networkAutoSyncStarted) {
             networkAutoSyncStarted = true
@@ -122,7 +138,8 @@ class PhyVlabScreenModel(
 
     internal suspend fun prepareManualLogin() = sessionProtocol.prepareManualLogin()
 
-    internal suspend fun rememberManualSession(username: String) = sessionProtocol.rememberCurrentSession(username)
+    internal suspend fun rememberManualSession(username: String) =
+        accountWork.inAccount { sessionProtocol.rememberCurrentSession(username) }
 
     internal fun manualCredentialsRejected() {
         mutableState.value = mutableState.value.copy(
@@ -132,7 +149,9 @@ class PhyVlabScreenModel(
         )
     }
 
-    suspend fun refresh() {
+    suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
+
+    private suspend fun refreshInAccount() {
         if (!refreshMutex.tryLock()) return
         try {
             performRefresh()
@@ -141,10 +160,8 @@ class PhyVlabScreenModel(
         }
     }
 
-    internal suspend fun refreshWaiting() {
-        refreshMutex.withLock {
-            performRefresh()
-        }
+    internal suspend fun refreshWaiting() = accountWork.inAccount {
+        refreshMutex.withLock { performRefresh() }
     }
 
     private suspend fun performRefresh() {
@@ -257,6 +274,7 @@ class PhyVlabScreenModel(
             val syncedAt = Clock.System.now().toEpochMilliseconds()
             mutableState.value = mutableState.value.copy(
                 courses = courses,
+                allActivities = allActivities(),
                 events = eventsForSelectedCourse(selectedCourse, monthStart),
                 agendaEvents = scheduleEvents,
                 monthLabel = monthLabelFor(monthStart),
@@ -365,10 +383,16 @@ class PhyVlabScreenModel(
 
     /** 本机 CLI 与远程同步读取详情：共用会话恢复，不改界面状态。读取幂等，过期时恢复后重试一次。 */
     internal suspend fun fetchDetailForAgent(activity: PhyVlabActivity): PhyVlabAssignmentDetailResult =
+        accountWork.inAccount { fetchDetailForAgentInAccount(activity) }
+
+    private suspend fun fetchDetailForAgentInAccount(activity: PhyVlabActivity): PhyVlabAssignmentDetailResult =
         retryAfterSessionRecovery(PhyVlabAssignmentDetailResult.Failure(PhyVlabSyncFailure.SESSION_EXPIRED),
             { (it as? PhyVlabAssignmentDetailResult.Failure)?.reason }) { repository.fetchAssignmentDetail(activity) }
 
     internal suspend fun downloadAttachmentForAgent(attachment: PhyVlabAttachment): PhyVlabAttachmentResult =
+        accountWork.inAccount { downloadAttachmentForAgentInAccount(attachment) }
+
+    private suspend fun downloadAttachmentForAgentInAccount(attachment: PhyVlabAttachment): PhyVlabAttachmentResult =
         retryAfterSessionRecovery(PhyVlabAttachmentResult.Failure(PhyVlabSyncFailure.SESSION_EXPIRED),
             { (it as? PhyVlabAttachmentResult.Failure)?.reason }) { repository.downloadAttachment(attachment) }
 
@@ -388,7 +412,9 @@ class PhyVlabScreenModel(
         return if (recovered) read() else first
     }
 
-    suspend fun loadSelectedActivityDetail(force: Boolean = false) {
+    suspend fun loadSelectedActivityDetail(force: Boolean = false) = accountWork.inAccount { loadSelectedActivityDetailInAccount(force = force) }
+
+    private suspend fun loadSelectedActivityDetailInAccount(force: Boolean = false) {
         val before = mutableState.value
         val activity = before.selectedActivity ?: return
         if (!force && before.isDetailLoading) return
@@ -430,6 +456,7 @@ class PhyVlabScreenModel(
                     scheduleEvents = resolveEventSubmitted(scheduleEvents)
                     mutableState.value = mutableState.value.copy(
                         activities = mutableState.value.activities.map { if (it.id == activity.id) it.copy(completed = completed) else it },
+                        allActivities = allActivities(),
                         selectedActivity = mutableState.value.selectedActivity?.let { if (it.id == activity.id) it.copy(completed = completed) else it },
                         agendaEvents = scheduleEvents,
                         events = mutableState.value.selectedCourse?.let { eventsForSelectedCourse(it, lastRequestedMonthSeconds ?: currentBeijingMonthStartSeconds()) }
@@ -451,7 +478,10 @@ class PhyVlabScreenModel(
         }
     }
 
-    suspend fun submitSelectedActivity(files: List<HomeworkFileContent>, removed: Set<String> = emptySet(), finalize: Boolean = false,
+    suspend fun submitSelectedActivity(files: List<FileContent>, removed: Set<String> = emptySet(), finalize: Boolean = false,
+        filesChecked: Boolean = false) = accountWork.inAccount { submitSelectedActivityInAccount(files = files, removed = removed, finalize = finalize, filesChecked = filesChecked) }
+
+    private suspend fun submitSelectedActivityInAccount(files: List<FileContent>, removed: Set<String> = emptySet(), finalize: Boolean = false,
         filesChecked: Boolean = false) {
         if (mutableState.value.isSubmitting) return
         val activity = mutableState.value.selectedActivity ?: return
@@ -515,7 +545,9 @@ class PhyVlabScreenModel(
         }
     }
 
-    suspend fun prepareFinalization(): Boolean {
+    suspend fun prepareFinalization(): Boolean = accountWork.inAccount { prepareFinalizationInAccount() }
+
+    private suspend fun prepareFinalizationInAccount(): Boolean {
         val activity = mutableState.value.selectedActivity ?: return false
         if (mutableState.value.isSubmitting) return false
         preparedFinalization = null
@@ -540,7 +572,9 @@ class PhyVlabScreenModel(
         } finally { mutableState.value = mutableState.value.copy(isSubmitting = false) }
     }
 
-    suspend fun loadSelectedActivities() {
+    suspend fun loadSelectedActivities() = accountWork.inAccount { loadSelectedActivitiesInAccount() }
+
+    private suspend fun loadSelectedActivitiesInAccount() {
         // 全量同步会逐门读取课程页；Compose 的选中课程副作用可能在第一门请求尚未完成时
         // 触发，这里直接等待全量同步的结果，避免同一课程产生重复网络请求。
         if (mutableState.value.isLoading) return
@@ -552,7 +586,9 @@ class PhyVlabScreenModel(
         refreshActivities(course)
     }
 
-    suspend fun changeMonth(direction: Int) {
+    suspend fun changeMonth(direction: Int) = accountWork.inAccount { changeMonthInAccount(direction = direction) }
+
+    private suspend fun changeMonthInAccount(direction: Int) {
         val base = lastRequestedMonthSeconds ?: return
         val next = beijingMonthStartSecondsSafe(base, direction) ?: return
         try {
@@ -596,6 +632,7 @@ class PhyVlabScreenModel(
                     val refreshedAt = Clock.System.now().toEpochMilliseconds()
                     mutableState.value = mutableState.value.copy(
                         activities = result.activities,
+                        allActivities = allActivities(),
                         events = eventsForSelectedCourse(course, month),
                         agendaEvents = scheduleEvents,
                         // 单门按需刷新不能宣称整份物理在线快照都已同步。
@@ -661,6 +698,7 @@ class PhyVlabScreenModel(
         val selectedCourse = snapshot.courses.firstOrNull()
         mutableState.value = mutableState.value.copy(
             courses = snapshot.courses,
+            allActivities = allActivities(),
             events = eventsForSelectedCourse(selectedCourse, monthStart),
             agendaEvents = scheduleEvents,
             monthLabel = monthLabelFor(monthStart),

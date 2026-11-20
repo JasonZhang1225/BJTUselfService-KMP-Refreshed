@@ -33,7 +33,7 @@ description: 查询北京交通大学“交大自由行”电脑端上传到私�
 
 ## 即时查询与刷新（只在需要时）
 
-- 普通提问只用 `get_*`。用户说手动同步过或要求仅查缓存时，读 `get_homework(detail: true)`，不要创建即时任务。
+- 普通提问只用 `get_*`。用户说手动同步过或要求仅查缓存时，使用与问题对应的 `get_*` 工具（仅查作业正文或题面时用 `get_homework(detail: true)`），不要创建即时任务。
 - 需要即时任务时检查 `get_status` 的 `site.taskPollingAvailable`。电脑的 `polling.lastPollAt` 是实际轮询记录。为 false、或创建时返回 `device_not_polling`，说明暂时等不到设备领取，直接返回已同步的结果。
 - `request_live_query`：用户明确要“最新/实时”，或 `notes` 提示日期超出快照覆盖范围时调用。参数是 `command`（homework/calendar/exams/grades/mail/status）+ `arguments`（与对应 `get_*` 工具相同）+ `freshness`（`local` 读电脑缓存；`latest` 先刷新相关来源，约 10–90 秒）+ 一次请求独有的 `idempotencyKey`。结果用 `get_request_result` 读取，结构与对应 `get_*` 相同，`origin` 为 `live_local` / `live_latest`。
 - `request_refresh_all`：只有用户明确要全量刷新时调用。

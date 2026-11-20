@@ -3,7 +3,7 @@ package team.bjtuss.bjtuselfservice.shared.feature.home
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import team.bjtuss.bjtuselfservice.shared.feature.shell.buildHomeSyncItems
+import team.bjtuss.bjtuselfservice.shared.feature.presentation.buildHomeSyncItems
 
 class HomeSyncStatusTest {
     @Test fun citelStartupStateTracksScheduledWork() {

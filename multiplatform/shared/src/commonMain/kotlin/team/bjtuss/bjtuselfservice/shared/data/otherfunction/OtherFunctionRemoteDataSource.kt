@@ -3,7 +3,7 @@ package team.bjtuss.bjtuselfservice.shared.data.otherfunction
 import team.bjtuss.bjtuselfservice.shared.network.SchoolEndpoints
 
 import kotlinx.coroutines.CancellationException
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.otherfunction.ReportCardLanguage
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpMethod
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
@@ -31,7 +31,7 @@ fun reportCardDownloadUrl(language: ReportCardLanguage): String {
 }
 
 interface OtherFunctionRemoteDataSource {
-    suspend fun fetchReportCardFile(language: ReportCardLanguage): HomeworkFileContent
+    suspend fun fetchReportCardFile(language: ReportCardLanguage): FileContent
 }
 
 /**
@@ -43,7 +43,7 @@ class SchoolOtherFunctionRemoteDataSource(
     private val transport: SchoolHttpTransport,
 ) : OtherFunctionRemoteDataSource {
 
-    override suspend fun fetchReportCardFile(language: ReportCardLanguage): HomeworkFileContent {
+    override suspend fun fetchReportCardFile(language: ReportCardLanguage): FileContent {
         val url = reportCardDownloadUrl(language)
         val response = execute(
             SchoolHttpRequest(
@@ -65,7 +65,7 @@ class SchoolOtherFunctionRemoteDataSource(
             ReportCardLanguage.CHINESE -> "中文成绩单.pdf"
             ReportCardLanguage.ENGLISH -> "英文成绩单.pdf"
         }
-        return HomeworkFileContent(
+        return FileContent(
             fileName = fileName,
             contentType = "application/pdf",
             bytes = response.body,

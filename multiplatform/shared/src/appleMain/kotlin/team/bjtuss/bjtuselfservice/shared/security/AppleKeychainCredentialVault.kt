@@ -99,9 +99,15 @@ class AppleKeychainCredentialVault(
         }
     }
 
+    fun clearService() {
+        val status = withKeychainQuery(matchAllAccounts = true) { SecItemDelete(it) }
+        if (status != errSecSuccess && status != errSecItemNotFound) throw vaultError(CredentialVaultOperation.CLEAR, status)
+    }
+
     private fun <T> withKeychainQuery(
         payload: NSData? = null,
         returnData: Boolean = false,
+        matchAllAccounts: Boolean = false,
         block: (CFDictionaryRef) -> T,
     ): T {
         val retainedValues = mutableListOf<CFTypeRef>()
@@ -118,7 +124,7 @@ class AppleKeychainCredentialVault(
 
         CFDictionaryAddValue(dictionary, kSecClass, kSecClassGenericPassword)
         CFDictionaryAddValue(dictionary, kSecAttrService, retain(service))
-        CFDictionaryAddValue(dictionary, kSecAttrAccount, retain(account))
+        if (!matchAllAccounts) CFDictionaryAddValue(dictionary, kSecAttrAccount, retain(account))
         if (payload != null) {
             if (accessibleAfterFirstUnlock) {
                 CFDictionaryAddValue(

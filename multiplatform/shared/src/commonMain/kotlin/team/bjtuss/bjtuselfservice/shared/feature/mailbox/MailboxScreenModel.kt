@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.mailbox
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -111,12 +114,13 @@ private val defaultMailboxFolders = listOf(
 class MailboxScreenModel(
     private val transport: SchoolHttpTransport,
     private val remote: MailboxRemoteDataSource = SchoolMailboxRemoteDataSource(transport),
+    private val accountWork: AccountWork? = null,
 ) {
-    private val mutableState = MutableStateFlow<MailboxUiState>(MailboxUiState.Idle)
+    private val mutableState = accountWork.accountState<MailboxUiState>(MailboxUiState.Idle)
     val state: StateFlow<MailboxUiState> = mutableState.asStateFlow()
 
     // 首页「新邮件」徽标用的收件箱未读摘要；null 表示尚未探测成功（首页回退 MIS 聚合值）。
-    private val _unreadSummary = MutableStateFlow<MailboxUnreadSummary?>(null)
+    private val _unreadSummary = accountWork.accountState<MailboxUnreadSummary?>(null)
     val unreadSummary: StateFlow<MailboxUnreadSummary?> = _unreadSummary.asStateFlow()
 
     /** 最近一次成功探测到的收件箱摘要（不含正文）；全局刷新据此更新 Agent 可读的邮箱缓存。 */
@@ -124,7 +128,9 @@ class MailboxScreenModel(
         private set
 
     /** Agent 即时查询读取单封邮件正文；不改界面状态。学校会把这封邮件标记为已读。 */
-    suspend fun fetchMessageForAgent(messageId: String): MailMessage = remote.readMessage(messageId)
+    suspend fun fetchMessageForAgent(messageId: String): MailMessage = accountWork.inAccount { fetchMessageForAgentInAccount(messageId = messageId) }
+
+    private suspend fun fetchMessageForAgentInAccount(messageId: String): MailMessage = remote.readMessage(messageId)
 
     private val operationMutex = Mutex()
     // 详情页可能在上一次读取尚未返回时被退出并重新打开；只允许当前消息的结果落地。
@@ -133,7 +139,9 @@ class MailboxScreenModel(
     // 否则快速返回后再打开下一封时，上一页迟到的 clear 会把新详情打成空页。
     private var messageGeneration = 0
 
-    suspend fun initialize() {
+    suspend fun initialize() = accountWork.inAccount { initializeInAccount() }
+
+    private suspend fun initializeInAccount() {
         if (mutableState.value == MailboxUiState.Idle) refresh()
     }
 
@@ -142,7 +150,9 @@ class MailboxScreenModel(
      * 会话失效或网络错误时保留上一次成功值，不清零，避免首页在偶发失败时回退到误导数字。
      */
     /** 只探测收件箱前几封的未读数；返回是否成功取得（失败时保留上次的计数）。 */
-    suspend fun refreshUnreadInboxCount(): Boolean {
+    suspend fun refreshUnreadInboxCount(): Boolean = accountWork.inAccount { refreshUnreadInboxCountInAccount() }
+
+    private suspend fun refreshUnreadInboxCountInAccount(): Boolean {
         val summary = runCatching {
             val page = remote.listMessages(
                 folderId = INBOX_FOLDER_ID,
@@ -158,7 +168,9 @@ class MailboxScreenModel(
         return summary != null
     }
 
-    suspend fun refresh() {
+    suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
+
+    private suspend fun refreshInAccount() {
         operationMutex.withLock {
             val previous = mutableState.value as? MailboxUiState.Ready
             messageRequestId = null
@@ -203,7 +215,9 @@ class MailboxScreenModel(
         }
     }
 
-    suspend fun selectFolder(folderId: Int) {
+    suspend fun selectFolder(folderId: Int) = accountWork.inAccount { selectFolderInAccount(folderId = folderId) }
+
+    private suspend fun selectFolderInAccount(folderId: Int) {
         operationMutex.withLock {
             val current = mutableState.value as? MailboxUiState.Ready ?: return
             mutableState.value = current.copy(
@@ -225,7 +239,9 @@ class MailboxScreenModel(
     }
 
     /** 加载当前文件夹的下一页；列表状态已经串行化，避免快速点击产生重复页。 */
-    suspend fun loadMore() {
+    suspend fun loadMore() = accountWork.inAccount { loadMoreInAccount() }
+
+    private suspend fun loadMoreInAccount() {
         operationMutex.withLock {
             val current = mutableState.value as? MailboxUiState.Ready ?: return
             if (
@@ -289,7 +305,9 @@ class MailboxScreenModel(
      * 详情读取不占用列表互斥锁。上一封还在请求时再打开下一封，必须立刻开始新请求；
      * 过期结果靠 [messageRequestId] 和代次丢弃，不能让第 3、4 封卡在队列里。
      */
-    suspend fun openMessage(message: MailSummary) {
+    suspend fun openMessage(message: MailSummary) = accountWork.inAccount { openMessageInAccount(message = message) }
+
+    private suspend fun openMessageInAccount(message: MailSummary) {
         val current = mutableState.value as? MailboxUiState.Ready ?: return
         if (messageRequestId != message.id || !current.isMessageLoading) {
             prepareMessage(message)
@@ -336,7 +354,9 @@ class MailboxScreenModel(
         }
     }
 
-    suspend fun startCompose(replyToMessageId: String? = null) {
+    suspend fun startCompose(replyToMessageId: String? = null) = accountWork.inAccount { startComposeInAccount(replyToMessageId = replyToMessageId) }
+
+    private suspend fun startComposeInAccount(replyToMessageId: String? = null) {
         operationMutex.withLock {
             val current = mutableState.value as? MailboxUiState.Ready ?: return
             mutableState.value = current.copy(
@@ -368,7 +388,9 @@ class MailboxScreenModel(
         )
     }
 
-    suspend fun sendCompose(): Boolean {
+    suspend fun sendCompose(): Boolean = accountWork.inAccount { sendComposeInAccount() }
+
+    private suspend fun sendComposeInAccount(): Boolean {
         operationMutex.withLock {
             val current = mutableState.value as? MailboxUiState.Ready ?: return false
             val draft = current.compose.draft ?: return false
@@ -407,7 +429,9 @@ class MailboxScreenModel(
         }
     }
 
-    suspend fun cancelCompose() {
+    suspend fun cancelCompose() = accountWork.inAccount { cancelComposeInAccount() }
+
+    private suspend fun cancelComposeInAccount() {
         operationMutex.withLock {
             val current = mutableState.value as? MailboxUiState.Ready ?: return
             val composeId = current.compose.draft?.id
@@ -429,6 +453,11 @@ class MailboxScreenModel(
      * 结果只交给预览/保存流程，不写入状态或缓存。
      */
     suspend fun downloadAttachment(
+        messageId: String,
+        attachment: MailAttachment,
+    ): MailAttachmentDownloadResult = accountWork.inAccount { downloadAttachmentInAccount(messageId = messageId, attachment = attachment) }
+
+    private suspend fun downloadAttachmentInAccount(
         messageId: String,
         attachment: MailAttachment,
     ): MailAttachmentDownloadResult {

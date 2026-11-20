@@ -21,7 +21,7 @@ import kotlin.test.assertTrue
 import org.junit.Assume.assumeTrue
 import team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.*
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.*
 import team.bjtuss.bjtuselfservice.shared.files.*
 import team.bjtuss.bjtuselfservice.shared.media.ProgressiveVideoCompositor
@@ -69,11 +69,11 @@ class WindowsPlaybackHardwareAcceptanceTest {
         val outputNumber = AtomicInteger()
         val outputDirectory = File(directory, "outputs").apply { mkdir() }
         val unrelated = File(outputDirectory, ".bjtu-save-unrelated.tmp").apply { writeText("保留") }
-        val gateway = object : HomeworkFileGateway {
+        val gateway = object : FileGateway {
             override val isAvailable = true
             override val isStreamingSaveAvailable = true
-            override suspend fun pickFiles() = HomeworkFilePickResult.Cancelled
-            override suspend fun saveFile(file: HomeworkFileContent) = HomeworkFileSaveResult.Cancelled
+            override suspend fun pickFiles() = FilePickResult.Cancelled
+            override suspend fun saveFile(file: FileContent) = FileSaveResult.Cancelled
             override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
                 val index = outputNumber.incrementAndGet()
                 val target = File(outputDirectory, "fixture-$index.mp4")

@@ -3,11 +3,11 @@ package team.bjtuss.bjtuselfservice.shared.feature.citel
 import kotlinx.coroutines.runBlocking
 import kotlin.test.*
 import team.bjtuss.bjtuselfservice.shared.data.moodle.*
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.network.*
 
 class MoodleAssignmentTest {
-    private val file = HomeworkFileContent("new.pdf", "application/pdf", byteArrayOf(1, 2, 3))
+    private val file = FileContent("new.pdf", "application/pdf", byteArrayOf(1, 2, 3))
 
     @Test fun citelAddsAndRemovesFilesAndSaveIsAlreadySubmitted() = runBlocking {
         val fixture = Fixture(finalRequired = false)
@@ -42,14 +42,14 @@ class MoodleAssignmentTest {
     }
     @Test fun sameNamedFileIsReplacedInDraftAndExistingOtherFilesArePreserved() = runBlocking {
         val fixture = Fixture(finalRequired = false)
-        fixture.client.saveFiles(7, listOf(file, HomeworkFileContent("old.pdf", "application/pdf", byteArrayOf(8))))
+        fixture.client.saveFiles(7, listOf(file, FileContent("old.pdf", "application/pdf", byteArrayOf(8))))
         assertEquals(setOf("old.pdf", "keep.pdf", "new.pdf"), fixture.saved)
         assertEquals(1, fixture.actions.count { it == "delete" })
     }
     @Test fun limitsAndAcceptedExtensionsFailBeforeAnyWrite() = runBlocking {
         val fixture = Fixture(finalRequired = true)
-        assertFailsWith<MoodleAssignmentFailure> { fixture.client.saveFiles(7, listOf(HomeworkFileContent("wrong.txt", "text/plain", byteArrayOf(1)))) }
-        assertFailsWith<MoodleAssignmentFailure> { fixture.client.saveFiles(7, listOf(HomeworkFileContent("big.pdf", "application/pdf", ByteArray(11)))) }
+        assertFailsWith<MoodleAssignmentFailure> { fixture.client.saveFiles(7, listOf(FileContent("wrong.txt", "text/plain", byteArrayOf(1)))) }
+        assertFailsWith<MoodleAssignmentFailure> { fixture.client.saveFiles(7, listOf(FileContent("big.pdf", "application/pdf", ByteArray(11)))) }
         assertTrue(fixture.actions.isEmpty())
     }
     @Test fun unknownExistingFileCannotBeRemoved() = runBlocking {

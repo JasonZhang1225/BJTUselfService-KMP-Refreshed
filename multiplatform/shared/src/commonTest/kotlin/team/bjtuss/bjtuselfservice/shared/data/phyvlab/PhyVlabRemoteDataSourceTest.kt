@@ -11,7 +11,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
@@ -273,7 +273,7 @@ class PhyVlabRemoteDataSourceTest {
             SchoolHttpResponse(200, activity.activityUrl, body = """<main id="region-main"><table class="submissionstatustable"><tr><th>Submission status</th><td>Draft (not submitted)</td></tr><tr><td><a href="/pluginfile.php/report.pdf">report.pdf</a></td></tr></table><form><input name="action" value="submit"></form></main>""".encodeToByteArray()),
         )
         SchoolPhyVlabRemoteDataSource(transport).submitAssignment(activity,
-            listOf(HomeworkFileContent("report.pdf", "application/pdf", byteArrayOf(1, 2, 3))))
+            listOf(FileContent("report.pdf", "application/pdf", byteArrayOf(1, 2, 3))))
         assertEquals(5, transport.requests.size)
         val upload = transport.requests[2]
         assertEquals("upload", upload.formFields["action"])
@@ -396,7 +396,7 @@ private class FailingRemoteDataSource : PhyVlabRemoteDataSource {
     override suspend fun fetchAssignmentDetail(activity: PhyVlabActivity): PhyVlabAssignmentDetail =
         throw PhyVlabRemoteException(PhyVlabRemoteFailure.NETWORK)
 
-    override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>) {
+    override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<FileContent>) {
         throw PhyVlabRemoteException(PhyVlabRemoteFailure.NETWORK)
     }
 }

@@ -54,12 +54,11 @@ import platform.darwin.NSObject
 import platform.darwin.dispatch_after
 import platform.darwin.dispatch_get_main_queue
 import platform.darwin.dispatch_time
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-class IosHomeworkFileGateway(
+class IosFileGateway(
     private val owner: () -> UIViewController,
-) : HomeworkFileGateway, CoursewareDirectoryGateway {
+) : FileGateway, DirectoryGateway {
     private var activeDelegate: IosDocumentPickerDelegate? = null
     private var activePicker: UIDocumentPickerViewController? = null
 
@@ -70,14 +69,14 @@ class IosHomeworkFileGateway(
     override val isPreviewAvailable: Boolean = true
 
     /** 系统快速查看：文件只放在应用临时目录，预览关闭时删除。 */
-    override suspend fun previewFile(file: HomeworkFileContent): HomeworkFilePreviewResult {
+    override suspend fun previewFile(file: FileContent): FilePreviewResult {
         if (activePreview != null || activeDelegate != null) {
-            return HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            return FilePreviewResult.Failed(FileGatewayFailure.UNAVAILABLE)
         }
         // 预览目录单独加前缀：进程在预览中途退出时来不及删，下次预览前统一清掉。
         removeStalePreviewDirectories()
         val temporary = file.writeTemporaryExport(PREVIEW_DIRECTORY_PREFIX)
-            ?: return HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.IO)
+            ?: return FilePreviewResult.Failed(FileGatewayFailure.IO)
         lateinit var source: IosQuickLookSource
         source = IosQuickLookSource(temporary.fileUrl) {
             removeTemporary(temporary.directoryUrl)
@@ -94,12 +93,12 @@ class IosHomeworkFileGateway(
                 removeTemporary(temporary.directoryUrl)
             }
         }
-        return HomeworkFilePreviewResult.Opened
+        return FilePreviewResult.Opened
     }
 
-    override suspend fun pickFiles(): HomeworkFilePickResult {
+    override suspend fun pickFiles(): FilePickResult {
         if (activeDelegate != null) {
-            return HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            return FilePickResult.Failed(FileGatewayFailure.UNAVAILABLE)
         }
         return suspendCancellableCoroutine { continuation ->
             lateinit var delegate: IosDocumentPickerDelegate
@@ -109,7 +108,7 @@ class IosHomeworkFileGateway(
                     finish(delegate, continuation, result)
                 },
                 onCancelled = {
-                    finish(delegate, continuation, HomeworkFilePickResult.Cancelled)
+                    finish(delegate, continuation, FilePickResult.Cancelled)
                 },
             )
             val picker = UIDocumentPickerViewController(
@@ -125,27 +124,27 @@ class IosHomeworkFileGateway(
                 cancel(delegate)
             }
             presentFromTop(picker) {
-                finish(delegate, continuation, HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE))
+                finish(delegate, continuation, FilePickResult.Failed(FileGatewayFailure.UNAVAILABLE))
             }
         }
     }
 
-    override suspend fun saveFile(file: HomeworkFileContent): HomeworkFileSaveResult {
+    override suspend fun saveFile(file: FileContent): FileSaveResult {
         if (activeDelegate != null) {
-            return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            return FileSaveResult.Failed(FileGatewayFailure.UNAVAILABLE)
         }
         val temporary = file.writeTemporaryExport()
-            ?: return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+            ?: return FileSaveResult.Failed(FileGatewayFailure.IO)
         return suspendCancellableCoroutine { continuation ->
             lateinit var delegate: IosDocumentPickerDelegate
             delegate = IosDocumentPickerDelegate(
                 onPicked = {
                     removeTemporary(temporary.directoryUrl)
-                    finish(delegate, continuation, HomeworkFileSaveResult.Saved)
+                    finish(delegate, continuation, FileSaveResult.Saved)
                 },
                 onCancelled = {
                     removeTemporary(temporary.directoryUrl)
-                    finish(delegate, continuation, HomeworkFileSaveResult.Cancelled)
+                    finish(delegate, continuation, FileSaveResult.Cancelled)
                 },
             )
             val picker = UIDocumentPickerViewController(
@@ -163,7 +162,7 @@ class IosHomeworkFileGateway(
             presentFromTop(picker) {
                 if (activeDelegate === delegate) {
                     removeTemporary(temporary.directoryUrl)
-                    finish(delegate, continuation, HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE))
+                    finish(delegate, continuation, FileSaveResult.Failed(FileGatewayFailure.UNAVAILABLE))
                 }
             }
         }
@@ -178,7 +177,7 @@ class IosHomeworkFileGateway(
      */
     override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
         if (activeDelegate != null) {
-            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            return StreamingDestinationResult.Failed(FileGatewayFailure.UNAVAILABLE)
         }
         val folder = pickFolder() ?: return StreamingDestinationResult.Cancelled
         val scoped = folder.startAccessingSecurityScopedResource()
@@ -188,13 +187,13 @@ class IosHomeworkFileGateway(
             !NSFileManager.defaultManager.createFileAtPath(partPath, contents = null, attributes = null)
         ) {
             if (scoped) folder.stopAccessingSecurityScopedResource()
-            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+            return StreamingDestinationResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
         }
         val handle = NSFileHandle.fileHandleForWritingAtPath(partPath)
         if (handle == null) {
             NSFileManager.defaultManager.removeItemAtPath(partPath, error = null)
             if (scoped) folder.stopAccessingSecurityScopedResource()
-            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+            return StreamingDestinationResult.Failed(FileGatewayFailure.IO)
         }
         return StreamingDestinationResult.Opened(
             IosStreamingDestination(folder, scoped, folderPath, partPath, safeExportFileName(fileName), handle),
@@ -220,9 +219,9 @@ class IosHomeworkFileGateway(
         presentFromTop(picker) { finish(delegate, continuation, null) }
     }
 
-    override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult {
+    override suspend fun openDirectory(directoryName: String): DirectoryOpenResult {
         if (activeDelegate != null) {
-            return CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            return DirectoryOpenResult.Failed(FileGatewayFailure.UNAVAILABLE)
         }
         return suspendCancellableCoroutine { continuation ->
             lateinit var delegate: IosDocumentPickerDelegate
@@ -230,16 +229,16 @@ class IosHomeworkFileGateway(
                 onPicked = { urls ->
                     val selectedDirectory = urls.singleOrNull()
                     if (selectedDirectory == null) {
-                        finish(delegate, continuation, CoursewareDirectoryOpenResult.Cancelled)
+                        finish(delegate, continuation, DirectoryOpenResult.Cancelled)
                     } else {
                         CoroutineScope(continuation.context).launch {
-                            var openedSession: CoursewareDirectoryWriteSession? = null
+                            var openedSession: DirectoryWriteSession? = null
                             var handedOff = false
                             try {
                                 val result = withContext(Dispatchers.Default) {
-                                    openCoursewareDirectorySession(selectedDirectory, directoryName)
+                                    openDirectorySession(selectedDirectory, directoryName)
                                 }
-                                if (result is CoursewareDirectoryOpenResult.Opened) {
+                                if (result is DirectoryOpenResult.Opened) {
                                     openedSession = result.session
                                 }
                                 withContext(Dispatchers.Main) {
@@ -252,7 +251,7 @@ class IosHomeworkFileGateway(
                     }
                 },
                 onCancelled = {
-                    finish(delegate, continuation, CoursewareDirectoryOpenResult.Cancelled)
+                    finish(delegate, continuation, DirectoryOpenResult.Cancelled)
                 },
             )
             val picker = UIDocumentPickerViewController(
@@ -268,7 +267,7 @@ class IosHomeworkFileGateway(
                 cancel(delegate)
             }
             presentFromTop(picker) {
-                finish(delegate, continuation, CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE))
+                finish(delegate, continuation, DirectoryOpenResult.Failed(FileGatewayFailure.UNAVAILABLE))
             }
         }
     }
@@ -298,17 +297,17 @@ class IosHomeworkFileGateway(
         }
     }
 
-    private fun readFiles(urls: List<NSURL>): HomeworkFilePickResult {
-        if (urls.isEmpty()) return HomeworkFilePickResult.Cancelled
+    private fun readFiles(urls: List<NSURL>): FilePickResult {
+        if (urls.isEmpty()) return FilePickResult.Cancelled
         return try {
-            HomeworkFilePickResult.Selected(
+            FilePickResult.Selected(
                 urls.map { url ->
                     val scoped = url.startAccessingSecurityScopedResource()
                     try {
                         val data = NSData.dataWithContentsOfURL(url)
-                            ?: return HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.IO)
+                            ?: return FilePickResult.Failed(FileGatewayFailure.IO)
                         val fileName = safeExportFileName(url.lastPathComponent ?: "upload.bin")
-                        HomeworkFileContent(
+                        FileContent(
                             fileName = fileName,
                             contentType = fileName.guessContentType(),
                             bytes = data.toByteArray(),
@@ -319,7 +318,7 @@ class IosHomeworkFileGateway(
                 },
             )
         } catch (_: Exception) {
-            HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.IO)
+            FilePickResult.Failed(FileGatewayFailure.IO)
         }
     }
 
@@ -415,7 +414,7 @@ private class IosStreamingDestination(
         if (!written) throw StreamingSinkIoException()
     }
 
-    override suspend fun commit(): HomeworkFileSaveResult = withContext(Dispatchers.Default) {
+    override suspend fun commit(): FileSaveResult = withContext(Dispatchers.Default) {
         close()
         val finalPath = uniqueChildPath(folderPath, fileName)
         val moved = memScoped {
@@ -425,10 +424,10 @@ private class IosStreamingDestination(
         release()
         if (moved) {
             displayName = finalPath.substringAfterLast('/')
-            HomeworkFileSaveResult.Saved
+            FileSaveResult.Saved
         } else {
             NSFileManager.defaultManager.removeItemAtPath(partPath, error = null)
-            HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+            FileSaveResult.Failed(FileGatewayFailure.IO)
         }
     }
 
@@ -496,7 +495,7 @@ private fun removeStalePreviewDirectories() {
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private fun HomeworkFileContent.writeTemporaryExport(prefix: String = "bjtu-homework-"): TemporaryExport? {
+private fun FileContent.writeTemporaryExport(prefix: String = "bjtu-homework-"): TemporaryExport? {
     val safeName = safeExportFileName(fileName)
     val directoryPath = NSTemporaryDirectory().trimEnd('/') + "/" + prefix + NSUUID().UUIDString
     val manager = NSFileManager.defaultManager
@@ -519,18 +518,18 @@ private fun HomeworkFileContent.writeTemporaryExport(prefix: String = "bjtu-home
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private suspend fun openCoursewareDirectorySession(
+private suspend fun openDirectorySession(
     selectedDirectory: NSURL,
     directoryName: String,
-): CoursewareDirectoryOpenResult {
+): DirectoryOpenResult {
     if (!selectedDirectory.startAccessingSecurityScopedResource()) {
-        return CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+        return DirectoryOpenResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
     }
     val context = currentCoroutineContext()
     var createdRootUrl: NSURL? = null
     return try {
-        var result: CoursewareDirectoryOpenResult =
-            CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.IO)
+        var result: DirectoryOpenResult =
+            DirectoryOpenResult.Failed(FileGatewayFailure.IO)
         NSFileCoordinator().coordinateWritingItemAtURL(
             url = selectedDirectory,
             options = 0uL,
@@ -555,12 +554,12 @@ private suspend fun openCoursewareDirectorySession(
                 return@directoryAccess
             }
             createdRootUrl = candidate
-            result = CoursewareDirectoryOpenResult.Opened(
-                IosCoursewareDirectoryWriteSession(selectedDirectory, candidate),
+            result = DirectoryOpenResult.Opened(
+                IosDirectoryWriteSession(selectedDirectory, candidate),
             )
         }
         context.ensureActive()
-        if (result !is CoursewareDirectoryOpenResult.Opened) {
+        if (result !is DirectoryOpenResult.Opened) {
             selectedDirectory.stopAccessingSecurityScopedResource()
         }
         result
@@ -571,50 +570,50 @@ private suspend fun openCoursewareDirectorySession(
     } catch (_: Exception) {
         createdRootUrl?.let { NSFileManager.defaultManager.removeItemAtURL(it, error = null) }
         selectedDirectory.stopAccessingSecurityScopedResource()
-        CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.IO)
+        DirectoryOpenResult.Failed(FileGatewayFailure.IO)
     }
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private class IosCoursewareDirectoryWriteSession(
+private class IosDirectoryWriteSession(
     private val selectedDirectory: NSURL,
     private val rootUrl: NSURL,
-) : CoursewareDirectoryWriteSession {
+) : DirectoryWriteSession {
     private val lifecycleMutex = Mutex()
     private var closed = false
 
     override val supportsStreamingFiles: Boolean = true
 
-    override suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult = lifecycleMutex.withLock {
-        if (closed) return@withLock StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+    override suspend fun openFile(file: DirectoryFile): StreamingDestinationResult = lifecycleMutex.withLock {
+        if (closed) return@withLock StreamingDestinationResult.Failed(FileGatewayFailure.UNAVAILABLE)
         withContext(Dispatchers.Default) {
             val manager = NSFileManager.defaultManager
-            val rootPath = rootUrl.path ?: return@withContext StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+            val rootPath = rootUrl.path ?: return@withContext StreamingDestinationResult.Failed(FileGatewayFailure.IO)
             val folderPath = file.relativeFolders.fold(rootPath) { path, segment -> "$path/${safeExportPathSegment(segment)}" }
             if (!manager.createDirectoryAtPath(folderPath, withIntermediateDirectories = true, attributes = null, error = null)) {
-                return@withContext StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+                return@withContext StreamingDestinationResult.Failed(FileGatewayFailure.IO)
             }
             val name = safeExportFileName(file.content.fileName)
-            if (manager.fileExistsAtPath("$folderPath/$name")) return@withContext StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+            if (manager.fileExistsAtPath("$folderPath/$name")) return@withContext StreamingDestinationResult.Failed(FileGatewayFailure.IO)
             val part = "$folderPath/.${NSUUID().UUIDString}.part"
-            if (!manager.createFileAtPath(part, contents = null, attributes = null)) return@withContext StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+            if (!manager.createFileAtPath(part, contents = null, attributes = null)) return@withContext StreamingDestinationResult.Failed(FileGatewayFailure.IO)
             val handle = NSFileHandle.fileHandleForWritingAtPath(part)
             if (handle == null) {
                 manager.removeItemAtPath(part, error = null)
-                return@withContext StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+                return@withContext StreamingDestinationResult.Failed(FileGatewayFailure.IO)
             }
             StreamingDestinationResult.Opened(IosStreamingDestination(selectedDirectory, false, folderPath, part, name, handle))
         }
     }
 
-    override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult =
+    override suspend fun write(file: DirectoryFile): FileSaveResult =
         lifecycleMutex.withLock {
-            if (closed) return@withLock HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            if (closed) return@withLock FileSaveResult.Failed(FileGatewayFailure.UNAVAILABLE)
             withContext(Dispatchers.Default) {
                 val context = currentCoroutineContext()
                 try {
-                    var result: HomeworkFileSaveResult =
-                        HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+                    var result: FileSaveResult =
+                        FileSaveResult.Failed(FileGatewayFailure.IO)
                     NSFileCoordinator().coordinateWritingItemAtURL(
                         url = rootUrl,
                         options = 0uL,
@@ -622,23 +621,23 @@ private class IosCoursewareDirectoryWriteSession(
                     ) fileAccess@{ coordinatedRoot ->
                         context.ensureActive()
                         val root = coordinatedRoot ?: return@fileAccess
-                        result = writeCoursewareFile(root, file) { context.ensureActive() }
+                        result = writeDirectoryFile(root, file) { context.ensureActive() }
                     }
                     context.ensureActive()
                     result
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
-                    HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+                    FileSaveResult.Failed(FileGatewayFailure.IO)
                 }
             }
         }
 
-    override suspend fun commit(): HomeworkFileSaveResult = lifecycleMutex.withLock {
-        if (closed) return@withLock HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+    override suspend fun commit(): FileSaveResult = lifecycleMutex.withLock {
+        if (closed) return@withLock FileSaveResult.Failed(FileGatewayFailure.UNAVAILABLE)
         closed = true
         selectedDirectory.stopAccessingSecurityScopedResource()
-        HomeworkFileSaveResult.Saved
+        FileSaveResult.Saved
     }
 
     override suspend fun abort() {
@@ -664,19 +663,19 @@ private class IosCoursewareDirectoryWriteSession(
 }
 
 @OptIn(ExperimentalForeignApi::class)
-private fun writeCoursewareFile(
+private fun writeDirectoryFile(
     rootUrl: NSURL,
-    file: CoursewareDirectoryFile,
+    file: DirectoryFile,
     ensureActive: () -> Unit,
-): HomeworkFileSaveResult {
+): FileSaveResult {
     ensureActive()
     val manager = NSFileManager.defaultManager
     var folderUrl: NSURL? = rootUrl
     file.relativeFolders.forEach { segment ->
         folderUrl = folderUrl?.URLByAppendingPathComponent(safeExportPathSegment(segment), isDirectory = true)
     }
-    val resolvedFolderUrl = folderUrl ?: return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
-    val folderPath = resolvedFolderUrl.path ?: return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+    val resolvedFolderUrl = folderUrl ?: return FileSaveResult.Failed(FileGatewayFailure.IO)
+    val folderPath = resolvedFolderUrl.path ?: return FileSaveResult.Failed(FileGatewayFailure.IO)
     if (!manager.createDirectoryAtPath(
             path = folderPath,
             withIntermediateDirectories = true,
@@ -684,21 +683,21 @@ private fun writeCoursewareFile(
             error = null,
         )
     ) {
-        return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+        return FileSaveResult.Failed(FileGatewayFailure.IO)
     }
     val fileUrl = resolvedFolderUrl.URLByAppendingPathComponent(
         safeExportFileName(file.content.fileName),
         isDirectory = false,
-    ) ?: return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
-    val filePath = fileUrl.path ?: return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+    ) ?: return FileSaveResult.Failed(FileGatewayFailure.IO)
+    val filePath = fileUrl.path ?: return FileSaveResult.Failed(FileGatewayFailure.IO)
     if (manager.fileExistsAtPath(filePath)) {
-        return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+        return FileSaveResult.Failed(FileGatewayFailure.IO)
     }
     ensureActive()
     return if (file.content.bytes.toNSData().writeToURL(fileUrl, atomically = true)) {
-        HomeworkFileSaveResult.Saved
+        FileSaveResult.Saved
     } else {
-        HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+        FileSaveResult.Failed(FileGatewayFailure.IO)
     }
 }
 

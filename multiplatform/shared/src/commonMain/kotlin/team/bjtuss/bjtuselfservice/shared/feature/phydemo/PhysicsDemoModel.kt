@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.phydemo
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,14 +26,18 @@ data class PhysicsDemoState(val username: String = "", val configured: Boolean =
 
 class PhysicsDemoModel(private val scope: String, private val cache: CacheStore,
     private val vault: CredentialVault?, private val remote: PhysicsDemoRemote,
-    private val changeRecorder: DataChangeRecorder<PhysicsDemoBooking>? = null) {
-    private val mutableState = MutableStateFlow(PhysicsDemoState(username = scope))
+    private val changeRecorder: DataChangeRecorder<PhysicsDemoBooking>? = null,
+    private val accountWork: AccountWork? = null,
+) {
+    private val mutableState = accountWork.accountState(PhysicsDemoState(username = scope))
     val state = mutableState.asStateFlow()
     private val mutex = Mutex()
     private var initialized = false
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    suspend fun initialize() = mutex.withLock {
+    suspend fun initialize() = accountWork.inAccount { initializeInAccount() }
+
+    private suspend fun initializeInAccount() = mutex.withLock {
         if (initialized) return@withLock
         val configured = cache.metadata(scope, "phydemo.configured") != "false"
         val creds = try { if (configured) vault?.load() else null }
@@ -48,7 +55,9 @@ class PhysicsDemoModel(private val scope: String, private val cache: CacheStore,
         initialized = true
     }
 
-    suspend fun configure(username: String, password: String): Boolean {
+    suspend fun configure(username: String, password: String): Boolean = accountWork.inAccount { configureInAccount(username = username, password = password) }
+
+    private suspend fun configureInAccount(username: String, password: String): Boolean {
         initialize()
         return mutex.withLock {
             mutableState.value = state.value.copy(refreshing = true, failed = false, message = null)
@@ -82,7 +91,9 @@ class PhysicsDemoModel(private val scope: String, private val cache: CacheStore,
     }
 
     /** [onlyIfUnsynced] 用于进入 App/页面时的自动同步：本次会话已成功查询过则不重复访问网络。 */
-    suspend fun refresh(onlyIfUnsynced: Boolean = false) {
+    suspend fun refresh(onlyIfUnsynced: Boolean = false) = accountWork.inAccount { refreshInAccount(onlyIfUnsynced = onlyIfUnsynced) }
+
+    private suspend fun refreshInAccount(onlyIfUnsynced: Boolean = false) {
         initialize()
         mutex.withLock {
             if (!state.value.enabled || !state.value.configured) return@withLock
@@ -106,7 +117,9 @@ class PhysicsDemoModel(private val scope: String, private val cache: CacheStore,
         }
     }
 
-    suspend fun setEnabled(enabled: Boolean) {
+    suspend fun setEnabled(enabled: Boolean) = accountWork.inAccount { setEnabledInAccount(enabled = enabled) }
+
+    private suspend fun setEnabledInAccount(enabled: Boolean) {
         initialize()
         mutex.withLock {
             if (enabled && !state.value.configured) return@withLock
@@ -116,7 +129,9 @@ class PhysicsDemoModel(private val scope: String, private val cache: CacheStore,
         if (enabled) refresh()
     }
 
-    suspend fun clearConfiguration() {
+    suspend fun clearConfiguration() = accountWork.inAccount { clearConfigurationInAccount() }
+
+    private suspend fun clearConfigurationInAccount() {
         initialize()
         mutex.withLock {
             try {

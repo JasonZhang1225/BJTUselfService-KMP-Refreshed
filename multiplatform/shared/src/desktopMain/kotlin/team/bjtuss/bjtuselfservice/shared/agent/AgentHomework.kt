@@ -26,7 +26,7 @@ import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkRepository
 import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkSyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkDetail
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.isHomeworkSubmitted
 import team.bjtuss.bjtuselfservice.shared.domain.homework.parseSchoolLocalDateTime
 import team.bjtuss.bjtuselfservice.shared.domain.homework.typeLabel
@@ -313,14 +313,14 @@ class AgentHomeworkExecutor(
             downloads.mapIndexed { index, (id, _) -> id to target.resolve(names[index]).toString() }.toMap()
         }
 
-    private suspend fun readUploads(uploads: List<AgentHomeworkUpload>): List<HomeworkFileContent> = withContext(Dispatchers.IO) {
+    private suspend fun readUploads(uploads: List<AgentHomeworkUpload>): List<FileContent> = withContext(Dispatchers.IO) {
         totalUploadProblem(uploads.map { File(it.path) })?.let { stop(AgentHomeworkFailureCode.IO, "$it 这次没有提交。") }
         uploads.map { upload ->
             val file = File(upload.path)
             val problem = uploadFileProblem(file)
             if (problem != null) stop(AgentHomeworkFailureCode.IO, "$problem 这次没有提交。")
             try {
-                HomeworkFileContent(upload.uploadName, Files.probeContentType(file.toPath()) ?: "application/octet-stream", file.readBytes())
+                FileContent(upload.uploadName, Files.probeContentType(file.toPath()) ?: "application/octet-stream", file.readBytes())
             } catch (_: Exception) {
                 stop(AgentHomeworkFailureCode.IO, "无法读取 ${file.name}，这次没有提交。")
             }

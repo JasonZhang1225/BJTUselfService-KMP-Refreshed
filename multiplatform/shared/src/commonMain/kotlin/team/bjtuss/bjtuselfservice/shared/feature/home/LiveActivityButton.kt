@@ -24,8 +24,8 @@ import androidx.compose.ui.unit.sp
 import kotlinx.datetime.LocalDate
 import team.bjtuss.bjtuselfservice.shared.domain.course.displayScheduleCourseName
 import team.bjtuss.bjtuselfservice.shared.domain.home.HomeNowSession
-import team.bjtuss.bjtuselfservice.shared.feature.course.CourseColorCategory
-import team.bjtuss.bjtuselfservice.shared.feature.course.tones
+import team.bjtuss.bjtuselfservice.shared.presentation.course.CourseColorCategory
+import team.bjtuss.bjtuselfservice.shared.presentation.course.tones
 import team.bjtuss.bjtuselfservice.shared.feature.widget.compactWidgetPlace
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertAction

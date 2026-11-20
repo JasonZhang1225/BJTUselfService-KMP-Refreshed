@@ -563,7 +563,7 @@ export class RemoteService {
   async status() {
     const devices = (await this.q("SELECT * FROM devices ORDER BY created_at DESC LIMIT 20").all()).results ?? [];
     const taskDevice = await this.taskDevice();
-    const active = devices.filter((d) => d.revoked_at == null);
+    const active = await this.activeDevices();
     const snapshots = active.length ? ((await this.q(`SELECT device_id, snapshot_id, sequence, generated_at, uploaded_at, received_at, body_json FROM snapshots WHERE device_id IN (${active.map(() => "?").join(",")})`,
       ...active.map((d) => d.device_id)).all()).results ?? []) : [];
     const counts = (await this.q("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status").all()).results ?? [];
