@@ -707,47 +707,73 @@ internal fun VersionAndProjectCard(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text("版本与项目", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Column {
-                VersionInfoRow("系统版本", systemVersion)
-                VersionInfoRow("App 版本", AppUpdateChecker.CURRENT_VERSION)
-                VersionInfoRow("构建号", AppUpdateChecker.CURRENT_BUILD.toString())
-                VersionInfoRow(
-                    "打包标识",
-                    team.bjtuss.bjtuselfservice.shared.update.PACKAGE_BUILD_ID,
-                )
-            }
-            Text("更新源", style = MaterialTheme.typography.titleSmall)
-            UpdateSourceSelector(
-                selected = updateSource,
-                enabled = !checking,
-                onSelect = onUpdateSource,
+            VersionAndProjectContent(
+                systemVersion = systemVersion,
+                updateSource = updateSource,
+                checking = checking,
+                onUpdateSource = onUpdateSource,
+                onCheckUpdate = onCheckUpdate,
+                onOpenUri = onOpenUri,
             )
-            Text(
-                updateSourceDescription(updateSource),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+        }
+    }
+}
+
+/** 复用于设置页卡片与登录页「版本与项目」弹层的内容部分（不含外层卡片与重复标题）。 */
+@Composable
+internal fun VersionAndProjectContent(
+    systemVersion: String,
+    updateSource: UpdateSource,
+    checking: Boolean,
+    onUpdateSource: (UpdateSource) -> Unit,
+    onCheckUpdate: () -> Unit,
+    onOpenUri: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Column {
+            VersionInfoRow("系统版本", systemVersion)
+            VersionInfoRow("App 版本", AppUpdateChecker.CURRENT_VERSION)
+            VersionInfoRow("构建号", AppUpdateChecker.CURRENT_BUILD.toString())
+            VersionInfoRow(
+                "打包标识",
+                team.bjtuss.bjtuselfservice.shared.update.PACKAGE_BUILD_ID,
             )
-            OutlinedButton(
-                onClick = onCheckUpdate,
-                enabled = !checking,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (checking) "正在检查更新…" else "检查更新")
-            }
-            Text("项目仓库", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
-            RepositoryLinkButton(RepositoryBrandIcons.GitHub, "GitHub 仓库") {
-                onOpenUri("https://github.com/${AppUpdateChecker.REPO}")
-            }
-            RepositoryLinkButton(RepositoryBrandIcons.Gitee, "Gitee 仓库") {
-                onOpenUri("https://gitee.com/${AppUpdateChecker.GITEE_REPO}")
-            }
-            Text("相关仓库", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
-            RepositoryLinkButton(RepositoryBrandIcons.GitHub, "交大自由行 NEO（原版）") {
-                onOpenUri("https://github.com/HFDLYS/BJTUselfService")
-            }
-            RepositoryLinkButton(RepositoryBrandIcons.GitHub, "交大自由行 AIO（跨平台）") {
-                onOpenUri("https://github.com/optsimauth/BJTUselfServiceAIO")
-            }
+        }
+        Text("更新源", style = MaterialTheme.typography.titleSmall)
+        UpdateSourceSelector(
+            selected = updateSource,
+            enabled = !checking,
+            onSelect = onUpdateSource,
+        )
+        Text(
+            updateSourceDescription(updateSource),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(
+            onClick = onCheckUpdate,
+            enabled = !checking,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (checking) "正在检查更新…" else "检查更新")
+        }
+        Text("项目仓库", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
+        RepositoryLinkButton(RepositoryBrandIcons.GitHub, "GitHub 仓库") {
+            onOpenUri("https://github.com/${AppUpdateChecker.REPO}")
+        }
+        RepositoryLinkButton(RepositoryBrandIcons.Gitee, "Gitee 仓库") {
+            onOpenUri("https://gitee.com/${AppUpdateChecker.GITEE_REPO}")
+        }
+        Text("相关仓库", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
+        RepositoryLinkButton(RepositoryBrandIcons.GitHub, "交大自由行 NEO（原版）") {
+            onOpenUri("https://github.com/HFDLYS/BJTUselfService")
+        }
+        RepositoryLinkButton(RepositoryBrandIcons.GitHub, "交大自由行 AIO（跨平台）") {
+            onOpenUri("https://github.com/optsimauth/BJTUselfServiceAIO")
         }
     }
 }

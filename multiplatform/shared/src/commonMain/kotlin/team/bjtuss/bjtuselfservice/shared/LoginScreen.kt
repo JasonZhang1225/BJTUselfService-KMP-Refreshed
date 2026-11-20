@@ -9,8 +9,11 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,8 +35,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -58,6 +64,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -133,11 +140,19 @@ import team.bjtuss.bjtuselfservice.shared.feature.otherfunction.OtherFunctionScr
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.classroom.ClassroomScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.classroomoccupancy.ClassroomOccupancyScreenModel
+import team.bjtuss.bjtuselfservice.shared.feature.settings.AppUpdateResultDialog
+import team.bjtuss.bjtuselfservice.shared.feature.settings.RepositoryBrandIcons
 import team.bjtuss.bjtuselfservice.shared.feature.settings.SettingsScreenModel
+import team.bjtuss.bjtuselfservice.shared.feature.settings.UpdateCheckState
+import team.bjtuss.bjtuselfservice.shared.feature.settings.VersionAndProjectContent
 import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.home.HomeScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
+import team.bjtuss.bjtuselfservice.shared.feature.shell.bottomSystemBars
+import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetBodyScroll
+import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetScrollContentPadding
 import team.bjtuss.bjtuselfservice.shared.runtime.bindAuthenticatedSession
 import androidx.compose.runtime.collectAsState
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryAccess
@@ -521,6 +536,10 @@ fun LoginRoute(
     }
 
     SideEffect {
+        login.bindPreferences(
+            provider = { appPreferences },
+            updater = { transform -> onPreferencesChanged(appPreferences.transform()) },
+        )
         runtime.currentAccount?.rebindCallbacks(
             onPreferencesChanged = onPreferencesChanged,
             onLogout = { accountScope -> logout(accountScope) },
@@ -547,6 +566,7 @@ fun LoginRoute(
                 systemCalendarGateway = systemCalendarGateway,
                 onLogout = { accountScope -> logout(accountScope) },
                 onPurgeLogout = { accountScope -> logout(accountScope, fullWipe = true) },
+                initialAutomaticUpdateChecked = login.automaticUpdateCheckCompleted,
             )
         }
         login.startOnce {
@@ -665,6 +685,20 @@ fun LoginRoute(
         return
     }
 
+    val updateCheckState by login.updateCoordinator.state.collectAsState()
+    var versionInfoSheetVisible by remember { mutableStateOf(false) }
+    var updateSourceSaveFailed by remember { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
+    val startManualUpdateCheck: () -> Unit = {
+        scope.launch { login.updateCoordinator.checkForUpdate(silentOnMiss = false) }
+    }
+
+    LaunchedEffect(storageReady, logoutCleanupPending) {
+        if (storageReady && !logoutCleanupPending && !runtime.cleanupBlocksLogin) {
+            login.updateCoordinator.checkForUpdate(silentOnMiss = true)
+        }
+    }
+
     val loginContent = @Composable {
         LoginScreen(
             platform = platform,
@@ -692,6 +726,13 @@ fun LoginRoute(
                 }
             },
             onLogin = ::startAutomaticLogin,
+            checkingUpdate = updateCheckState is UpdateCheckState.Checking,
+            onOpenVersionInfo = {
+                updateSourceSaveFailed = false
+                versionInfoSheetVisible = true
+            },
+            onCheckUpdate = startManualUpdateCheck,
+            onOpenRepository = uriHandler::openUri,
         )
     }
 
@@ -741,6 +782,57 @@ fun LoginRoute(
             }
         }
     }
+    if (versionInfoSheetVisible) {
+        AppleSheet(
+            onDismissRequest = {
+                versionInfoSheetVisible = false
+                updateSourceSaveFailed = false
+            },
+            title = "版本与项目",
+        ) {
+            val sheetScroll = rememberScrollState()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .sheetBodyScroll(sheetScroll)
+                    .sheetScrollContentPadding(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (updateSourceSaveFailed) {
+                    Text(
+                        text = "更新源设置保存失败，请重试。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                VersionAndProjectContent(
+                    systemVersion = platform.displayName,
+                    updateSource = appPreferences.updateSource,
+                    checking = updateCheckState is UpdateCheckState.Checking,
+                    onUpdateSource = { source ->
+                        if (updateCheckState !is UpdateCheckState.Checking) {
+                            val saved = onPreferencesChanged(appPreferences.copy(updateSource = source))
+                            updateSourceSaveFailed = !saved
+                            if (saved) login.updateCoordinator.dismissUpdateCheck()
+                        }
+                    },
+                    onCheckUpdate = {
+                        versionInfoSheetVisible = false
+                        updateSourceSaveFailed = false
+                        startManualUpdateCheck()
+                    },
+                    onOpenUri = uriHandler::openUri,
+                )
+            }
+        }
+    }
+    if (fallbackChallenge == null && !versionInfoSheetVisible) {
+        AppUpdateResultDialog(
+            check = updateCheckState,
+            onDismiss = login.updateCoordinator::dismissUpdateCheck,
+            onPostpone = login.updateCoordinator::postponeUpdate,
+        )
+    }
 
     if (platform.family == PlatformFamily.MacOS) {
         // macOS：右键输入框用 AWT JPopupMenu 渲染原生样式菜单（剪切/拷贝/粘贴/全选）。
@@ -765,6 +857,10 @@ fun LoginScreen(
     onPasswordChange: (String) -> Unit,
     onRememberCredentialsChange: (Boolean) -> Unit,
     onLogin: () -> Unit,
+    checkingUpdate: Boolean = false,
+    onOpenVersionInfo: () -> Unit = {},
+    onCheckUpdate: () -> Unit = {},
+    onOpenRepository: (String) -> Unit = {},
 ) {
     val scroll = rememberScrollState()
     val focusManager = LocalFocusManager.current
@@ -789,6 +885,7 @@ fun LoginScreen(
         }
     }
     if (windowClass == WindowClass.Expanded) {
+        val leftScroll = rememberScrollState()
         Row(
             modifier = Modifier
                 .fillMaxSize()
@@ -798,7 +895,22 @@ fun LoginScreen(
             horizontalArrangement = Arrangement.spacedBy(28.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            LoginIntroduction(platform, windowClass, Modifier.weight(2f))
+            Column(
+                modifier = Modifier
+                    .weight(2f)
+                    .verticalScroll(leftScroll)
+                    .desktopTouchScroll(leftScroll),
+            ) {
+                LoginIntroduction(platform, windowClass, Modifier.fillMaxWidth())
+                Spacer(Modifier.height(16.dp))
+                LoginAboutAndUpdateActions(
+                    checkingUpdate = checkingUpdate,
+                    onOpenVersionInfo = onOpenVersionInfo,
+                    onCheckUpdate = onCheckUpdate,
+                    onOpenRepository = onOpenRepository,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                )
+            }
             LoginCard(
                 compact = false,
                 state = state,
@@ -840,6 +952,7 @@ fun LoginScreen(
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.Center,
         ) {
+            Spacer(Modifier.height(16.dp))
             LoginIntroduction(platform, windowClass, Modifier.fillMaxWidth())
             Spacer(Modifier.height(20.dp))
             LoginCard(
@@ -858,6 +971,62 @@ fun LoginScreen(
                 onLogin = onLogin,
                 modifier = Modifier.fillMaxWidth(),
             )
+            Spacer(Modifier.height(16.dp))
+            LoginAboutAndUpdateActions(
+                checkingUpdate = checkingUpdate,
+                onOpenVersionInfo = onOpenVersionInfo,
+                onCheckUpdate = onCheckUpdate,
+                onOpenRepository = onOpenRepository,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.bottomSystemBars))
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun LoginAboutAndUpdateActions(
+    checkingUpdate: Boolean,
+    onOpenVersionInfo: () -> Unit,
+    onCheckUpdate: () -> Unit,
+    onOpenRepository: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedButton(
+            onClick = onOpenVersionInfo,
+            modifier = Modifier.heightIn(min = 48.dp),
+        ) {
+            Text("版本 v${AppUpdateChecker.CURRENT_VERSION}")
+        }
+        OutlinedButton(
+            onClick = onCheckUpdate,
+            enabled = !checkingUpdate,
+            modifier = Modifier.heightIn(min = 48.dp),
+        ) {
+            Text(if (checkingUpdate) "正在检查更新…" else "检查更新")
+        }
+        TextButton(
+            onClick = { onOpenRepository("https://github.com/${AppUpdateChecker.REPO}") },
+            modifier = Modifier.heightIn(min = 48.dp),
+        ) {
+            Icon(RepositoryBrandIcons.GitHub, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("GitHub")
+        }
+        TextButton(
+            onClick = { onOpenRepository("https://gitee.com/${AppUpdateChecker.GITEE_REPO}") },
+            modifier = Modifier.heightIn(min = 48.dp),
+        ) {
+            Icon(RepositoryBrandIcons.Gitee, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Gitee")
         }
     }
 }

@@ -10,10 +10,13 @@ import team.bjtuss.bjtuselfservice.shared.auth.CaptchaChallenge
 import team.bjtuss.bjtuselfservice.shared.auth.LoginState
 import team.bjtuss.bjtuselfservice.shared.auth.SchoolLoginProtocol
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
+import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.network.createSchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityCoordinator
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityStore
+import team.bjtuss.bjtuselfservice.shared.update.AppUpdateChecker
+import team.bjtuss.bjtuselfservice.shared.update.AppUpdateCoordinator
 
 /** Transitional login state owner. Contains no Activity, controller, window or navigation callbacks. */
 internal class LoginRuntimeContext(
@@ -24,6 +27,15 @@ internal class LoginRuntimeContext(
     val transport = lazy(LazyThreadSafetyMode.NONE, transportFactory)
     val protocol = lazy(LazyThreadSafetyMode.NONE) { SchoolLoginProtocol(transport.value) }
     val securityCoordinator = AccountSecurityCoordinator(store)
+    private var preferencesProvider: () -> AppPreferences = { AppPreferences() }
+    private var preferencesUpdater: (AppPreferences.() -> AppPreferences) -> Boolean = { false }
+    val updateCoordinator = AppUpdateCoordinator(
+        preferencesProvider = { preferencesProvider() },
+        updatePreferences = { preferencesUpdater(it) },
+        fetchLatest = { source -> AppUpdateChecker.fetchLatest(transport.value, source) },
+    )
+    val automaticUpdateCheckCompleted: Boolean
+        get() = updateCoordinator.automaticCheckSucceeded
     val state = mutableStateOf<LoginState>(LoginState.SignedOut)
     val username = mutableStateOf("")
     val password = mutableStateOf("")
@@ -43,6 +55,15 @@ internal class LoginRuntimeContext(
     private var authentication = AccountWork(scope.coroutineContext[Job])
 
     private var accountPublisher: ((StudentProfile, Boolean, Credentials) -> AuthenticatedSession)? = null
+
+    /** Keeps pre-login update checks synchronized with the host's persisted preferences. */
+    fun bindPreferences(
+        provider: () -> AppPreferences,
+        updater: (AppPreferences.() -> AppPreferences) -> Boolean,
+    ) {
+        preferencesProvider = provider
+        preferencesUpdater = updater
+    }
 
     /** Platform resources are rebound by a host; publication itself runs in login work. */
     fun bindAccountPublisher(publish: (StudentProfile, Boolean, Credentials) -> AuthenticatedSession) {

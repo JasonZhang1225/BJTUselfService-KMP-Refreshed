@@ -1,23 +1,28 @@
 # BJTUselfService 实时工作记忆
 
 > **当前状态（2026-11-20）**
-> - **当前分支**：`fix/remote-polling-and-citel-cache`（已合并含 PR #102–#106 的最新代码与修复），远端轮询、CITEL 题面快照与 2.0.1-Alpha 版本升级待验证。
-> - **源码版本**：`2.0.1-Alpha` / Build 46（发布说明草稿 `docs/releases/v2.0.1-KMP.md`；iOS 与桌面安装器数值版本 `2.0.1`；上个正式标签：`v2.0.0-KMP` / Build 45）。
-> - **远端活跃分支**：`main`、`feat/citel-batch-cache`（PR #106）、`fix/remote-polling-and-citel-cache`（PR #108）、`feat/mac-swift`（macOS 原生 SwiftUI 探索）。
-> - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（课程回放、macOS/Windows 硬件合成、作业忽略与筛选拆分、全应用设备时区、离线更新日志、`DESIGN.md` / `AppleAlert` / `AppleMenuPickerCard`、物理实验 IP 备用路径、上传文件拖放、本机 CLI 交作业、统一作业详情与远程增量同步等，PR #68–#99）及架构拆分与账号生命周期收口（PR #102–#105）均已合入或移入 `history_full.md`。
+> - **当前分支**：`fix/bjtu-tls-chain-and-login-update`（从最新 `origin/main` `667ffe5b` 切出），正在准备直接推送 main 并发布正式版。
+> - **源码版本**：`2.0.1-KMP` / Build 46（发布说明 `docs/releases/v2.0.1-KMP.md`；iOS 与桌面安装器数值版本 `2.0.1`；上个正式标签：`v2.0.0-KMP` / Build 45）。
+> - **远端活跃分支**：`main`、`feat/mac-swift`（macOS 原生 SwiftUI 探索）。
+> - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（PR #68–#99）及架构拆分、账号生命周期收口、CITEL 批量缓存与远端轮询、物理在线验证码补刷与 2.0.1 文档对齐（PR #102–#111）均已合入或移入 `history_full.md`。
 
 ---
 
-## 进行中：远端轮询与 CITEL 题面快照（PR #108，含 2.0.1-Alpha / Build 46 版本更新）
+## 进行中：缺失中间证书三层自动补链与登录页检查更新（分支 `fix/bjtu-tls-chain-and-login-update`）
 
-- Site 单独持久化任务轮询，MCP 据此决定是否入队和继续等待；`status()` 从全量有效设备计算活跃状态与逐源同步时间，不再受最近 20 条展示上限干扰；补充 MCP/Skill 对“仅查缓存”与“缺失 ≤ 5 MB 附件触发详情补全”的指引。
-- 作业快照可以直接读取同 CITEL 账号的本机题面缓存，绕开通用详情补齐的批次上限与退避。原 Site 增量升级需补跑 `0004_device_polling.sql`。
-- 本分支已合并 PR #106 并升级至 `2.0.1-Alpha` / Build 46，新增 `docs/releases/v2.0.1-KMP.md` 发布说明草稿并同步远程模板与内嵌更新日志。
+- **三层安全自动补链**：学校 2026-11-17 换发 `*.bjtu.edu.cn` 后，`mis.bjtu.edu.cn` 与 `mail.bjtu.edu.cn` 漏发中间证书 `GeoTrust G2 TLS CN RSA4096 SHA256 2022 CA1`（SHA-256 `05:DC:9E:DC:0F:DD:FA:97:5A:14:32:EF:80:6E:C7:80:07:8B:53:62:AD:45:AF:76:DB:15:C9:07:63:0D:B2:5D`）。在 `mediaJvmMain/network/SchoolTlsTrustManager.kt`、`KtorEngine.desktop.kt`、`KtorEngine.android.kt` 及 `androidApp/proguard-rules.pro` 落地三层自动补链，始终委托系统默认 `X509TrustManager` 与域名校验，不加入 TrustAnchor、不放宽 TLS 校验：
+  1. 内置上述 GeoTrust 官方中间证书 + 会话期间同校证书链被动学习内存缓存（0ms）；
+  2. 同校公开 HTTPS 节点（`sso.bjtu.edu.cn`、`aa.bjtu.edu.cn`）纯 HTTPS 探测自动学习新中间证书；
+  3. 仅在学校叶证书失败且前两层未果时，按受限 AIA (`1.3.6.1.5.5.7.1.1`) 动态拉取公开非敏感 CA 中间证书（禁 IP 字面量、DNS 全公网校验、禁重定向、≤ 64 KiB、3 秒超时、5 分钟失败冷却）。**安全登记**：桌面端支持公开 CA 证书的 `http://`/`https://` AIA，Android 保持 `network_security_config.xml` 全局 `cleartextTrafficPermitted="false"` 仅允许 `https://` AIA（常规靠第 1/2 层纯 HTTPS 补链）。
+- **未登录检查更新与登录页入口**：新增 `AppUpdateCoordinator.kt`，在 `LoginRuntimeContext`、`SettingsScreenModel`、`AppDataGraph`、`AccountSession`、`LoginAccountBinding` 间共享更新检查并去重（并在 `!runtime.cleanupBlocksLogin` 时不触发网络）；抽出 `VersionAndProjectContent` 供 `SettingsScreen` 与 `LoginScreen` 的 `AppleSheet` 复用，登录页底部/左侧新增「版本 v2.0.1-KMP」「检查更新」「GitHub」「Gitee」入口。
+- **发布说明与文档**：补全 `docs/releases/v2.0.1-KMP.md` 证书故障与登录页更新说明、更新 `README.md`，并执行 `sync-bundled-changelog.py` 同步 `BundledChangelog.kt`。
+- **验证状态**：
+  - 实网桌面端匿名握手：`mis`、`mail`、`cas`、`sso`、`aa` 均 HTTP 200/302；空内置列表中独立关闭别层后，第 2 层与第 3 层均实网通过 `mis.bjtu.edu.cn`（TLSv1.3）和 `mail.bjtu.edu.cn`（TLSv1.2）。
+  - Android 平板（`6c5a737e`）：安装第一版 Debug APK（`versionCode=46`）后用户实测确认可以登录。
+  - 三层补链 + 文档同步后最终验证：`sync-bundled-changelog.py --check` 通过；`:shared:desktopTest` 全量 **1619 项（1618 通过、0 失败、1 项跳过）**；`:shared:compileKotlinIosArm64`、`:shared:compileKotlinIosSimulatorArm64`、`:desktopApp:compileKotlin`、`:windowsApp:compileKotlinWindows`、`:androidApp:assembleDebug` 均通过；`LoginScreenRenderTest` 已在 `.artifacts/login-update-check/` 渲染 3 组截图并目视确认。
+  - **未验证边界**：三层补链升级版尚未重打 Release APK 或重装平板实测；Android R8 Release 混淆路径、iOS 模拟器 `AppleSheet` 实机目视、Windows 实机运行未在本轮执行。
 
-## 进行中：CITEL 题面批量缓存与窄窗口作业滚动（PR #106）
-
-- CITEL 启用后，可从「Agent 和 ChatGPT 插件」进入题面缓存页，按课程和实际提交状态筛选、批量拉取缺失题面，并对已缓存题目查看时间、逐题更新或确认删除；同步期间课程暂缺时保留已选课程并禁用误拉取，批量结果展示拉取范围标签。
-- 聚合作业与课程平台作业列表恢复 Navigation 3 保存的滚动位置，补充 `untilEpoch` 筛选切换回顶与回归测试；`KMP package` 仅自动响应 `debug-*` 标签，正式发版需手动指定 `publish_release=true`。
+---
 
 ## 进行中 / 待处理：物理在线相关检查
 

@@ -25,7 +25,7 @@ test('设备独立在线状态与快照，不把手机静默当作离线，也�
 });
 
 test('App 对齐 Site、MCP 和插件模板版本，网页提供每台设备独立撤销', () => {
-  assert.equal(TEMPLATE_VERSION, '2.0.1-Alpha');
+  assert.equal(TEMPLATE_VERSION, '2.0.1-KMP');
   for (const name of ['../package.json','../plugin/plugin.json']) {
     assert.equal(JSON.parse(readFileSync(new URL(name, import.meta.url))).version, TEMPLATE_VERSION);
   }

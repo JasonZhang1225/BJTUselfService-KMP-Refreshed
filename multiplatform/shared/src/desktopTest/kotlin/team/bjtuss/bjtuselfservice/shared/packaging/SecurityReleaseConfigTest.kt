@@ -246,6 +246,30 @@ class SecurityReleaseConfigTest {
             assertTrue(Regex("<key>CFBundleShortVersionString</key>\\s*<string>${Regex.escape(numericVersion)}</string>").containsMatchIn(text), plist)
         }
     }
+
+    @Test
+    fun androidProguardKeepsOkHttpTrustManagerExtensionAndNoTrustAllAdded() {
+        val proguard = root.resolve("multiplatform/androidApp/proguard-rules.pro").readText()
+        assertTrue(
+            "AndroidSchoolTlsTrustManager" in proguard &&
+                "checkServerTrusted(java.security.cert.X509Certificate[], java.lang.String, java.lang.String)" in proguard,
+        )
+
+        val tlsFiles = listOf(
+            "multiplatform/shared/src/mediaJvmMain/kotlin/team/bjtuss/bjtuselfservice/shared/network/SchoolTlsTrustManager.kt",
+            "multiplatform/shared/src/desktopMain/kotlin/team/bjtuss/bjtuselfservice/shared/network/KtorEngine.desktop.kt",
+            "multiplatform/shared/src/androidMain/kotlin/team/bjtuss/bjtuselfservice/shared/network/KtorEngine.android.kt",
+            "multiplatform/shared/src/iosMain/kotlin/team/bjtuss/bjtuselfservice/shared/network/KtorEngine.ios.kt",
+        ).map { root.resolve(it).readText() }
+        tlsFiles.forEach { source ->
+            assertFalse("hostnameVerifier" in source, "Custom TrustManager/Engine must keep default hostname verification")
+            assertFalse("TrustAll" in source, "Must not define trust-all managers")
+            assertFalse("acceptedIssuers" in source && "emptyArray()" in source)
+        }
+        val sharedTls = tlsFiles.first()
+        assertTrue("delegate.checkServerTrusted" in sharedTls)
+        assertTrue("delegate.acceptedIssuers" in sharedTls)
+    }
 }
 
 private fun sha256(file: File): String {

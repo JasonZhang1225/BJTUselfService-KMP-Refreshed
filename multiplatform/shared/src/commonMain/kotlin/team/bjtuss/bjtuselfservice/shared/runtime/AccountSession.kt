@@ -143,6 +143,7 @@ internal fun AppRuntime.obtainAccountSession(
     onPurgeLogout: (String) -> Unit,
     refreshDispatcher: CoroutineDispatcher = Dispatchers.Main,
     playbackRecovery: PlaybackRecoveryAccess? = null,
+    initialAutomaticUpdateChecked: Boolean = false,
 ): AccountSession = obtainAccount(profile.studentId) { id ->
     val bindings = AccountSessionBindings(credentials, onPreferencesChanged, onLogout, onPurgeLogout)
     val graphWork = AccountWork()
@@ -165,6 +166,7 @@ internal fun AppRuntime.obtainAccountSession(
         accountWork = graphWork,
         entryWork = entryAuthenticationWork,
         onCleanup = { operation -> cleanup(account, operation) },
+        initialAutomaticUpdateChecked = initialAutomaticUpdateChecked,
     )
     val holder = MobileSessionHolder()
     val mobileRemote = createMobileRemoteAgent(platform, graph.cacheStore, securityCoordinator, graph.refreshCoordinator, holder, graphWork)

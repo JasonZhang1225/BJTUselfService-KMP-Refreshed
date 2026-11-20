@@ -16,7 +16,7 @@ android {
         minSdk = 28
         targetSdk = 35
         versionCode = 46
-        versionName = "2.0.1-Alpha"
+        versionName = "2.0.1-KMP"
     }
 
     buildFeatures {

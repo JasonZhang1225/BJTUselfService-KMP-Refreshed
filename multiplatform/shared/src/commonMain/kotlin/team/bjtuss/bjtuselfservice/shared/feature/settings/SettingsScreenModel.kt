@@ -54,12 +54,13 @@ class SettingsScreenModel(
     private val prepareUninstall: (suspend () -> Boolean)? = null,
     private val checkReleaseFromSource: (suspend (UpdateSource) -> AppUpdateChecker.Result)? = null,
     private val accountWork: AccountWork? = null,
+    initialAutomaticUpdateChecked: Boolean = false,
 ) {
     private val mutableState = MutableStateFlow(SettingsUiState(initialPreferences.copy(
         autoSyncGrades = true, autoSyncHomework = true, autoSyncSchedule = true, autoSyncExams = true,
     )))
     val state: StateFlow<SettingsUiState> = mutableState.asStateFlow()
-    private var automaticUpdateChecked = false
+    private var automaticUpdateChecked = initialAutomaticUpdateChecked
     private var postponedUntilMillis = initialPreferences.updatePostponedUntilMillis
 
     /** 1.8.3 合并弹窗覆盖新版导航、CITEL、作业聚合三项，确认一次即全部记为已读。 */

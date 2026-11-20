@@ -107,6 +107,7 @@ class AppDataGraph(
     private val entryWork: team.bjtuss.bjtuselfservice.shared.runtime.AccountWork? = null,
     private val onCleanup: (suspend (team.bjtuss.bjtuselfservice.shared.cleanup.CleanupOperation) -> team.bjtuss.bjtuselfservice.shared.cleanup.CleanupReport)? = null,
     private val playbackRecovery: team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryAccess? = null,
+    initialAutomaticUpdateChecked: Boolean = false,
 ) {
     private val appCacheStore = cacheStore
     internal val cleanupCache get() = appCacheStore
@@ -236,6 +237,7 @@ class AppDataGraph(
         checkLatestRelease = { AppUpdateChecker.fetchLatest(this.transport) },
         checkReleaseFromSource = { source -> AppUpdateChecker.fetchLatest(this.transport, source) },
         accountWork = accountWork,
+        initialAutomaticUpdateChecked = initialAutomaticUpdateChecked,
     )
     val mailboxModel = MailboxScreenModel(
         transport = this.transport,

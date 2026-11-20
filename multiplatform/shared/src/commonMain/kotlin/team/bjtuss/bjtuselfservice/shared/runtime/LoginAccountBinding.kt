@@ -36,6 +36,7 @@ internal fun bindAuthenticatedSession(
     onLogout: (String) -> Unit,
     onPurgeLogout: (String) -> Unit,
     playbackRecovery: PlaybackRecoveryAccess? = null,
+    initialAutomaticUpdateChecked: Boolean = false,
 ): AuthenticatedSession {
     val account = runtime.obtainAccountSession(
         profile = profile,
@@ -55,6 +56,7 @@ internal fun bindAuthenticatedSession(
         systemCalendarGateway = systemCalendarGateway,
         onLogout = onLogout,
         onPurgeLogout = onPurgeLogout,
+        initialAutomaticUpdateChecked = initialAutomaticUpdateChecked,
     )
     account.update(
         profile = profile,
