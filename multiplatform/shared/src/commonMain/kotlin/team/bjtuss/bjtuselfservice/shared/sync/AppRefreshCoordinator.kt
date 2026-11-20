@@ -134,16 +134,48 @@ class AppRefreshCoordinator(
         request: RefreshRequest,
         sessionProbe: (suspend () -> Boolean)?,
         sessionProbeLease: (() -> RefreshSessionProbe.Lease)? = null,
+    ): RefreshReport = runRefresh(request, sessionProbe, sessionProbeLease = sessionProbeLease)
+
+    internal fun enqueuePhyVlabAfterLogin(refresh: suspend () -> Unit) {
+        scope.launch { refreshPhyVlabAfterLogin(refresh) }
+    }
+
+    /** A verified physical-online login can require another read after the active batch. */
+    internal suspend fun refreshPhyVlabAfterLogin(refresh: suspend () -> Unit): RefreshReport =
+        runRefresh(
+            RefreshRequest(setOf(RefreshSource.PHYVLAB), RefreshOrigin.APP),
+            probeSession,
+            followUp = refresh,
+        )
+
+    private suspend fun runRefresh(
+        request: RefreshRequest,
+        sessionProbe: (suspend () -> Boolean)?,
+        sessionProbeLease: (() -> RefreshSessionProbe.Lease)? = null,
+        followUp: (suspend () -> Unit)? = null,
     ): RefreshReport {
         val startedAt = nowEpochSeconds()
         val requested = RefreshSource.entries.filter { it in request.sources }
-        val waits: Map<RefreshSource, Deferred<RefreshSourceResult>> = mutex.withLock {
-            if (closed) return@withLock emptyMap()
-            val missing = requested.filter { it in adapterBySource && it !in inFlight }
-            if (missing.isNotEmpty()) {
-                startBatch(missing, request.forceReauthenticate, sessionProbe, sessionProbeLease)
+        val waits: Map<RefreshSource, Deferred<RefreshSourceResult>> = if (followUp == null) {
+            mutex.withLock {
+                if (closed) return@withLock emptyMap()
+                val missing = requested.filter { it in adapterBySource && it !in inFlight }
+                val existing = requested.mapNotNull { source -> inFlight[source]?.let { source to it } }.toMap()
+                existing + if (missing.isEmpty()) {
+                    emptyMap()
+                } else {
+                    startBatch(
+                        missing,
+                        request.forceReauthenticate,
+                        sessionProbe,
+                        sessionProbeLease = sessionProbeLease,
+                    )
+                }
             }
-            requested.mapNotNull { source -> inFlight[source]?.let { source to it } }.toMap()
+        } else {
+            val source = RefreshSource.PHYVLAB
+            val wait = reservePhyVlabFollowUp(followUp)
+            if (wait == null) emptyMap() else mapOf(source to wait)
         }
         val results = requested.map { source ->
             val adapter = adapterBySource[source]
@@ -165,6 +197,29 @@ class AppRefreshCoordinator(
             .also { if (!closed && waits.isNotEmpty()) completedReports.tryEmit(it) }
     }
 
+    private suspend fun reservePhyVlabFollowUp(
+        refreshAfterLogin: suspend () -> Unit,
+    ): Deferred<RefreshSourceResult>? {
+        val source = RefreshSource.PHYVLAB
+        val adapter = adapterBySource[source] ?: return null
+        while (true) {
+            val active = mutex.withLock {
+                if (closed) return null
+                inFlight[source] ?: run {
+                    val followUp = object : RefreshSourceAdapter by adapter {
+                        override suspend fun refresh() = refreshAfterLogin()
+                    }
+                    return startBatch(listOf(source), false, null, overrideAdapter = followUp).getValue(source)
+                }
+            }
+            try {
+                active.await()
+            } catch (error: CancellationException) {
+                if (!currentCoroutineContext().isActive) throw error
+            }
+        }
+    }
+
     /** 退出登录或切换账号：取消在途刷新，此后请求一律不再执行。 */
     fun close() {
         closed = true
@@ -183,7 +238,8 @@ class AppRefreshCoordinator(
         forceReauthenticate: Boolean,
         sessionProbe: (suspend () -> Boolean)?,
         sessionProbeLease: (() -> RefreshSessionProbe.Lease)? = null,
-    ) {
+        overrideAdapter: RefreshSourceAdapter? = null,
+    ): Map<RefreshSource, Deferred<RefreshSourceResult>> {
         val lease = if (forceReauthenticate) null else sessionProbeLease?.invoke()
         val effectiveProbe = lease?.verify ?: sessionProbe
         val session = SessionRefreshCoordinator(
@@ -210,8 +266,8 @@ class AppRefreshCoordinator(
             }
             if (releaseNow) lease.release()
         }
-        for ((index, source) in sources.withIndex()) {
-            val adapter = adapterBySource.getValue(source)
+        return sources.withIndex().associate { (index, source) ->
+            val adapter = overrideAdapter ?: adapterBySource.getValue(source)
             val result = CompletableDeferred<RefreshSourceResult>()
             inFlight[source] = result
             val job = scope.launch {
@@ -240,6 +296,7 @@ class AppRefreshCoordinator(
                 if (!result.isCompleted) result.cancel(CancellationException("refresh cancelled", cause))
                 releaseSlot(index)
             }
+            source to result
         }
     }
 

@@ -66,7 +66,7 @@ internal class ShellActions(
             if (view.phyVlabCaptchaAccount.value == null) {
                 val account = session.phyVlabAccountModel?.credentials()
                 phyVlabDebug("openPhyVlabCaptcha credentialsLoaded=${account != null}")
-                if (account != null) {
+                if (account != null && view.phyVlabCaptchaAccount.value == null) {
                     view.phyVlabCaptchaFromAssignments.value = fromAssignments
                     view.phyVlabCaptchaAccount.value = account
                     view.homeSyncDialogVisible.value = false

@@ -105,17 +105,20 @@ internal fun ShellOverlays(
             onEnterCaptcha = { openPhyVlabCaptcha(false) },
         )
     }
-    phyVlabCaptchaAccount?.let { account ->
+    if (!blockingGuideVisible) phyVlabCaptchaAccount?.let { account ->
         PhyVlabCaptchaSheet(
             account = account,
             prepare = phyVlabModel::prepareManualLogin,
+            runInAccount = phyVlabModel::runManualLogin,
+            submit = phyVlabModel::submitManualLogin,
             onSuccess = {
                 phyVlabModel.rememberManualSession(account.username)
-                phyVlabCaptchaAccount = null
+                phyVlabModel.sessionChanged()
                 refreshPhyVlabAfterLogin()
                 true
             },
             onRejected = phyVlabModel::manualCredentialsRejected,
+            onCompleted = { phyVlabCaptchaAccount = null },
             onDismiss = closePhyVlabCaptcha,
         )
     }

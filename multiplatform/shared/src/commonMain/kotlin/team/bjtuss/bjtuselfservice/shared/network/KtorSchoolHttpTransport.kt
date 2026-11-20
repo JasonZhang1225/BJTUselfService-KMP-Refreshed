@@ -8,6 +8,7 @@ import team.bjtuss.bjtuselfservice.shared.logging.SyncTiming
 import kotlin.concurrent.Volatile
 import kotlin.time.TimeSource
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineName
 import io.ktor.client.plugins.cookies.AcceptAllCookiesStorage
 import io.ktor.client.plugins.cookies.HttpCookies
@@ -302,6 +303,7 @@ class KtorSchoolHttpTransport(
                     it.domain == url.host && PhyVlabLoginSession.fromCookie(it.value) != null
             } ?: return false
             phyVlabSessionMutex.withLock {
+                currentCoroutineContext().ensureActive()
                 if (currentStorage !== cookieStorage || generation != phyVlabSessionGeneration) {
                     return@withLock false
                 }

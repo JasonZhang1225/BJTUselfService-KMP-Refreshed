@@ -19,7 +19,6 @@ import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabContentSource
 import team.bjtuss.bjtuselfservice.shared.sync.AppRefreshCoordinator
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshRequest
-import team.bjtuss.bjtuselfservice.shared.sync.RefreshSource
 
 /**
  * 页面刷新与账号工作共用的执行入口。
@@ -168,9 +167,9 @@ internal class AccountRefresher(
     fun refreshPhyVlabAfterAccountSaved() {
         val model = session.phyVlabModel ?: return
         if (session.refreshCoordinator != null) {
-            refreshCoordinator.enqueueFresh(RefreshRequest(setOf(RefreshSource.PHYVLAB), RefreshOrigin.APP))
+            refreshCoordinator.enqueuePhyVlabAfterLogin(model::refreshAfterLogin)
         } else {
-            scope.launch { model.refreshWaiting() }
+            scope.launch { model.refreshAfterLogin() }
         }
     }
 

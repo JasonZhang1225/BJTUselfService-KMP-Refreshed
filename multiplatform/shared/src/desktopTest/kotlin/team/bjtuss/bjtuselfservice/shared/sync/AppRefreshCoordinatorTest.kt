@@ -113,7 +113,7 @@ class AppRefreshCoordinatorTest {
                 withTimeout(5_000) { coordinator.completed.first() }
             }
             val settingsPage = async {
-                coordinator.enqueue(request(RefreshSource.PHYVLAB))
+                coordinator.enqueuePhyVlabAfterLogin(physicalOnline::refresh)
             }
             settingsPage.await()
             waitUntil { physicalOnline.calls.get() == 1 }
@@ -291,7 +291,7 @@ class AppRefreshCoordinatorTest {
     }
 
     @Test
-    fun refreshFreshWaitsForInFlightRefreshAndStartsFreshRun() = runBlocking {
+    fun postLoginRefreshWaitsForPreviousReadAndUsesTheVerifiedSession() = runBlocking {
         val firstStarted = CompletableDeferred<Unit>()
         val releaseFirst = CompletableDeferred<Unit>()
         val calls = AtomicInteger()
@@ -323,7 +323,7 @@ class AppRefreshCoordinatorTest {
             withTimeout(5_000) { firstStarted.await() }
 
             loggedIn = true
-            val postAuth = async(Dispatchers.Default) { coordinator.refreshFresh(request(RefreshSource.PHYVLAB)) }
+            val postAuth = async(Dispatchers.Default) { coordinator.refreshPhyVlabAfterLogin(phyVlab::refresh) }
             delay(50)
             assertEquals(1, calls.get())
 

@@ -40,8 +40,11 @@ private const val PHYVLAB_SUBMIT_TIMEOUT_MS = 60_000L
 internal fun PhyVlabCaptchaSheet(
     account: Credentials,
     prepare: suspend () -> PhyVlabManualLogin,
+    runInAccount: suspend (suspend () -> Unit) -> Unit,
+    submit: suspend (suspend () -> Unit) -> Unit,
     onSuccess: suspend () -> Boolean,
     onRejected: () -> Unit,
+    onCompleted: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var attemptNumber by remember { mutableIntStateOf(0) }
@@ -68,57 +71,63 @@ internal fun PhyVlabCaptchaSheet(
         val dismissNativeSheet = LocalDismissNativeSheet.current
         val proof = remember(attemptNumber) { CompletableDeferred<PhyVlabCaptchaProof?>() }
         LaunchedEffect(attemptNumber) {
-            var attempt: PhyVlabManualLogin? = null
-            try {
-                attempt = prepare()
-                val activeCaptchaId = attempt.captchaId
-                val answer = if (activeCaptchaId != null) {
-                    captchaId = activeCaptchaId
-                    loading = false
-                    proof.await() ?: run {
-                        captchaId = null
-                        error = "无法读取验证码结果，请重试。"
-                        return@LaunchedEffect
+            runInAccount {
+                var attempt: PhyVlabManualLogin? = null
+                try {
+                    attempt = prepare()
+                    val activeCaptchaId = attempt.captchaId
+                    val answer = if (activeCaptchaId != null) {
+                        captchaId = activeCaptchaId
+                        loading = false
+                        proof.await() ?: run {
+                            captchaId = null
+                            error = "无法读取验证码结果，请重试。"
+                            return@runInAccount
+                        }
+                    } else {
+                        loading = false
+                        null
                     }
-                } else {
-                    loading = false
-                    null
-                }
-                phyVlabDebug("captcha submission started")
-                submitting = true
-                captchaId = null
-                // 学校没有响应时不能一直停在“正在登录”，超时后把重试入口还给用户。
-                val outcome = withTimeoutOrNull(PHYVLAB_SUBMIT_TIMEOUT_MS) { attempt.complete(account, answer) }
-                phyVlabDebug("captcha submission finished: ${outcome?.let { it::class.simpleName } ?: "timeout"}")
-                error = if (outcome == null) PHYVLAB_LOGIN_TIMEOUT_MESSAGE else when (outcome) {
-                    is PhyVlabSessionResult.Ready ->
-                        if (onSuccess()) {
-                            completed = true
-                            phyVlabDebug("captcha login succeeded, requesting dismiss hasDirectDismiss=${dismissNativeSheet != null}")
-                            // Close the UIKit presentation even if the covered page has not recomposed yet.
-                            dismissNativeSheet?.invoke()
-                            null
-                        } else "登录成功，但保存账号失败。请关闭后查看设置页的提示。"
-                    PhyVlabSessionResult.CaptchaRequired,
-                    PhyVlabSessionResult.CaptchaRejected,
-                    -> "验证码未通过，请重新验证。"
-                    PhyVlabSessionResult.AccountRequired,
-                    PhyVlabSessionResult.CredentialsRejected,
-                    -> {
-                        credentialsRejected = true
-                        onRejected()
-                        PHYVLAB_ACCOUNT_REJECTED_MESSAGE
+                    phyVlabDebug("captcha submission started")
+                    submitting = true
+                    captchaId = null
+                    // 学校没有响应时不能一直停在“正在登录”，超时后把重试入口还给用户。
+                    submit {
+                        val outcome = withTimeoutOrNull(PHYVLAB_SUBMIT_TIMEOUT_MS) { attempt.complete(account, answer) }
+                        phyVlabDebug("captcha submission finished: ${outcome?.let { it::class.simpleName } ?: "timeout"}")
+                        error = if (outcome == null) PHYVLAB_LOGIN_TIMEOUT_MESSAGE else when (outcome) {
+                            is PhyVlabSessionResult.Ready ->
+                                if (onSuccess()) {
+                                    completed = true
+                                    null
+                                } else "登录成功，但保存账号失败。请关闭后查看设置页的提示。"
+                            PhyVlabSessionResult.CaptchaRequired,
+                            PhyVlabSessionResult.CaptchaRejected,
+                            -> "验证码未通过，请重新验证。"
+                            PhyVlabSessionResult.AccountRequired,
+                            PhyVlabSessionResult.CredentialsRejected,
+                            -> {
+                                credentialsRejected = true
+                                onRejected()
+                                PHYVLAB_ACCOUNT_REJECTED_MESSAGE
+                            }
+                            is PhyVlabSessionResult.Failed -> PHYVLAB_LOGIN_NETWORK_MESSAGE
+                        }
                     }
-                    is PhyVlabSessionResult.Failed -> PHYVLAB_LOGIN_NETWORK_MESSAGE
+                    if (completed) {
+                        // The covered iOS page may not recompose until UIKit starts dismissal.
+                        dismissNativeSheet?.invoke()
+                        onCompleted()
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    error = PHYVLAB_LOGIN_NETWORK_MESSAGE
+                } finally {
+                    attempt?.close?.invoke()
+                    loading = false
+                    submitting = false
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                error = PHYVLAB_LOGIN_NETWORK_MESSAGE
-            } finally {
-                attempt?.close?.invoke()
-                loading = false
-                submitting = false
             }
         }
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

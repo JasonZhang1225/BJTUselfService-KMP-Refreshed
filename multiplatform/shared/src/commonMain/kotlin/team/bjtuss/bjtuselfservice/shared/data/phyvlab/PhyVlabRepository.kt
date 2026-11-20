@@ -13,6 +13,7 @@ enum class PhyVlabSyncFailure {
     NETWORK,
     PARSE,
     SESSION_EXPIRED,
+    CAPTCHA_REQUIRED,
 }
 
 /** 物理在线列表/安排的本地快照；不包含 Cookie、sesskey 或其它短期会话字段。 */

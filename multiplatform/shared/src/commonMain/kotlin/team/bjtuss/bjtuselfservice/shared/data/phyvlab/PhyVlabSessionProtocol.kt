@@ -10,6 +10,8 @@ import io.ktor.http.Url
 import io.ktor.http.takeFrom
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.withLock
 import kotlin.concurrent.Volatile
 import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
@@ -65,18 +67,37 @@ class PhyVlabSessionProtocol(
     private val sessionVault: CredentialVault? = null,
     private val credentials: suspend () -> Credentials? = { null },
 ) {
+    internal val loginMutex = Mutex()
+    private val sessionGeneration = MutableStateFlow(0L)
+    internal val loginGeneration: Long get() = sessionGeneration.value
+
+    internal fun markSessionChanged() {
+        sessionGeneration.update { it + 1 }
+    }
+
     private val sessionVaultMutex = Mutex()
     private var lastSavedSession: Credentials? = null
     @Volatile
     private var activeSessionUsername: String? = null
 
-    suspend fun establishSession(): PhyVlabSessionResult = try {
+    suspend fun establishSession(): PhyVlabSessionResult = establishSession { }
+
+    internal suspend fun establishSession(onSessionRead: (Long) -> Unit): PhyVlabSessionResult =
+        loginMutex.withLock {
+            onSessionRead(loginGeneration)
+            establishSessionLocked()
+        }
+
+    private suspend fun establishSessionLocked(): PhyVlabSessionResult = try {
         val loginPage = loadLoginPage()
         if (parseOffMain { loginPage.pageMarks() }.authenticated) {
             val owner = activeSessionUsername
             val account = if (sessionVault != null || owner != null) credentials() else null
-            if (owner != null && (account == null || owner != account.username)) {
-                clearRememberedSession()
+            if ((sessionVault != null || owner != null) && (owner == null || account?.username != owner)) {
+                // A new app account may share the login runtime's transport. Restore only
+                // a session tied to this account, even if that transport still has a cookie.
+                transport.clearPhyVlabSession()
+                activeSessionUsername = null
                 if (account == null) PhyVlabSessionResult.AccountRequired
                 else restoreSessionOrLogin(loadLoginPage(), account)
             } else {
@@ -225,6 +246,15 @@ class PhyVlabSessionProtocol(
         throw e
     } catch (_: Exception) {
         SessionProbe.UNAVAILABLE
+    }
+
+    internal suspend fun verifyConfiguration(account: Credentials): PhyVlabSessionResult {
+        val attempt = prepareManualLogin()
+        return try {
+            if (attempt.captchaId != null) PhyVlabSessionResult.CaptchaRequired else attempt.complete(account)
+        } finally {
+            attempt.close()
+        }
     }
 
     internal suspend fun prepareManualLogin(): PhyVlabManualLogin {

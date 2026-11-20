@@ -34,6 +34,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import team.bjtuss.bjtuselfservice.shared.agent.AgentDetailException
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
@@ -300,6 +303,31 @@ class RemoteAgentRunnerTest {
         executor.reportStatus = RefreshStatus.NEEDS_USER_ACTION
         runner.handleTask(client, task())
         assertEquals(RemoteTaskStatus.PARTIAL, client.results.single().second.status)
+    }
+
+    @Test
+    fun assignmentWithCaptchaBlockedAttachmentReportsPartialAndKeepsDetail() = runBlocking {
+        config.value = config.value.copy(scopes = listOf(RemoteScope.ASSIGNMENTS.wire))
+        val detail = JsonObject(mapOf("content" to JsonPrimitive("缓存外读取的作业详情")))
+        val message = "请在 App 内完成物理在线验证码验证后重试。"
+        val attachment = RemoteAttachmentRef("att_fixture", "phyvlab:7", "attachment-7", null)
+        val reader = object : RemoteRefreshExecutor by executor {
+            override suspend fun query(task: RemoteTask, scopes: Set<RemoteScope>) =
+                RemoteQueryOutcome(RemoteTaskStatus.SUCCEEDED, detail, uploads = listOf(attachment))
+
+            override suspend fun readAttachment(ref: RemoteAttachmentRef): FileContent? {
+                assertEquals(attachment, ref)
+                throw AgentDetailException("captcha_required", message)
+            }
+        }
+        val runner = RemoteAgentRunner(config, { client }, reader, store, { now }, Random(7), secondMillis = 10)
+        runner.handleTask(client, task(operation = RemoteOperation.ASSIGNMENT_DETAIL))
+
+        val result = client.results.single().second
+        assertEquals(RemoteTaskStatus.PARTIAL, result.status)
+        assertEquals(RemoteError("captcha_required", message), result.error)
+        assertEquals(detail["content"], result.result["content"])
+        assertEquals(kotlinx.serialization.json.JsonArray(emptyList()), result.result["onlineAttachmentIds"])
     }
 
     @Test

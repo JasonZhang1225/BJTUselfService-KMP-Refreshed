@@ -109,12 +109,13 @@ class PhyVlabScreenModel(
     private val mutableState = accountWork.accountState(PhyVlabUiState(filters = filterStore?.load() ?: AssignmentFilters()))
     val state: StateFlow<PhyVlabUiState> = mutableState.asStateFlow()
     private val refreshMutex = Mutex()
+    private var refreshedLoginGeneration = 0L
     private var preparedFinalization: Pair<Int, List<String>>? = null
     private var lastRequestedMonthSeconds: Long? = null
     private var networkAutoSyncStarted = false
     private var sessionReady = false
     private var agentBatchRecoveryUsed = false
-    private var agentBatchRecoveryBlocked = false
+    private var agentBatchRecoveryFailure: PhyVlabSyncFailure? = null
     private var agentDetailBatchActive = false
     private var cacheLoaded = false
     private val cacheAccountScope = accountScope?.trim()?.takeIf { it.isNotEmpty() }
@@ -136,10 +137,20 @@ class PhyVlabScreenModel(
         }
     }
 
+    internal suspend fun runManualLogin(block: suspend () -> Unit) = accountWork.inAccount(block)
+
     internal suspend fun prepareManualLogin() = sessionProtocol.prepareManualLogin()
+
+    internal suspend fun submitManualLogin(block: suspend () -> Unit) = accountWork.inAccount {
+        sessionProtocol.loginMutex.withLock { block() }
+    }
 
     internal suspend fun rememberManualSession(username: String) =
         accountWork.inAccount { sessionProtocol.rememberCurrentSession(username) }
+
+    internal fun sessionChanged() {
+        sessionProtocol.markSessionChanged()
+    }
 
     internal fun manualCredentialsRejected() {
         mutableState.value = mutableState.value.copy(
@@ -164,6 +175,13 @@ class PhyVlabScreenModel(
         refreshMutex.withLock { performRefresh() }
     }
 
+    internal suspend fun refreshAfterLogin() = accountWork.inAccount {
+        refreshMutex.withLock {
+            val generation = sessionProtocol.loginGeneration
+            if (refreshedLoginGeneration != generation) performRefresh()
+        }
+    }
+
     private suspend fun performRefresh() {
         try {
             // 首页主动刷新、失败后的用户重试和物理在线页初始化都走这里。
@@ -176,7 +194,8 @@ class PhyVlabScreenModel(
             mutableState.value = mutableState.value.copy(isLoading = true, failure = null, failureDetail = null,
                 accountLoginRequired = false, accountRejected = false, captchaRequired = false,
             )
-            when (val session = sessionProtocol.establishSession()) {
+            var establishedLoginGeneration: Long? = null
+            when (val session = sessionProtocol.establishSession { establishedLoginGeneration = it }) {
                 is PhyVlabSessionResult.Failed -> {
                     phyVlabDebug("session failed reason=${session.reason} detail=${session.detail ?: "none"}")
                     if (session.reason == PhyVlabRemoteFailure.SESSION_EXPIRED &&
@@ -294,7 +313,10 @@ class PhyVlabScreenModel(
                 failureDetail = null,
             )
             lastRequestedMonthSeconds = monthStart
-            if (!activityFetchFailed) persistCache(syncedAt)
+            if (!activityFetchFailed) {
+                persistCache(syncedAt)
+                establishedLoginGeneration?.let { refreshedLoginGeneration = it }
+            }
             phyVlabDebug(
                 "refresh data courses=${courses.size} activities=${activitiesByCourse.values.sumOf { it.size }} " +
                     "events=${scheduleEvents.size}",
@@ -372,13 +394,13 @@ class PhyVlabScreenModel(
     internal fun beginAgentDetailBatch() {
         agentDetailBatchActive = true
         agentBatchRecoveryUsed = false
-        agentBatchRecoveryBlocked = false
+        agentBatchRecoveryFailure = null
     }
 
     internal fun endAgentDetailBatch() {
         agentDetailBatchActive = false
         agentBatchRecoveryUsed = false
-        agentBatchRecoveryBlocked = false
+        agentBatchRecoveryFailure = null
     }
 
     /** 本机 CLI 与远程同步读取详情：共用会话恢复，不改界面状态。读取幂等，过期时恢复后重试一次。 */
@@ -386,30 +408,40 @@ class PhyVlabScreenModel(
         accountWork.inAccount { fetchDetailForAgentInAccount(activity) }
 
     private suspend fun fetchDetailForAgentInAccount(activity: PhyVlabActivity): PhyVlabAssignmentDetailResult =
-        retryAfterSessionRecovery(PhyVlabAssignmentDetailResult.Failure(PhyVlabSyncFailure.SESSION_EXPIRED),
+        retryAfterSessionRecovery({ PhyVlabAssignmentDetailResult.Failure(it) },
             { (it as? PhyVlabAssignmentDetailResult.Failure)?.reason }) { repository.fetchAssignmentDetail(activity) }
 
     internal suspend fun downloadAttachmentForAgent(attachment: PhyVlabAttachment): PhyVlabAttachmentResult =
         accountWork.inAccount { downloadAttachmentForAgentInAccount(attachment) }
 
     private suspend fun downloadAttachmentForAgentInAccount(attachment: PhyVlabAttachment): PhyVlabAttachmentResult =
-        retryAfterSessionRecovery(PhyVlabAttachmentResult.Failure(PhyVlabSyncFailure.SESSION_EXPIRED),
+        retryAfterSessionRecovery({ PhyVlabAttachmentResult.Failure(it) },
             { (it as? PhyVlabAttachmentResult.Failure)?.reason }) { repository.downloadAttachment(attachment) }
 
-    private suspend fun <T> retryAfterSessionRecovery(expired: T, reason: (T) -> PhyVlabSyncFailure?, read: suspend () -> T): T {
-        if (agentDetailBatchActive && agentBatchRecoveryBlocked) return expired
-        if (!ensureSessionForOperation()) {
-            if (agentDetailBatchActive) agentBatchRecoveryBlocked = true
-            return expired
-        }
+    private suspend fun <T> retryAfterSessionRecovery(
+        failure: (PhyVlabSyncFailure) -> T,
+        reason: (T) -> PhyVlabSyncFailure?,
+        read: suspend () -> T,
+    ): T {
+        if (agentDetailBatchActive) agentBatchRecoveryFailure?.let { return failure(it) }
+        agentSessionFailure()?.let { return failure(it) }
         val first = read()
         if (reason(first) != PhyVlabSyncFailure.SESSION_EXPIRED) return first
         sessionReady = false
-        if (agentDetailBatchActive && (agentBatchRecoveryUsed || agentBatchRecoveryBlocked)) return first
+        if (agentDetailBatchActive && agentBatchRecoveryUsed) return first
         agentBatchRecoveryUsed = true
-        val recovered = ensureSessionForOperation()
-        if (!recovered && agentDetailBatchActive) agentBatchRecoveryBlocked = true
-        return if (recovered) read() else first
+        val recoveryFailure = agentSessionFailure()
+        return when (recoveryFailure) {
+            null -> read()
+            PhyVlabSyncFailure.CAPTCHA_REQUIRED -> failure(recoveryFailure)
+            else -> first
+        }
+    }
+
+    private suspend fun agentSessionFailure(): PhyVlabSyncFailure? {
+        val failure = sessionFailureForOperation()
+        if (agentDetailBatchActive) agentBatchRecoveryFailure = failure
+        return failure
     }
 
     suspend fun loadSelectedActivityDetail(force: Boolean = false) = accountWork.inAccount { loadSelectedActivityDetailInAccount(force = force) }
@@ -812,22 +844,17 @@ class PhyVlabScreenModel(
         return false
     }
 
-    private suspend fun ensureSessionForOperation(): Boolean {
-        if (sessionReady) return true
-        return when (sessionProtocol.establishSession()) {
-            is PhyVlabSessionResult.Ready -> {
-                sessionReady = true
-                true
-            }
-            PhyVlabSessionResult.AccountRequired,
-            PhyVlabSessionResult.CredentialsRejected,
+    private suspend fun ensureSessionForOperation(): Boolean = sessionFailureForOperation() == null
+
+    private suspend fun sessionFailureForOperation(): PhyVlabSyncFailure? {
+        if (sessionReady) return null
+        val result = sessionProtocol.establishSession()
+        sessionReady = result is PhyVlabSessionResult.Ready
+        return when (result) {
+            is PhyVlabSessionResult.Ready -> null
             PhyVlabSessionResult.CaptchaRequired,
-            PhyVlabSessionResult.CaptchaRejected,
-            is PhyVlabSessionResult.Failed,
-            -> {
-                sessionReady = false
-                false
-            }
+            PhyVlabSessionResult.CaptchaRejected -> PhyVlabSyncFailure.CAPTCHA_REQUIRED
+            else -> PhyVlabSyncFailure.SESSION_EXPIRED
         }
     }
 }
