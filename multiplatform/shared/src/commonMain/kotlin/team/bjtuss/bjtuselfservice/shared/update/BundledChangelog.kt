@@ -42,7 +42,6 @@ internal object BundledChangelog {
                 ChangelogItem("CITEL 折扣提醒", "首页单独提醒未来 48 小时内结束折扣的未完成作业。"),
                 ChangelogItem("切换时区支持", "支持切换到其他时区后正确处理时间。学校的时间都按北京时间换算成真实时刻，再按手机所在时区显示；作业截止、考试、首页日程都换成当地时间，课表格子仍按北京时间的星期和节次排列，只把上课时间换成当地时间。让你在世界各地都能饮水思源。"),
                 ChangelogItem("更新日志", "「应用」页新增入口，可按版本离线查看新增、优化和修复。"),
-                ChangelogItem("物理在线图形验证码", "物理在线手动输入图形验证码支持，会话会尽可能保留直至服务端过期。"),
             )),
             ChangelogSection("优化", listOf(
                 ChangelogItem("远程同步", "改为只上传变化的内容，每台设备只和自己上次的数据比较，同步更省流量。"),
@@ -59,7 +58,6 @@ internal object BundledChangelog {
                 ChangelogItem(null, "修复 Android 导出整门课或文件夹时失败。"),
                 ChangelogItem(null, "修复成绩课程性质筛选按钮在勾选、取消时宽度变化导致位置跳动。"),
                 ChangelogItem(null, "修复更新检查受旧缓存影响而错过新版本。"),
-                ChangelogItem(null, "修复物理实验和物理在线系统无法登录的问题。"),
             )),
         )),
         ChangelogRelease("v1.8.6-KMP", "1.8.6-KMP", listOf(

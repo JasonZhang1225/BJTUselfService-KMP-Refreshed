@@ -9,7 +9,7 @@ MCP 工具、Skill 与本机 CLI 共用的查询参数和返回结构见同目�
 所有示例均为虚构数据，数据库在内存中，重启重置。它不读取 App 的真实缓存、DPAPI 或学校账号。
 预览拥有者鉴权由回环开发服务器处理；此服务器不能用作线上部署入口。
 
-`plugin/` 为本地开发插件。使用目标宿主支持的本地插件导入流程选择该目录后，应能发现 13 个工具。
+`plugin/` 为本地开发插件。使用目标宿主支持的本地插件导入流程选择该目录后，应能发现 13 个工具，包括联网读取作业详情的 `request_assignment_detail` 和读取已上传附件的 `get_assignment_attachment`。
 也可用 JSONL 向 `node plugin/server/stdio.mjs` 输入 `initialize`、`tools/list` 和 `tools/call` 验证。
 默认连接本地虚构预览；仅在需要受控远程调试时，在进程环境配置 `BJTU_REMOTE_SITE_URL`、
 `BJTU_REMOTE_OWNER_TOKEN`、`BJTU_REMOTE_PLATFORM_ACCESS`。凭据不能放入插件包或命令参数。
@@ -37,13 +37,13 @@ Windows 打包：在 `multiplatform/` 用 JDK 21 运行 `gradlew.bat :windowsApp
 
 ## 手机与平板（Android / iOS）
 
-仅在手机 ChatGPT 查询已配对电脑上传的数据时，无需配对手机 App。手机 App 自己需要上传缓存时，登录同一 Site 另生成一份配对信息；基础配对要求模板为 1.8.6-Beta2 或更高（1.8.6-Beta2、1.8.6-KMP 与 2.0.0-KMP 的 App、模板可互通，使用作业详情与附件读取需将 Site 增量更新到 2.0.0-KMP），并使用支持完整配对信息的新客户端。
+仅在手机 ChatGPT 查询已配对电脑上传的数据时，无需配对手机 App。手机 App 自己需要上传缓存时，登录同一 Site 另生成一份配对信息；基础配对要求模板为 1.8.6-Beta2 或更高（1.8.6-Beta2、1.8.6-KMP、2.0.0-KMP 与 2.0.1-Alpha 的 App、模板可互通，使用作业详情与附件读取需将 Site 增量更新到 2.0.0-KMP 或更高，使用设备轮询状态校验需升级到 2.0.1-Alpha），并使用支持完整配对信息的新客户端。
 
 手机不定时上传、不心跳、不轮询任务，只在 App 刷新后上传；即时任务由电脑执行。health 认证/网络失败应报告实际错误，只有确实读到旧版才提示升级。
 
 ## 开发与回归
 
-`node scripts/package-template.mjs <源码目录外的绝对输出路径.tar.gz>` 生成无个人部署身份的包。创建实例保留 DB、MCP、Drizzle 迁移；新实例确认 owner-private 后，用 Sites 工具设置 `OWNER_PRIVATE_BOOTSTRAP=true` 与 secret `SITE_DEVICE_ACCESS`，后者来自本站 get_site 的服务访问令牌。配置后部署，用户首次可信登录固定身份。已有 Site 升级保留已有身份、设备绑定与数据，只按顺序补跑未执行的增量迁移（如从 1.8.6-KMP 升至 2.0.0-KMP 只补跑 `0003_attachments.sql`）。
+`node scripts/package-template.mjs <源码目录外的绝对输出路径.tar.gz>` 生成无个人部署身份的包。创建实例保留 DB、MCP、Drizzle 迁移；新实例确认 owner-private 后，用 Sites 工具设置 `OWNER_PRIVATE_BOOTSTRAP=true` 与 secret `SITE_DEVICE_ACCESS`，后者来自本站 get_site 的服务访问令牌。配置后部署，用户首次可信登录固定身份。已有 Site 升级保留已有身份、设备绑定与数据，只按顺序补跑未执行的增量迁移（如从 2.0.0-KMP 升至 2.0.1-Alpha 只补跑 `0004_device_polling.sql`，从 1.8.6-KMP 升级依次补跑 `0003_attachments.sql` 与 `0004_device_polling.sql`）。
 
 不要以公开 Site 绕过平台访问，不让搭建助手直接写用户安装版存储，不用诊断进程成功代替实际 App 配对证据。对权限和部署配置错误停止自动重试，给出可操作原因。
 

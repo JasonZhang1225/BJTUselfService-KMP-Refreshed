@@ -185,8 +185,9 @@ class SecurityReleaseConfigTest {
     fun remoteSiteTemplateVersionAndGuideStayInSyncWithAppRelease() {
         val version = team.bjtuss.bjtuselfservice.shared.update.AppUpdateChecker.CURRENT_VERSION
         val templateDir = root.resolve("multiplatform/remote-site-template")
-        assertTrue("\"version\": \"$version\"" in templateDir.resolve("package.json").readText())
-        assertTrue("\"version\": \"$version\"" in templateDir.resolve("plugin/plugin.json").readText())
+        listOf("package.json", "plugin/plugin.json").forEach { path ->
+            assertTrue("\"version\": \"$version\"" in templateDir.resolve(path).readText(), path)
+        }
         assertTrue("TEMPLATE_VERSION = \"$version\"" in templateDir.resolve("src/protocol.js").readText())
         val setup = templateDir.resolve("SETUP.md").readText()
         assertTrue("模板 $version" in setup)
