@@ -42,8 +42,8 @@ import team.bjtuss.bjtuselfservice.shared.domain.home.HomeNowSession
 import team.bjtuss.bjtuselfservice.shared.domain.home.pickHomeNowSessions
 import team.bjtuss.bjtuselfservice.shared.domain.time.displaySchoolClockText
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseDetailContent
-import team.bjtuss.bjtuselfservice.shared.feature.course.courseCategoryAccent
-import team.bjtuss.bjtuselfservice.shared.feature.course.courseColorCategory
+import team.bjtuss.bjtuselfservice.shared.presentation.course.courseCategoryAccent
+import team.bjtuss.bjtuselfservice.shared.presentation.course.courseColorCategory
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetBodyScroll

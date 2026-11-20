@@ -1,4 +1,4 @@
-package team.bjtuss.bjtuselfservice.shared.feature.course
+package team.bjtuss.bjtuselfservice.shared.presentation.course
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -7,7 +7,13 @@ import androidx.compose.ui.graphics.luminance
 import team.bjtuss.bjtuselfservice.shared.domain.course.Course
 import team.bjtuss.bjtuselfservice.shared.domain.grade.CourseType
 import team.bjtuss.bjtuselfservice.shared.domain.grade.courseTypeForCourseName
-import team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors
+
+internal data class CourseCategoryColors(
+    val container: Color,
+    val onContainer: Color,
+    /** 描边用色：半透明的 onContainer，浅深色下都能看清。 */
+    val border: Color = onContainer.copy(alpha = 0.55f),
+)
 
 /**
  * 课程配色的唯一来源：按课程性质（必修/限选/任选/体育/未知）与特殊安排（实验/考试）分类，
@@ -71,12 +77,18 @@ private fun rgb(value: Long): Color = Color(0xFF000000 or value)
 
 /** 课程表色块同款底色与文字色，随当前主题深浅切换。 */
 @Composable
-internal fun courseCategoryColors(category: CourseColorCategory): GradeTypeColors {
+internal fun courseCategoryColors(category: CourseColorCategory): CourseCategoryColors {
     val tones = category.tones
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    return if (dark) GradeTypeColors(rgb(tones.darkContainer), rgb(tones.darkContent))
-    else GradeTypeColors(rgb(tones.lightContainer), rgb(tones.lightContent))
+    return if (dark) CourseCategoryColors(rgb(tones.darkContainer), rgb(tones.darkContent))
+    else CourseCategoryColors(rgb(tones.lightContainer), rgb(tones.lightContent))
 }
 
 /** 色条、图标、进行中描边用的强调色。 */
 internal fun courseCategoryAccent(category: CourseColorCategory): Color = rgb(category.tones.accent)
+
+/**
+ * 成绩页的课程性质配色，与课程表、首页、小组件同取 [courseCategoryColors]，不另设色值。
+ */
+@Composable
+internal fun courseTypeColors(type: CourseType): CourseCategoryColors = courseCategoryColors(type.colorCategory())
