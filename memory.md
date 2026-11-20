@@ -1,31 +1,23 @@
 # BJTUselfService 实时工作记忆
 
 > **当前状态（2026-11-20）**
-> - **当前分支**：`feat/citel-batch-cache`，基于已快进至 `e8e44f34` 的本地 `main`（与 `origin/main` 一致）。CITEL 批量缓存已推送至 `bd2e1876` 并触发 CI #155，本分支续做已缓存题目管理、窄窗口作业滚动修复和发布触发调整。
-> - **源码版本**：`2.0.0-KMP` / Build 45。
-> - **本地分支整理**：已删除合入 `main` 的 `chore/docs-cleanup`、`feat/phyvlab-auto-captcha`、`fix/phyvlab-manual-captcha`。原两个物理在线工作树已切换为 detached HEAD，保留原提交和未提交文件。
-> - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（课程回放、macOS/Windows 硬件合成、作业忽略与筛选拆分、全应用设备时区、离线更新日志、`DESIGN.md` / `AppleAlert` / `AppleMenuPickerCard`、物理实验 IP 备用路径、上传文件拖放、本机 CLI 交作业、统一作业详情与远程增量同步等，PR #68–#99）均已移入 `history_full.md`。
+> - **当前分支**：`fix/remote-polling-and-citel-cache`（已合并含 PR #102–#106 的最新代码与修复），远端轮询、CITEL 题面快照与 2.0.1-Alpha 版本升级待验证。
+> - **源码版本**：`2.0.1-Alpha` / Build 46（发布说明草稿 `docs/releases/v2.0.1-KMP.md`；iOS 与桌面安装器数值版本 `2.0.1`；上个正式标签：`v2.0.0-KMP` / Build 45）。
+> - **远端活跃分支**：`main`、`feat/citel-batch-cache`（PR #106）、`fix/remote-polling-and-citel-cache`（PR #108）、`feat/mac-swift`（macOS 原生 SwiftUI 探索）。
+> - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（课程回放、macOS/Windows 硬件合成、作业忽略与筛选拆分、全应用设备时区、离线更新日志、`DESIGN.md` / `AppleAlert` / `AppleMenuPickerCard`、物理实验 IP 备用路径、上传文件拖放、本机 CLI 交作业、统一作业详情与远程增量同步等，PR #68–#99）及架构拆分与账号生命周期收口（PR #102–#105）均已合入或移入 `history_full.md`。
 
 ---
 
-## 进行中：CITEL 题面批量缓存
+## 进行中：远端轮询与 CITEL 题面快照（PR #108，含 2.0.1-Alpha / Build 46 版本更新）
 
-- CITEL 启用后，可从「Agent 和 ChatGPT 插件」进入题面缓存页，按课程和实际提交状态筛选，查看剩余题数并批量下载题面及用例到本机。
-- 复用现有账号缓存与详情下载路径，批次逐题落盘，跳过已有缓存。单题失败可重试，明确登录失败结束当前批次。
-- 脱敏用例覆盖筛选、跳过缓存、部分失败后的重试、重新初始化后的缓存恢复及 Android 原生路由。`:shared:desktopTest` 共 1461 项，0 失败、1 跳过。`:androidApp:assembleDebug`、`:desktopApp:compileKotlin`、`:windowsApp:compileKotlinWindows`、`:shared:compileKotlinIosArm64`、`:shared:compileKotlinIosSimulatorArm64` 均通过。
-- 桌面渲染已目视检查窄屏深色 1.5 倍字体、宽屏浅色和空状态。iOS arm64 签名模拟器构建及 `codesign --verify --deep --strict` 通过，iPhone 17 Pro 与 iPhone Air 模拟器均在安装离线测试包时超时。模拟器阶段未完成 iOS 目视验收。用户随后在 Mac 和 iPhone 验证了 CI #155 的批量缓存功能。
-- 本轮新增同一筛选条件下的已缓存题目列表、缓存时间、逐题更新和确认删除。更新失败保留原题面，删除后题目回到未缓存列表。
-- 本轮仅在 Mac 本地验证。`:shared:desktopTest` 共 1462 项，0 失败、1 跳过。`:desktopApp:packageDmg`、DMG 校验和包内 App 签名验证通过。已在打包 App 的离线测试页验证窄/宽窗口、浅/深色、更新、取消删除、确认删除、重新拉取和计数变化。产物在 `.artifacts/citel-cache-management/BJTUselfServiceKMP-CITEL-cache-macOS-arm64.dmg`。
+- Site 单独持久化任务轮询，MCP 据此决定是否入队和继续等待；`status()` 从全量有效设备计算活跃状态与逐源同步时间，不再受最近 20 条展示上限干扰；补充 MCP/Skill 对“仅查缓存”与“缺失 ≤ 5 MB 附件触发详情补全”的指引。
+- 作业快照可以直接读取同 CITEL 账号的本机题面缓存，绕开通用详情补齐的批次上限与退避。原 Site 增量升级需补跑 `0004_device_polling.sql`。
+- 本分支已合并 PR #106 并升级至 `2.0.1-Alpha` / Build 46，新增 `docs/releases/v2.0.1-KMP.md` 发布说明草稿并同步远程模板与内嵌更新日志。
 
-## 进行中：桌面窄窗口作业返回位置
+## 进行中：CITEL 题面批量缓存与窄窗口作业滚动（PR #106）
 
-- 聚合作业与课程平台作业列表恢复 Navigation 3 保存的滚动位置，筛选、排序和搜索变化仍回到首项。
-- 桌面回归测试用实际列表与 Navigation 3 验证从详情返回保持同一位置、改搜索后回顶。修复前可复现回到第 0 项，修复后两种列表通过。
-
-## 进行中：发布触发调整
-
-- `KMP package` 只自动响应 `debug-*` 标签。GitHub 手动发 Release 与创建正式标签可单独执行。CI 正式发版需要从正式标签显式运行 `publish_release=true`，发布成功后才调用 Gitee 镜像。手动镜像入口保留。
-- 发布工作流回归断言、`actionlint`（排除原有 runner 标签和两条 ShellCheck 告警）及镜像脚本 16 项单测通过。整分支 `:shared:desktopTest :desktopApp:packageDmg` 通过，共 1463 项、0 失败、1 跳过。未创建测试 Release。
+- CITEL 启用后，可从「Agent 和 ChatGPT 插件」进入题面缓存页，按课程和实际提交状态筛选、批量拉取缺失题面，并对已缓存题目查看时间、逐题更新或确认删除；同步期间课程暂缺时保留已选课程并禁用误拉取，批量结果展示拉取范围标签。
+- 聚合作业与课程平台作业列表恢复 Navigation 3 保存的滚动位置，补充 `untilEpoch` 筛选切换回顶与回归测试；`KMP package` 仅自动响应 `debug-*` 标签，正式发版需手动指定 `publish_release=true`。
 
 ## 进行中 / 待处理：物理在线相关检查
 

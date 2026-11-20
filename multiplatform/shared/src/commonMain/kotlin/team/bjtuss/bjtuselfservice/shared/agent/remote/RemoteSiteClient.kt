@@ -55,7 +55,7 @@ interface RemoteSiteClient {
     suspend fun deleteAttachment(key: String): RemoteCall<Unit> = RemoteCall.Failure(RemoteFailureKind.CLIENT_ERROR, "unsupported")
     suspend fun putScopes(scopes: List<String>): RemoteCall<Unit>
     suspend fun putScopes(scopes: List<String>, scopesRevision: Long): RemoteCall<Unit> = putScopes(scopes)
-    suspend fun poll(): RemoteCall<RemotePollResponse>
+    suspend fun poll(pollIntervalSeconds: Int? = null): RemoteCall<RemotePollResponse>
     suspend fun renewLease(requestId: String, leaseId: String, leaseSeconds: Int): RemoteCall<Unit>
     suspend fun submitResult(requestId: String, result: RemoteTaskResult): RemoteCall<RemoteTaskResultAck>
 }
@@ -107,8 +107,9 @@ class KtorRemoteSiteClient(
     override suspend fun putScopes(scopes: List<String>, scopesRevision: Long): RemoteCall<Unit> =
         call(HttpMethod.Put, "/api/v1/device/scopes", RemoteScopesUpdate(scopes, scopesRevision), RemoteScopesUpdate.serializer(), null)
 
-    override suspend fun poll() =
-        call(HttpMethod.Post, "/api/v1/device/poll", "{}", String.serializer(), RemotePollResponse.serializer(), raw = true)
+    override suspend fun poll(pollIntervalSeconds: Int?) =
+        call(HttpMethod.Post, "/api/v1/device/poll", pollIntervalSeconds?.let { """{"pollIntervalSeconds":$it}""" } ?: "{}",
+            String.serializer(), RemotePollResponse.serializer(), raw = true)
 
     override suspend fun renewLease(requestId: String, leaseId: String, leaseSeconds: Int): RemoteCall<Unit> =
         call(HttpMethod.Post, "/api/v1/device/tasks/${pathId(requestId)}/renew", RemoteLeaseRenewal(leaseId, leaseSeconds),

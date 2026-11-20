@@ -192,9 +192,10 @@ class SecurityReleaseConfigTest {
         assertTrue("模板 $version" in setup)
         assertTrue("13 个工具" in setup)
         assertTrue("0003_attachments.sql" in setup)
+        assertTrue("0004_device_polling.sql" in setup)
         val readme = templateDir.resolve("README.md").readText()
         assertTrue("模板版本 $version" in readme)
-        assertTrue("0003_attachments.sql" in readme)
+        assertTrue("当前最新为 `0004`" in readme)
     }
 
     @Test

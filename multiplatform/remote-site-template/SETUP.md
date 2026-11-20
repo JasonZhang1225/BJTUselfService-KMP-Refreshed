@@ -1,4 +1,4 @@
-# 私人 Site 和插件：一次交付流程（模板 2.0.0-KMP）
+# 私人 Site 和插件：一次交付流程（模板 2.0.1-Alpha）
 
 本文给搭建助手执行，支持**新建私人 Site**与**从旧版本增量更新已有 Site**。每个用户复用同一模板，但有自己的 Site、DB、canonical 插件和设备授权。搭建与升级中不要求用户提前登录 Site、取身份 ID、取配对码或给助手本机存储权限。用户交互集中在最后交付 Site、插件安装/连接入口及操作说明。
 
@@ -20,14 +20,15 @@
 
 当用户指定了已有 Site，或按上述宽松条件在 Sites 列表中匹配到名字相同/相近、模板结构相似的已有 Site（如从 `0.x` / `1.8.6-Beta` / `1.8.6-KMP` 等任意旧模板升级至 `2.0.0-KMP`）时，严格执行以下增量步骤，**禁止新建重复站点、销毁重建数据库或更换实例身份**：
 
-1. **打开已有源码并增量覆盖模板文件**：按 Sites 源码流程拉取/打开用户原有 Site 源码，**完整保留** `.openai/hosting.json` 中的原有 `project_id`、`d1: "DB"` 与 `capabilities: ["mcp"]`（以及本地已有的运行时环境变量/机密，绝不覆盖）；用 `2.0.0-KMP` 模板覆盖以下全部模板文件与目录：`src/`、`fixtures/`、`migrations/`、`drizzle/`、`plugin/`、`scripts/`、`test/`、`package.json`、`README.md`、`SETUP.md`、`agent-query-contract.md`、`.gitignore`、`.env.example`（其中 `fixtures/` 是测试与契约校验必需的共享样例，必须一并同步，否则新增测试会因缺少样例失败）。
+1. **打开已有源码并增量覆盖模板文件**：按 Sites 源码流程拉取/打开用户原有 Site 源码，**完整保留** `.openai/hosting.json` 中的原有 `project_id`、`d1: "DB"` 与 `capabilities: ["mcp"]`（以及本地已有的运行时环境变量/机密，绝不覆盖）；用 `2.0.1-Alpha` 模板覆盖以下全部模板文件与目录：`src/`、`fixtures/`、`migrations/`、`drizzle/`、`plugin/`、`scripts/`、`test/`、`package.json`、`README.md`、`SETUP.md`、`agent-query-contract.md`、`.gitignore`、`.env.example`（其中 `fixtures/` 是测试与契约校验必需的共享样例，必须一并同步，否则新增测试会因缺少样例失败）。
 2. **保留原有拥有者与有效机密**：保留 DB 中已固定的 `OWNER_USER_ID`（如已设置不得替换或覆写），并保留已配置的 `OWNER_PRIVATE_BOOTSTRAP` 与 `SITE_DEVICE_ACCESS`；仅当缺少其中一项时按第 2 节补齐。不要无故轮换已有 `SITE_DEVICE_ACCESS`，以免已配对设备立即断连。
 3. **只按顺序补跑未执行的 DB 增量迁移**：先在原 D1 数据库检查当前迁移版本（`SELECT value FROM template_meta WHERE key = 'schema_migration'`）与现有表结构，再严格按序号**仅执行尚未落库的迁移文件**（`migrations/` 与 `drizzle/` 内容对应；构建产物保留 `dist/.openai/drizzle/`）：
    - `0001_init.sql`：基础表（`template_meta`、`pairing_codes`、`devices`、`snapshots`、`tasks`）
    - `0002_multi_device.sql`：多设备支持（`devices.device_kind` 列）
    - `0003_attachments.sql`：作业附件与分块表（`attachments`、`attachment_chunks`、`attachments_lookup` 索引）
-   - 例：当前为 `0002`（`1.8.6-KMP`）升级至 `2.0.0-KMP`，**只需补跑 `0003_attachments.sql`**；当前为 `0001` 则依次补跑 `0002_multi_device.sql` 和 `0003_attachments.sql`。确认 `template_meta.schema_migration` 已更新为 `'0003'`。切勿删除、重建或清空已有表，原有 `devices`、`snapshots`、`tasks` 与设备令牌必须完整保留。
-4. **验证、部署原 Site 并同步升级同一个 canonical 插件**：按第 3 节运行 `npm test`、`npm run build` 并部署回原 Site；验证 `GET /api/v1/health` 返回 `releaseVersion: "2.0.0-KMP"`（`templateVersion: "2.0.0"`）。随后按第 4 节打开同一个 canonical `plugin_id`，保留原 App 绑定，增量更新 `plugin/skills/bjtuss-remote/SKILL.md` 与插件版本并核对 `/mcp` 的 13 个工具，不新建第二个插件。
+   - `0004_device_polling.sql`：独立记录设备最近轮询时间和轮询周期。
+   - 例：当前为 `0003` 时只需补跑 `0004_device_polling.sql`；当前为 `0002` 时先跑 `0003_attachments.sql`，再跑 `0004_device_polling.sql`。确认 `template_meta.schema_migration` 已更新为 `'0004'`。原有设备、快照、任务和令牌保留。
+4. **验证、部署原 Site 并同步升级同一个 canonical 插件**：按第 3 节运行 `npm test`、`npm run build` 并部署回原 Site；验证 `GET /api/v1/health` 返回 `releaseVersion: "2.0.1-Alpha"`（`templateVersion: "2.0.1"`）。随后按第 4 节打开同一个 canonical `plugin_id`，保留原 App 绑定，增量更新 `plugin/skills/bjtuss-remote/SKILL.md` 与插件版本并核对 `/mcp` 的 13 个工具，不新建第二个插件。
 5. **无需重新配对已绑设备**：增量升级不会失效既有设备令牌与快照；告知用户原有已配对的电脑和手机可继续直接同步，只有新加设备时才需到 Site 重新生成配对信息。
 
 ## 2. 发布前配置，两项都由助手完成
