@@ -19,6 +19,7 @@ import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import java.io.File
 import javax.swing.SwingUtilities
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
@@ -82,6 +84,46 @@ class IndependentAssignmentScrollToTopTest {
             }
         }
     }
+
+    @Test fun citelBatchActionStaysVisibleWhileDownloadingAndClearsTheScrollButton() =
+        SwingUtilities.invokeAndWait {
+            for (layout in listOf(Layout(390, 844, false, 1f), Layout(640, 360, true, 1.6f))) {
+                Fixture("citel-cache", 60, layout).use { fixture ->
+                    fixture.settle()
+                    val action = assertNotNull(fixture.nodeWithText("一键拉取未缓存题面"))
+                    assertNull(fixture.button())
+                    fixture.scene.sendPointerEvent(PointerEventType.Press, action.boundsInRoot.center)
+                    fixture.scene.sendPointerEvent(PointerEventType.Release, action.boundsInRoot.center)
+                    fixture.scroll(10_000f)
+                    fixture.settle(120)
+
+                    val progressText = assertNotNull(fixture.nodeWithText("正在拉取题面…"))
+                    val progress = assertNotNull(generateSequence(progressText) { it.parent }.firstOrNull {
+                        it.config.getOrNull(SemanticsProperties.Role) == Role.Button
+                    })
+                    assertTrue(SemanticsProperties.Disabled in progress.config)
+                    val button = assertNotNull(fixture.button())
+                    val lastTask = assertNotNull(fixture.nodeWithText("课后练习 60"))
+                    assertTrue(lastTask.boundsInRoot.bottom <= button.boundsInRoot.top)
+                    assertTrue(button.boundsInRoot.bottom <= progress.boundsInRoot.top)
+                    assertTrue(progress.boundsInRoot.bottom <= layout.height - 84f - 10f)
+                    fixture.capture("citel-cache-${layout.width}x${layout.height}-busy")
+
+                    fixture.scene.sendPointerEvent(PointerEventType.Press, button.boundsInRoot.center)
+                    fixture.scene.sendPointerEvent(PointerEventType.Release, button.boundsInRoot.center)
+                    fixture.settle(180)
+                    assertFalse(fixture.canScrollBackward())
+                    assertNull(fixture.button())
+                    assertNotNull(fixture.nodeWithText("正在拉取题面…"))
+
+                    fixture.finishCitelBatch()
+                    fixture.settle()
+                    assertNull(fixture.nodeWithText("正在拉取题面…"))
+                    assertNull(fixture.nodeWithText("一键拉取未缓存题面"))
+                    assertEquals(60, fixture.cachedCitelCount())
+                }
+            }
+        }
 
     @Test fun compactHomeworkAndAggregateRetainPositionWhenReturningFromDetails() = SwingUtilities.invokeAndWait {
         for (source in listOf("homework", "aggregate")) {
@@ -151,7 +193,7 @@ class IndependentAssignmentScrollToTopTest {
         }
         private val aggregatedHomework = aggregateAssignments(homework, emptyList(), emptyList())
         private val activities = (1..count).map { completionFixturePhysical().copy(id = it, title = "实验准备 $it") }
-        private val tasks = (1..count).map { completionFixtureCitel().copy(id = it, title = "课后练习 $it") }
+        private val tasks = (1..count).map { completionFixtureCitel().copy(id = it, title = "课后练习 $it", programming = source == "citel-cache") }
         private val homeworkModel = HomeworkScreenModel(DefaultHomeworkRepository("scroll-fixture",
             CacheStoreHomeworkLocalDataSource(cache), SchoolHomeworkRemoteDataSource(NoNetwork)))
         private val course = PhyVlabCourse(10, "示例物理课程", "示例", 0, "https://phyvlab.bjtu.edu.cn/course/view.php?id=10")
@@ -166,8 +208,18 @@ class IndependentAssignmentScrollToTopTest {
                 "https://phyvlab.bjtu.edu.cn/login/index.php", body = "<a href='/login/logout.php'>退出登录</a>".encodeToByteArray())
             override fun clearSession() = Unit
         }))
+        private val finishBatch = CompletableDeferred<Unit>()
         private val citelModel = CitelModel("scroll-fixture", cache, null, object : CitelDataSource {
-            override suspend fun fetch(credentials: Credentials): List<CitelTask> = error("No network request expected")
+            override suspend fun fetch(credentials: Credentials): List<CitelTask> {
+                check(source == "citel-cache")
+                return tasks
+            }
+
+            override suspend fun problem(credentials: Credentials, task: CitelTask, withResults: Boolean): CitelProblem {
+                check(source == "citel-cache")
+                finishBatch.await()
+                return CitelProblem(task.title, "", "<p>测试题面</p>")
+            }
         })
         private var controller: NativeScrollController? = null
         private var frame = 0L
@@ -179,7 +231,8 @@ class IndependentAssignmentScrollToTopTest {
             runBlocking {
                 homeworkModel.initialize(refreshFromNetwork = false)
                 if (source == "phyvlab") phyModel.initialize()
-                citelModel.initialize()
+                if (source == "citel-cache") citelModel.configure("scroll-fixture", "fixture", remember = false, enabled = true)
+                else citelModel.initialize()
             }
             val density = Density(1f, layout.scale)
             scene = ImageComposeScene(layout.width, layout.height, density = density, coroutineContext = Dispatchers.Unconfined) {
@@ -206,6 +259,10 @@ class IndependentAssignmentScrollToTopTest {
             )
         }
 
+        fun finishCitelBatch() { finishBatch.complete(Unit) }
+
+        fun cachedCitelCount() = citelModel.state.value.problems.size
+
         fun goBack() { routes.removeAt(routes.lastIndex) }
 
         fun setHomeworkDeadlineScope(hideExpired: Boolean, untilEpoch: Long?) {
@@ -227,6 +284,7 @@ class IndependentAssignmentScrollToTopTest {
                 )
                 "phyvlab" -> PhyVlabWorkspace(phyModel, showDetailSheet = false)
                 "citel" -> CitelWorkspace(citelModel, holdNetwork = true, onOpen = {}, showDetailSheet = false)
+                "citel-cache" -> CitelBatchCacheScreen(citelModel, Modifier.fillMaxSize())
             }
         }
 

@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.citel
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -7,17 +9,22 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -32,11 +39,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AppleSegmentedControl
+import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentListWithScrollToTop
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleAlertAction
@@ -108,169 +117,172 @@ internal fun CitelBatchCacheScreen(
     val missingByCourse = remember(missing) { missing.groupBy { it.courseId } }
     val cachedByCourse = remember(cached) { cached.groupBy { it.courseId } }
     val canManageCache = !busy && activeTaskId == null && pendingDeletion == null && !state.refreshing
+    val showBatchAction = busy || (state.enabled && courseValid && missing.isNotEmpty())
+    val bottomClearance = LocalBottomBarClearance.current
+
+    fun startBatchCache() {
+        if (busy || activeTaskId != null || pendingDeletion != null) return
+        val batchScopeLabel = "$selectedCourseLabel · ${submission.label}"
+        busy = true
+        result = null
+        resultScopeLabel = null
+        actionFeedback = null
+        scope.launch {
+            try {
+                val next = model.cacheMissingProblems(courseId, submission)
+                resultScopeLabel = batchScopeLabel
+                result = next
+            } finally {
+                busy = false
+            }
+        }
+    }
 
     LaunchedEffect(courseKey, submission) { listState.scrollToItem(0) }
 
     BoxWithConstraints(modifier) {
         val horizontalPadding = if (maxWidth >= 760.dp) 24.dp else 16.dp
-        TopScrollLazyColumn(
+        val batchAction: @Composable (Modifier) -> Unit = { actionModifier ->
+            CitelBatchCacheAction(
+                busy = busy,
+                enabled = canManageCache && !holdNetwork,
+                modifier = actionModifier
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                    .padding(horizontal = horizontalPadding),
+                onClick = ::startBatchCache,
+            )
+        }
+        AssignmentListWithScrollToTop(
             state = listState,
-            modifier = Modifier.fillMaxSize().desktopTouchScroll(listState),
-            contentPadding = PaddingValues(
-                start = horizontalPadding,
-                end = horizontalPadding,
-                top = 16.dp + LocalTopBarClearance.current,
-                bottom = 16.dp + LocalBottomBarClearance.current,
-            ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            if (!state.enabled) {
-                item { Text("请先在设置中启用 CITEL。") }
-            } else if (state.tasks.isEmpty() && (state.refreshing || holdNetwork)) {
-                item {
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+            bottomAction = batchAction.takeIf { showBatchAction },
+        ) { scrollModifier, overlayClearance ->
+            TopScrollLazyColumn(
+                state = listState,
+                modifier = scrollModifier.desktopTouchScroll(listState),
+                contentPadding = PaddingValues(
+                    start = horizontalPadding,
+                    end = horizontalPadding,
+                    top = 16.dp + LocalTopBarClearance.current,
+                    bottom = 16.dp + bottomClearance + overlayClearance,
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (!state.enabled) {
+                    item { Text("请先在设置中启用 CITEL。") }
+                } else if (state.tasks.isEmpty() && (state.refreshing || holdNetwork)) {
+                    item {
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
                     }
-                }
-            } else if (courses.isEmpty()) {
-                item {
-                    Text(when {
-                        state.failed -> state.message ?: "CITEL 作业列表获取失败，请刷新重试。"
-                        state.lastSync == null -> "尚未同步 CITEL 作业，请使用顶栏刷新。"
-                        else -> "当前未缓存 0 题，暂无可缓存的 CITEL 编程题目。"
-                    })
-                }
-            } else {
-                item {
-                    val missingCourseOption = if (!courseValid && courseId != null) {
-                        listOf(AppleMenuOption(courseId.toString(), "$selectedCourseLabel（当前未在列表）"))
-                    } else emptyList()
-                    AppleMenuPickerCard(
-                        label = "课程 · 共 ${courses.size} 门",
-                        value = if (courseValid) selectedCourseLabel else "$selectedCourseLabel（当前未在列表）",
-                        options = listOf(AppleMenuOption("all", "全部课程")) +
-                            missingCourseOption +
-                            courses.map { (id, name) -> AppleMenuOption(id.toString(), name) },
-                        selectedKey = if (courseKey == "all") "all" else (courseId?.toString() ?: courseKey),
-                        onSelect = { key ->
-                            courseKey = key
-                            selectedCourseName = key.toIntOrNull()?.let { courses[it] }
-                        },
-                        accessibilityName = "筛选课程",
-                    )
-                }
-                item {
-                    AppleSegmentedControl(
-                        options = CitelProblemSubmission.entries.map { it.label },
-                        selectedIndex = submissionIndex,
-                        onSelect = { submissionIndex = it },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("当前筛选未缓存 ${missing.size} 题",
-                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                            style = MaterialTheme.typography.titleMedium)
-                        if (!courseValid) {
-                            Text("当前所选课程暂未出现在最新作业列表中，已保留选择；可等待同步恢复或切换其他课程。",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        if (state.failed) {
-                            Text(state.message ?: "CITEL 作业列表同步失败。",
-                                color = MaterialTheme.colorScheme.error)
-                        }
-                        Button(
-                            enabled = canManageCache && !holdNetwork && courseValid && missing.isNotEmpty(),
-                            onClick = {
-                                if (busy || activeTaskId != null || pendingDeletion != null || !courseValid) return@Button
-                                val batchScopeLabel = "$selectedCourseLabel · ${submission.label}"
-                                busy = true
-                                result = null
-                                resultScopeLabel = null
-                                actionFeedback = null
-                                scope.launch {
-                                    try {
-                                        val next = model.cacheMissingProblems(courseId, submission)
-                                        resultScopeLabel = batchScopeLabel
-                                        result = next
-                                    } finally {
-                                        busy = false
-                                    }
-                                }
+                } else if (courses.isEmpty()) {
+                    item {
+                        Text(when {
+                            state.failed -> state.message ?: "CITEL 作业列表获取失败，请刷新重试。"
+                            state.lastSync == null -> "尚未同步 CITEL 作业，请使用顶栏刷新。"
+                            else -> "当前未缓存 0 题，暂无可缓存的 CITEL 编程题目。"
+                        })
+                    }
+                } else {
+                    item {
+                        val missingCourseOption = if (!courseValid && courseId != null) {
+                            listOf(AppleMenuOption(courseId.toString(), "$selectedCourseLabel（当前未在列表）"))
+                        } else emptyList()
+                        AppleMenuPickerCard(
+                            label = "课程 · 共 ${courses.size} 门",
+                            value = if (courseValid) selectedCourseLabel else "$selectedCourseLabel（当前未在列表）",
+                            options = listOf(AppleMenuOption("all", "全部课程")) +
+                                missingCourseOption +
+                                courses.map { (id, name) -> AppleMenuOption(id.toString(), name) },
+                            selectedKey = if (courseKey == "all") "all" else (courseId?.toString() ?: courseKey),
+                            onSelect = { key ->
+                                courseKey = key
+                                selectedCourseName = key.toIntOrNull()?.let { courses[it] }
                             },
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (busy) CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Text(if (busy) "正在拉取题面…" else "一键拉取未缓存题面")
+                            accessibilityName = "筛选课程",
+                        )
+                    }
+                    item {
+                        AppleSegmentedControl(
+                            options = CitelProblemSubmission.entries.map { it.label },
+                            selectedIndex = submissionIndex,
+                            onSelect = { submissionIndex = it },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("当前筛选未缓存 ${missing.size} 题",
+                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                                style = MaterialTheme.typography.titleMedium)
+                            if (!courseValid) {
+                                Text("当前所选课程暂未出现在最新作业列表中，已保留选择；可等待同步恢复或切换其他课程。",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (state.failed) {
+                                Text(state.message ?: "CITEL 作业列表同步失败。",
+                                    color = MaterialTheme.colorScheme.error)
+                            }
+                            result?.let {
+                                if (it.saved > 0 || it.failed > 0) {
+                                    val scopePrefix = resultScopeLabel?.let { label -> "$label：" }.orEmpty()
+                                    Text("${scopePrefix}已缓存 ${it.saved} 题，失败 ${it.failed} 题。")
+                                }
+                                it.message?.let { message ->
+                                    Text(message, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            if (courseValid && missing.isEmpty()) {
+                                Text("当前筛选没有需要拉取的题目。",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        result?.let {
-                            if (it.saved > 0 || it.failed > 0) {
-                                val scopePrefix = resultScopeLabel?.let { label -> "$label：" }.orEmpty()
-                                Text("${scopePrefix}已缓存 ${it.saved} 题，失败 ${it.failed} 题。")
+                    }
+                    missingByCourse.forEach { (id, tasks) ->
+                        item(key = "missing-course-$id") {
+                            Text("${courses[id].orEmpty()} · 未缓存 ${tasks.size} 题",
+                                style = MaterialTheme.typography.titleSmall)
+                        }
+                        items(tasks, key = { it.id }) { task ->
+                            CitelCacheTaskCard(task) {
+                                CitelCacheActionMessage(task, actionFeedback)
                             }
-                            it.message?.let { message ->
-                                Text(message, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    item(key = "cached-header") {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("当前筛选已缓存 ${cached.size} 题", style = MaterialTheme.typography.titleMedium)
+                            if (cached.isEmpty()) {
+                                Text("当前筛选没有已缓存的题目。", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
-                        if (courseValid && missing.isEmpty()) {
-                            Text("当前筛选没有需要拉取的题目。",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    cachedByCourse.forEach { (id, tasks) ->
+                        item(key = "cached-course-$id") {
+                            Text("${courses[id].orEmpty()} · 已缓存 ${tasks.size} 题",
+                                style = MaterialTheme.typography.titleSmall)
                         }
-                    }
-                }
-                missingByCourse.forEach { (id, tasks) ->
-                    item(key = "missing-course-$id") {
-                        Text("${courses[id].orEmpty()} · 未缓存 ${tasks.size} 题",
-                            style = MaterialTheme.typography.titleSmall)
-                    }
-                    items(tasks, key = { it.id }) { task ->
-                        CitelCacheTaskCard(task) {
-                            CitelCacheActionMessage(task, actionFeedback)
-                        }
-                    }
-                }
-                item(key = "cached-header") {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("当前筛选已缓存 ${cached.size} 题", style = MaterialTheme.typography.titleMedium)
-                        if (cached.isEmpty()) {
-                            Text("当前筛选没有已缓存的题目。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                cachedByCourse.forEach { (id, tasks) ->
-                    item(key = "cached-course-$id") {
-                        Text("${courses[id].orEmpty()} · 已缓存 ${tasks.size} 题",
-                            style = MaterialTheme.typography.titleSmall)
-                    }
-                    items(tasks, key = { it.id }) { task ->
-                        val entry = problems.getValue(task.id)
-                        CitelCacheTaskCard(task) {
-                            Text("缓存时间 ${citelDateText(entry.fetchedAt)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            CitelCacheActionMessage(task, actionFeedback)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TextButton(
-                                    enabled = canManageCache && !holdNetwork,
-                                    onClick = {
-                                        runCacheAction(task.id, "题面缓存已更新。") { model.updateCachedProblem(entry) }
-                                    },
-                                ) { Text(if (activeTaskId == task.id) "正在处理…" else "更新") }
-                                TextButton(
-                                    enabled = canManageCache,
-                                    onClick = { pendingDeletion = task to entry },
-                                ) {
-                                    Text("删除", color = if (canManageCache) MaterialTheme.colorScheme.error
-                                        else MaterialTheme.colorScheme.onSurfaceVariant)
+                        items(tasks, key = { it.id }) { task ->
+                            val entry = problems.getValue(task.id)
+                            CitelCacheTaskCard(task) {
+                                Text("缓存时间 ${citelDateText(entry.fetchedAt)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                CitelCacheActionMessage(task, actionFeedback)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(
+                                        enabled = canManageCache && !holdNetwork,
+                                        onClick = {
+                                            runCacheAction(task.id, "题面缓存已更新。") { model.updateCachedProblem(entry) }
+                                        },
+                                    ) { Text(if (activeTaskId == task.id) "正在处理…" else "更新") }
+                                    TextButton(
+                                        enabled = canManageCache,
+                                        onClick = { pendingDeletion = task to entry },
+                                    ) {
+                                        Text("删除", color = if (canManageCache) MaterialTheme.colorScheme.error
+                                            else MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
                                 }
                             }
                         }
@@ -293,6 +305,47 @@ internal fun CitelBatchCacheScreen(
             ),
             onDismissRequest = { pendingDeletion = null },
         )
+    }
+}
+
+@Composable
+private fun CitelBatchCacheAction(
+    busy: Boolean,
+    enabled: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(percent = 50),
+        color = colorScheme.surfaceContainerHigh,
+        border = BorderStroke(0.5.dp, colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        shadowElevation = 8.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .heightIn(min = 48.dp)
+                .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+                .semantics { liveRegion = LiveRegionMode.Polite }
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val color = if (enabled) colorScheme.primary else colorScheme.onSurfaceVariant
+            if (busy) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = color,
+                )
+            }
+            Text(
+                if (busy) "正在拉取题面…" else "一键拉取未缓存题面",
+                style = MaterialTheme.typography.labelLarge,
+                color = color,
+            )
+        }
     }
 }
 
