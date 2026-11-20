@@ -8,21 +8,44 @@ internal class RefreshSessionProbe(private val probeSession: (suspend () -> Bool
     private val lock = AccountMutationLock()
     private var active: Check? = null
 
-    suspend fun <T> use(block: suspend ((suspend () -> Boolean)?) -> T): T {
-        val probe = probeSession ?: return block(null)
+    interface Lease {
+        val verify: (suspend () -> Boolean)?
+        fun release()
+    }
+
+    fun acquire(): Lease {
+        val probe = probeSession ?: return EmptyLease
         val check = lock.withLock {
             val current = active ?: Check(probe).also { active = it }
             current.users++
             current
         }
-        try {
-            return block(check::verify)
-        } finally {
-            lock.withLock {
-                check.users--
-                if (check.users == 0) active = null
+        return object : Lease {
+            private var released = false
+            override val verify: (suspend () -> Boolean) = check::verify
+            override fun release() {
+                lock.withLock {
+                    if (released) return@withLock
+                    released = true
+                    check.users--
+                    if (check.users == 0 && active === check) active = null
+                }
             }
         }
+    }
+
+    suspend fun <T> use(block: suspend ((suspend () -> Boolean)?) -> T): T {
+        val lease = acquire()
+        return try {
+            block(lease.verify)
+        } finally {
+            lease.release()
+        }
+    }
+
+    private object EmptyLease : Lease {
+        override val verify: (suspend () -> Boolean)? = null
+        override fun release() = Unit
     }
 
     private class Check(private val probe: suspend () -> Boolean) {

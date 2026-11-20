@@ -24,39 +24,50 @@ internal class ExperimentRefresh(
     }
 
     /** Returns whether the caller joined an existing request. */
-    suspend fun run(onlyIfUnsynced: Boolean = false): Boolean = coroutineScope {
-        val (completion, joined) = lock.withLock {
-            val active = pending
-            if (active != null && !active.completion.isCompleted) {
-                if (!onlyIfUnsynced) active.onlyIfUnsynced = false
-                active.completion to true
-            } else {
-                val next = Request(onlyIfUnsynced)
-                next.completion = (scope ?: this).async(start = CoroutineStart.LAZY) { execute(next) }
-                pending = next
-                next.completion to false
-            }
+    suspend fun run(onlyIfUnsynced: Boolean = false): Boolean {
+        val sharedScope = scope ?: return false.also {
+            execute(Request(onlyIfUnsynced), shared = false)
         }
-        completion.await()
-        joined
+        return coroutineScope {
+            val (completion, joined) = lock.withLock {
+                val active = pending
+                if (active != null && !active.completion.isCompleted) {
+                    if (!onlyIfUnsynced) active.onlyIfUnsynced = false
+                    active.completion to true
+                } else {
+                    val next = Request(onlyIfUnsynced)
+                    next.completion = sharedScope.async(start = CoroutineStart.LAZY) { execute(next, shared = true) }
+                    pending = next
+                    next.completion to false
+                }
+            }
+            completion.await()
+            joined
+        }
     }
 
-    private suspend fun execute(request: Request) = operationMutex.withLock {
-        val skip = lock.withLock {
-            if (request.onlyIfUnsynced && isUpToDate()) {
-                // A manual refresh arriving after this decision starts a new request.
-                pending = null
-                true
-            } else {
-                false
+    private suspend fun execute(request: Request, shared: Boolean) = operationMutex.withLock {
+        val skip = if (shared) {
+            lock.withLock {
+                if (request.onlyIfUnsynced && isUpToDate()) {
+                    // A manual refresh arriving after this decision starts a new request.
+                    if (pending === request) pending = null
+                    true
+                } else {
+                    false
+                }
             }
+        } else {
+            request.onlyIfUnsynced && isUpToDate()
         }
         if (!skip) {
             try {
                 fetch()
             } finally {
-                // Retire the result before an account settings change can acquire the lock.
-                lock.withLock { pending = null }
+                if (shared) {
+                    // Retire the result before an account settings change can acquire the lock.
+                    lock.withLock { if (pending === request) pending = null }
+                }
             }
         }
     }

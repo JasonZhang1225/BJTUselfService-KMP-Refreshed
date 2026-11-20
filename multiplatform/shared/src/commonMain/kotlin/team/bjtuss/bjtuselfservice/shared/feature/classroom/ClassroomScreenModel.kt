@@ -65,6 +65,8 @@ class ClassroomScreenModel(
 
     /** 会话内各教学楼最近一次成功快照，用于失败时保留旧数据。 */
     private val lastSuccessByBuilding = mutableMapOf<String, ClassroomBuildingInfo>()
+    private val nextRequestSeqByBuilding = mutableMapOf<String, Long>()
+    private val appliedRequestSeqByBuilding = mutableMapOf<String, Long>()
     private val stateLock = AccountMutationLock()
 
     /** 选择教学楼并触发加载（若该楼从未成功加载过）。 */
@@ -150,13 +152,19 @@ class ClassroomScreenModel(
     }
 
     private suspend fun fetch(building: String) {
-        stateLock.withLock {
+        val requestSeq = stateLock.withLock {
+            val seq = (nextRequestSeqByBuilding[building] ?: 0L) + 1L
+            nextRequestSeqByBuilding[building] = seq
             if (mutableState.value.selectedBuilding == building) {
                 updateState { it.copy(buildingState = ClassroomBuildingState.Loading) }
             }
+            seq
         }
         val result = repository.fetchBuildingInfo(building)
         stateLock.withLock {
+            val applied = appliedRequestSeqByBuilding[building] ?: 0L
+            if (requestSeq < applied) return@withLock
+            appliedRequestSeqByBuilding[building] = requestSeq
             // 若在请求期间用户切到了别的楼，只更新该楼的缓存。
             when (result) {
                 is ClassroomFetchResult.Success -> {

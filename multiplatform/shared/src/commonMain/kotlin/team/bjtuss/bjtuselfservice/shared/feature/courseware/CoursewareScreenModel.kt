@@ -14,6 +14,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -115,6 +116,7 @@ class CoursewareScreenModel(
     private val prefetchMutex = Mutex()
     private val freshCourseIds = mutableSetOf<Int>()
     private var initialized = false
+    private var catalogSessionExpired = false
     private var navigationGeneration = 0L
 
     private class Refresh(val firstLoad: Boolean, var session: SessionRefreshCoordinator?) {
@@ -131,23 +133,41 @@ class CoursewareScreenModel(
     private suspend fun requestRefresh(
         firstLoad: Boolean = false,
         session: SessionRefreshCoordinator? = null,
-    ) = coroutineScope {
-        val completion = refreshLock.withLock {
-            if (firstLoad) {
-                if (initialized) return@withLock null
-                initialized = true
+    ) {
+        var checked = false
+        while (true) {
+            val restarted = coroutineScope {
+                val completion = refreshLock.withLock {
+                    if (!checked) {
+                        checked = true
+                        if (firstLoad) {
+                            if (initialized) return@withLock null
+                            initialized = true
+                        }
+                    }
+                    val active = pendingRefresh
+                    if (active != null && !active.completion.isCompleted) {
+                        if (active.session == null) active.session = session
+                        return@withLock active.completion
+                    }
+                    val next = Refresh(firstLoad, session)
+                    next.completion = (refreshScope ?: this).async(start = CoroutineStart.LAZY) { runRefresh(next) }
+                    pendingRefresh = next
+                    next.completion
+                } ?: return@coroutineScope false
+                try {
+                    completion.await()
+                    false
+                } catch (error: CancellationException) {
+                    if (refreshScope != null || !currentCoroutineContext().isActive) throw error
+                    refreshLock.withLock {
+                        if (pendingRefresh?.completion === completion) pendingRefresh = null
+                    }
+                    true
+                }
             }
-            val active = pendingRefresh
-            if (active != null && !active.completion.isCompleted) {
-                if (active.session == null) active.session = session
-                return@withLock active.completion
-            }
-            val next = Refresh(firstLoad, session)
-            next.completion = (refreshScope ?: this).async(start = CoroutineStart.LAZY) { runRefresh(next) }
-            pendingRefresh = next
-            next.completion
+            if (!restarted) return
         }
-        if (completion != null) completion.await()
     }
 
     private suspend fun runRefresh(request: Refresh) {
@@ -168,7 +188,7 @@ class CoursewareScreenModel(
             // 手动刷新若加入了已经开始的首次读取，仍可处理这轮返回的会话过期。
             val session = refreshLock.withLock {
                 request.session?.takeIf { sessionExpired() }.also {
-                    if (it == null) pendingRefresh = null
+                    if (it == null && pendingRefresh === request) pendingRefresh = null
                 }
             }
             session?.retryAfterExpiry(::fetchCatalogAndDirectories, ::sessionExpired)
@@ -179,7 +199,8 @@ class CoursewareScreenModel(
         }
     }
 
-    private fun sessionExpired() = state.value.failure == CoursewareSyncFailure.SESSION_EXPIRED
+    private fun sessionExpired() =
+        state.value.failure == CoursewareSyncFailure.SESSION_EXPIRED || catalogSessionExpired
 
     private fun loadCachedCourses() {
         val cached = runCatching(repository::load).getOrNull()
@@ -200,6 +221,7 @@ class CoursewareScreenModel(
     private suspend fun fetchCatalogAndDirectories() {
         var reloadLoaded = false
         operationMutex.withLock {
+            catalogSessionExpired = false
             val before = mutableState.value
             mutableState.value = before.copy(
                 isLoading = before.courses.isEmpty(),
@@ -217,11 +239,14 @@ class CoursewareScreenModel(
                         )
                         reloadLoaded = true
                     }
-                    is CoursewareRefreshResult.Failure -> applySnapshot(
-                        result.snapshot,
-                        if (result.snapshot.courses.isEmpty()) null else CoursewareContentSource.CACHE,
-                        result.reason,
-                    )
+                    is CoursewareRefreshResult.Failure -> {
+                        catalogSessionExpired = result.reason == CoursewareSyncFailure.SESSION_EXPIRED
+                        applySnapshot(
+                            result.snapshot,
+                            if (result.snapshot.courses.isEmpty()) null else CoursewareContentSource.CACHE,
+                            result.reason,
+                        )
+                    }
                 }
             } finally {
                 val current = mutableState.value
@@ -902,7 +927,11 @@ class CoursewareScreenModel(
                 is CoursewareOperationResult.Failure -> {
                     // 课件目录刷新失败时保留旧内容，但必须明确提示用户，避免把旧目录
                     // 误认为已经同步成功；再次刷新或重新选择课程都会重试。
-                    mutableState.value = mutableState.value.copy(failure = result.reason)
+                    if (mutableState.value.failure != CoursewareSyncFailure.SESSION_EXPIRED ||
+                        result.reason == CoursewareSyncFailure.SESSION_EXPIRED
+                    ) {
+                        mutableState.value = mutableState.value.copy(failure = result.reason)
+                    }
                 }
             }
         } finally {

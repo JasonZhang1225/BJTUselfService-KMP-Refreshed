@@ -11,8 +11,10 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
@@ -220,21 +222,33 @@ class CitelModel(
 
     private suspend fun refreshInAccount() {
         initializeInAccount()
-        coroutineScope {
-            val completion = refreshLock.withLock {
-                inFlightRefresh?.takeUnless { it.isCompleted }
-                    ?: (refreshScope ?: this).async(start = CoroutineStart.LAZY) {
-                        mutex.withLock {
-                            try {
-                                if (state.value.enabled) fetchAssignments()
-                            } finally {
-                                // 在配置修改获得锁前结束本轮，后续刷新才能使用更新后的凭据。
-                                refreshLock.withLock { inFlightRefresh = null }
+        while (true) {
+            val restarted = coroutineScope {
+                val completion = refreshLock.withLock {
+                    inFlightRefresh?.takeUnless { it.isCompleted }
+                        ?: (refreshScope ?: this).async(start = CoroutineStart.LAZY) {
+                            mutex.withLock {
+                                try {
+                                    if (state.value.enabled) fetchAssignments()
+                                } finally {
+                                    // 在配置修改获得锁前结束本轮，后续刷新才能使用更新后的凭据。
+                                    refreshLock.withLock { inFlightRefresh = null }
+                                }
                             }
-                        }
-                    }.also { inFlightRefresh = it }
+                        }.also { inFlightRefresh = it }
+                }
+                try {
+                    completion.await()
+                    false
+                } catch (error: CancellationException) {
+                    if (refreshScope != null || !currentCoroutineContext().isActive) throw error
+                    refreshLock.withLock {
+                        if (inFlightRefresh === completion) inFlightRefresh = null
+                    }
+                    true
+                }
             }
-            completion.await()
+            if (!restarted) return
         }
     }
 
