@@ -39,13 +39,13 @@ import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.cache.db.CacheDatabaseSql
 import team.bjtuss.bjtuselfservice.shared.data.homework.*
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.*
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.*
 import team.bjtuss.bjtuselfservice.shared.feature.citel.*
 import team.bjtuss.bjtuselfservice.shared.feature.homework.*
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.*
 import team.bjtuss.bjtuselfservice.shared.feature.shell.*
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
 import team.bjtuss.bjtuselfservice.shared.network.*
 
 class IndependentAssignmentScrollToTopTest {
@@ -107,6 +107,20 @@ class IndependentAssignmentScrollToTopTest {
         }
     }
 
+    @Test fun homeworkResetsScrollWhenChangingUntilEpochWithHideExpired() = SwingUtilities.invokeAndWait {
+        Fixture("homework", 60, Layout(390, 844, false, 1f), homeworkEndTime = "2099-12-31 23:59").use { fixture ->
+            fixture.setHomeworkDeadlineScope(hideExpired = true, untilEpoch = 4_102_500_000L)
+            fixture.settle()
+            fixture.scroll(2400f)
+            fixture.settle()
+            assertTrue(fixture.scrollPosition() > 0f)
+
+            fixture.setHomeworkDeadlineScope(hideExpired = true, untilEpoch = 4_102_600_000L)
+            fixture.settle()
+            assertEquals(0f, fixture.scrollPosition(), 0.0001f)
+        }
+    }
+
     @Test fun emptyAndShortIndependentListsDoNotShowTheButton() = SwingUtilities.invokeAndWait {
         for (source in listOf("homework", "phyvlab", "citel")) for (count in listOf(0, 1)) {
             Fixture(source, count, Layout(390, 844, false, 1f)).use { fixture ->
@@ -125,12 +139,16 @@ class IndependentAssignmentScrollToTopTest {
         count: Int,
         val layout: Layout,
         private val navigate: Boolean = false,
+        homeworkEndTime: String? = null,
     ) : AutoCloseable {
         private val routes = mutableStateListOf("list")
         val search = PageSearchState()
         private val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY).also { CacheDatabaseSql.Schema.create(it) }
         private val cache = CacheStore(driver)
-        private val homework = (1..count).map { completionFixtureHomework().copy(upId = it, title = "阅读与思考 $it") }
+        private val homework = (1..count).map {
+            val base = completionFixtureHomework().copy(upId = it, title = "阅读与思考 $it")
+            if (homeworkEndTime != null) base.copy(endTime = homeworkEndTime) else base
+        }
         private val aggregatedHomework = aggregateAssignments(homework, emptyList(), emptyList())
         private val activities = (1..count).map { completionFixturePhysical().copy(id = it, title = "实验准备 $it") }
         private val tasks = (1..count).map { completionFixtureCitel().copy(id = it, title = "课后练习 $it") }
@@ -142,7 +160,7 @@ class IndependentAssignmentScrollToTopTest {
             override suspend fun fetchCourseActivities(course: PhyVlabCourse) = PhyVlabActivitiesResult.Success(activities)
             override suspend fun fetchEvents(monthTimestampSeconds: Long) = PhyVlabEventsResult.Success(emptyList())
             override suspend fun fetchAssignmentDetail(activity: PhyVlabActivity): PhyVlabAssignmentDetailResult = error("No detail request expected")
-            override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>): PhyVlabSubmissionResult = error("No submission allowed")
+            override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<FileContent>): PhyVlabSubmissionResult = error("No submission allowed")
         }, PhyVlabSessionProtocol(object : SchoolHttpTransport {
             override suspend fun execute(request: SchoolHttpRequest) = SchoolHttpResponse(200,
                 "https://phyvlab.bjtu.edu.cn/login/index.php", body = "<a href='/login/logout.php'>退出登录</a>".encodeToByteArray())
@@ -190,17 +208,21 @@ class IndependentAssignmentScrollToTopTest {
 
         fun goBack() { routes.removeAt(routes.lastIndex) }
 
+        fun setHomeworkDeadlineScope(hideExpired: Boolean, untilEpoch: Long?) {
+            homeworkModel.setDeadlineScope(hideExpired, untilEpoch)
+        }
+
         @Composable private fun content() {
             when (source) {
                 "homework" -> {
                     val state by homeworkModel.state.collectAsState()
                     HomeworkWorkspace(state, layout.width >= 600, model = homeworkModel,
-                        fileGateway = UnavailableHomeworkFileGateway, onRefresh = {},
+                        fileGateway = UnavailableFileGateway, onRefresh = {},
                         onOpenDetail = { if (navigate) routes.add("detail") }, modifier = Modifier.fillMaxSize(), search = search)
                 }
                 "aggregate" -> AggregatedAssignmentWorkspace(
                     aggregatedHomework, emptyList(), null, {}, { routes.add("detail") }, {}, false, {},
-                    modifier = Modifier.fillMaxSize(), fileGateway = UnavailableHomeworkFileGateway,
+                    modifier = Modifier.fillMaxSize(), fileGateway = UnavailableFileGateway,
                     markdown = { "" }, detailContent = {}, search = search,
                 )
                 "phyvlab" -> PhyVlabWorkspace(phyModel, showDetailSheet = false)

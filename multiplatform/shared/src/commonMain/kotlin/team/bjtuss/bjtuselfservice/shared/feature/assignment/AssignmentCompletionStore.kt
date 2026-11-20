@@ -1,5 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.feature.assignment
 
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -62,13 +64,14 @@ internal interface AssignmentCompletionPersistence {
 class AssignmentCompletionStore internal constructor(
     private val persistence: AssignmentCompletionPersistence,
     private val saveScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val accountWork: team.bjtuss.bjtuselfservice.shared.runtime.AccountWork? = null,
 ) {
-    constructor(cache: CacheStore, accountScope: String) : this(CacheAssignmentCompletionPersistence(cache, accountScope))
+    constructor(cache: CacheStore, accountScope: String, saveScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default), accountWork: team.bjtuss.bjtuselfservice.shared.runtime.AccountWork? = null) : this(CacheAssignmentCompletionPersistence(cache, accountScope), saveScope, accountWork)
 
     private val mutex = Mutex()
-    private val mutableState = MutableStateFlow(AssignmentCompletionState())
+    private val mutableState = accountWork.accountState(AssignmentCompletionState())
     val state: StateFlow<AssignmentCompletionState> = mutableState.asStateFlow()
-    private val mutableUndo = MutableStateFlow<AssignmentIgnoreUndo?>(null)
+    private val mutableUndo = accountWork.accountState<AssignmentIgnoreUndo?>(null)
     val undo: StateFlow<AssignmentIgnoreUndo?> = mutableUndo.asStateFlow()
     private var undoSerial = 0L
 
@@ -76,7 +79,9 @@ class AssignmentCompletionStore internal constructor(
         loadState()
     }
 
-    suspend fun reload(): Boolean = mutex.withLock { loadState() }
+    suspend fun reload(): Boolean = accountWork.inAccount { reloadInAccount() }
+
+    private suspend fun reloadInAccount(): Boolean = mutex.withLock { loadState() }
 
     /**
      * 保存属于账号会话，即使列表项退出组合也继续执行。
@@ -129,7 +134,9 @@ class AssignmentCompletionStore internal constructor(
         }
     }
 
-    suspend fun setCompleted(key: AssignmentCompletionKey, completed: Boolean): Boolean = mutex.withLock {
+    suspend fun setCompleted(key: AssignmentCompletionKey, completed: Boolean): Boolean = accountWork.inAccount { setCompletedInAccount(key = key, completed = completed) }
+
+    private suspend fun setCompletedInAccount(key: AssignmentCompletionKey, completed: Boolean): Boolean = mutex.withLock {
         val current = mutableState.value
         if (!current.loaded) return@withLock false
         val next = if (completed) current.completedKeys + key else current.completedKeys - key

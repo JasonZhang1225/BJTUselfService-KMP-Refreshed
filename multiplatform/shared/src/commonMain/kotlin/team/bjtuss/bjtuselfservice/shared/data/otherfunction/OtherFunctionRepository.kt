@@ -1,7 +1,7 @@
 package team.bjtuss.bjtuselfservice.shared.data.otherfunction
 
 import kotlinx.coroutines.CancellationException
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.otherfunction.ReportCardLanguage
 
 enum class OtherFunctionSyncFailure {
@@ -11,7 +11,7 @@ enum class OtherFunctionSyncFailure {
 }
 
 sealed interface OtherFunctionDownloadResult {
-    data class Success(val file: HomeworkFileContent) : OtherFunctionDownloadResult
+    data class Success(val file: FileContent) : OtherFunctionDownloadResult
     data class Failure(val reason: OtherFunctionSyncFailure) : OtherFunctionDownloadResult
 }
 

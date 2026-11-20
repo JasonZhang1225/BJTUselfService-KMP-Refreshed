@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.courseware
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -18,7 +21,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackCompositeQua
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackDetail
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackLesson
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStream
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
 
 data class PlaybackUiState(
     val courseId: Int? = null,
@@ -46,8 +49,9 @@ class PlaybackScreenModel(
     val taskManager: PlaybackTaskManager,
     private val scope: CoroutineScope,
     private val reauthenticate: (suspend () -> Boolean)? = null,
+    private val accountWork: AccountWork? = null,
 ) {
-    private val mutableState = MutableStateFlow(PlaybackUiState())
+    private val mutableState = accountWork.accountState(PlaybackUiState())
     val state: StateFlow<PlaybackUiState> = mutableState.asStateFlow()
 
     private val loadMutex = Mutex()
@@ -73,7 +77,9 @@ class PlaybackScreenModel(
     }
 
     /** 进入回放页或切换课程时调用；同一门课已加载过就直接复用（[force] 时重新拉取）。 */
-    suspend fun showCourse(course: CoursewareCourse?, force: Boolean = false) {
+    suspend fun showCourse(course: CoursewareCourse?, force: Boolean = false) = accountWork.inAccount { showCourseInAccount(course = course, force = force) }
+
+    private suspend fun showCourseInAccount(course: CoursewareCourse?, force: Boolean = false) {
         if (course == null) {
             mutableState.value = mutableState.value.copy(courseId = null, lessons = emptyList(), selectedLessonKey = null, detail = null)
             return
@@ -149,7 +155,16 @@ class PlaybackScreenModel(
     suspend fun download(
         detail: PlaybackDetail,
         streams: List<PlaybackStream>,
-        gateway: HomeworkFileGateway,
+        gateway: FileGateway,
+        courseName: String,
+        composite: Boolean,
+        quality: PlaybackCompositeQuality = PlaybackCompositeQuality.HIGH,
+    ): PlaybackEnqueueResult = accountWork.inAccount { downloadInAccount(detail = detail, streams = streams, gateway = gateway, courseName = courseName, composite = composite, quality = quality) }
+
+    private suspend fun downloadInAccount(
+        detail: PlaybackDetail,
+        streams: List<PlaybackStream>,
+        gateway: FileGateway,
         courseName: String,
         composite: Boolean,
         quality: PlaybackCompositeQuality = PlaybackCompositeQuality.HIGH,

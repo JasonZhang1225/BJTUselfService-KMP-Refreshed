@@ -2,12 +2,12 @@ package team.bjtuss.bjtuselfservice.shared.feature.citel
 
 import kotlinx.coroutines.runBlocking
 import kotlin.test.*
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.network.*
 
 class CitelProgrammingSubmissionTest {
     private val task = CitelTask(7, 3, "测试课程", "测试代码", "$CITEL_BASE/mod/programming/view.php?id=7", true)
-    private val file = HomeworkFileContent("main.cpp", "text/plain", "int main(){}".encodeToByteArray())
+    private val file = FileContent("main.cpp", "text/plain", "int main(){}".encodeToByteArray())
     @Test fun sourceFileAndSelectedLanguageAreSentAndPendingJudgeIsNotCompletion() = runBlocking {
         val fixture = Fixture()
         assertEquals(mapOf("0" to "gcc", "1" to "g++"), fixture.client.options(task).languages)
@@ -23,7 +23,7 @@ class CitelProgrammingSubmissionTest {
     @Test fun invalidLanguageAndOversizedFileFailBeforeSendingCode() = runBlocking {
         val fixture = Fixture()
         assertFailsWith<CitelFailure> { fixture.client.submit(task, file, "python") }
-        assertFailsWith<CitelFailure> { fixture.client.submit(task, HomeworkFileContent("large.cpp", "text/plain", ByteArray(65537)), "1") }
+        assertFailsWith<CitelFailure> { fixture.client.submit(task, FileContent("large.cpp", "text/plain", ByteArray(65537)), "1") }
         assertTrue(fixture.writes.isEmpty())
     }
     @Test fun lostPostResponseIsNotRetried() = runBlocking {

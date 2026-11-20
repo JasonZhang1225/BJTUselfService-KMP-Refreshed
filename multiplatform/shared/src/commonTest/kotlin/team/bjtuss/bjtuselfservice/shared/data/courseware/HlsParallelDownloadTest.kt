@@ -120,7 +120,7 @@ class HlsParallelDownloadTest {
         assertEquals(2, destination.chunks.size, "失败后不再继续写盘")
         assertEquals(4, transport.requests.count { it == failing }, "初次失败后自动重试 3 次")
 
-        // 调用方收尾（PlaybackTaskManager / HomeworkFileGateway 都是失败即 abort）：半成品不保留。
+        // 调用方收尾（PlaybackTaskManager / FileGateway 都是失败即 abort）：半成品不保留。
         destination.abort()
         assertTrue(destination.aborted)
         assertEquals(0, destination.size(), "失败后不留半成品")

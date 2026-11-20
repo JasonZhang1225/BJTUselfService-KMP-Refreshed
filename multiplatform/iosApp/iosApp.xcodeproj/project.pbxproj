@@ -12,6 +12,14 @@
 		A10000000000000000000003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* Assets.xcassets */; };
 		A10000000000000000000004 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000016 /* PrivacyInfo.xcprivacy */; };
 		A11000000000000000000001 /* NativeNavigationGlassState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11000000000000000000002 /* NativeNavigationGlassState.swift */; };
+		A20000000000000000000001 /* NativeHostSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21000000000000000000001 /* NativeHostSupport.swift */; };
+		A20000000000000000000002 /* NativeNavigationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21000000000000000000002 /* NativeNavigationController.swift */; };
+		A20000000000000000000003 /* NativeChromeBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21000000000000000000003 /* NativeChromeBar.swift */; };
+		A20000000000000000000004 /* NativeChromeBarGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21000000000000000000004 /* NativeChromeBarGlass.swift */; };
+		A20000000000000000000005 /* NativePageSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21000000000000000000005 /* NativePageSearch.swift */; };
+		A20000000000000000000006 /* NativeScrollHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21000000000000000000006 /* NativeScrollHost.swift */; };
+		A20000000000000000000007 /* TabRootNavigationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21000000000000000000007 /* TabRootNavigationController.swift */; };
+		A20000000000000000000008 /* NativeTabsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A21000000000000000000008 /* NativeTabsController.swift */; };
 		B10000000000000000000001 /* CourseWidgetData.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* CourseWidgetData.swift */; };
 		B10000000000000000000002 /* CourseWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* CourseWidgets.swift */; };
 		B10000000000000000000004 /* WeekCourseWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* WeekCourseWidget.swift */; };
@@ -60,6 +68,14 @@
 		A10000000000000000000015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A10000000000000000000016 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A11000000000000000000002 /* NativeNavigationGlassState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeNavigationGlassState.swift; sourceTree = "<group>"; };
+		A21000000000000000000001 /* NativeHostSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHostSupport.swift; sourceTree = "<group>"; };
+		A21000000000000000000002 /* NativeNavigationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeNavigationController.swift; sourceTree = "<group>"; };
+		A21000000000000000000003 /* NativeChromeBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeChromeBar.swift; sourceTree = "<group>"; };
+		A21000000000000000000004 /* NativeChromeBarGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeChromeBarGlass.swift; sourceTree = "<group>"; };
+		A21000000000000000000005 /* NativePageSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePageSearch.swift; sourceTree = "<group>"; };
+		A21000000000000000000006 /* NativeScrollHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeScrollHost.swift; sourceTree = "<group>"; };
+		A21000000000000000000007 /* TabRootNavigationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabRootNavigationController.swift; sourceTree = "<group>"; };
+		A21000000000000000000008 /* NativeTabsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTabsController.swift; sourceTree = "<group>"; };
 		B10000000000000000000010 /* CourseScheduleWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CourseScheduleWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000000000000000000011 /* CourseWidgetData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseWidgetData.swift; sourceTree = "<group>"; };
 		B10000000000000000000012 /* CourseWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CourseWidgets.swift; sourceTree = "<group>"; };
@@ -110,6 +126,14 @@
 				A10000000000000000000011 /* iOSApp.swift */,
 				A10000000000000000000012 /* ContentView.swift */,
 				A11000000000000000000002 /* NativeNavigationGlassState.swift */,
+				A21000000000000000000001 /* NativeHostSupport.swift */,
+				A21000000000000000000002 /* NativeNavigationController.swift */,
+				A21000000000000000000003 /* NativeChromeBar.swift */,
+				A21000000000000000000004 /* NativeChromeBarGlass.swift */,
+				A21000000000000000000005 /* NativePageSearch.swift */,
+				A21000000000000000000006 /* NativeScrollHost.swift */,
+				A21000000000000000000007 /* TabRootNavigationController.swift */,
+				A21000000000000000000008 /* NativeTabsController.swift */,
 				C10000000000000000000013 /* CourseLiveActivityCoordinator.swift */,
 				C10000000000000000000016 /* PlaybackDownloadCoordinator.swift */,
 				A10000000000000000000015 /* Assets.xcassets */,
@@ -277,6 +301,14 @@
 				A10000000000000000000001 /* iOSApp.swift in Sources */,
 				A10000000000000000000002 /* ContentView.swift in Sources */,
 				A11000000000000000000001 /* NativeNavigationGlassState.swift in Sources */,
+				A20000000000000000000001 /* NativeHostSupport.swift in Sources */,
+				A20000000000000000000002 /* NativeNavigationController.swift in Sources */,
+				A20000000000000000000003 /* NativeChromeBar.swift in Sources */,
+				A20000000000000000000004 /* NativeChromeBarGlass.swift in Sources */,
+				A20000000000000000000005 /* NativePageSearch.swift in Sources */,
+				A20000000000000000000006 /* NativeScrollHost.swift in Sources */,
+				A20000000000000000000007 /* TabRootNavigationController.swift in Sources */,
+				A20000000000000000000008 /* NativeTabsController.swift in Sources */,
 				C10000000000000000000003 /* CourseLiveActivityAttributes.swift in Sources */,
 				C10000000000000000000004 /* CourseWidgetData.swift in Sources */,
 				C10000000000000000000005 /* CourseLiveActivityCoordinator.swift in Sources */,

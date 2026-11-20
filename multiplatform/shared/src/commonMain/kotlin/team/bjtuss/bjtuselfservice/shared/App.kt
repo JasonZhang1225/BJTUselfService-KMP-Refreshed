@@ -13,6 +13,7 @@ import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,14 +24,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStoreHandle
+import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeHostState
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalNativeSheetPresenter
 import team.bjtuss.bjtuselfservice.shared.feature.shell.NativeSheetPresenter
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityStore
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableCoursewareDirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableDirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.system.rememberPlatformIncreasedContrast
 import team.bjtuss.bjtuselfservice.shared.system.rememberPlatformFontScale
 import team.bjtuss.bjtuselfservice.shared.system.rememberPlatformReduceMotion
@@ -40,13 +42,15 @@ import team.bjtuss.bjtuselfservice.shared.auth.UnavailableCaptchaRecognizer
 import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
 import team.bjtuss.bjtuselfservice.shared.calendar.UnavailableSystemCalendarGateway
 import team.bjtuss.bjtuselfservice.shared.webview.openExternalUrl
+import team.bjtuss.bjtuselfservice.shared.runtime.AppRuntime
+import team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryAccess
 
 @Composable
 fun App(
     accountSecurityStore: AccountSecurityStore,
     cacheStoreHandle: CacheStoreHandle,
-    homeworkFileGateway: HomeworkFileGateway = UnavailableHomeworkFileGateway,
-    coursewareDirectoryGateway: CoursewareDirectoryGateway = UnavailableCoursewareDirectoryGateway,
+    fileGateway: FileGateway = UnavailableFileGateway,
+    directoryGateway: DirectoryGateway = UnavailableDirectoryGateway,
     systemCalendarGateway: SystemCalendarGateway = UnavailableSystemCalendarGateway,
     appCommandBus: AppCommandBus? = null,
     captchaRecognizer: CaptchaRecognizer = UnavailableCaptchaRecognizer,
@@ -58,12 +62,26 @@ fun App(
     onOpenNativeRoute: (String) -> Unit = {},
     onOpenExternalUrl: (String) -> Unit = ::openExternalUrl,
     onAuthenticatedSessionChanged: (AuthenticatedSession?) -> Unit = {},
+    appRuntime: AppRuntime,
+    nativeHostState: NativeHostState? = null,
+    playbackRecovery: PlaybackRecoveryAccess? = null,
 ) {
     if (cacheStoreHandle.state == team.bjtuss.bjtuselfservice.shared.cache.CacheOpenState.UNAVAILABLE) {
         CacheStorageFailureScreen()
         return
     }
+    val hostState = nativeHostState ?: remember { NativeHostState() }
     val cacheStore = cacheStoreHandle.store
+    val runtime = appRuntime
+    val services = remember(runtime) { runtime.hostServices(playbackRecovery) }
+    remember(runtime, cacheStore, accountSecurityStore) {
+        runtime.bindCleanupResources(cacheStore, accountSecurityStore, services.playbackRecovery,
+            cacheAvailable = cacheStoreHandle.state != team.bjtuss.bjtuselfservice.shared.cache.CacheOpenState.UNAVAILABLE)
+    }
+    DisposableEffect(services, fileGateway, directoryGateway, systemCalendarGateway) {
+        val release = services.attach(fileGateway, directoryGateway, systemCalendarGateway)
+        onDispose { release() }
+    }
     var appPreferences by remember(cacheStore) {
         mutableStateOf(runCatching(cacheStore::prepareRedesignPreferences).getOrDefault(AppPreferences(bottomNavigationItems = emptyList())))
     }
@@ -87,6 +105,7 @@ fun App(
                     } else Modifier,
                 )) {
                     LoginRoute(
+                        runtime = runtime,
                         platform = currentPlatform(),
                         windowClass = adaptiveWindowClassFor(
                             widthDp = maxWidth.value.toInt(),
@@ -94,15 +113,17 @@ fun App(
                         ),
                         accountSecurityStore = accountSecurityStore,
                         cacheStoreHandle = cacheStoreHandle,
-                        homeworkFileGateway = homeworkFileGateway,
-                        coursewareDirectoryGateway = coursewareDirectoryGateway,
-                        systemCalendarGateway = systemCalendarGateway,
+                        fileGateway = services.files,
+                        playbackRecovery = services.playbackRecovery,
+                        directoryGateway = services.directories,
+                        systemCalendarGateway = services.calendar,
                         appCommandBus = appCommandBus,
                         appPreferences = appPreferences,
                         onPreferencesChanged = onPreferencesChanged,
                         captchaRecognizer = captchaRecognizer,
                         nativeNavigationEnabled = nativeNavigationEnabled,
                         nativeTabBarEnabled = nativeTabBarEnabled,
+                        nativeHostState = hostState,
                         onOpenNativeRoute = onOpenNativeRoute,
                         onOpenExternalUrl = onOpenExternalUrl,
                         onAuthenticatedSessionChanged = onAuthenticatedSessionChanged,
@@ -118,8 +139,8 @@ fun App(
 fun AuthenticatedDestinationApp(
     session: AuthenticatedSession,
     routeId: String,
-    homeworkFileGateway: HomeworkFileGateway = session.homeworkFileGateway,
-    coursewareDirectoryGateway: CoursewareDirectoryGateway = session.coursewareDirectoryGateway,
+    fileGateway: FileGateway = session.fileGateway,
+    directoryGateway: DirectoryGateway = session.directoryGateway,
     nativeTabBarEnabled: Boolean = false,
     useNativeTitleBar: Boolean = false,
     /** iOS uses the host's real UISheetPresentationController for shared sheets. */
@@ -130,7 +151,10 @@ fun AuthenticatedDestinationApp(
     onNativeTitleChanged: (String) -> Unit = {},
     onNativeActionChanged: (team.bjtuss.bjtuselfservice.shared.feature.shell.NativeBarAction?) -> Unit = {},
     onOpenExternalUrl: (String) -> Unit = ::openExternalUrl,
+    nativeHostState: NativeHostState? = null,
+    onNativeTabItemsChanged: (List<String>) -> Unit = {},
 ) {
+    val hostState = nativeHostState ?: remember { NativeHostState() }
     // 跟设置页开关同一 StateFlow，切换动态取色时原生二级页也会立刻换色。
     val settingsState by session.settingsModel.state.collectAsState()
     PlatformAppTheme(
@@ -140,7 +164,7 @@ fun AuthenticatedDestinationApp(
         CompositionLocalProvider(LocalNativeSheetPresenter provides nativeSheetPresenter) {
             Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 BoxWithConstraints(modifier = Modifier.fillMaxSize().then(
-                    if (currentPlatform().family == PlatformFamily.IOS && !session.systemManagedContentBounds) {
+                    if (currentPlatform().family == PlatformFamily.IOS && !hostState.systemManagedContentBounds) {
                         Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                     } else Modifier,
                 )) {
@@ -153,16 +177,18 @@ fun AuthenticatedDestinationApp(
                         ),
                         nativeNavigationEnabled = true,
                         nativeTabBarEnabled = nativeTabBarEnabled,
+                        nativeHostState = hostState,
                         useNativeTitleBar = useNativeTitleBar,
                         onOpenNativeRoute = onOpenNativeRoute,
                         onSelectNativeTab = onSelectNativeTab,
+                        onNativeTabItemsChanged = onNativeTabItemsChanged,
                         onNativeTitleChanged = onNativeTitleChanged,
                         onNativeActionChanged = onNativeActionChanged,
                         onOpenExternalUrl = onOpenExternalUrl,
                         forcedRouteId = routeId,
                         onCloseNativeRoute = onCloseNativeRoute,
-                        homeworkFileGatewayOverride = homeworkFileGateway,
-                        coursewareDirectoryGatewayOverride = coursewareDirectoryGateway,
+                        fileGatewayOverride = fileGateway,
+                        directoryGatewayOverride = directoryGateway,
                     )
                 }
             }

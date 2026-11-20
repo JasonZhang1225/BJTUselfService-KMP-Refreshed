@@ -29,7 +29,7 @@ import team.bjtuss.bjtuselfservice.shared.data.homework.*
 import team.bjtuss.bjtuselfservice.shared.feature.homework.HomeworkScreenModel
 
 /** Only selected by the Swift DEBUG gate. No network, real cache, Keychain or login UI. */
-fun OfflineLayoutBootstrap(onReady: (AuthenticatedSession) -> Unit): UIViewController = ComposeUIViewController {
+fun OfflineLayoutBootstrap(owner: IosAppRuntimeOwner, onReady: (AuthenticatedSession) -> Unit): UIViewController = ComposeUIViewController {
     val cache = remember { CacheStore(NativeSqliteDriver(CacheDatabaseSql.Schema, ":memory:")) }
     val transport = remember { object : SchoolHttpTransport {
         override suspend fun execute(request: SchoolHttpRequest): SchoolHttpResponse = error("Offline layout fixture")
@@ -45,13 +45,15 @@ fun OfflineLayoutBootstrap(onReady: (AuthenticatedSession) -> Unit): UIViewContr
         else CitelModel("offline-layout", cache, null, OfflineLayoutCitelSource())
     }
     val preferences = remember { AppPreferences(bottomNavigationItems = listOf("HOME", "SCHEDULE", "GRADES", "ASSIGNMENTS", "MORE"), physicsLabEnabled = false, citelEnabled = citel != null, redesignGuideAcknowledged = true, citelGuideAcknowledged = true, assignmentAggregateGuideAcknowledged = true, release184GuideAcknowledged = true, emergencyFix185NoticeAcknowledged = true) }
-    val source = rememberAuthenticatedSession(
+    val protocol = remember(transport) { SchoolLoginProtocol(transport) }
+    val source = remember(owner) { team.bjtuss.bjtuselfservice.shared.runtime.bindAuthenticatedSession(
+        owner.runtime,
         StudentProfile("布局测试", "offline-layout", "测试", "测试"), false,
-        transport, remember { SchoolLoginProtocol(transport) }, cache, currentPlatform(), preferences,
+        transport, protocol, cache, currentPlatform(), preferences,
         { true }, security, UnavailableCaptchaRecognizer, "", "",
-        UnavailableHomeworkFileGateway, UnavailableCoursewareDirectoryGateway, UnavailableSystemCalendarGateway,
+        UnavailableFileGateway, UnavailableDirectoryGateway, UnavailableSystemCalendarGateway,
         {}, {},
-    )
+    ) }
     val session = remember(source) {
         val snapshot = CourseScheduleSnapshot((1..7).flatMap { slot -> (1..7).map { day ->
             Course(slot * 10 + day, "fixture", "测试课程 $slot", "测试教师", slot * 8 + day,
@@ -69,7 +71,7 @@ fun OfflineLayoutBootstrap(onReady: (AuthenticatedSession) -> Unit): UIViewContr
             mailboxModel = source.mailboxModel, phyVlabModel = source.phyVlabModel,
             homeModel = source.homeModel, homeChangeFeed = source.homeChangeFeed,
             libraryModel = source.libraryModel, citelModel = citel,
-            homeworkFileGateway = source.homeworkFileGateway, coursewareDirectoryGateway = source.coursewareDirectoryGateway,
+            fileGateway = source.fileGateway, directoryGateway = source.directoryGateway,
             systemCalendarGateway = source.systemCalendarGateway, onLogout = {},
         ).also { it.legacyHttpWarningDismissed = true }
     }
@@ -113,7 +115,7 @@ private class OfflineLayoutHomeworkRepository : HomeworkRepository {
     override suspend fun loadSubmittedAttachments(homework: Homework) = HomeworkOperationResult.Success(emptyList<SubmittedHomeworkAttachment>())
     override suspend fun downloadTeacherAttachment(homeworkId: Int, attachment: HomeworkAttachment) = HomeworkOperationResult.Failure(HomeworkSyncFailure.NETWORK)
     override suspend fun downloadSubmittedAttachment(attachment: SubmittedHomeworkAttachment) = HomeworkOperationResult.Failure(HomeworkSyncFailure.NETWORK)
-    override suspend fun submitHomework(homework: Homework, content: String, files: List<HomeworkFileContent>) = HomeworkOperationResult.Failure(HomeworkSyncFailure.SUBMIT_REJECTED)
+    override suspend fun submitHomework(homework: Homework, content: String, files: List<FileContent>) = HomeworkOperationResult.Failure(HomeworkSyncFailure.SUBMIT_REJECTED)
     override fun attachmentDownloadUrl(homeworkId: Int, attachmentId: Int) = ""
 }
 

@@ -1,8 +1,25 @@
 import SwiftUI
 import WidgetKit
+import BJTUShared
+
+private final class AppRuntimeOwner: ObservableObject {
+    let runtime = IosAppRuntimeOwner()
+    init() {
+        runtime.setSystemCleanupHandler { mode, completed in
+            Task { @MainActor in
+                let courses = await CourseLiveActivityCoordinator.shared.clearAccountData(allLocalData: mode == "all")
+                let playback = await PlaybackDownloadCoordinator.shared.clearAccountData()
+                completed(courses && playback ? "ok" : "failed")
+            }
+        }
+    }
+    deinit { runtime.close() }
+}
 
 @main
 struct iOSApp: App {
+    @StateObject private var runtimeOwner = AppRuntimeOwner()
+
     init() {
         // 共享层写完课程小组件快照后发此通知；WidgetKit 只有 Swift 接口，由宿主代为刷新。
         // 名称与 CourseWidgetStore.ios.kt 的 COURSE_WIDGET_DID_CHANGE_NOTIFICATION 一致。
@@ -22,7 +39,7 @@ struct iOSApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(runtimeOwner: runtimeOwner.runtime)
         }
     }
 }

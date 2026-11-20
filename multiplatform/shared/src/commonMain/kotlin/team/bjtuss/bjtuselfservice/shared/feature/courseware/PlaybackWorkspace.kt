@@ -76,7 +76,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleMenuPickerCard
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleMenuOption
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
 import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetBodyScroll
 
 /**
@@ -88,7 +88,7 @@ fun PlaybackScreen(
     coursewareState: CoursewareUiState,
     coursewareModel: CoursewareScreenModel,
     model: PlaybackScreenModel,
-    fileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     expanded: Boolean,
     onRefresh: () -> Unit,
     modifier: Modifier,
@@ -331,7 +331,7 @@ private fun PlaybackCompactList(
 fun PlaybackDetailWorkspace(
     model: PlaybackScreenModel,
     courses: List<CoursewareCourse>,
-    fileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     modifier: Modifier = Modifier,
 ) {
     val state by model.state.collectAsState()
@@ -475,7 +475,7 @@ private fun PlaybackDetailBody(
     lesson: PlaybackLesson,
     course: CoursewareCourse?,
     model: PlaybackScreenModel,
-    fileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     onOpenTasks: () -> Unit,
     onRetryDetail: () -> Unit,
 ) {
@@ -511,7 +511,7 @@ private fun PlaybackStreamChooser(
     detail: PlaybackDetail,
     courseName: String,
     model: PlaybackScreenModel,
-    fileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     onOpenTasks: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()

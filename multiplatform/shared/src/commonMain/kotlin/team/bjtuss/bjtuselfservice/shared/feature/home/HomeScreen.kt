@@ -169,7 +169,7 @@ fun HomeWorkspace(
     onClearAllChanges: () -> Unit,
     onClearChangeDomain: (HomeChangeDomain) -> Unit,
     onOpenChangeDomain: (HomeChangeDomain) -> Unit,
-    // 静默自动登录期间为 true：会话未就绪，初始化（含网络刷新）延后到登录完成。
+    // 首次同步的登录门禁由账号任务负责；保留此参数兼容既有页面装配。
     holdNetwork: Boolean = false,
     todayRequest: Int = 0,
     onTodaySelectedChanged: (Boolean) -> Unit = {},
@@ -186,7 +186,6 @@ fun HomeWorkspace(
     var selectedChangeDomain by remember { mutableStateOf<HomeChangeDomain?>(null) }
     var selectedChangeCourse by remember { mutableStateOf<Course?>(null) }
     val homeSchedule = LocalHomeSchedule.current
-    LaunchedEffect(model, holdNetwork) { if (!holdNetwork) team.bjtuss.bjtuselfservice.shared.logging.SyncTiming.measure("startup.home-status") { model.initialize() } }
     selectedChangeDomain?.let { domain ->
         HomeChangeDialog(
             domain = domain,
@@ -1299,14 +1298,14 @@ private fun courseAgendaMarkColor(): Color =
 /** 紫色实验标记与课程蓝、作业红绿和考试橙保持清楚区分。 */
 @Composable
 private fun labAgendaMarkColor(): Color =
-    team.bjtuss.bjtuselfservice.shared.feature.course.courseCategoryColors(
-        team.bjtuss.bjtuselfservice.shared.feature.course.CourseColorCategory.LAB,
+    team.bjtuss.bjtuselfservice.shared.presentation.course.courseCategoryColors(
+        team.bjtuss.bjtuselfservice.shared.presentation.course.CourseColorCategory.LAB,
     ).onContainer
 
 @Composable
 private fun examAgendaMarkColor(): Color =
-    team.bjtuss.bjtuselfservice.shared.feature.course.courseCategoryColors(
-        team.bjtuss.bjtuselfservice.shared.feature.course.CourseColorCategory.EXAM,
+    team.bjtuss.bjtuselfservice.shared.presentation.course.courseCategoryColors(
+        team.bjtuss.bjtuselfservice.shared.presentation.course.CourseColorCategory.EXAM,
     ).onContainer
 
 /** 待提交作业用红色，与已提交的深绿区分。 */
@@ -1533,8 +1532,8 @@ private fun AgendaDayDetails(
                     ?.let { displaySchoolClockText(it, schoolDate, timeZone, markDayShift = false) }.orEmpty()
                 AgendaEventRow(
                     type = "课程",
-                    markColor = team.bjtuss.bjtuselfservice.shared.feature.course.courseCategoryAccent(
-                        team.bjtuss.bjtuselfservice.shared.feature.course.courseColorCategory(
+                    markColor = team.bjtuss.bjtuselfservice.shared.presentation.course.courseCategoryAccent(
+                        team.bjtuss.bjtuselfservice.shared.presentation.course.courseColorCategory(
                             course, LocalHomeSchedule.current.courseTypesByCode,
                         ),
                     ),

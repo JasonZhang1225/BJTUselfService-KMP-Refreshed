@@ -57,9 +57,11 @@ internal fun CitelBatchCacheScreen(
 ) {
     val state by model.state.collectAsState()
     var courseKey by rememberSaveable(state.username) { mutableStateOf("all") }
+    var selectedCourseName by rememberSaveable(state.username) { mutableStateOf<String?>(null) }
     var submissionIndex by rememberSaveable(state.username) { mutableStateOf(0) }
     var busy by remember(model) { mutableStateOf(false) }
     var result by remember(model, state.username) { mutableStateOf<CitelBatchCacheResult?>(null) }
+    var resultScopeLabel by remember(model, state.username) { mutableStateOf<String?>(null) }
     var pendingDeletion by remember(model, state.username) { mutableStateOf<Pair<CitelTask, CitelCachedProblem>?>(null) }
     var activeTaskId by remember(model) { mutableStateOf<Int?>(null) }
     var actionFeedback by remember(model, state.username) { mutableStateOf<CitelCacheActionFeedback?>(null) }
@@ -69,6 +71,7 @@ internal fun CitelBatchCacheScreen(
         if (activeTaskId != null || busy) return
         activeTaskId = taskId
         result = null
+        resultScopeLabel = null
         actionFeedback = null
         scope.launch {
             try {
@@ -84,17 +87,29 @@ internal fun CitelBatchCacheScreen(
     val courses = remember(state.tasks) {
         state.tasks.filter { it.programming }.associate { it.courseId to it.courseName }
     }
-    val courseId = courseKey.toIntOrNull()?.takeIf { courses.containsKey(it) }
+    val selectedCourseId = if (courseKey == "all") null else courseKey.toIntOrNull()
+    val courseValid = courseKey == "all" || (selectedCourseId != null && courses.containsKey(selectedCourseId))
+    val courseId = selectedCourseId
+    LaunchedEffect(selectedCourseId, courses) {
+        if (selectedCourseId != null) {
+            courses[selectedCourseId]?.let { selectedCourseName = it }
+        }
+    }
+    val selectedCourseLabel = when {
+        courseId == null -> if (courseKey == "all") "全部课程" else (selectedCourseName ?: "已选课程")
+        else -> courses[courseId] ?: selectedCourseName ?: "课程 #$courseId"
+    }
     val submission = CitelProblemSubmission.entries[submissionIndex]
     val problems = state.problems
-    val (missing, cached) = remember(state.tasks, problems, courseId, submission) {
-        state.filteredProgrammingTasks(courseId, submission).partition { it.id !in problems }
+    val (missing, cached) = remember(state.tasks, problems, courseKey, courseId, submission) {
+        if (courseKey != "all" && courseId == null) emptyList<CitelTask>() to emptyList()
+        else state.filteredProgrammingTasks(courseId, submission).partition { it.id !in problems }
     }
     val missingByCourse = remember(missing) { missing.groupBy { it.courseId } }
     val cachedByCourse = remember(cached) { cached.groupBy { it.courseId } }
     val canManageCache = !busy && activeTaskId == null && pendingDeletion == null && !state.refreshing
 
-    LaunchedEffect(courseId, submission) { listState.scrollToItem(0) }
+    LaunchedEffect(courseKey, submission) { listState.scrollToItem(0) }
 
     BoxWithConstraints(modifier) {
         val horizontalPadding = if (maxWidth >= 760.dp) 24.dp else 16.dp
@@ -127,13 +142,20 @@ internal fun CitelBatchCacheScreen(
                 }
             } else {
                 item {
+                    val missingCourseOption = if (!courseValid && courseId != null) {
+                        listOf(AppleMenuOption(courseId.toString(), "$selectedCourseLabel（当前未在列表）"))
+                    } else emptyList()
                     AppleMenuPickerCard(
                         label = "课程 · 共 ${courses.size} 门",
-                        value = courses[courseId] ?: "全部课程",
+                        value = if (courseValid) selectedCourseLabel else "$selectedCourseLabel（当前未在列表）",
                         options = listOf(AppleMenuOption("all", "全部课程")) +
+                            missingCourseOption +
                             courses.map { (id, name) -> AppleMenuOption(id.toString(), name) },
-                        selectedKey = courseId?.toString() ?: "all",
-                        onSelect = { courseKey = it },
+                        selectedKey = if (courseKey == "all") "all" else (courseId?.toString() ?: courseKey),
+                        onSelect = { key ->
+                            courseKey = key
+                            selectedCourseName = key.toIntOrNull()?.let { courses[it] }
+                        },
                         accessibilityName = "筛选课程",
                     )
                 }
@@ -150,20 +172,28 @@ internal fun CitelBatchCacheScreen(
                         Text("当前筛选未缓存 ${missing.size} 题",
                             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                             style = MaterialTheme.typography.titleMedium)
+                        if (!courseValid) {
+                            Text("当前所选课程暂未出现在最新作业列表中，已保留选择；可等待同步恢复或切换其他课程。",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         if (state.failed) {
                             Text(state.message ?: "CITEL 作业列表同步失败。",
                                 color = MaterialTheme.colorScheme.error)
                         }
                         Button(
-                            enabled = canManageCache && !holdNetwork && missing.isNotEmpty(),
+                            enabled = canManageCache && !holdNetwork && courseValid && missing.isNotEmpty(),
                             onClick = {
-                                if (busy || activeTaskId != null || pendingDeletion != null) return@Button
+                                if (busy || activeTaskId != null || pendingDeletion != null || !courseValid) return@Button
+                                val batchScopeLabel = "$selectedCourseLabel · ${submission.label}"
                                 busy = true
                                 result = null
+                                resultScopeLabel = null
                                 actionFeedback = null
                                 scope.launch {
                                     try {
-                                        result = model.cacheMissingProblems(courseId, submission)
+                                        val next = model.cacheMissingProblems(courseId, submission)
+                                        resultScopeLabel = batchScopeLabel
+                                        result = next
                                     } finally {
                                         busy = false
                                     }
@@ -184,13 +214,14 @@ internal fun CitelBatchCacheScreen(
                         }
                         result?.let {
                             if (it.saved > 0 || it.failed > 0) {
-                                Text("已缓存 ${it.saved} 题，失败 ${it.failed} 题。")
+                                val scopePrefix = resultScopeLabel?.let { label -> "$label：" }.orEmpty()
+                                Text("${scopePrefix}已缓存 ${it.saved} 题，失败 ${it.failed} 题。")
                             }
                             it.message?.let { message ->
                                 Text(message, color = MaterialTheme.colorScheme.error)
                             }
                         }
-                        if (missing.isEmpty()) {
+                        if (courseValid && missing.isEmpty()) {
                             Text("当前筛选没有需要拉取的题目。",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }

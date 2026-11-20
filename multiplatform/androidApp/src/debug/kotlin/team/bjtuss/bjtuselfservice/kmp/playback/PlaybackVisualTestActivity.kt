@@ -22,12 +22,12 @@ import android.util.JsonReader
 import java.io.StringReader
 import team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.*
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.*
 import team.bjtuss.bjtuselfservice.shared.files.*
 import team.bjtuss.bjtuselfservice.shared.media.defaultVideoCompositor
 import team.bjtuss.bjtuselfservice.shared.network.*
-import team.bjtuss.bjtuselfservice.kmp.AndroidHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.kmp.AndroidFileGateway
 import java.io.File
 
 /** 只在 debug 包中：脱离账号页验证生产播放器、预览和任务卡；不读取学校凭据。 */
@@ -72,8 +72,8 @@ class PlaybackVisualTestActivity : ComponentActivity() {
             }
         }
         // 使用生产保存面板、可持久化 URI、任务存储和前台服务；仅标题是虚构数据。
-        val gateway = AndroidHomeworkFileGateway(this)
-        val manager = (gateway.playbackRecovery as AndroidPlaybackRecovery).managerFor("visual-test", testTransport)
+        val gateway = AndroidFileGateway(this)
+        val manager = AndroidPlaybackRecovery(applicationContext).managerFor("visual-test", testTransport)
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2102)
         }

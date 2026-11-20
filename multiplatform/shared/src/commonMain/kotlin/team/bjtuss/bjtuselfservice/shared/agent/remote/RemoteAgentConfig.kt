@@ -51,6 +51,12 @@ data class RemoteAgentConfig(
         scopes = RemoteScope.entries.filter { it.wire in scopes }.map { it.wire },
     )
 
+    /** 删除账号身份与授权，只保留设备级同步和窗口偏好。 */
+    fun withoutAccountData(): RemoteAgentConfig = RemoteAgentConfig(
+        uploadIntervalSeconds = uploadIntervalSeconds, pollIntervalSeconds = pollIntervalSeconds,
+        backgroundSync = backgroundSync, minimizeToTray = minimizeToTray,
+    )
+
     /** 解除绑定：保留间隔与范围偏好，清掉 Site 与设备身份。 */
     fun unpaired(): RemoteAgentConfig = copy(enabled = false, siteUrl = null, deviceId = null, accountBindingId = null, accountScope = null)
 }

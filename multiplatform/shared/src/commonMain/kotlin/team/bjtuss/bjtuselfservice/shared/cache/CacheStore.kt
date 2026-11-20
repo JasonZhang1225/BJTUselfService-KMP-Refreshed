@@ -86,7 +86,13 @@ class CacheDatabaseOpenException(cause: Throwable) :
 class CacheStore(
     private val driver: SqlDriver,
     private val protector: CacheValueProtector = PlaintextCacheValueProtector,
+    private val writeGuard: CacheWriteGuard? = null,
+    private val ownsDriver: Boolean = true,
 ) {
+    fun guardedBy(guard: CacheWriteGuard): CacheStore = CacheStore(driver, protector, guard, ownsDriver = false)
+
+    private fun <T> mutate(block: () -> T): T = if (writeGuard == null) block() else writeGuard.mutate(block)
+
     private val database = CacheDatabaseSql(driver)
     private val queries = database.cacheQueries
 
@@ -107,7 +113,9 @@ class CacheStore(
         )
     }.executeAsList()
 
-    fun replaceGrades(accountScope: String, grades: List<Grade>) {
+    fun replaceGrades(accountScope: String, grades: List<Grade>) = mutate { replaceGradesInAccount(accountScope = accountScope, grades = grades) }
+
+    private fun replaceGradesInAccount(accountScope: String, grades: List<Grade>) {
         val scope = protectedAccountScope(accountScope)
         queries.transaction {
             replaceGradesInTransaction(scope, grades)
@@ -120,6 +128,13 @@ class CacheStore(
      * 抓取失败（null）时保留上一次成功的旧映射不动。
      */
     fun replaceGradeSnapshot(
+        accountScope: String,
+        grades: List<Grade>,
+        selections: List<GradeSelectionRecord>,
+        courseTypes: Map<String, String>? = null,
+    ) = mutate { replaceGradeSnapshotInAccount(accountScope = accountScope, grades = grades, selections = selections, courseTypes = courseTypes) }
+
+    private fun replaceGradeSnapshotInAccount(
         accountScope: String,
         grades: List<Grade>,
         selections: List<GradeSelectionRecord>,
@@ -141,7 +156,9 @@ class CacheStore(
             .executeAsList()
             .associate { protector.unprotect(it.course_id) to protector.unprotect(it.course_type) }
 
-    fun replaceProgramCourseTypes(accountScope: String, courseTypes: Map<String, String>) {
+    fun replaceProgramCourseTypes(accountScope: String, courseTypes: Map<String, String>) = mutate { replaceProgramCourseTypesInAccount(accountScope = accountScope, courseTypes = courseTypes) }
+
+    private fun replaceProgramCourseTypesInAccount(accountScope: String, courseTypes: Map<String, String>) {
         val scope = protectedAccountScope(accountScope)
         queries.transaction {
             replaceProgramCourseTypesInTransaction(scope, courseTypes)
@@ -163,7 +180,9 @@ class CacheStore(
         )
     }.executeAsList()
 
-    fun replaceCourses(accountScope: String, courses: List<Course>) {
+    fun replaceCourses(accountScope: String, courses: List<Course>) = mutate { replaceCoursesInAccount(accountScope = accountScope, courses = courses) }
+
+    private fun replaceCoursesInAccount(accountScope: String, courses: List<Course>) {
         val scope = protectedAccountScope(accountScope)
         queries.transaction {
             replaceCoursesInTransaction(scope, courses)
@@ -177,7 +196,9 @@ class CacheStore(
             ?: 0
 
     /** 课程行与它们对应的当前周提示属于同一个账号快照。 */
-    fun replaceCourseSnapshot(accountScope: String, courses: List<Course>, currentWeek: Int) {
+    fun replaceCourseSnapshot(accountScope: String, courses: List<Course>, currentWeek: Int) = mutate { replaceCourseSnapshotInAccount(accountScope = accountScope, courses = courses, currentWeek = currentWeek) }
+
+    private fun replaceCourseSnapshotInAccount(accountScope: String, courses: List<Course>, currentWeek: Int) {
         val scope = protectedAccountScope(accountScope)
         val safeWeek = currentWeek.takeIf { it in 1..COURSE_MAX_WEEK } ?: 0
         queries.transaction {
@@ -203,7 +224,9 @@ class CacheStore(
         )
     }.executeAsList()
 
-    fun replaceExams(accountScope: String, exams: List<ExamSchedule>) {
+    fun replaceExams(accountScope: String, exams: List<ExamSchedule>) = mutate { replaceExamsInAccount(accountScope = accountScope, exams = exams) }
+
+    private fun replaceExamsInAccount(accountScope: String, exams: List<ExamSchedule>) {
         val scope = protectedAccountScope(accountScope)
         queries.transaction {
             queries.deleteExamsByAccount(scope)
@@ -247,7 +270,9 @@ class CacheStore(
         )
     }.executeAsList()
 
-    fun replaceHomework(accountScope: String, homework: List<Homework>) {
+    fun replaceHomework(accountScope: String, homework: List<Homework>) = mutate { replaceHomeworkInAccount(accountScope = accountScope, homework = homework) }
+
+    private fun replaceHomeworkInAccount(accountScope: String, homework: List<Homework>) {
         val scope = protectedAccountScope(accountScope)
         queries.transaction {
             queries.deleteHomeworkByAccount(scope)
@@ -299,7 +324,9 @@ class CacheStore(
             ),
         )
 
-    fun replaceGradeSelections(accountScope: String, records: List<GradeSelectionRecord>) {
+    fun replaceGradeSelections(accountScope: String, records: List<GradeSelectionRecord>) = mutate { replaceGradeSelectionsInAccount(accountScope = accountScope, records = records) }
+
+    private fun replaceGradeSelectionsInAccount(accountScope: String, records: List<GradeSelectionRecord>) {
         val scope = protectedAccountScope(accountScope)
         queries.transaction {
             replaceGradeSelectionsInTransaction(scope, records)
@@ -323,7 +350,9 @@ class CacheStore(
         )
     }
 
-    fun saveHomeworkFilter(accountScope: String, preferences: HomeworkFilterPreferences) {
+    fun saveHomeworkFilter(accountScope: String, preferences: HomeworkFilterPreferences) = mutate { saveHomeworkFilterInAccount(accountScope = accountScope, preferences = preferences) }
+
+    private fun saveHomeworkFilterInAccount(accountScope: String, preferences: HomeworkFilterPreferences) {
         val scope = requireAccountScope(accountScope)
         queries.transaction {
             putMetadata(scope, HOMEWORK_FILTER_COURSES_KEY, encodeHomeworkFilterCourses(preferences.selectedCourses))
@@ -343,11 +372,13 @@ class CacheStore(
             .executeAsOneOrNull()
             ?.let(protector::unprotect)
 
-    internal fun deleteMetadata(accountScope: String, key: String) {
+    internal fun deleteMetadata(accountScope: String, key: String) = mutate {
         queries.deleteMetadata(protectedAccountScope(accountScope), protectedKey(key))
     }
 
-    fun putMetadata(accountScope: String, key: String, value: String) {
+    fun putMetadata(accountScope: String, key: String, value: String) = mutate { putMetadataInAccount(accountScope = accountScope, key = key, value = value) }
+
+    private fun putMetadataInAccount(accountScope: String, key: String, value: String) {
         queries.putMetadata(
             protectedAccountScope(accountScope),
             protectedKey(key),
@@ -369,7 +400,9 @@ class CacheStore(
         )
     }
 
-    fun saveCachedProfile(profile: StudentProfile) {
+    fun saveCachedProfile(profile: StudentProfile) = mutate { saveCachedProfileInAccount(profile = profile) }
+
+    private fun saveCachedProfileInAccount(profile: StudentProfile) {
         val scope = protectedAccountScope(profile.studentId)
         queries.transaction {
             queries.putMetadata(scope, protectedKey(PROFILE_NAME_KEY), protector.protect(profile.name))
@@ -382,16 +415,22 @@ class CacheStore(
         .executeAsOneOrNull()
         ?.let(protector::unprotect)
 
-    fun putSetting(key: String, value: String) {
+    fun putSetting(key: String, value: String) = mutate { putSettingInAccount(key = key, value = value) }
+
+    private fun putSettingInAccount(key: String, value: String) {
         queries.putSetting(protectedKey(key), protector.protect(value))
     }
 
-    fun deleteSetting(key: String) {
+    fun deleteSetting(key: String) = mutate { deleteSettingInAccount(key = key) }
+
+    private fun deleteSettingInAccount(key: String) {
         queries.deleteSetting(protectedKey(key))
     }
 
     /** This release transition is independent of version numbers and guide acknowledgement. */
-    fun prepareRedesignPreferences(): AppPreferences {
+    fun prepareRedesignPreferences(): AppPreferences = mutate { prepareRedesignPreferencesInAccount() }
+
+    private fun prepareRedesignPreferencesInAccount(): AppPreferences {
         queries.transaction {
             // 物理在线原经统一认证登录，1.8.5 起改用独立账号：升级时一律关闭（升级前不可能配好独立账号），
             // 老用户另弹说明；新安装没有旧开关可误导，只静默关闭默认开启的状态。
@@ -444,7 +483,9 @@ class CacheStore(
         release186GuideAcknowledged = booleanSetting(SettingKey.RELEASE_186_GUIDE_ACKNOWLEDGED, false),
     )
 
-    fun savePreferences(preferences: AppPreferences) {
+    fun savePreferences(preferences: AppPreferences) = mutate { savePreferencesInAccount(preferences = preferences) }
+
+    private fun savePreferencesInAccount(preferences: AppPreferences) {
         queries.transaction {
             putSetting(SettingKey.AUTO_SYNC_GRADES, preferences.autoSyncGrades.toString())
             putSetting(SettingKey.AUTO_SYNC_HOMEWORK, preferences.autoSyncHomework.toString())
@@ -477,7 +518,9 @@ class CacheStore(
         }
     }
 
-    fun claimLegacyAccountData(accountScope: String) {
+    fun claimLegacyAccountData(accountScope: String) = mutate { claimLegacyAccountDataInAccount(accountScope = accountScope) }
+
+    private fun claimLegacyAccountDataInAccount(accountScope: String) {
         if (!protector.isIdentity) return
         val scope = requireAccountScope(accountScope)
         queries.transaction {
@@ -488,7 +531,51 @@ class CacheStore(
         }
     }
 
-    fun clearAccount(accountScope: String) {
+    /**
+     * Clears only this account's refetchable database cache, in one transaction.
+     * Local grade selections, ignored assignments, filters, change history, service
+     * configuration and unclassified metadata remain available for the next refresh.
+     * File tasks, credentials and system displays belong to their own cleanup steps.
+     */
+    fun clearAccountCache(accountScope: String) = mutate { clearAccountCacheInAccount(accountScope = accountScope) }
+
+    private fun clearAccountCacheInAccount(accountScope: String) {
+        val scope = protectedAccountScope(accountScope)
+        queries.transaction {
+            // Keys are encrypted on desktop. Classify their decoded names, but use
+            // the stored keys for deletion; SQL prefix matching would miss them.
+            val cacheKeys = queries.selectMetadataKeysByAccount(scope).executeAsList()
+                .filter { isRefetchableAccountMetadata(protector.unprotect(it)) }
+            queries.deleteGradesByAccount(scope)
+            queries.deleteCoursesByAccount(scope)
+            queries.deleteExamsByAccount(scope)
+            queries.deleteHomeworkByAccount(scope)
+            queries.deleteProgramCourseTypesByAccount(scope)
+            cacheKeys.forEach { key -> queries.deleteMetadata(scope, key) }
+        }
+    }
+
+    /** Explicit logout contract: no independent-service metadata is retained. */
+    fun clearAccountData(accountScope: String) = mutate {
+        val scope = protectedAccountScope(accountScope)
+        queries.transaction {
+            queries.deleteGradesByAccount(scope)
+            queries.deleteCoursesByAccount(scope)
+            queries.deleteExamsByAccount(scope)
+            queries.deleteHomeworkByAccount(scope)
+            queries.deleteGradeSelectionsByAccount(scope)
+            queries.deleteProgramCourseTypesByAccount(scope)
+            queries.deleteMetadataByAccount(scope)
+        }
+    }
+
+    fun accountScopes(): Set<String> = queries.selectAllAccountScopes().executeAsList()
+        .map(protector::unprotect).filter { it.isNotBlank() && it != "remote-agent" }.toSet()
+
+    /** Legacy database-only exit cleanup; not the complete account cleanup contract. */
+    fun clearAccount(accountScope: String) = mutate { clearAccountInAccount(accountScope = accountScope) }
+
+    private fun clearAccountInAccount(accountScope: String) {
         // 独立实验账号是同步设置；清离线副本时保留标记，完整清空时再统一清安全存储。
         val labSettings = listOf("physicslab.enabled", "physicslab.configured", "physicslab.username", "physicslab.twoWeekOverrides",
             "phydemo.enabled", "phydemo.configured", "phydemo.username",
@@ -509,7 +596,9 @@ class CacheStore(
         }
     }
 
-    fun clearAll() {
+    fun clearAll() = mutate { clearAllInAccount() }
+
+    private fun clearAllInAccount() {
         queries.transaction {
             queries.deleteAllGrades()
             queries.deleteAllCourses()
@@ -538,7 +627,7 @@ class CacheStore(
     }
 
     fun close() {
-        driver.close()
+        if (ownsDriver) driver.close()
     }
 
     private fun replaceGradesInTransaction(scope: String, grades: List<Grade>) {

@@ -16,14 +16,13 @@ interface PlaybackTaskStore {
 
 /** 保存面板的宿主与恢复能力分开；Android 实现只持有 applicationContext。 */
 interface PlaybackRecoveryAccess {
+    fun knownAccountScopes(): Set<String> = emptySet()
+    suspend fun clearUnregisteredAccountData(knownScopes: Set<String>): Boolean = true
+
     fun storeFor(accountScope: String): PlaybackTaskStore
     suspend fun restoreDestination(token: String, displayName: String): StreamingDestinationResult
     /** Android 的前台任务由应用持有，重建登录页/Activity 不得换掉执行器。 */
     fun retainedManager(accountScope: String): PlaybackTaskManager? = null
-}
-
-interface PlaybackRecoveryProvider {
-    val playbackRecovery: PlaybackRecoveryAccess
 }
 
 @Serializable

@@ -59,7 +59,7 @@ fun DesktopAgentUiSmoke() {
                     TextButton(onClick = { dark = !dark }) { Text(if (dark) "浅色" else "深色") }
                 }
                 when (page) {
-                    AgentSmokePage.Detail -> CitelDetailWorkspace(model, UnavailableHomeworkFileGateway, {}, modifier = Modifier.weight(1f))
+                    AgentSmokePage.Detail -> CitelDetailWorkspace(model, UnavailableFileGateway, {}, modifier = Modifier.weight(1f))
                     AgentSmokePage.Cache -> CitelBatchCacheScreen(model, Modifier.weight(1f))
                     AgentSmokePage.Settings -> SettingsWorkspace(settings, "测试账号", currentPlatform(),
                         expanded = false, onLogout = {}, modifier = Modifier.weight(1f))

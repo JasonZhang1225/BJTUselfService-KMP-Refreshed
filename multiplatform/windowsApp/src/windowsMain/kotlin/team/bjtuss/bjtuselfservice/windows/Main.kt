@@ -1,5 +1,6 @@
 package team.bjtuss.bjtuselfservice.windows
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AppRuntime
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
@@ -71,13 +72,17 @@ fun main(args: Array<String>) {
     }
     val accountSecurityStore = createWindowsAccountSecurityStore()
     val cacheStoreHandle = createWindowsCacheStore()
+    val appRuntime = AppRuntime()
+    val playbackRecovery = WindowsPlaybackRecovery(
+        File(System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), "BJTUselfServiceKMP/playback-tasks"),
+    )
     // 刷新执行者：持锁并开放本机 IPC，命令行 `cache update` 交给当前会话执行，避免两边各登录一次互相顶掉会话。
     // 后台命令行正在刷新时先请它交出执行权（最多等几秒），拿不到也照常启动。
-    val currentSession = java.util.concurrent.atomic.AtomicReference<AuthenticatedSession?>(null)
+    val currentSession = { appRuntime.session.value }
     val showRequests = MutableStateFlow(0L)
     appRunningLock = team.bjtuss.bjtuselfservice.shared.agent.host.AppRefreshHost.start(
         windowsAgentCliPlatform().cacheDirectory,
-        sessionProvider = currentSession::get,
+        sessionProvider = currentSession,
         onShowRequest = { showRequests.update { it + 1 } },
     )
 
@@ -86,16 +91,17 @@ fun main(args: Array<String>) {
     val remoteController = RemoteAgentController(
         store = RemoteAgentStore(cacheStoreHandle.store),
         secrets = WindowsRemoteSecretStore(),
-        executor = AppSessionRemoteExecutor(currentSession::get, cacheStoreHandle.store),
+        executor = AppSessionRemoteExecutor(currentSession, cacheStoreHandle.store),
         scope = remoteScope,
         host = WindowsRemoteHost(),
     )
     remoteController.start()
     // 关闭“后台定时同步”时，像手机端一样在每次 App 内刷新完成后上传。
-    val sessionUpdates = kotlinx.coroutines.flow.MutableStateFlow<AuthenticatedSession?>(null)
-    remoteController.followAppRefreshes(sessionUpdates)
+    appRuntime.bindRemoteAgent(remoteController)
+    remoteController.followAppRefreshes(appRuntime.session)
     // 开机启动时按“静默启动”决定是否只留在托盘；没有托盘时总是显示窗口，不留无窗口进程。
     val startupHost = WindowsStartupHost()
+    appRuntime.bindDeviceCleanup { startupHost.clearLocalSettings() }
     val traySupported = remoteController.host?.traySupported == true
     val startHidden = shouldStartHidden(args, startupHost.isSilentStart(), canReopen = traySupported)
 
@@ -179,19 +185,19 @@ fun main(args: Array<String>) {
                     toolkit.addAWTEventListener(clickListener, AWTEvent.MOUSE_EVENT_MASK)
                     onDispose { toolkit.removeAWTEventListener(clickListener) }
                 }
-                val homeworkFileGateway = remember(window) { WindowsHomeworkFileGateway(owner = { window }) }
+                val fileGateway = remember(window) { WindowsFileGateway(owner = { window }) }
                 CompositionLocalProvider(LocalRemoteAgentController provides remoteController, LocalAppStartupHost provides startupHost) {
                 App(
+                    appRuntime = appRuntime,
                     accountSecurityStore = accountSecurityStore,
                     cacheStoreHandle = cacheStoreHandle,
-                    homeworkFileGateway = homeworkFileGateway,
-                    coursewareDirectoryGateway = homeworkFileGateway,
+                    fileGateway = fileGateway,
+                    playbackRecovery = playbackRecovery,
+                    directoryGateway = fileGateway,
                     appCommandBus = appCommandBus,
                     captchaRecognizer = captchaRecognizer,
                     onAuthenticatedSessionChanged = {
                             authenticatedSession.value = it
-                            currentSession.set(it)
-                            sessionUpdates.value = it
                         },
                 )
                 }
@@ -202,6 +208,7 @@ fun main(args: Array<String>) {
         runCatching { appRunningLock?.close() }
         remoteController.close()
         remoteScope.cancel()
+        kotlinx.coroutines.runBlocking { appRuntime.closeAndJoin() }
         cacheStoreHandle.store.close()
     }
 }

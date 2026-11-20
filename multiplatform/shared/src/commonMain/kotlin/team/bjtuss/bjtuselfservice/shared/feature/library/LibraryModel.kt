@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.library
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,8 +35,9 @@ class LibraryModel(
     private val repository: LibraryRepository,
     private val clock: Clock = Clock.System,
     private val timeZone: TimeZone = TimeZone.currentSystemDefault(),
+    private val accountWork: AccountWork? = null,
 ) {
-    private val mutableState = MutableStateFlow(LibraryUiState())
+    private val mutableState = accountWork.accountState(LibraryUiState())
     val state: StateFlow<LibraryUiState> = mutableState.asStateFlow()
 
     private val mutex = Mutex()
@@ -41,14 +45,16 @@ class LibraryModel(
     /** 首页提醒的自动同步每个模型实例（≈ 每个登录会话）最多一次。 */
     private var autoSyncRequested = false
 
-    private val mutableReminder = MutableStateFlow(libraryReminder(emptyList(), today()))
+    private val mutableReminder = accountWork.accountState(libraryReminder(emptyList(), today()))
     val reminder: StateFlow<LibraryReminder> = mutableReminder.asStateFlow()
 
     /**
      * 首次进入页面时同步一次；已经拿到过用户信息或完成过一次同步就不重复请求。
      * 首次失败后再次进入页面允许重试（失败不会被永久记住）。
      */
-    suspend fun initialize() {
+    suspend fun initialize() = accountWork.inAccount { initializeInAccount() }
+
+    private suspend fun initializeInAccount() {
         if (state.value.user != null || state.value.lastSyncEpochSeconds != null) return
         mutex.withLock {
             if (state.value.user != null || state.value.lastSyncEpochSeconds != null) return@withLock
@@ -60,7 +66,9 @@ class LibraryModel(
      * 首页/磁贴提醒用：每个会话只自动同步一次，之后的提醒刷新交给页面内刷新。
      * 页面已经同步过时直接跳过，避免同一会话重复握手。
      */
-    suspend fun refreshIfNeeded() {
+    suspend fun refreshIfNeeded() = accountWork.inAccount { refreshIfNeededInAccount() }
+
+    private suspend fun refreshIfNeededInAccount() {
         if (autoSyncRequested) return
         mutex.withLock {
             if (autoSyncRequested) return@withLock
@@ -76,7 +84,9 @@ class LibraryModel(
      * @param silent 静默同步（首页提醒/首次进入）失败时只记 [LibraryUiState.failure]，
      *   不覆盖已有消息；用户主动刷新失败则把失败文案放进 message 供页面提示。
      */
-    suspend fun refresh(silent: Boolean = false) {
+    suspend fun refresh(silent: Boolean = false) = accountWork.inAccount { refreshInAccount(silent = silent) }
+
+    private suspend fun refreshInAccount(silent: Boolean = false) {
         mutex.withLock { loadAll(silent = silent) }
     }
 
@@ -120,7 +130,9 @@ class LibraryModel(
      * 全部失败时把 [LibraryFailure] 放进状态，部分失败时保留 [LibraryUiState.renewResult]
      * 让界面展示失败原因。
      */
-    suspend fun renewSelected() {
+    suspend fun renewSelected() = accountWork.inAccount { renewSelectedInAccount() }
+
+    private suspend fun renewSelectedInAccount() {
         mutex.withLock {
             val current = state.value
             if (current.renewing) return@withLock
@@ -189,7 +201,9 @@ class LibraryModel(
     }
 
     /** 失败卡片上的重试：先清掉旧失败，再走一次用户主动刷新。 */
-    suspend fun retry() {
+    suspend fun retry() = accountWork.inAccount { retryInAccount() }
+
+    private suspend fun retryInAccount() {
         dismissFailure()
         refresh()
     }

@@ -36,10 +36,11 @@ internal class MacOsKeychainItem(
 ) {
     fun save(payload: ByteArray, operation: CredentialVaultOperation) {
         require(account != null)
-        val clearStatus = withQuery { SecurityApi.INSTANCE.SecItemDelete(it) }
-        if (clearStatus != ERR_SEC_SUCCESS && clearStatus != ERR_SEC_ITEM_NOT_FOUND) {
-            throw vaultError(operation, clearStatus)
-        }
+        val updated = withQuery { query -> withQuery(payload = payload, attributesOnly = true) { attributes ->
+            SecurityApi.INSTANCE.SecItemUpdate(query, attributes)
+        } }
+        if (updated == ERR_SEC_SUCCESS) return
+        if (updated != ERR_SEC_ITEM_NOT_FOUND) throw vaultError(operation, updated)
         val status = withQuery(payload = payload) { SecurityApi.INSTANCE.SecItemAdd(it, null) }
         if (status != ERR_SEC_SUCCESS) throw vaultError(operation, status)
     }
@@ -74,6 +75,7 @@ internal class MacOsKeychainItem(
     private fun <T> withQuery(
         payload: ByteArray? = null,
         returnData: Boolean = false,
+        attributesOnly: Boolean = false,
         block: (Pointer) -> T,
     ): T {
         val ownedValues = mutableListOf<Pointer>()
@@ -82,12 +84,13 @@ internal class MacOsKeychainItem(
         fun cfData(value: ByteArray): Pointer = CoreFoundationApi.INSTANCE.createData(value)
             .also(ownedValues::add)
 
-        val entries = mutableListOf(
-            SecuritySymbols.kSecClass to SecuritySymbols.kSecClassGenericPassword,
-            SecuritySymbols.kSecAttrService to cfString(service),
-        )
-        if (account != null) entries += SecuritySymbols.kSecAttrAccount to cfString(account)
-        else entries += SecuritySymbols.kSecMatchLimit to SecuritySymbols.kSecMatchLimitAll
+        val entries = mutableListOf<Pair<Pointer, Pointer>>()
+        if (!attributesOnly) {
+            entries += SecuritySymbols.kSecClass to SecuritySymbols.kSecClassGenericPassword
+            entries += SecuritySymbols.kSecAttrService to cfString(service)
+            if (account != null) entries += SecuritySymbols.kSecAttrAccount to cfString(account)
+            else entries += SecuritySymbols.kSecMatchLimit to SecuritySymbols.kSecMatchLimitAll
+        }
         if (payload != null) {
             entries += SecuritySymbols.kSecValueData to cfData(payload)
         }
@@ -115,6 +118,7 @@ internal class MacOsKeychainItem(
 }
 
 private interface SecurityApi : Library {
+    fun SecItemUpdate(query: Pointer, attributesToUpdate: Pointer): Int
     fun SecItemAdd(attributes: Pointer, result: PointerByReference?): Int
     fun SecItemCopyMatching(query: Pointer, result: PointerByReference): Int
     fun SecItemDelete(query: Pointer): Int

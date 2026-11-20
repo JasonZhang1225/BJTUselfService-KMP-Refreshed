@@ -19,16 +19,16 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryFile
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryOpenResult
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryWriteSession
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryFile
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryOpenResult
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryWriteSession
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGatewayFailure
 import team.bjtuss.bjtuselfservice.shared.files.readLocalFiles
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FilePickResult
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestination
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingSinkIoException
@@ -38,20 +38,17 @@ import team.bjtuss.bjtuselfservice.shared.files.safeExportPathSegment
 /**
  * Windows 文件网关：系统文件面板 + 临时文件原子写入。
  */
-class WindowsHomeworkFileGateway(
+class WindowsFileGateway(
     private val owner: () -> Frame? = { null },
-    recoveryRoot: File = File(System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"), "BJTUselfServiceKMP/playback-tasks"),
-) : HomeworkFileGateway, CoursewareDirectoryGateway,
-    team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryProvider {
-    override val playbackRecovery = WindowsPlaybackRecovery(recoveryRoot)
+) : FileGateway, DirectoryGateway {
     private val requestMutex = Mutex()
 
     override val isAvailable: Boolean = true
     override val isDirectoryExportAvailable: Boolean = true
 
-    override suspend fun pickFiles(): HomeworkFilePickResult {
+    override suspend fun pickFiles(): FilePickResult {
         if (!requestMutex.tryLock()) {
-            return HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            return FilePickResult.Failed(FileGatewayFailure.UNAVAILABLE)
         }
         try {
             val selected = try {
@@ -59,18 +56,18 @@ class WindowsHomeworkFileGateway(
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
-                return HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.IO)
+                return FilePickResult.Failed(FileGatewayFailure.IO)
             }
-            if (selected.isEmpty()) return HomeworkFilePickResult.Cancelled
+            if (selected.isEmpty()) return FilePickResult.Cancelled
             return readLocalFiles(selected)
         } finally {
             requestMutex.unlock()
         }
     }
 
-    override suspend fun saveFile(file: HomeworkFileContent): HomeworkFileSaveResult {
+    override suspend fun saveFile(file: FileContent): FileSaveResult {
         if (!requestMutex.tryLock()) {
-            return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            return FileSaveResult.Failed(FileGatewayFailure.UNAVAILABLE)
         }
         try {
             val selected = try {
@@ -78,19 +75,19 @@ class WindowsHomeworkFileGateway(
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
-                return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
-            } ?: return HomeworkFileSaveResult.Cancelled
+                return FileSaveResult.Failed(FileGatewayFailure.IO)
+            } ?: return FileSaveResult.Cancelled
             return withContext(Dispatchers.IO) {
                 val context = currentCoroutineContext()
                 try {
                     writeFileAtomically(selected, file.bytes) { context.ensureActive() }
-                    HomeworkFileSaveResult.Saved
+                    FileSaveResult.Saved
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: SecurityException) {
-                    HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+                    FileSaveResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
                 } catch (_: Exception) {
-                    HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+                    FileSaveResult.Failed(FileGatewayFailure.IO)
                 }
             }
         } finally {
@@ -102,7 +99,7 @@ class WindowsHomeworkFileGateway(
 
     override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
         if (!requestMutex.tryLock()) {
-            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            return StreamingDestinationResult.Failed(FileGatewayFailure.UNAVAILABLE)
         }
         // 面板只需串行到用户选好位置；之后的长时间写入不占锁，其他保存照常可用。
         val selected = try {
@@ -110,7 +107,7 @@ class WindowsHomeworkFileGateway(
         } catch (error: CancellationException) {
             throw error
         } catch (_: Throwable) {
-            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+            return StreamingDestinationResult.Failed(FileGatewayFailure.IO)
         } finally {
             requestMutex.unlock()
         } ?: return StreamingDestinationResult.Cancelled
@@ -121,15 +118,15 @@ class WindowsHomeworkFileGateway(
                 StreamingDestinationResult.Opened(prepareFileStreamingDestination(selected, parent))
             }
         } catch (_: SecurityException) {
-            StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+            StreamingDestinationResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
         } catch (_: Exception) {
-            StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+            StreamingDestinationResult.Failed(FileGatewayFailure.IO)
         }
     }
 
-    override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult {
+    override suspend fun openDirectory(directoryName: String): DirectoryOpenResult {
         if (!requestMutex.tryLock()) {
-            return CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            return DirectoryOpenResult.Failed(FileGatewayFailure.UNAVAILABLE)
         }
         var sessionOpened = false
         var createdRoot: File? = null
@@ -139,19 +136,19 @@ class WindowsHomeworkFileGateway(
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
-                return CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.IO)
-            } ?: return CoursewareDirectoryOpenResult.Cancelled
+                return DirectoryOpenResult.Failed(FileGatewayFailure.IO)
+            } ?: return DirectoryOpenResult.Cancelled
             val result = withContext(Dispatchers.IO) {
                 val context = currentCoroutineContext()
                 val root = File(destination, safeExportPathSegment(directoryName))
                 if (root.exists()) {
-                    return@withContext CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.IO)
+                    return@withContext DirectoryOpenResult.Failed(FileGatewayFailure.IO)
                 }
                 try {
                     context.ensureActive()
                     if (!root.mkdirs()) throw IllegalStateException("Unable to create export root")
                     createdRoot = root
-                    CoursewareDirectoryOpenResult.Opened(
+                    DirectoryOpenResult.Opened(
                         WindowsDirectoryWriteSession(root) { requestMutex.unlock() },
                     )
                 } catch (error: CancellationException) {
@@ -159,13 +156,13 @@ class WindowsHomeworkFileGateway(
                     throw error
                 } catch (_: SecurityException) {
                     createdRoot?.takeIf { it == root }?.deleteRecursively()
-                    CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+                    DirectoryOpenResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
                 } catch (_: Exception) {
                     createdRoot?.takeIf { it == root }?.deleteRecursively()
-                    CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.IO)
+                    DirectoryOpenResult.Failed(FileGatewayFailure.IO)
                 }
             }
-            sessionOpened = result is CoursewareDirectoryOpenResult.Opened
+            sessionOpened = result is DirectoryOpenResult.Opened
             return result
         } catch (error: CancellationException) {
             withContext(NonCancellable + Dispatchers.IO) { createdRoot?.deleteRecursively() }
@@ -178,14 +175,14 @@ class WindowsHomeworkFileGateway(
     private inner class WindowsDirectoryWriteSession(
         private val root: File,
         private val onClosed: () -> Unit,
-    ) : CoursewareDirectoryWriteSession {
+    ) : DirectoryWriteSession {
         private val lifecycleMutex = Mutex()
         private var closed = false
 
         override val supportsStreamingFiles: Boolean = true
 
-        override suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult = lifecycleMutex.withLock {
-            if (closed) return@withLock StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        override suspend fun openFile(file: DirectoryFile): StreamingDestinationResult = lifecycleMutex.withLock {
+            if (closed) return@withLock StreamingDestinationResult.Failed(FileGatewayFailure.UNAVAILABLE)
             withContext(Dispatchers.IO) {
                 try {
                     val folder = file.relativeFolders.fold(root) { parent, segment -> File(parent, safeExportPathSegment(segment)) }
@@ -194,16 +191,16 @@ class WindowsHomeworkFileGateway(
                     if (target.exists()) throw IllegalStateException("Export file already exists")
                     StreamingDestinationResult.Opened(prepareFileStreamingDestination(target, folder))
                 } catch (_: SecurityException) {
-                    StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+                    StreamingDestinationResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
                 } catch (_: Exception) {
-                    StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+                    StreamingDestinationResult.Failed(FileGatewayFailure.IO)
                 }
             }
         }
 
-        override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult =
+        override suspend fun write(file: DirectoryFile): FileSaveResult =
             lifecycleMutex.withLock {
-                if (closed) return@withLock HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+                if (closed) return@withLock FileSaveResult.Failed(FileGatewayFailure.UNAVAILABLE)
                 withContext(Dispatchers.IO) {
                     val context = currentCoroutineContext()
                     try {
@@ -216,25 +213,25 @@ class WindowsHomeworkFileGateway(
                         }
                         val destination = File(folder, safeExportFileName(file.content.fileName))
                         if (destination.exists()) {
-                            return@withContext HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+                            return@withContext FileSaveResult.Failed(FileGatewayFailure.IO)
                         }
                         writeFileAtomically(destination, file.content.bytes) { context.ensureActive() }
-                        HomeworkFileSaveResult.Saved
+                        FileSaveResult.Saved
                     } catch (error: CancellationException) {
                         throw error
                     } catch (_: SecurityException) {
-                        HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+                        FileSaveResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
                     } catch (_: Exception) {
-                        HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+                        FileSaveResult.Failed(FileGatewayFailure.IO)
                     }
                 }
             }
 
-        override suspend fun commit(): HomeworkFileSaveResult = lifecycleMutex.withLock {
-            if (closed) return@withLock HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        override suspend fun commit(): FileSaveResult = lifecycleMutex.withLock {
+            if (closed) return@withLock FileSaveResult.Failed(FileGatewayFailure.UNAVAILABLE)
             closed = true
             onClosed()
-            HomeworkFileSaveResult.Saved
+            FileSaveResult.Saved
         }
 
         override suspend fun abort() {
@@ -365,7 +362,7 @@ internal class FileStreamingDestination(
         }
     }
 
-    override suspend fun commit(): HomeworkFileSaveResult = withContext(Dispatchers.IO) {
+    override suspend fun commit(): FileSaveResult = withContext(Dispatchers.IO) {
         try {
             output?.close()
             output = null
@@ -376,11 +373,11 @@ internal class FileStreamingDestination(
             }
             committed = true
             temporaryOwned = false
-            HomeworkFileSaveResult.Saved
+            FileSaveResult.Saved
         } catch (_: SecurityException) {
-            HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+            FileSaveResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
         } catch (_: Exception) {
-            HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+            FileSaveResult.Failed(FileGatewayFailure.IO)
         }
     }
 

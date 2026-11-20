@@ -30,6 +30,20 @@ final class PlaybackDownloadCoordinator {
     private var dismissedByUser = false
     private var observers: [NSObjectProtocol] = []
 
+    func clearAccountData() async -> Bool {
+        desiredState = nil
+        revision += 1
+        if let worker { await worker.value }
+        for existing in Activity<PlaybackDownloadAttributes>.activities {
+            await existing.end(nil, dismissalPolicy: .immediate)
+        }
+        activity = nil
+        lastState = nil
+        desiredState = nil
+        dismissedByUser = false
+        return Activity<PlaybackDownloadAttributes>.activities.allSatisfy { $0.activityState == .ended || $0.activityState == .dismissed }
+    }
+
     private init() {}
 
     /// App 启动时调用一次。

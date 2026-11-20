@@ -12,7 +12,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareCourse
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNode
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNodeKind
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareSnapshot
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 
 class CoursewareRepositoryTest {
     @Test
@@ -408,11 +408,11 @@ class CoursewareRepositoryTest {
             return childrenByParentId?.get(parentId) ?: folderChildren
         }
 
-        override suspend fun downloadResource(node: CoursewareNode): HomeworkFileContent =
-            HomeworkFileContent(node.name, "application/octet-stream", byteArrayOf(1))
+        override suspend fun downloadResource(node: CoursewareNode): FileContent =
+            FileContent(node.name, "application/octet-stream", byteArrayOf(1))
 
-        override suspend fun downloadTeachingCalendar(course: CoursewareCourse): HomeworkFileContent =
-            HomeworkFileContent("${course.name}_教学日历.pdf", "application/pdf", "%PDF".encodeToByteArray())
+        override suspend fun downloadTeachingCalendar(course: CoursewareCourse): FileContent =
+            FileContent("${course.name}_教学日历.pdf", "application/pdf", "%PDF".encodeToByteArray())
     }
 
     private fun snapshot(name: String) = CoursewareSnapshot(

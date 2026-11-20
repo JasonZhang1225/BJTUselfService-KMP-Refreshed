@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.classroomoccupancy
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -97,8 +100,9 @@ class ClassroomOccupancyScreenModel(
     private val todayWeekdayProvider: () -> Int = {
         Clock.System.now().toLocalDateTime(team.bjtuss.bjtuselfservice.shared.domain.time.SchoolTimeZone).dayOfWeek.isoDayNumber
     },
+    private val accountWork: AccountWork? = null,
 ) {
-    private val mutableState = MutableStateFlow(ClassroomOccupancyUiState())
+    private val mutableState = accountWork.accountState(ClassroomOccupancyUiState())
     val state: StateFlow<ClassroomOccupancyUiState> = mutableState.asStateFlow()
 
     private var initialized = false
@@ -123,7 +127,9 @@ class ClassroomOccupancyScreenModel(
         )
     }
 
-    suspend fun ensureWeekDatesLoaded() {
+    suspend fun ensureWeekDatesLoaded() = accountWork.inAccount { ensureWeekDatesLoadedInAccount() }
+
+    private suspend fun ensureWeekDatesLoadedInAccount() {
         if (weekDatesNonEmpty) return
         weekDatesMutex.withLock {
             if (weekDatesNonEmpty) return
@@ -141,7 +147,9 @@ class ClassroomOccupancyScreenModel(
         }
     }
 
-    suspend fun ensureSemestersLoaded() {
+    suspend fun ensureSemestersLoaded() = accountWork.inAccount { ensureSemestersLoadedInAccount() }
+
+    private suspend fun ensureSemestersLoadedInAccount() {
         if (mutableState.value.semesters.isNotEmpty()) return
         semesterMutex.withLock {
             if (mutableState.value.semesters.isNotEmpty()) return
@@ -155,7 +163,9 @@ class ClassroomOccupancyScreenModel(
         }
     }
 
-    suspend fun selectWeek(week: Int) {
+    suspend fun selectWeek(week: Int) = accountWork.inAccount { selectWeekInAccount(week = week) }
+
+    private suspend fun selectWeekInAccount(week: Int) {
         val clamped = week.coerceIn(MIN_WEEK, MAX_WEEK)
         val current = mutableState.value
         if (clamped == current.selectedWeek && current.selectedNonTeachingWeekStart == null) return
@@ -188,7 +198,9 @@ class ClassroomOccupancyScreenModel(
         )
     }
 
-    suspend fun selectSemester(semester: OccupancySemester?) {
+    suspend fun selectSemester(semester: OccupancySemester?) = accountWork.inAccount { selectSemesterInAccount(semester = semester) }
+
+    private suspend fun selectSemesterInAccount(semester: OccupancySemester?) {
         if (semester == mutableState.value.selectedSemester) return
         mutableState.value = mutableState.value.copy(
             selectedSemester = semester,
@@ -236,7 +248,9 @@ class ClassroomOccupancyScreenModel(
         return currentIndex + offset in slots.indices
     }
 
-    suspend fun moveWeekBy(offset: Int) {
+    suspend fun moveWeekBy(offset: Int) = accountWork.inAccount { moveWeekByInAccount(offset = offset) }
+
+    private suspend fun moveWeekByInAccount(offset: Int) {
         if (offset !in setOf(-1, 1)) return
         val current = mutableState.value
         val slots = weekSlots()
@@ -258,7 +272,9 @@ class ClassroomOccupancyScreenModel(
         }
     }
 
-    suspend fun refreshPeople() {
+    suspend fun refreshPeople() = accountWork.inAccount { refreshPeopleInAccount() }
+
+    private suspend fun refreshPeopleInAccount() {
         val building = mutableState.value.selectedBuilding ?: return
         val remote = peopleRepository ?: return
         if (building.name !in team.bjtuss.bjtuselfservice.shared.domain.classroom.CLASSROOM_BUILDINGS) return
@@ -276,7 +292,9 @@ class ClassroomOccupancyScreenModel(
         }
     }
 
-    suspend fun refresh() = query()
+    suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
+
+    private suspend fun refreshInAccount() = query()
 
     private fun applySemesterOptions(options: SemesterOptions) {
         if (options.all.isEmpty()) return

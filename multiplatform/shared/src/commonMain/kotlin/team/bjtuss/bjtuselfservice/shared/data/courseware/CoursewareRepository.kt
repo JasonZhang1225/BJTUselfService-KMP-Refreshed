@@ -16,7 +16,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNodeKind
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackDetail
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackLesson
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.findCoursewareNode
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.files.StreamingFileSink
 
 private const val COURSEWARE_CACHE_KEY = "courseware_tree_v1"
@@ -103,7 +103,7 @@ interface CoursewareRepository {
     ): CoursewareOperationResult<CoursewareSnapshot> =
         CoursewareOperationResult.Success(snapshot)
 
-    suspend fun downloadResource(node: CoursewareNode): CoursewareOperationResult<HomeworkFileContent>
+    suspend fun downloadResource(node: CoursewareNode): CoursewareOperationResult<FileContent>
     suspend fun streamResource(node: CoursewareNode, sink: StreamingFileSink, onProgress: (Long, Long) -> Unit) {
         when (val result = downloadResource(node)) {
             is CoursewareOperationResult.Success -> {
@@ -113,7 +113,7 @@ interface CoursewareRepository {
             is CoursewareOperationResult.Failure -> throw CoursewareRemoteException(CoursewareRemoteFailure.NETWORK)
         }
     }
-    suspend fun downloadTeachingCalendar(course: CoursewareCourse): CoursewareOperationResult<HomeworkFileContent>
+    suspend fun downloadTeachingCalendar(course: CoursewareCourse): CoursewareOperationResult<FileContent>
     suspend fun planStoredDownload(node: CoursewareNode): CoursewareOperationResult<CoursewareStoredDownload> =
         CoursewareOperationResult.Failure(CoursewareSyncFailure.MALFORMED_RESPONSE)
 
@@ -374,7 +374,7 @@ class DefaultCoursewareRepository(
 
     override suspend fun downloadResource(
         node: CoursewareNode,
-    ): CoursewareOperationResult<HomeworkFileContent> = try {
+    ): CoursewareOperationResult<FileContent> = try {
         CoursewareOperationResult.Success(remote.downloadResource(node))
     } catch (error: CancellationException) {
         throw error
@@ -389,7 +389,7 @@ class DefaultCoursewareRepository(
 
     override suspend fun downloadTeachingCalendar(
         course: CoursewareCourse,
-    ): CoursewareOperationResult<HomeworkFileContent> = remoteOperation {
+    ): CoursewareOperationResult<FileContent> = remoteOperation {
         remote.downloadTeachingCalendar(course)
     }
 

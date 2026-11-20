@@ -26,7 +26,7 @@ actual val fileDropSupported: Boolean = true
 actual fun Modifier.fileDropTarget(
     enabled: Boolean,
     onHoverChange: (Boolean) -> Unit,
-    onDrop: (HomeworkFilePickResult) -> Unit,
+    onDrop: (FilePickResult) -> Unit,
 ): Modifier {
     val hover by rememberUpdatedState(onHoverChange)
     val drop by rememberUpdatedState(onDrop)

@@ -20,13 +20,16 @@ fun createAndroidAccountSecurityStore(context: Context): AccountSecurityStore = 
     citelVault = { AndroidKeystoreCredentialVault(context.applicationContext, "team.bjtuss.bjtuselfservice.kmp.citel.$it", "secure_citel_$it") },
     phyVlabVault = { AndroidKeystoreCredentialVault(context.applicationContext, "team.bjtuss.bjtuselfservice.kmp.phyvlab.$it", "secure_phyvlab_$it") },
     remoteVault = { AndroidKeystoreCredentialVault(context.applicationContext, "team.bjtuss.bjtuselfservice.kmp.remote.$it", "secure_remote_$it") },
+    clearAllServiceVaults = { clearAllAndroidServiceVaults(context.applicationContext) },
+    cleanupJournalVault = AndroidKeystoreCredentialVault(context.applicationContext, "team.bjtuss.bjtuselfservice.kmp.cleanup.v1", "secure_cleanup_journal"),
 )
 
 class AndroidKeystoreCredentialVault(
     context: Context,
     private val keyAlias: String = "team.bjtuss.bjtuselfservice.kmp.credentials.v1",
-    preferenceName: String = "secure_account_credentials",
+    private val preferenceName: String = "secure_account_credentials",
 ) : CredentialVault {
+    private val app = context.applicationContext
     private val preferences = context.getSharedPreferences(
         preferenceName,
         Context.MODE_PRIVATE,
@@ -69,6 +72,8 @@ class AndroidKeystoreCredentialVault(
         if (!committed) {
             throw CredentialVaultException(CredentialVaultOperation.CLEAR)
         }
+        KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }.deleteEntry(keyAlias)
+        check(app.deleteSharedPreferences(preferenceName))
     }
 
     private fun getOrCreateSecretKey(): SecretKey {
@@ -126,4 +131,17 @@ private class AndroidAccountPreferences(context: Context) : AccountPreferences {
     private companion object {
         const val REMEMBER_CREDENTIALS_KEY = "remember_credentials"
     }
+}
+
+private fun clearAllAndroidServiceVaults(app: Context) {
+    val services = listOf("physicslab", "phydemo", "phyvlab", "citel", "remote")
+    val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    var ok = true
+    val aliases = store.aliases().toList().filter { alias -> services.any { alias.startsWith("team.bjtuss.bjtuselfservice.kmp.$it.") } }
+    aliases.forEach { alias -> if (runCatching { store.deleteEntry(alias) }.isFailure) ok = false }
+    val root = java.io.File(app.applicationInfo.dataDir, "shared_prefs")
+    root.listFiles().orEmpty().filter { it.name.endsWith(".xml") && services.any { service -> it.name.startsWith("secure_${service}_") } }.forEach {
+        if (java.nio.file.Files.isSymbolicLink(it.toPath()) || !app.deleteSharedPreferences(it.name.removeSuffix(".xml"))) ok = false
+    }
+    check(ok) { "Unable to clear application service credentials" }
 }

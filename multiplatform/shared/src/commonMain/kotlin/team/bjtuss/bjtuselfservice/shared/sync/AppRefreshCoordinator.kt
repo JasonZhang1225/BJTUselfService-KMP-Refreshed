@@ -152,19 +152,16 @@ class AppRefreshCoordinator(
 
     /** 退出登录或切换账号：取消在途刷新，此后请求一律不再执行。 */
     fun close() {
-        val pending = synchronizedClose()
-        pending.forEach { it.cancel(CancellationException("refresh coordinator closed")) }
+        closed = true
         scope.cancel(CancellationException("refresh coordinator closed"))
     }
 
-    val isClosed: Boolean get() = closed
-
-    private fun synchronizedClose(): List<CompletableDeferred<RefreshSourceResult>> {
-        // close() 可能在主线程同步调用；inFlight 只在 mutex 下变更，这里尽力取一份快照即可：
-        // 之后的 refresh() 会看到 closed 并直接返回，漏掉的在途项随 scope 一起取消。
-        closed = true
-        return inFlight.values.toList()
+    suspend fun stopAndJoin() {
+        close()
+        scope.coroutineContext[kotlinx.coroutines.Job]?.join()
     }
+
+    val isClosed: Boolean get() = closed
 
     private fun startBatch(sources: List<RefreshSource>, forceReauthenticate: Boolean) {
         val session = SessionRefreshCoordinator(

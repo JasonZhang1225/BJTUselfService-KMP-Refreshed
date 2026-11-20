@@ -1,5 +1,10 @@
 package team.bjtuss.bjtuselfservice.shared.feature.course
 
+import team.bjtuss.bjtuselfservice.shared.presentation.course.CourseCategoryColors
+import team.bjtuss.bjtuselfservice.shared.presentation.course.CourseColorCategory
+import team.bjtuss.bjtuselfservice.shared.presentation.course.colorCategory
+import team.bjtuss.bjtuselfservice.shared.presentation.course.courseCategoryColors
+
 import team.bjtuss.bjtuselfservice.shared.domain.course.eventDates
 import team.bjtuss.bjtuselfservice.shared.domain.course.eventDatesLabel
 
@@ -108,11 +113,10 @@ import team.bjtuss.bjtuselfservice.shared.domain.grade.courseTypeForCourseName
 import team.bjtuss.bjtuselfservice.shared.domain.grade.displayName
 import team.bjtuss.bjtuselfservice.shared.calendar.SystemCalendarGateway
 import team.bjtuss.bjtuselfservice.shared.feature.calendar.CourseCalendarExportSheet
-import team.bjtuss.bjtuselfservice.shared.feature.grade.courseTypeColors
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
 import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetBodyScroll
 
 /** 详情/网格等完整日名。 */
@@ -195,7 +199,7 @@ fun CourseScheduleWorkspace(
     courseTypesByCode: Map<String, CourseType>?,
     expanded: Boolean,
     model: CourseScheduleScreenModel,
-    fileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     systemCalendarGateway: SystemCalendarGateway,
     showCalendarExportSheet: Boolean,
     onDismissCalendarExport: () -> Unit,
@@ -1631,7 +1635,7 @@ private fun CourseTypeLegend(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CourseLegendRow(
-    entries: List<Pair<String, team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors>>,
+    entries: List<Pair<String, CourseCategoryColors>>,
     modifier: Modifier,
 ) {
     androidx.compose.foundation.layout.FlowRow(
@@ -2020,11 +2024,11 @@ private fun CourseEmptyState(type: CourseScheduleType, onRefresh: () -> Unit) = 
 )
 
 @Composable
-private fun scheduleEventColors(kind: String): team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors =
+private fun scheduleEventColors(kind: String): CourseCategoryColors =
     courseCategoryColors(if (kind == "physicslab" || kind == "phydemo") CourseColorCategory.LAB else CourseColorCategory.EXAM)
 
 @Composable
-private fun courseScheduleTypeColors(type: CourseType): team.bjtuss.bjtuselfservice.shared.feature.grade.GradeTypeColors =
+private fun courseScheduleTypeColors(type: CourseType): CourseCategoryColors =
     courseCategoryColors(type.colorCategory())
 
 @Composable

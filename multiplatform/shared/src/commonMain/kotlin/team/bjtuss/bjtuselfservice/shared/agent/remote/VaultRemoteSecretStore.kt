@@ -21,9 +21,11 @@ class VaultRemoteSecretStore(private val vaultFor: (String) -> CredentialVault) 
     override suspend fun loadPlatformAccessSiteUrl(): String? = read(PLATFORM_SITE)
     override suspend fun savePlatformAccessSiteUrl(siteUrl: String?) = write(PLATFORM_SITE, siteUrl)
     override suspend fun clear() {
-        write(DEVICE_TOKEN, null)
-        write(PLATFORM_ACCESS, null)
-        write(PLATFORM_SITE, null)
+        var failed = false
+        for (key in listOf(DEVICE_TOKEN, PLATFORM_ACCESS, PLATFORM_SITE)) {
+            if (runCatching { write(key, null) }.isFailure) failed = true
+        }
+        check(!failed) { "Remote secret cleanup failed" }
     }
 
     private companion object {

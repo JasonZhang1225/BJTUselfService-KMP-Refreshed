@@ -8,13 +8,15 @@ import team.bjtuss.bjtuselfservice.shared.feature.settings.AppStartupHost
 const val BACKGROUND_LAUNCH_ARGUMENT = "--background"
 
 /** 静默启动偏好（非机密）：存当前用户的 Java Preferences，启动时在读缓存前就能取到。默认开启。 */
-class DesktopStartupPreferences(nodePath: String = "/team/bjtuss/bjtuselfservice/kmp/startup") {
-    private val node = Preferences.userRoot().node(nodePath)
+class DesktopStartupPreferences(private val nodePath: String = "/team/bjtuss/bjtuselfservice/kmp/startup") {
+    private val node get() = Preferences.userRoot().node(nodePath)
     fun silentStart(): Boolean = node.getBoolean(SILENT_KEY, true)
     fun setSilentStart(enabled: Boolean) {
         node.putBoolean(SILENT_KEY, enabled)
         runCatching { node.flush() }
     }
+
+    fun clear() { node.remove(SILENT_KEY); node.flush() }
 
     private companion object {
         const val SILENT_KEY = "silent_start"
@@ -75,6 +77,12 @@ class MacLaunchAgentStartupHost(
 
     override fun isSilentStart(): Boolean = preferences.silentStart()
     override fun setSilentStart(enabled: Boolean) = preferences.setSilentStart(enabled)
+    fun clearLocalSettings(): Boolean = runCatching {
+        if (plist.exists()) check(plist.delete())
+        preferences.clear()
+        true
+    }.getOrDefault(false)
+
     override fun openSystemSettings(): Boolean = openSettings()
 
     companion object {

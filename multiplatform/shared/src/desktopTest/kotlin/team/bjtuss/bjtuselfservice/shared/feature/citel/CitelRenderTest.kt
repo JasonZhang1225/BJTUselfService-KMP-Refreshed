@@ -19,7 +19,7 @@ import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.cache.db.CacheDatabaseSql
 import team.bjtuss.bjtuselfservice.shared.data.moodle.*
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
 
 /** Render production UI with synthetic tasks; no browser, credentials, or network. */
 class CitelRenderTest {
@@ -52,7 +52,7 @@ class CitelRenderTest {
                         density = Density(1f, if (name.contains("large")) 1.5f else 1f), coroutineContext = Dispatchers.Unconfined) {
                         PlatformAppTheme(useDarkTheme = name.contains("dark"), dynamicColorEnabled = false) {
                             Surface(Modifier.fillMaxSize()) {
-                                if (name.startsWith("detail")) CitelDetailWorkspace(model, UnavailableHomeworkFileGateway, {})
+                                if (name.startsWith("detail")) CitelDetailWorkspace(model, UnavailableFileGateway, {})
                                 else if ("batch" in name) CitelBatchCacheScreen(model, Modifier.fillMaxSize())
                                 else if (name.startsWith("settings")) CitelSettingsWorkspace(model)
                                 else CitelWorkspace(model, false, {})

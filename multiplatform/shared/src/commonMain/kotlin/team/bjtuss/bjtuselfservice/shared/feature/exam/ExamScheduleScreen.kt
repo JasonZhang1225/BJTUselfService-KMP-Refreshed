@@ -71,7 +71,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
 import team.bjtuss.bjtuselfservice.shared.feature.homework.subtitleWithBoldFilterMarker
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -79,7 +79,7 @@ fun ExamScheduleWorkspace(
     state: ExamScheduleUiState,
     expanded: Boolean,
     model: ExamScheduleScreenModel,
-    fileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     systemCalendarGateway: SystemCalendarGateway,
     onRefresh: () -> Unit,
     modifier: Modifier,

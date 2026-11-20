@@ -5,7 +5,7 @@ import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkDetail
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.SubmittedHomeworkAttachment
 
 data class HomeworkSnapshot(val homework: List<Homework>)
@@ -79,14 +79,14 @@ interface HomeworkRepository {
     suspend fun downloadTeacherAttachment(
         homeworkId: Int,
         attachment: HomeworkAttachment,
-    ): HomeworkOperationResult<HomeworkFileContent>
+    ): HomeworkOperationResult<FileContent>
     suspend fun downloadSubmittedAttachment(
         attachment: SubmittedHomeworkAttachment,
-    ): HomeworkOperationResult<HomeworkFileContent>
+    ): HomeworkOperationResult<FileContent>
     suspend fun submitHomework(
         homework: Homework,
         content: String,
-        files: List<HomeworkFileContent>,
+        files: List<FileContent>,
     ): HomeworkOperationResult<Unit>
     fun attachmentDownloadUrl(homeworkId: Int, attachmentId: Int): String
 }
@@ -146,20 +146,20 @@ class DefaultHomeworkRepository(
     override suspend fun downloadTeacherAttachment(
         homeworkId: Int,
         attachment: HomeworkAttachment,
-    ): HomeworkOperationResult<HomeworkFileContent> = remoteOperation {
+    ): HomeworkOperationResult<FileContent> = remoteOperation {
         remote.downloadTeacherAttachment(homeworkId, attachment)
     }
 
     override suspend fun downloadSubmittedAttachment(
         attachment: SubmittedHomeworkAttachment,
-    ): HomeworkOperationResult<HomeworkFileContent> = remoteOperation {
+    ): HomeworkOperationResult<FileContent> = remoteOperation {
         remote.downloadSubmittedAttachment(attachment)
     }
 
     override suspend fun submitHomework(
         homework: Homework,
         content: String,
-        files: List<HomeworkFileContent>,
+        files: List<FileContent>,
     ): HomeworkOperationResult<Unit> {
         if (files.isEmpty()) return HomeworkOperationResult.Failure(HomeworkSyncFailure.MALFORMED_RESPONSE)
         return try {

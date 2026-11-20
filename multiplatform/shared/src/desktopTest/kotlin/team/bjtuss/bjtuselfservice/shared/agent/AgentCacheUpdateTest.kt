@@ -156,6 +156,24 @@ class AgentCacheUpdateTest {
         handle.store.close()
     }
 
+    @Test
+    fun pendingCleanupJournalBlocksHeadlessCredentialUse() {
+        writeCache()
+        val primary = object : CredentialVault {
+            override suspend fun load(): Credentials = error("Pending cleanup must be checked before reading credentials")
+            override suspend fun save(credentials: Credentials) = Unit
+            override suspend fun clear() = error("Headless refresh must not delete credentials")
+        }
+        val environment = AgentCliPlatform(directory, { key.copyOf() }, { "20990001" },
+            securityStore = { AccountSecurityStore(primary, FakePreferences(true),
+                cleanupJournalVault = FakeVault(Credentials("cleanup", "corrupt-pending-journal"))) },
+            captchaRecognizer = { error("Pending cleanup cannot start login") })
+        val output = runCacheUpdate(emptyList(), environment)
+        assertEquals(AgentExit.LOGIN_FAILED, output.exitCode)
+        assertTrue("清理尚未完成" in output.stderr)
+        assertNotNull(AgentAppLock.tryAcquire(directory)).close()
+    }
+
     private fun platform(remember: Boolean, vault: FakeVault = FakeVault(Credentials("20990001", "secret"))) = AgentCliPlatform(
         cacheDirectory = directory,
         loadCacheKey = { key.copyOf() },

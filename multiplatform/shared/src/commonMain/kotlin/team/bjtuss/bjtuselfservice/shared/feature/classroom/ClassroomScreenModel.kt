@@ -1,5 +1,8 @@
 package team.bjtuss.bjtuselfservice.shared.feature.classroom
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
+import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,8 +59,9 @@ data class ClassroomUiState(
  */
 class ClassroomScreenModel(
     private val repository: ClassroomRepository,
+    private val accountWork: AccountWork? = null,
 ) {
-    private val mutableState = MutableStateFlow(ClassroomUiState())
+    private val mutableState = accountWork.accountState(ClassroomUiState())
     val state: StateFlow<ClassroomUiState> = mutableState.asStateFlow()
 
     /** 会话内各教学楼最近一次成功快照，用于失败时保留旧数据。 */
@@ -65,7 +69,9 @@ class ClassroomScreenModel(
     private val fetchMutex = Mutex()
 
     /** 选择教学楼并触发加载（若该楼从未成功加载过）。 */
-    suspend fun selectBuilding(building: String) {
+    suspend fun selectBuilding(building: String) = accountWork.inAccount { selectBuildingInAccount(building = building) }
+
+    private suspend fun selectBuildingInAccount(building: String) {
         require(building in CLASSROOM_BUILDINGS) { "unknown building" }
         val cached = lastSuccessByBuilding[building]
         updateState {
@@ -83,7 +89,9 @@ class ClassroomScreenModel(
     }
 
     /** 强制刷新当前选中的教学楼。 */
-    suspend fun refresh() {
+    suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
+
+    private suspend fun refreshInAccount() {
         val building = mutableState.value.selectedBuilding ?: return
         fetch(building)
     }

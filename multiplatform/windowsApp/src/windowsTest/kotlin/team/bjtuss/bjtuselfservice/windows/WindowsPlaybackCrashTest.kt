@@ -20,7 +20,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.*
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.*
 import team.bjtuss.bjtuselfservice.shared.files.*
 import team.bjtuss.bjtuselfservice.shared.media.*
@@ -122,11 +122,11 @@ object PlaybackCrashFixture {
         val recovery = WindowsPlaybackRecovery(File(root, "state"))
         val store = recovery.storeFor("crash-test")
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-        val gateway = object : HomeworkFileGateway {
+        val gateway = object : FileGateway {
             override val isAvailable = true
             override val isStreamingSaveAvailable = true
-            override suspend fun pickFiles() = HomeworkFilePickResult.Cancelled
-            override suspend fun saveFile(file: HomeworkFileContent) = HomeworkFileSaveResult.Cancelled
+            override suspend fun pickFiles() = FilePickResult.Cancelled
+            override suspend fun saveFile(file: FileContent) = FileSaveResult.Cancelled
             override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
                 val destination = prepareFileStreamingDestination(target)
                 File(root, "temp-name").writeText(destination.temporary.fileName.toString())
