@@ -26,7 +26,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabAssignmentDetail
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabEvent
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpRequest
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpResponse
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
@@ -40,7 +40,7 @@ class PhyVlabScreenModelTest {
         model.showActivityDetails(activity)
         model.submitSelectedActivity(emptyList(), finalize = true, filesChecked = true)
         assertEquals(0, repository.finalCalls)
-        model.submitSelectedActivity(listOf(HomeworkFileContent("report.pdf", "application/pdf", byteArrayOf(1))))
+        model.submitSelectedActivity(listOf(FileContent("report.pdf", "application/pdf", byteArrayOf(1))))
         assertEquals(1, repository.saveCalls)
         assertEquals(0, repository.finalCalls)
         assertTrue(model.state.value.assignmentDetail!!.isDraft)
@@ -79,7 +79,7 @@ class PhyVlabScreenModelTest {
         var detail = PhyVlabAssignmentDetail(submissionStatus = "草稿（未提交）", isDraft = true, canSubmit = true, canFinalize = true,
             submittedFiles = listOf(team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabSubmissionFile("report.pdf")))
         override suspend fun fetchAssignmentDetail(activity: PhyVlabActivity) = PhyVlabAssignmentDetailResult.Success(detail)
-        override suspend fun saveAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>, removed: Set<String>): PhyVlabSubmissionResult {
+        override suspend fun saveAssignment(activity: PhyVlabActivity, files: List<FileContent>, removed: Set<String>): PhyVlabSubmissionResult {
             saveCalls++
             return PhyVlabSubmissionResult.Success
         }
@@ -385,7 +385,7 @@ class PhyVlabScreenModelTest {
             override suspend fun fetchCourseActivities(course: PhyVlabCourse) = PhyVlabActivitiesResult.Success(emptyList())
             override suspend fun fetchEvents(monthTimestampSeconds: Long) = PhyVlabEventsResult.Success(emptyList())
             override suspend fun fetchAssignmentDetail(activity: PhyVlabActivity) = error("unused")
-            override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>) = error("unused")
+            override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<FileContent>) = error("unused")
         }
         val model = PhyVlabScreenModel(repository, PhyVlabSessionProtocol(gatedTransport))
         val first = async(Dispatchers.Default) { model.refresh() }
@@ -439,7 +439,7 @@ class PhyVlabScreenModelTest {
 
         override suspend fun submitAssignment(
             activity: PhyVlabActivity,
-            files: List<HomeworkFileContent>,
+            files: List<FileContent>,
         ): PhyVlabSubmissionResult = error("not reached")
     }
 
@@ -463,7 +463,7 @@ class PhyVlabScreenModelTest {
 
         override suspend fun submitAssignment(
             activity: PhyVlabActivity,
-            files: List<HomeworkFileContent>,
+            files: List<FileContent>,
         ): PhyVlabSubmissionResult = error("not reached")
     }
 

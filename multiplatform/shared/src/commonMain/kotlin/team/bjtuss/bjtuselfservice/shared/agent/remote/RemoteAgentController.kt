@@ -32,7 +32,7 @@ import team.bjtuss.bjtuselfservice.shared.agent.buildAgentDataset
 import team.bjtuss.bjtuselfservice.shared.agent.loadAgentSnapshot
 import team.bjtuss.bjtuselfservice.shared.agent.runAgentQuery
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshReport
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshRequest
@@ -152,7 +152,7 @@ class AppSessionRemoteExecutor(
             agentPendingAssignmentIds(data, now().epochSeconds).toSet())
     }
 
-    override suspend fun readAttachment(ref: RemoteAttachmentRef): HomeworkFileContent? {
+    override suspend fun readAttachment(ref: RemoteAttachmentRef): FileContent? {
         val service = readySession()?.assignmentDetails ?: return null
         val file = service.attachment(ref.assignmentId, ref.attachmentId)
         val size = file.bytes.size.toLong()

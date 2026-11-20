@@ -34,7 +34,7 @@ import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkSyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkDetail
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.SubmittedHomeworkAttachment
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshSource
@@ -60,7 +60,7 @@ class AgentHomeworkTest {
         var items: List<Homework>,
         val submittedAfterRefresh: Boolean = true,
     ) : HomeworkRepository {
-        val submissions = mutableListOf<Pair<Homework, List<HomeworkFileContent>>>()
+        val submissions = mutableListOf<Pair<Homework, List<FileContent>>>()
         var submitFailures = ArrayDeque<HomeworkOperationResult.Failure>()
         var attachments = listOf<HomeworkAttachment>()
 
@@ -71,10 +71,10 @@ class AgentHomeworkTest {
         override suspend fun loadSubmittedAttachments(homework: Homework) =
             HomeworkOperationResult.Success(listOf(SubmittedHomeworkAttachment("1", "旧文件.pdf", "/private")))
         override suspend fun downloadTeacherAttachment(homeworkId: Int, attachment: HomeworkAttachment) =
-            HomeworkOperationResult.Success(HomeworkFileContent(attachment.fileName, "text/plain", "要求-$homeworkId".toByteArray()))
+            HomeworkOperationResult.Success(FileContent(attachment.fileName, "text/plain", "要求-$homeworkId".toByteArray()))
         override suspend fun downloadSubmittedAttachment(attachment: SubmittedHomeworkAttachment) =
             HomeworkOperationResult.Failure(HomeworkSyncFailure.NETWORK)
-        override suspend fun submitHomework(homework: Homework, content: String, files: List<HomeworkFileContent>): HomeworkOperationResult<Unit> {
+        override suspend fun submitHomework(homework: Homework, content: String, files: List<FileContent>): HomeworkOperationResult<Unit> {
             submitFailures.removeFirstOrNull()?.let { return it }
             submissions += homework to files
             if (submittedAfterRefresh) items = items.map { it.copy(idSnId = 1, subStatus = "已提交") }

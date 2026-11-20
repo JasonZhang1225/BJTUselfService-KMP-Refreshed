@@ -25,7 +25,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshReport
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshStatus
 
@@ -74,7 +74,7 @@ interface RemoteRefreshExecutor {
     suspend fun attachmentPlan(scopes: Set<RemoteScope>): RemoteAttachmentPlan? = null
 
     /** 读取要上传的附件；超过 5 MB 返回 null。 */
-    suspend fun readAttachment(ref: RemoteAttachmentRef): HomeworkFileContent? = null
+    suspend fun readAttachment(ref: RemoteAttachmentRef): FileContent? = null
 }
 
 sealed interface RemoteUploadOutcome {

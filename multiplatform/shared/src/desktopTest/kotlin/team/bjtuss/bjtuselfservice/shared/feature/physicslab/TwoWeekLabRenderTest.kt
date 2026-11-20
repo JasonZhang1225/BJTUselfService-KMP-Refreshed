@@ -19,7 +19,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWee
 import team.bjtuss.bjtuselfservice.shared.feature.course.*
 import team.bjtuss.bjtuselfservice.shared.data.course.*
 import team.bjtuss.bjtuselfservice.shared.calendar.UnavailableSystemCalendarGateway
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
 
 /** Real components with synthetic data; never installs or launches the simulator app. */
 class TwoWeekLabRenderTest {
@@ -49,7 +49,7 @@ class TwoWeekLabRenderTest {
                                     }) }
                                     CourseScheduleWorkspace(CourseScheduleUiState(supplementalCourses = courses, academicWeeks = weeks,
                                         physicsLabs = labs, selectedWeek = 0, isLoading = false, currentWeek = 13),
-                                        emptyMap(), false, model, UnavailableHomeworkFileGateway, UnavailableSystemCalendarGateway,
+                                        emptyMap(), false, model, UnavailableFileGateway, UnavailableSystemCalendarGateway,
                                         showCalendarExportSheet = false, onDismissCalendarExport = {}, onRefresh = {}, modifier = Modifier.fillMaxSize())
                                 }
                                 else -> CourseDetailContent(courses.first { it.scheduleEventTypeLabel == if (page == "specialty-detail") "专题实验" else "设计实验" },

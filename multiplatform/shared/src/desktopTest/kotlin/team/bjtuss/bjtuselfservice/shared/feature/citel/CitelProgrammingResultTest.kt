@@ -17,7 +17,7 @@ import team.bjtuss.bjtuselfservice.shared.PlatformAppTheme
 import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.cache.db.CacheDatabaseSql
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
 
 class CitelProgrammingResultTest {
@@ -78,7 +78,7 @@ class CitelProgrammingResultTest {
                 return result
             }
             override suspend fun programmingOptions(credentials: Credentials, task: CitelTask): CitelProgrammingOptions = error("AC/RJ must not request an upload form")
-            override suspend fun submitProgramming(credentials: Credentials, task: CitelTask, file: HomeworkFileContent, language: String): CitelProgrammingResult {
+            override suspend fun submitProgramming(credentials: Credentials, task: CitelTask, file: FileContent, language: String): CitelProgrammingResult {
                 posts++
                 return result
             }
@@ -103,7 +103,7 @@ class CitelProgrammingResultTest {
             assertTrue(model.state.value.tasks.single().submitted)
             assertTrue(cache.metadata("fixture", "citel.tasks")!!.contains("AC: Accepted"))
             assertEquals(6, model.state.value.programmingResult!!.passedTests)
-            model.submitProgramming(listOf(HomeworkFileContent("main.cpp", "text/plain", byteArrayOf(1))), "1")
+            model.submitProgramming(listOf(FileContent("main.cpp", "text/plain", byteArrayOf(1))), "1")
             assertEquals(0, posts)
             model.dismissTask()
             val before = reads

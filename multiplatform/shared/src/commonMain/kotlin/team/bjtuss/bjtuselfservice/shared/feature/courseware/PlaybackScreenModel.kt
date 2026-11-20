@@ -18,7 +18,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackCompositeQua
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackDetail
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackLesson
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStream
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
 
 data class PlaybackUiState(
     val courseId: Int? = null,
@@ -149,7 +149,7 @@ class PlaybackScreenModel(
     suspend fun download(
         detail: PlaybackDetail,
         streams: List<PlaybackStream>,
-        gateway: HomeworkFileGateway,
+        gateway: FileGateway,
         courseName: String,
         composite: Boolean,
         quality: PlaybackCompositeQuality = PlaybackCompositeQuality.HIGH,

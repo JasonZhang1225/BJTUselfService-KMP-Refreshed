@@ -31,13 +31,13 @@ import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.cache.db.CacheDatabaseSql
 import team.bjtuss.bjtuselfservice.shared.data.homework.*
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.*
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.*
 import team.bjtuss.bjtuselfservice.shared.feature.citel.*
 import team.bjtuss.bjtuselfservice.shared.feature.homework.*
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.*
 import team.bjtuss.bjtuselfservice.shared.feature.shell.*
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
 import team.bjtuss.bjtuselfservice.shared.network.*
 
 class IndependentAssignmentScrollToTopTest {
@@ -102,7 +102,7 @@ class IndependentAssignmentScrollToTopTest {
             override suspend fun fetchCourseActivities(course: PhyVlabCourse) = PhyVlabActivitiesResult.Success(activities)
             override suspend fun fetchEvents(monthTimestampSeconds: Long) = PhyVlabEventsResult.Success(emptyList())
             override suspend fun fetchAssignmentDetail(activity: PhyVlabActivity): PhyVlabAssignmentDetailResult = error("No detail request expected")
-            override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<HomeworkFileContent>): PhyVlabSubmissionResult = error("No submission allowed")
+            override suspend fun submitAssignment(activity: PhyVlabActivity, files: List<FileContent>): PhyVlabSubmissionResult = error("No submission allowed")
         }, PhyVlabSessionProtocol(object : SchoolHttpTransport {
             override suspend fun execute(request: SchoolHttpRequest) = SchoolHttpResponse(200,
                 "https://phyvlab.bjtu.edu.cn/login/index.php", body = "<a href='/login/logout.php'>退出登录</a>".encodeToByteArray())
@@ -140,7 +140,7 @@ class IndependentAssignmentScrollToTopTest {
                 "homework" -> {
                     val state by homeworkModel.state.collectAsState()
                     HomeworkWorkspace(state, layout.width >= 600, model = homeworkModel,
-                        fileGateway = UnavailableHomeworkFileGateway, onRefresh = {}, onOpenDetail = {}, modifier = Modifier.fillMaxSize())
+                        fileGateway = UnavailableFileGateway, onRefresh = {}, onOpenDetail = {}, modifier = Modifier.fillMaxSize())
                 }
                 "phyvlab" -> PhyVlabWorkspace(phyModel, showDetailSheet = false)
                 "citel" -> CitelWorkspace(citelModel, holdNetwork = true, onOpen = {}, showDetailSheet = false)

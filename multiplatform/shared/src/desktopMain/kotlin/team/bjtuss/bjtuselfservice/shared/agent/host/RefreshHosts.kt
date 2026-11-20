@@ -24,7 +24,7 @@ import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.auth.SchoolLoginProtocol
 import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityCoordinator
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityStore
@@ -264,7 +264,7 @@ class HeadlessRefreshHost(private val deps: HeadlessRefreshDependencies) {
             securityCoordinator = AccountSecurityCoordinator(deps.securityStore),
             captchaRecognizer = deps.captchaRecognizer,
             credentialsProvider = { deps.credentials },
-            homeworkFileGateway = UnavailableHomeworkFileGateway,
+            fileGateway = UnavailableFileGateway,
             onPurgeLogout = {},
             refreshDispatcher = Dispatchers.Default,
             nowEpochSeconds = { Clock.System.now().epochSeconds },

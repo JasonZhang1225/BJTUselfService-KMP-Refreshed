@@ -1,6 +1,5 @@
 package team.bjtuss.bjtuselfservice.shared.files
 
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
 
 private const val MAX_EXPORT_NAME_CHARS = 80
 private const val MAX_PRESERVED_EXTENSION_CHARS = 16
@@ -51,24 +50,24 @@ private fun String.takeExportPrefix(maxChars: Int): String {
     return if (prefix.lastOrNull()?.code in 0xd800..0xdbff) prefix.dropLast(1) else prefix
 }
 
-data class CoursewareDirectoryFile(
+data class DirectoryFile(
     val relativeFolders: List<String>,
-    val content: HomeworkFileContent,
+    val content: FileContent,
 ) {
     init {
         require(relativeFolders.none(String::isBlank))
     }
 
     override fun toString(): String =
-        "CoursewareDirectoryFile(depth=${relativeFolders.size}, content=<redacted>)"
+        "DirectoryFile(depth=${relativeFolders.size}, content=<redacted>)"
 }
 
 /** Allocates one deterministic, case-insensitive export tree before platform providers see the names. */
-class CoursewareExportNameAllocator {
+class ExportNameAllocator {
     private val resolvedFolders = mutableMapOf<List<String>, List<String>>(emptyList<String>() to emptyList())
     private val usedNamesByFolder = mutableMapOf<List<String>, MutableSet<String>>()
 
-    fun resolve(file: CoursewareDirectoryFile): CoursewareDirectoryFile {
+    fun resolve(file: DirectoryFile): DirectoryFile {
         var sourcePath = emptyList<String>()
         var exportPath = emptyList<String>()
         file.relativeFolders.forEach { sourceSegment ->
@@ -91,9 +90,9 @@ class CoursewareExportNameAllocator {
             usedNames = usedNames(exportPath),
             preserveExtension = true,
         )
-        return CoursewareDirectoryFile(
+        return DirectoryFile(
             relativeFolders = exportPath,
-            content = HomeworkFileContent(
+            content = FileContent(
                 fileName = exportFileName,
                 contentType = file.content.contentType,
                 bytes = file.content.bytes,
@@ -131,34 +130,34 @@ private fun String.withExportSuffix(suffix: String, preserveExtension: Boolean):
     return stem.takeExportPrefix(stemLimit) + suffix + extension
 }
 
-sealed interface CoursewareDirectoryOpenResult {
-    class Opened(val session: CoursewareDirectoryWriteSession) : CoursewareDirectoryOpenResult {
+sealed interface DirectoryOpenResult {
+    class Opened(val session: DirectoryWriteSession) : DirectoryOpenResult {
         override fun toString(): String = "Opened(session=<redacted>)"
     }
 
-    data object Cancelled : CoursewareDirectoryOpenResult
-    data class Failed(val reason: HomeworkFileGatewayFailure) : CoursewareDirectoryOpenResult
+    data object Cancelled : DirectoryOpenResult
+    data class Failed(val reason: FileGatewayFailure) : DirectoryOpenResult
 }
 
 /** A newly created export root. [abort] must be idempotent and remove only that new root. */
-interface CoursewareDirectoryWriteSession {
-    suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult
+interface DirectoryWriteSession {
+    suspend fun write(file: DirectoryFile): FileSaveResult
     val supportsStreamingFiles: Boolean get() = false
-    suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult =
-        StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
-    suspend fun commit(): HomeworkFileSaveResult
+    suspend fun openFile(file: DirectoryFile): StreamingDestinationResult =
+        StreamingDestinationResult.Failed(FileGatewayFailure.UNAVAILABLE)
+    suspend fun commit(): FileSaveResult
     suspend fun abort()
 }
 
 /** 平台实现必须先让用户选择位置并创建新根目录，再通过会话逐文件写入。 */
-interface CoursewareDirectoryGateway {
+interface DirectoryGateway {
     val isDirectoryExportAvailable: Boolean
-    suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult
+    suspend fun openDirectory(directoryName: String): DirectoryOpenResult
 }
 
-object UnavailableCoursewareDirectoryGateway : CoursewareDirectoryGateway {
+object UnavailableDirectoryGateway : DirectoryGateway {
     override val isDirectoryExportAvailable: Boolean = false
 
-    override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult =
-        CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+    override suspend fun openDirectory(directoryName: String): DirectoryOpenResult =
+        DirectoryOpenResult.Failed(FileGatewayFailure.UNAVAILABLE)
 }

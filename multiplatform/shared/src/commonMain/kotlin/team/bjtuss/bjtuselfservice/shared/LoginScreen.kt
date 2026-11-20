@@ -141,8 +141,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.home.HomeScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppCommandBus
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheetOrAlert
 import team.bjtuss.bjtuselfservice.shared.feature.shell.rememberAuthenticatedSession
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.network.createSchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.update.AppUpdateChecker
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityCoordinator
@@ -159,8 +159,8 @@ fun LoginRoute(
     windowClass: WindowClass,
     accountSecurityStore: AccountSecurityStore,
     cacheStoreHandle: CacheStoreHandle,
-    homeworkFileGateway: HomeworkFileGateway,
-    coursewareDirectoryGateway: CoursewareDirectoryGateway,
+    fileGateway: FileGateway,
+    directoryGateway: DirectoryGateway,
     systemCalendarGateway: SystemCalendarGateway,
     appCommandBus: AppCommandBus?,
     appPreferences: AppPreferences,
@@ -581,8 +581,8 @@ fun LoginRoute(
             captchaRecognizer = captchaRecognizer,
             username = username,
             password = password,
-            homeworkFileGateway = homeworkFileGateway,
-            coursewareDirectoryGateway = coursewareDirectoryGateway,
+            fileGateway = fileGateway,
+            directoryGateway = directoryGateway,
             systemCalendarGateway = systemCalendarGateway,
             onLogout = { accountScope -> logout(accountScope) },
             onPurgeLogout = { accountScope -> logout(accountScope, fullWipe = true) },

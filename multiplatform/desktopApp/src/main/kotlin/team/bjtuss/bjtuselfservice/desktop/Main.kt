@@ -210,16 +210,16 @@ fun main(args: Array<String>) {
                     LaunchedEffect(Unit) {
                         window.minimumSize = Dimension(720, 520)
                     }
-                    val homeworkFileGateway = remember(window) {
-                        DesktopHomeworkFileGateway { window }
+                    val fileGateway = remember(window) {
+                        DesktopFileGateway { window }
                     }
                     val systemCalendarGateway = remember { DesktopSystemCalendarGateway() }
                     CompositionLocalProvider(LocalAppStartupHost provides startupHost, LocalRemoteAgentController provides remoteController) {
                     App(
                         accountSecurityStore = accountSecurityStore,
                         cacheStoreHandle = cacheStoreHandle,
-                        homeworkFileGateway = homeworkFileGateway,
-                        coursewareDirectoryGateway = homeworkFileGateway,
+                        fileGateway = fileGateway,
+                        directoryGateway = fileGateway,
                         systemCalendarGateway = systemCalendarGateway,
                         appCommandBus = appCommandBus,
                         onAuthenticatedSessionChanged = {

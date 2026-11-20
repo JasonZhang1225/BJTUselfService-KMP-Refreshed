@@ -71,8 +71,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.otherfunction.OtherFunctionScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.settings.SettingsScreenModel
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.network.createSchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.security.AccountSecurityCoordinator
@@ -98,7 +98,7 @@ class AppDataGraph(
     captchaRecognizer: CaptchaRecognizer,
     /** 当前内存中的登录凭据；会话过期时用于在 App 内自动恢复。 */
     credentialsProvider: () -> Credentials?,
-    homeworkFileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     onPurgeLogout: (String) -> Unit,
     /** 刷新协调器的调度器：App 用主线程（与旧壳层刷新一致），无窗口宿主用后台线程。 */
     refreshDispatcher: CoroutineDispatcher,
@@ -177,7 +177,7 @@ class AppDataGraph(
     val otherFunctionRepository = DefaultOtherFunctionRepository(
         remote = SchoolOtherFunctionRemoteDataSource(transport),
     )
-    val otherFunctionModel = OtherFunctionScreenModel(otherFunctionRepository, homeworkFileGateway)
+    val otherFunctionModel = OtherFunctionScreenModel(otherFunctionRepository, fileGateway)
     val classroomRepository = DefaultClassroomRepository(
         remote = SchoolClassroomRemoteDataSource(createSchoolHttpTransport()),
     )
@@ -257,7 +257,7 @@ class AppDataGraph(
     )
     /** 页面模型的作用域；Android 下载执行器另外由应用按账号持有，不随 [close] 销毁。 */
     private val playbackScope = CoroutineScope(SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
-    private val playbackRecovery = (homeworkFileGateway as? team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryProvider)?.playbackRecovery
+    private val playbackRecovery = (fileGateway as? team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryProvider)?.playbackRecovery
     val playbackTaskManager = playbackRecovery?.retainedManager(accountScope) ?: team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackTaskManager(
         scope = playbackScope,
         downloader = team.bjtuss.bjtuselfservice.shared.data.courseware.HlsRecordingDownloader(

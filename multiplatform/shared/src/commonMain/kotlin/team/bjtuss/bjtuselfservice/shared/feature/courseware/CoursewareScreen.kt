@@ -62,10 +62,10 @@ import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareSyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareCourse
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.CoursewareNode
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.VisibleCoursewareNode
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FileGatewayFailure
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalTopBarClearance
@@ -88,8 +88,8 @@ fun CoursewareWorkspace(
     legacyWarningVisible: Boolean = false,
     onDismissLegacyWarning: () -> Unit = {},
     model: CoursewareScreenModel,
-    fileGateway: HomeworkFileGateway,
-    directoryGateway: CoursewareDirectoryGateway,
+    fileGateway: FileGateway,
+    directoryGateway: DirectoryGateway,
     onRefresh: () -> Unit,
     modifier: Modifier,
 ) {
@@ -121,9 +121,9 @@ fun CoursewareWorkspace(
                 when (val saved = model.saveRestrictedResource(node.stableKey, fileGateway)) {
                     is CoursewareOperationResult.Failure -> Unit
                     is CoursewareOperationResult.Success -> fileFeedback = when (saved.value) {
-                        HomeworkFileSaveResult.Saved -> "文件已通过备用方式保存。"
-                        HomeworkFileSaveResult.Cancelled -> "已取消保存，没有写入文件。"
-                        is HomeworkFileSaveResult.Failed -> "保存失败，未完成的文件已删除，请重新选择位置。"
+                        FileSaveResult.Saved -> "文件已通过备用方式保存。"
+                        FileSaveResult.Cancelled -> "已取消保存，没有写入文件。"
+                        is FileSaveResult.Failed -> "保存失败，未完成的文件已删除，请重新选择位置。"
                     }
                 }
                 return@launch
@@ -132,9 +132,9 @@ fun CoursewareWorkspace(
                 when (val saved = model.saveResourceStreaming(node.stableKey, fileGateway)) {
                     is CoursewareOperationResult.Failure -> Unit
                     is CoursewareOperationResult.Success -> fileFeedback = when (saved.value) {
-                        HomeworkFileSaveResult.Saved -> "文件已保存。"
-                        HomeworkFileSaveResult.Cancelled -> "已取消保存，没有写入文件。"
-                        is HomeworkFileSaveResult.Failed -> "保存失败，未完成的文件已删除。"
+                        FileSaveResult.Saved -> "文件已保存。"
+                        FileSaveResult.Cancelled -> "已取消保存，没有写入文件。"
+                        is FileSaveResult.Failed -> "保存失败，未完成的文件已删除。"
                     }
                 }
                 return@launch
@@ -143,9 +143,9 @@ fun CoursewareWorkspace(
                 is CoursewareOperationResult.Failure -> Unit
                 is CoursewareOperationResult.Success -> {
                     fileFeedback = when (fileGateway.saveFile(downloaded.value)) {
-                        HomeworkFileSaveResult.Saved -> "文件已保存。"
-                        HomeworkFileSaveResult.Cancelled -> "已取消保存，没有写入文件。"
-                        is HomeworkFileSaveResult.Failed -> "保存失败，请重新选择位置。"
+                        FileSaveResult.Saved -> "文件已保存。"
+                        FileSaveResult.Cancelled -> "已取消保存，没有写入文件。"
+                        is FileSaveResult.Failed -> "保存失败，请重新选择位置。"
                     }
                 }
             }
@@ -165,7 +165,7 @@ fun CoursewareWorkspace(
             fileFeedback = null
             isCancellingDirectory = false
             keepCompletedOnCancel = true
-            var keepResult: HomeworkFileSaveResult? = null
+            var keepResult: FileSaveResult? = null
             try {
                 when (val exported = model.exportDirectory(stableKey, directoryName, directoryGateway,
                     keepCompletedOnCancel = { keepCompletedOnCancel },
@@ -174,7 +174,7 @@ fun CoursewareWorkspace(
                     is CoursewareOperationResult.Failure -> Unit
                     is CoursewareOperationResult.Success -> {
                         fileFeedback = when (exported.value) {
-                            HomeworkFileSaveResult.Saved -> model.state.value.directoryExportSkipped.let { skipped ->
+                            FileSaveResult.Saved -> model.state.value.directoryExportSkipped.let { skipped ->
                                 if (skipped.isEmpty()) {
                                     "目录已完整导出。"
                                 } else {
@@ -182,18 +182,18 @@ fun CoursewareWorkspace(
                                         skipped.take(3).joinToString("、") + if (skipped.size > 3) " 等。" else "。"
                                 }
                             }
-                            HomeworkFileSaveResult.Cancelled -> "已取消导出，没有写入目录。"
-                            is HomeworkFileSaveResult.Failed -> when (exported.value.reason) {
-                                HomeworkFileGatewayFailure.PERMISSION_DENIED -> "目录导出失败：没有目标文件夹的写入权限，请重新选择并授权。"
-                                HomeworkFileGatewayFailure.UNAVAILABLE -> "目录导出失败：文件选择器正忙或不可用，请稍后重试。"
-                                HomeworkFileGatewayFailure.IO -> "目录导出失败：无法创建目录或写入文件，请检查所选位置和可用空间。"
+                            FileSaveResult.Cancelled -> "已取消导出，没有写入目录。"
+                            is FileSaveResult.Failed -> when (exported.value.reason) {
+                                FileGatewayFailure.PERMISSION_DENIED -> "目录导出失败：没有目标文件夹的写入权限，请重新选择并授权。"
+                                FileGatewayFailure.UNAVAILABLE -> "目录导出失败：文件选择器正忙或不可用，请稍后重试。"
+                                FileGatewayFailure.IO -> "目录导出失败：无法创建目录或写入文件，请检查所选位置和可用空间。"
                             }
                         }
                     }
                 }
             } catch (_: CancellationException) {
                 fileFeedback = when {
-                    keepResult == HomeworkFileSaveResult.Saved -> "已取消导出，保留了已完成文件；未完成文件已请求清理。"
+                    keepResult == FileSaveResult.Saved -> "已取消导出，保留了已完成文件；未完成文件已请求清理。"
                     keepResult != null -> "已取消导出；未删除已完成文件，但无法确认目录保存状态，请检查目标文件夹。"
                     keepCompletedOnCancel -> "已取消导出；请检查目标文件夹中的已完成文件。"
                     else -> "已取消导出；已请求清理本次导出目录。"

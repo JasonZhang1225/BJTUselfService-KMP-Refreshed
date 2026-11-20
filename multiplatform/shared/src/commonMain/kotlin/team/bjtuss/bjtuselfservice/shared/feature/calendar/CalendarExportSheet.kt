@@ -38,18 +38,18 @@ import team.bjtuss.bjtuselfservice.shared.domain.calendar.generateAcademicCalend
 import team.bjtuss.bjtuselfservice.shared.domain.calendar.parseExamCalendarTime
 import team.bjtuss.bjtuselfservice.shared.domain.classroomoccupancy.OccupancyWeekDate
 import team.bjtuss.bjtuselfservice.shared.domain.exam.ExamSchedule
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.feature.course.COURSE_MAX_WEEK
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleType
 import team.bjtuss.bjtuselfservice.shared.feature.course.CourseScheduleUiState
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 
 /** 课表允许整学期批量加入；系统日历名严格跟随用户指定的两种课表名称。 */
 @Composable
 fun CourseCalendarExportSheet(
     courseState: CourseScheduleUiState,
-    fileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     systemCalendarGateway: SystemCalendarGateway,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
@@ -171,7 +171,7 @@ fun CourseCalendarExportSheet(
 @Composable
 fun SingleExamCalendarSheet(
     exam: ExamSchedule,
-    fileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     systemCalendarGateway: SystemCalendarGateway,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
@@ -304,25 +304,25 @@ private fun CourseScheduleUiState.generateCourseExport(
 )
 
 private suspend fun saveIcs(
-    gateway: HomeworkFileGateway,
+    gateway: FileGateway,
     fileName: String,
     generated: CalendarExportResult,
 ): String = when (
     gateway.saveFile(
-        HomeworkFileContent(
+        FileContent(
             fileName = fileName,
             contentType = "text/calendar; charset=utf-8",
             bytes = generated.ics.encodeToByteArray(),
         ),
     )
 ) {
-    HomeworkFileSaveResult.Saved -> if (generated.courseEventCount > 0) {
+    FileSaveResult.Saved -> if (generated.courseEventCount > 0) {
         "已保存 ${generated.courseEventCount} 个课次、${generated.physicsLabEventCount} 次物理实验、${generated.physicsDemoEventCount} 次演示实验，共 ${generated.events.size} 个日程。"
     } else {
         "已保存 ${generated.events.size} 个日程。"
     }
-    HomeworkFileSaveResult.Cancelled -> "已取消保存，没有残留文件。"
-    is HomeworkFileSaveResult.Failed -> "保存失败，请稍后重试。"
+    FileSaveResult.Cancelled -> "已取消保存，没有残留文件。"
+    is FileSaveResult.Failed -> "保存失败，请稍后重试。"
 }
 
 private suspend fun installSystemCalendar(

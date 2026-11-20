@@ -31,7 +31,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStream
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStreamKind
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackEnqueueResult
 import team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackTasksPage
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
 
 /** 人工 UI 验收入口，只使用传入的隔离目录和公开媒体；不加载真实账号或应用缓存。 */
@@ -51,7 +51,7 @@ fun main(args: Array<String>) {
         true, streams, streams.map { it.kind }, "")
     val recovery = WindowsPlaybackRecovery(File(root, "state"))
     val manager = recovery.retainedManager("ui-test-account")
-    val gateway = object : HomeworkFileGateway by WindowsHomeworkFileGateway(recoveryRoot = File(root, "state")) {
+    val gateway = object : FileGateway by WindowsFileGateway(recoveryRoot = File(root, "state")) {
         override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
             val target = File(root, "visual-result.mp4")
             val temporary = Files.createTempFile(root.toPath(), ".bjtu-save-", ".tmp")

@@ -173,15 +173,15 @@ class CitelProblemTest {
 
     @Test fun directoryFailureAbortsOnlyNewSession() = runBlocking {
         var aborted = false
-        val gateway = object : CoursewareDirectoryGateway {
+        val gateway = object : DirectoryGateway {
             override val isDirectoryExportAvailable = true
-            override suspend fun openDirectory(directoryName: String) = CoursewareDirectoryOpenResult.Opened(object : CoursewareDirectoryWriteSession {
-                override suspend fun write(file: CoursewareDirectoryFile) = HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
-                override suspend fun commit(): HomeworkFileSaveResult = error("must not commit")
+            override suspend fun openDirectory(directoryName: String) = DirectoryOpenResult.Opened(object : DirectoryWriteSession {
+                override suspend fun write(file: DirectoryFile) = FileSaveResult.Failed(FileGatewayFailure.IO)
+                override suspend fun commit(): FileSaveResult = error("must not commit")
                 override suspend fun abort() { aborted = true }
             })
         }
-        assertIs<HomeworkFileSaveResult.Failed>(exportCitelProblem(task, CitelCachedProblem("fixture", task.id, 0, parseCitelProblem(view())), gateway))
+        assertIs<FileSaveResult.Failed>(exportCitelProblem(task, CitelCachedProblem("fixture", task.id, 0, parseCitelProblem(view())), gateway))
         assertTrue(aborted)
     }
     @Test fun modelOnlyFetchesFullTextOnExplicitActionAndKeepsOldCacheOnFailure() = runBlocking {

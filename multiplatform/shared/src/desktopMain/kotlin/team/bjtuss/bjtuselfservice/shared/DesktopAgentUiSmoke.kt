@@ -49,7 +49,7 @@ fun DesktopAgentUiSmoke() {
                     TextButton(onClick = { dark = !dark }) { Text(if (dark) "浅色" else "深色") }
                 }
                 if (showSettings) SettingsWorkspace(settings,"测试账号",currentPlatform(),expanded = false,onLogout = {},modifier = Modifier.weight(1f))
-                else CitelDetailWorkspace(model,UnavailableHomeworkFileGateway,{},modifier = Modifier.weight(1f))
+                else CitelDetailWorkspace(model,UnavailableFileGateway,{},modifier = Modifier.weight(1f))
             }
         }
     }

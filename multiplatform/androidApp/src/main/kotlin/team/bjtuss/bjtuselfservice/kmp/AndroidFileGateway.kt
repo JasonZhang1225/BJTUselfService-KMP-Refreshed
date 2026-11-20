@@ -30,33 +30,33 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePreviewResult
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGatewayFailure
+import team.bjtuss.bjtuselfservice.shared.files.FilePickResult
+import team.bjtuss.bjtuselfservice.shared.files.FilePreviewResult
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestination
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingSinkIoException
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryFile
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryOpenResult
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryWriteSession
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryFile
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryOpenResult
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryWriteSession
 import team.bjtuss.bjtuselfservice.shared.files.previewContentType
 import team.bjtuss.bjtuselfservice.shared.files.safeExportFileName
 import team.bjtuss.bjtuselfservice.shared.files.safeExportPathSegment
 
-class AndroidHomeworkFileGateway(
+class AndroidFileGateway(
     private val activity: ComponentActivity,
-) : HomeworkFileGateway, CoursewareDirectoryGateway, DefaultLifecycleObserver,
+) : FileGateway, DirectoryGateway, DefaultLifecycleObserver,
     team.bjtuss.bjtuselfservice.shared.feature.courseware.PlaybackRecoveryProvider {
     override val playbackRecovery = team.bjtuss.bjtuselfservice.kmp.playback.AndroidPlaybackRecovery(activity.applicationContext)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var pickContinuation: CancellableContinuation<HomeworkFilePickResult>? = null
-    private var saveContinuation: CancellableContinuation<HomeworkFileSaveResult>? = null
-    private var pendingSaveFile: HomeworkFileContent? = null
-    private var directoryContinuation: CancellableContinuation<CoursewareDirectoryOpenResult>? = null
+    private var pickContinuation: CancellableContinuation<FilePickResult>? = null
+    private var saveContinuation: CancellableContinuation<FileSaveResult>? = null
+    private var pendingSaveFile: FileContent? = null
+    private var directoryContinuation: CancellableContinuation<DirectoryOpenResult>? = null
     private var pendingDirectoryName: String? = null
     private var directoryOpenJob: Job? = null
     private var streamUriContinuation: CancellableContinuation<Uri?>? = null
@@ -77,7 +77,7 @@ class AndroidHomeworkFileGateway(
         val continuation = pickContinuation ?: return@registerForActivityResult
         if (uris.isEmpty()) {
             pickContinuation = null
-            if (continuation.isActive) continuation.resume(HomeworkFilePickResult.Cancelled)
+            if (continuation.isActive) continuation.resume(FilePickResult.Cancelled)
             return@registerForActivityResult
         }
         scope.launch {
@@ -97,13 +97,13 @@ class AndroidHomeworkFileGateway(
         if (uri == null) {
             saveContinuation = null
             pendingSaveFile = null
-            if (continuation.isActive) continuation.resume(HomeworkFileSaveResult.Cancelled)
+            if (continuation.isActive) continuation.resume(FileSaveResult.Cancelled)
             return@registerForActivityResult
         }
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 if (file == null) {
-                    HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+                    FileSaveResult.Failed(FileGatewayFailure.IO)
                 } else {
                     writeSelectedFile(uri, file)
                 }
@@ -124,21 +124,21 @@ class AndroidHomeworkFileGateway(
         if (uri == null) {
             directoryContinuation = null
             pendingDirectoryName = null
-            if (continuation.isActive) continuation.resume(CoursewareDirectoryOpenResult.Cancelled)
+            if (continuation.isActive) continuation.resume(DirectoryOpenResult.Cancelled)
             return@registerForActivityResult
         }
         directoryOpenJob = scope.launch {
-            var openedSession: CoursewareDirectoryWriteSession? = null
+            var openedSession: DirectoryWriteSession? = null
             var handedOff = false
             try {
                 val result = withContext(Dispatchers.IO) {
                     if (directoryName == null) {
-                        CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.IO)
+                        DirectoryOpenResult.Failed(FileGatewayFailure.IO)
                     } else {
                         openSelectedDirectory(uri, directoryName)
                     }
                 }
-                if (result is CoursewareDirectoryOpenResult.Opened) {
+                if (result is DirectoryOpenResult.Opened) {
                     openedSession = result.session
                 }
                 if (directoryContinuation === continuation) {
@@ -163,9 +163,9 @@ class AndroidHomeworkFileGateway(
     override val isAvailable: Boolean = true
     override val isDirectoryExportAvailable: Boolean = true
 
-    override suspend fun pickFiles(): HomeworkFilePickResult {
+    override suspend fun pickFiles(): FilePickResult {
         if (hasActiveRequest()) {
-            return HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            return FilePickResult.Failed(FileGatewayFailure.UNAVAILABLE)
         }
         return suspendCancellableCoroutine { continuation ->
             pickContinuation = continuation
@@ -185,7 +185,7 @@ class AndroidHomeworkFileGateway(
      * createChooser 默认只把 FLAG_GRANT 给选择器自己，目标应用读不到 content URI。
      * 必须把同一 URI 放进 ClipData，并显式 grant 给能处理该 MIME 的应用。
      */
-    override suspend fun previewFile(file: HomeworkFileContent): HomeworkFilePreviewResult {
+    override suspend fun previewFile(file: FileContent): FilePreviewResult {
         val uri = try {
             withContext(Dispatchers.IO) {
                 val root = File(activity.cacheDir, "previews")
@@ -198,9 +198,9 @@ class AndroidHomeworkFileGateway(
         } catch (error: CancellationException) {
             throw error
         } catch (_: SecurityException) {
-            return HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+            return FilePreviewResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
         } catch (_: Exception) {
-            return HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.IO)
+            return FilePreviewResult.Failed(FileGatewayFailure.IO)
         }
         val mimeType = previewContentType(file.fileName, file.contentType)
         val grantFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -217,15 +217,15 @@ class AndroidHomeworkFileGateway(
         }
         return try {
             activity.startActivity(chooser)
-            HomeworkFilePreviewResult.Opened
+            FilePreviewResult.Opened
         } catch (_: ActivityNotFoundException) {
-            HomeworkFilePreviewResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            FilePreviewResult.Failed(FileGatewayFailure.UNAVAILABLE)
         }
     }
 
-    override suspend fun saveFile(file: HomeworkFileContent): HomeworkFileSaveResult {
+    override suspend fun saveFile(file: FileContent): FileSaveResult {
         if (hasActiveRequest()) {
-            return HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            return FileSaveResult.Failed(FileGatewayFailure.UNAVAILABLE)
         }
         return suspendCancellableCoroutine { continuation ->
             pendingSaveFile = file
@@ -249,7 +249,7 @@ class AndroidHomeworkFileGateway(
      */
     override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
         if (hasActiveRequest()) {
-            return StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            return StreamingDestinationResult.Failed(FileGatewayFailure.UNAVAILABLE)
         }
         val uri = suspendCancellableCoroutine<Uri?> { continuation ->
             streamUriContinuation = continuation
@@ -265,22 +265,22 @@ class AndroidHomeworkFileGateway(
             val output = withContext(Dispatchers.IO) { resolver.openOutputStream(uri, "wt") }
             if (output == null) {
                 withContext(Dispatchers.IO) { runCatching { DocumentsContract.deleteDocument(resolver, uri) } }
-                StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+                StreamingDestinationResult.Failed(FileGatewayFailure.IO)
             } else {
                 StreamingDestinationResult.Opened(
                     ContentStreamingDestination(resolver, uri, output, displayName(uri) ?: safeExportFileName(fileName)),
                 )
             }
         } catch (_: SecurityException) {
-            StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+            StreamingDestinationResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
         } catch (_: FileNotFoundException) {
-            StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+            StreamingDestinationResult.Failed(FileGatewayFailure.IO)
         }
     }
 
-    override suspend fun openDirectory(directoryName: String): CoursewareDirectoryOpenResult {
+    override suspend fun openDirectory(directoryName: String): DirectoryOpenResult {
         if (hasActiveRequest()) {
-            return CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+            return DirectoryOpenResult.Failed(FileGatewayFailure.UNAVAILABLE)
         }
         return suspendCancellableCoroutine { continuation ->
             pendingDirectoryName = directoryName
@@ -299,14 +299,14 @@ class AndroidHomeworkFileGateway(
     override fun onDestroy(owner: LifecycleOwner) {
         directoryOpenJob?.cancel()
         if (pickContinuation?.isActive == true) {
-            pickContinuation?.resume(HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE))
+            pickContinuation?.resume(FilePickResult.Failed(FileGatewayFailure.UNAVAILABLE))
         }
         if (saveContinuation?.isActive == true) {
-            saveContinuation?.resume(HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE))
+            saveContinuation?.resume(FileSaveResult.Failed(FileGatewayFailure.UNAVAILABLE))
         }
         if (directoryContinuation?.isActive == true) {
             directoryContinuation?.resume(
-                CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE),
+                DirectoryOpenResult.Failed(FileGatewayFailure.UNAVAILABLE),
             )
         }
         if (streamUriContinuation?.isActive == true) streamUriContinuation?.resume(null)
@@ -320,13 +320,13 @@ class AndroidHomeworkFileGateway(
         scope.cancel()
     }
 
-    private fun readSelectedFiles(uris: List<Uri>): HomeworkFilePickResult = try {
-        HomeworkFilePickResult.Selected(
+    private fun readSelectedFiles(uris: List<Uri>): FilePickResult = try {
+        FilePickResult.Selected(
             uris.map { uri ->
                 val name = displayName(uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "upload.bin"
                 val bytes = activity.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     ?: throw FileNotFoundException()
-                HomeworkFileContent(
+                FileContent(
                     fileName = safeExportFileName(name),
                     contentType = activity.contentResolver.getType(uri) ?: "application/octet-stream",
                     bytes = bytes,
@@ -334,29 +334,29 @@ class AndroidHomeworkFileGateway(
             },
         )
     } catch (_: SecurityException) {
-        HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+        FilePickResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
     } catch (_: Exception) {
-        HomeworkFilePickResult.Failed(HomeworkFileGatewayFailure.IO)
+        FilePickResult.Failed(FileGatewayFailure.IO)
     }
 
     private fun writeSelectedFile(
         uri: Uri,
-        file: HomeworkFileContent,
-    ): HomeworkFileSaveResult = try {
+        file: FileContent,
+    ): FileSaveResult = try {
         activity.contentResolver.openOutputStream(uri, "w")?.use { output ->
             output.write(file.bytes)
         } ?: throw FileNotFoundException()
-        HomeworkFileSaveResult.Saved
+        FileSaveResult.Saved
     } catch (_: SecurityException) {
-        HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+        FileSaveResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
     } catch (_: Exception) {
-        HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+        FileSaveResult.Failed(FileGatewayFailure.IO)
     }
 
     private suspend fun openSelectedDirectory(
         destination: Uri,
         directoryName: String,
-    ): CoursewareDirectoryOpenResult {
+    ): DirectoryOpenResult {
         val context = currentCoroutineContext()
         val resolver = activity.contentResolver
         var createdRoot: Uri? = null
@@ -374,30 +374,30 @@ class AndroidHomeworkFileGateway(
             ) ?: throw FileNotFoundException()
             createdRoot = root
             context.ensureActive()
-            CoursewareDirectoryOpenResult.Opened(AndroidDirectoryWriteSession(root))
+            DirectoryOpenResult.Opened(AndroidDirectoryWriteSession(root))
         } catch (error: CancellationException) {
             createdRoot?.let { runCatching { DocumentsContract.deleteDocument(resolver, it) } }
             throw error
         } catch (_: SecurityException) {
             createdRoot?.let { runCatching { DocumentsContract.deleteDocument(resolver, it) } }
-            CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+            DirectoryOpenResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
         } catch (_: Exception) {
             createdRoot?.let { runCatching { DocumentsContract.deleteDocument(resolver, it) } }
-            CoursewareDirectoryOpenResult.Failed(HomeworkFileGatewayFailure.IO)
+            DirectoryOpenResult.Failed(FileGatewayFailure.IO)
         }
     }
 
     private inner class AndroidDirectoryWriteSession(
         private val root: Uri,
-    ) : CoursewareDirectoryWriteSession {
+    ) : DirectoryWriteSession {
         private val lifecycleMutex = Mutex()
         private val folders = mutableMapOf<List<String>, Uri>(emptyList<String>() to root)
         private var closed = false
 
         override val supportsStreamingFiles: Boolean = true
 
-        override suspend fun openFile(file: CoursewareDirectoryFile): StreamingDestinationResult = lifecycleMutex.withLock {
-            if (closed) return@withLock StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        override suspend fun openFile(file: DirectoryFile): StreamingDestinationResult = lifecycleMutex.withLock {
+            if (closed) return@withLock StreamingDestinationResult.Failed(FileGatewayFailure.UNAVAILABLE)
             withContext(Dispatchers.IO) {
                 val resolver = activity.contentResolver
                 try {
@@ -417,16 +417,16 @@ class AndroidHomeworkFileGateway(
                     val output = resolver.openOutputStream(uri, "w") ?: throw FileNotFoundException()
                     StreamingDestinationResult.Opened(ContentStreamingDestination(resolver, uri, output, name))
                 } catch (_: SecurityException) {
-                    StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+                    StreamingDestinationResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
                 } catch (_: Exception) {
-                    StreamingDestinationResult.Failed(HomeworkFileGatewayFailure.IO)
+                    StreamingDestinationResult.Failed(FileGatewayFailure.IO)
                 }
             }
         }
 
-        override suspend fun write(file: CoursewareDirectoryFile): HomeworkFileSaveResult =
+        override suspend fun write(file: DirectoryFile): FileSaveResult =
             lifecycleMutex.withLock {
-                if (closed) return@withLock HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+                if (closed) return@withLock FileSaveResult.Failed(FileGatewayFailure.UNAVAILABLE)
                 withContext(Dispatchers.IO) {
                     val context = currentCoroutineContext()
                     val resolver = activity.contentResolver
@@ -455,21 +455,21 @@ class AndroidHomeworkFileGateway(
                         resolver.openOutputStream(fileUri, "w")?.use { it.write(file.content.bytes) }
                             ?: throw FileNotFoundException()
                         context.ensureActive()
-                        HomeworkFileSaveResult.Saved
+                        FileSaveResult.Saved
                     } catch (error: CancellationException) {
                         throw error
                     } catch (_: SecurityException) {
-                        HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.PERMISSION_DENIED)
+                        FileSaveResult.Failed(FileGatewayFailure.PERMISSION_DENIED)
                     } catch (_: Exception) {
-                        HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+                        FileSaveResult.Failed(FileGatewayFailure.IO)
                     }
                 }
             }
 
-        override suspend fun commit(): HomeworkFileSaveResult = lifecycleMutex.withLock {
-            if (closed) return@withLock HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.UNAVAILABLE)
+        override suspend fun commit(): FileSaveResult = lifecycleMutex.withLock {
+            if (closed) return@withLock FileSaveResult.Failed(FileGatewayFailure.UNAVAILABLE)
             closed = true
-            HomeworkFileSaveResult.Saved
+            FileSaveResult.Saved
         }
 
         override suspend fun abort() {
@@ -528,7 +528,7 @@ internal class ContentStreamingDestination(
         }
     }
 
-    override suspend fun commit(): HomeworkFileSaveResult = withContext(Dispatchers.IO) {
+    override suspend fun commit(): FileSaveResult = withContext(Dispatchers.IO) {
         try {
             output?.flush()
             output?.close()
@@ -536,9 +536,9 @@ internal class ContentStreamingDestination(
             finished = true
             committed = true
             runCatching { resolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
-            HomeworkFileSaveResult.Saved
+            FileSaveResult.Saved
         } catch (_: Exception) {
-            HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+            FileSaveResult.Failed(FileGatewayFailure.IO)
         }
     }
 

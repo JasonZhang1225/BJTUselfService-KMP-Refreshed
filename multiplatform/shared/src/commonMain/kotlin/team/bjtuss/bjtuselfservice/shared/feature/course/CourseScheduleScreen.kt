@@ -116,7 +116,7 @@ import team.bjtuss.bjtuselfservice.shared.feature.calendar.CourseCalendarExportS
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppErrorBanner
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
 import team.bjtuss.bjtuselfservice.shared.feature.shell.sheetBodyScroll
 
 /** 详情/网格等完整日名。 */
@@ -199,7 +199,7 @@ fun CourseScheduleWorkspace(
     courseTypesByCode: Map<String, CourseType>?,
     expanded: Boolean,
     model: CourseScheduleScreenModel,
-    fileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     systemCalendarGateway: SystemCalendarGateway,
     showCalendarExportSheet: Boolean,
     onDismissCalendarExport: () -> Unit,

@@ -102,7 +102,7 @@ class SecurityReleaseConfigTest {
     @Test
     fun androidFilePreviewGrantsChooserTargetsAndUrlsNeverLaunchWeChatTickets() {
         val gateway = root.resolve(
-            "multiplatform/androidApp/src/main/kotlin/team/bjtuss/bjtuselfservice/kmp/AndroidHomeworkFileGateway.kt",
+            "multiplatform/androidApp/src/main/kotlin/team/bjtuss/bjtuselfservice/kmp/AndroidFileGateway.kt",
         ).readText()
         assertTrue("ClipData.newRawUri" in gateway)
         assertTrue("grantUriPermission" in gateway)

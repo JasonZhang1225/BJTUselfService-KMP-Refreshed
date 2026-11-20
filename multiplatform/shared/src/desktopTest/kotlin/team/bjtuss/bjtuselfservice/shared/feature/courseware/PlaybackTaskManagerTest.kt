@@ -25,10 +25,10 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackDetail
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackLesson
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStream
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStreamKind
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePickResult
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FilePickResult
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestination
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
 import team.bjtuss.bjtuselfservice.shared.media.VideoCompositor
@@ -282,15 +282,15 @@ class PlaybackTaskManagerTest {
         }
     }
 
-    private class DiskTestGateway(private val directory: File) : HomeworkFileGateway {
+    private class DiskTestGateway(private val directory: File) : FileGateway {
         val failWrite = java.util.concurrent.atomic.AtomicBoolean(false)
         val failAbort = java.util.concurrent.atomic.AtomicBoolean(false)
         lateinit var temporary: File
         lateinit var target: File
         override val isAvailable = true
         override val isStreamingSaveAvailable = true
-        override suspend fun pickFiles() = HomeworkFilePickResult.Cancelled
-        override suspend fun saveFile(file: HomeworkFileContent) = HomeworkFileSaveResult.Cancelled
+        override suspend fun pickFiles() = FilePickResult.Cancelled
+        override suspend fun saveFile(file: FileContent) = FileSaveResult.Cancelled
         override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult {
             target = File(directory, fileName).apply { writeText("用户已有视频") }
             temporary = File(directory, ".bjtu-save-test.tmp").apply { writeText("未完成") }
@@ -303,9 +303,9 @@ class PlaybackTaskManagerTest {
                     if (first) { temporary.writeBytes(bytes); first = false } else temporary.appendBytes(bytes)
                 }
                 override suspend fun closeForRecovery() { first = true }
-                override suspend fun commit(): HomeworkFileSaveResult {
+                override suspend fun commit(): FileSaveResult {
                     java.nio.file.Files.move(temporary.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-                    return HomeworkFileSaveResult.Saved
+                    return FileSaveResult.Saved
                 }
                 override suspend fun abort() {
                     if (failAbort.get()) throw java.io.IOException("模拟临时文件被占用")
@@ -484,7 +484,7 @@ class PlaybackTaskManagerTest {
         val driver = app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver(app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver.IN_MEMORY)
         team.bjtuss.bjtuselfservice.shared.cache.db.CacheDatabaseSql.Schema.create(driver).value
         val cache = team.bjtuss.bjtuselfservice.shared.cache.CacheStore(driver)
-        val recoveryGateway = object : HomeworkFileGateway by gateway, PlaybackRecoveryProvider {
+        val recoveryGateway = object : FileGateway by gateway, PlaybackRecoveryProvider {
             override val playbackRecovery = object : PlaybackRecoveryAccess {
                 override fun retainedManager(accountScope: String): PlaybackTaskManager {
                     assertEquals("fixture-student", accountScope)
@@ -863,22 +863,22 @@ class PlaybackTaskManagerTest {
         }
     }
 
-    private class MemoryGateway : HomeworkFileGateway {
+    private class MemoryGateway : FileGateway {
         var failCommits = 0
         val saved = mutableMapOf<String, ByteArray>()
         val aborted = mutableListOf<String>()
         override val isAvailable = true
         override val isStreamingSaveAvailable = true
-        override suspend fun pickFiles() = HomeworkFilePickResult.Cancelled
-        override suspend fun saveFile(file: HomeworkFileContent) = HomeworkFileSaveResult.Cancelled
+        override suspend fun pickFiles() = FilePickResult.Cancelled
+        override suspend fun saveFile(file: FileContent) = FileSaveResult.Cancelled
         override suspend fun openStreamingDestination(fileName: String, contentType: String): StreamingDestinationResult =
             StreamingDestinationResult.Opened(object : StreamingDestination {
                 val data = java.io.ByteArrayOutputStream()
                 override val displayName = fileName
                 override suspend fun write(bytes: ByteArray) = data.write(bytes)
-                override suspend fun commit(): HomeworkFileSaveResult {
-                    if (failCommits > 0) { failCommits--; return HomeworkFileSaveResult.Failed(team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure.IO) }
-                    saved[fileName] = data.toByteArray(); return HomeworkFileSaveResult.Saved
+                override suspend fun commit(): FileSaveResult {
+                    if (failCommits > 0) { failCommits--; return FileSaveResult.Failed(team.bjtuss.bjtuselfservice.shared.files.FileGatewayFailure.IO) }
+                    saved[fileName] = data.toByteArray(); return FileSaveResult.Saved
                 }
                 override suspend fun closeForRecovery() { data.reset() }
                 override suspend fun abort() { aborted += fileName }

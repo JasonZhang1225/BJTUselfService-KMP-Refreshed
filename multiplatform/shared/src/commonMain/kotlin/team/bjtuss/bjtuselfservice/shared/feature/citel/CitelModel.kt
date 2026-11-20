@@ -15,7 +15,7 @@ import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
 import team.bjtuss.bjtuselfservice.shared.data.moodle.*
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.domain.change.recordSafely
 
@@ -279,7 +279,7 @@ class CitelModel(
             }
         }
     }
-    suspend fun saveFiles(added: List<HomeworkFileContent>, removed: Set<String>) {
+    suspend fun saveFiles(added: List<FileContent>, removed: Set<String>) {
         if (state.value.submissionBusy) return
         mutex.withLock {
             val task = state.value.selectedTask ?: return@withLock
@@ -336,7 +336,7 @@ class CitelModel(
     }
 
     private fun loginCredentials(): Credentials = credentials ?: throw CitelFailure("请先设置 CITEL 账号和密码。")
-    suspend fun submitProgramming(files: List<HomeworkFileContent>, language: String) {
+    suspend fun submitProgramming(files: List<FileContent>, language: String) {
         if (state.value.submissionBusy) return
         mutex.withLock {
             val task = state.value.selectedTask ?: return@withLock

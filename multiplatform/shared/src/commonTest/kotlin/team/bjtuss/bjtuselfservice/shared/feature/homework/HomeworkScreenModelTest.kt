@@ -20,7 +20,7 @@ import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkSyncFailure
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkDetail
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferences
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferencesStore
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkSortOrder
@@ -232,7 +232,7 @@ class HomeworkScreenModelTest {
         )
         val snapshot = HomeworkSnapshot(listOf(submittedHomework))
         val submitted = SubmittedHomeworkAttachment("81", "我的作业.pdf", "/private/submitted")
-        val file = HomeworkFileContent("我的作业.pdf", "application/pdf", "body".encodeToByteArray())
+        val file = FileContent("我的作业.pdf", "application/pdf", "body".encodeToByteArray())
         val model = model(FakeRepository(snapshot, snapshot, submitted = listOf(submitted), file = file))
 
         model.initialize()
@@ -240,7 +240,7 @@ class HomeworkScreenModelTest {
         val result = model.downloadSubmittedAttachment("81")
 
         assertEquals(listOf(submitted), model.state.value.submittedAttachments)
-        assertEquals(file, assertIs<HomeworkOperationResult.Success<HomeworkFileContent>>(result).value)
+        assertEquals(file, assertIs<HomeworkOperationResult.Success<FileContent>>(result).value)
         assertFalse(model.state.value.isSubmittedAttachmentsLoading)
         assertFalse(model.state.value.isFileTransferInProgress)
     }
@@ -256,7 +256,7 @@ class HomeworkScreenModelTest {
         model.showDetails(item.stableKey())
         val result = model.submitHomework(
             content = "提交说明",
-            files = listOf(HomeworkFileContent("answer.txt", "text/plain", "answer".encodeToByteArray())),
+            files = listOf(FileContent("answer.txt", "text/plain", "answer".encodeToByteArray())),
         )
 
         assertIs<HomeworkOperationResult.Success<Unit>>(result)
@@ -464,7 +464,7 @@ class HomeworkScreenModelTest {
         private val refreshed: HomeworkSnapshot,
         private val detail: HomeworkDetail = HomeworkDetail("要求", emptyList()),
         private val submitted: List<SubmittedHomeworkAttachment> = emptyList(),
-        private val file: HomeworkFileContent = HomeworkFileContent("file.bin", "application/octet-stream", byteArrayOf(1)),
+        private val file: FileContent = FileContent("file.bin", "application/octet-stream", byteArrayOf(1)),
         private val failFirstN: Int = 0,
     ) : HomeworkRepository {
         var refreshCount = 0
@@ -491,16 +491,16 @@ class HomeworkScreenModelTest {
         override suspend fun downloadTeacherAttachment(
             homeworkId: Int,
             attachment: HomeworkAttachment,
-        ): HomeworkOperationResult<HomeworkFileContent> = HomeworkOperationResult.Success(file)
+        ): HomeworkOperationResult<FileContent> = HomeworkOperationResult.Success(file)
 
         override suspend fun downloadSubmittedAttachment(
             attachment: SubmittedHomeworkAttachment,
-        ): HomeworkOperationResult<HomeworkFileContent> = HomeworkOperationResult.Success(file)
+        ): HomeworkOperationResult<FileContent> = HomeworkOperationResult.Success(file)
 
         override suspend fun submitHomework(
             homework: Homework,
             content: String,
-            files: List<HomeworkFileContent>,
+            files: List<FileContent>,
         ): HomeworkOperationResult<Unit> {
             submitCount++
             return HomeworkOperationResult.Success(Unit)

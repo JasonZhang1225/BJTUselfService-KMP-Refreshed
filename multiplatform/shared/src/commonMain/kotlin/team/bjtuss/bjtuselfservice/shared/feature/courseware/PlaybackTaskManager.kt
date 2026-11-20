@@ -34,9 +34,9 @@ import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackDetail
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStream
 import team.bjtuss.bjtuselfservice.shared.domain.courseware.PlaybackStreamKind
 import team.bjtuss.bjtuselfservice.shared.data.homework.isSchoolPlaybackStreamUrl
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGatewayFailure
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestination
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingFileSink
@@ -240,7 +240,7 @@ class PlaybackTaskManager(
         streams: List<PlaybackStream>,
         courseName: String,
         composite: Boolean,
-        gateway: HomeworkFileGateway,
+        gateway: FileGateway,
         quality: PlaybackCompositeQuality = PlaybackCompositeQuality.HIGH,
     ): PlaybackEnqueueResult {
         initialized.await()
@@ -607,7 +607,7 @@ class PlaybackTaskManager(
                         destination.write(header)
                         readFileInChunks(dataPath) { destination.write(it) }
                         val saved = destination.commit()
-                        if (saved != HomeworkFileSaveResult.Saved) throw SaveFailure(saved)
+                        if (saved != FileSaveResult.Saved) throw SaveFailure(saved)
                         committed[index] = true
                     }
                     runCatching { kotlinx.io.files.SystemFileSystem.delete(dataPath, mustExist = false) }
@@ -687,7 +687,7 @@ class PlaybackTaskManager(
                     }
                     update(id) { it.copy(stageProgress = 1f, remainingSeconds = null) }
                     val saved = destination.commit()
-                    if (saved != HomeworkFileSaveResult.Saved) throw SaveFailure(saved)
+                    if (saved != FileSaveResult.Saved) throw SaveFailure(saved)
                     committed[0] = true
                 }
             }
@@ -827,7 +827,7 @@ class PlaybackTaskManager(
         } finally { ticker.cancel() }
     }
 
-    private class SaveFailure(val result: HomeworkFileSaveResult) : Exception("save failed")
+    private class SaveFailure(val result: FileSaveResult) : Exception("save failed")
 
     private fun failureMessage(error: Exception): String = when (error) {
         is HlsDownloadException -> when (error.reason) {
@@ -839,7 +839,7 @@ class PlaybackTaskManager(
         is CompositionException -> "合成失败：${error.message}。可以取消勾选“合成”后分别下载。"
         is StreamingSinkIoException -> "写入文件失败（空间不足或位置不可写）。"
         is SaveFailure -> when (val r = error.result) {
-            is HomeworkFileSaveResult.Failed -> gatewayFailureMessage(r.reason)
+            is FileSaveResult.Failed -> gatewayFailureMessage(r.reason)
             else -> "保存失败。"
         }
         else -> "处理失败（${error::class.simpleName}）。磁盘空间不足时也会出现，请清理后重试。"
@@ -911,7 +911,7 @@ class PlaybackTaskManager(
                             override val outputPath = task.outputPaths.getOrNull(index)
                             override val recoveryToken = token
                             override suspend fun write(bytes: ByteArray) = error("already saved")
-                            override suspend fun commit() = HomeworkFileSaveResult.Saved
+                            override suspend fun commit() = FileSaveResult.Saved
                             override suspend fun abort() = Unit
                         }
                     } else {
@@ -1049,8 +1049,8 @@ private fun isPersistablePlaybackUrl(url: String): Boolean =
         parsed.user == null && parsed.password == null
     }.getOrDefault(false)
 
-internal fun gatewayFailureMessage(reason: HomeworkFileGatewayFailure): String = when (reason) {
-    HomeworkFileGatewayFailure.PERMISSION_DENIED -> "没有写入所选位置的权限，请换个位置。"
-    HomeworkFileGatewayFailure.UNAVAILABLE -> "保存面板暂时不可用，请稍后再试。"
-    HomeworkFileGatewayFailure.IO -> "写入文件失败（空间不足或位置不可写）。"
+internal fun gatewayFailureMessage(reason: FileGatewayFailure): String = when (reason) {
+    FileGatewayFailure.PERMISSION_DENIED -> "没有写入所选位置的权限，请换个位置。"
+    FileGatewayFailure.UNAVAILABLE -> "保存面板暂时不可用，请稍后再试。"
+    FileGatewayFailure.IO -> "写入文件失败（空间不足或位置不可写）。"
 }

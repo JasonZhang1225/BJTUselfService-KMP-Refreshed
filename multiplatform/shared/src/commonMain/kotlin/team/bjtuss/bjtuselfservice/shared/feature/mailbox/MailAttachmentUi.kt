@@ -45,20 +45,20 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.decodeToImageBitmap
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailAttachmentContent
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGatewayFailure
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFilePreviewResult
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGatewayFailure
+import team.bjtuss.bjtuselfservice.shared.files.FilePreviewResult
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 import team.bjtuss.bjtuselfservice.shared.feature.shell.LocalBottomBarClearance
 
 /** 邮箱工作区向详情页提供的附件能力；独立预览/测试时为 null，附件只显示元数据。 */
 internal class MailAttachmentActions(
     val download: suspend (messageId: String, attachment: MailAttachment) -> MailAttachmentDownloadResult,
-    val fileGateway: HomeworkFileGateway,
+    val fileGateway: FileGateway,
     val reauthenticate: (suspend () -> Boolean)?,
 )
 
@@ -117,9 +117,9 @@ internal fun MailboxAttachmentSection(messageId: String, attachments: List<MailA
         val gateway = actions?.fileGateway ?: return
         val outcome = gateway.saveFile(attachment.toFileContent(content))
         rowStates[key] = when (outcome) {
-            HomeworkFileSaveResult.Saved -> AttachmentRowState.Notice("已保存", isError = false)
-            HomeworkFileSaveResult.Cancelled -> AttachmentRowState.Idle
-            is HomeworkFileSaveResult.Failed -> AttachmentRowState.Notice(outcome.reason.saveMessage(), isError = true)
+            FileSaveResult.Saved -> AttachmentRowState.Notice("已保存", isError = false)
+            FileSaveResult.Cancelled -> AttachmentRowState.Idle
+            is FileSaveResult.Failed -> AttachmentRowState.Notice(outcome.reason.saveMessage(), isError = true)
         }
     }
 
@@ -149,9 +149,9 @@ internal fun MailboxAttachmentSection(messageId: String, attachments: List<MailA
                 }
                 gateway != null && gateway.isPreviewAvailable -> {
                     when (val outcome = gateway.previewFile(attachment.toFileContent(content))) {
-                        HomeworkFilePreviewResult.Opened -> rowStates[key] = AttachmentRowState.Idle
-                        is HomeworkFilePreviewResult.Failed -> rowStates[key] = AttachmentRowState.Notice(
-                            if (outcome.reason == HomeworkFileGatewayFailure.UNAVAILABLE) {
+                        FilePreviewResult.Opened -> rowStates[key] = AttachmentRowState.Idle
+                        is FilePreviewResult.Failed -> rowStates[key] = AttachmentRowState.Notice(
+                            if (outcome.reason == FileGatewayFailure.UNAVAILABLE) {
                                 "没有可以打开此类文件的应用，请改用保存。"
                             } else {
                                 "无法打开预览，请改用保存。"
@@ -368,7 +368,7 @@ private fun ColumnScope.PreviewMessage(text: String) {
     }
 }
 
-private fun MailAttachment.toFileContent(content: MailAttachmentContent) = HomeworkFileContent(
+private fun MailAttachment.toFileContent(content: MailAttachmentContent) = FileContent(
     fileName = name.ifBlank { "attachment" },
     contentType = content.contentType ?: contentType ?: "application/octet-stream",
     bytes = content.bytes,
@@ -381,8 +381,8 @@ private fun MailAttachmentFailure.message(): String = when (this) {
     MailAttachmentFailure.UNAVAILABLE -> "这个附件无法下载，请在网页版中查看。"
 }
 
-private fun HomeworkFileGatewayFailure.saveMessage(): String = when (this) {
-    HomeworkFileGatewayFailure.PERMISSION_DENIED -> "没有写入所选位置的权限。"
-    HomeworkFileGatewayFailure.UNAVAILABLE -> "当前无法打开保存面板，请稍后重试。"
-    HomeworkFileGatewayFailure.IO -> "保存失败，请重试。"
+private fun FileGatewayFailure.saveMessage(): String = when (this) {
+    FileGatewayFailure.PERMISSION_DENIED -> "没有写入所选位置的权限。"
+    FileGatewayFailure.UNAVAILABLE -> "当前无法打开保存面板，请稍后重试。"
+    FileGatewayFailure.IO -> "保存失败，请重试。"
 }

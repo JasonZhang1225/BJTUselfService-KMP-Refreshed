@@ -32,21 +32,21 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.foundation.text.selection.SelectionContainer
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.deadlineInScope
-import team.bjtuss.bjtuselfservice.shared.files.CoursewareDirectoryGateway
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableCoursewareDirectoryGateway
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileSaveResult
+import team.bjtuss.bjtuselfservice.shared.files.DirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableDirectoryGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.safeExportFileName
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CitelWorkspace(model: CitelModel, holdNetwork: Boolean, onOpen: (String) -> Unit, modifier: Modifier = Modifier,
-    fileGateway: HomeworkFileGateway = UnavailableHomeworkFileGateway,
+    fileGateway: FileGateway = UnavailableFileGateway,
     showDetailSheet: Boolean = true, onOpenTask: ((CitelTask) -> Unit)? = null,
-    directoryGateway: CoursewareDirectoryGateway = UnavailableCoursewareDirectoryGateway) {
+    directoryGateway: DirectoryGateway = UnavailableDirectoryGateway) {
     val state by model.state.collectAsState()
     val filters = state.filters
     val pendingOnly = filters.hideSubmitted
@@ -158,9 +158,9 @@ private fun CitelDetailLine(label: String, value: String) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, onOpen: (String) -> Unit,
+fun CitelDetailWorkspace(model: CitelModel, fileGateway: FileGateway, onOpen: (String) -> Unit,
     holdNetwork: Boolean = false, modifier: Modifier = Modifier,
-    directoryGateway: CoursewareDirectoryGateway = UnavailableCoursewareDirectoryGateway,
+    directoryGateway: DirectoryGateway = UnavailableDirectoryGateway,
     headerContent: (@Composable () -> Unit)? = null) {
     val state by model.state.collectAsState()
     val scope = rememberCoroutineScope()
@@ -221,7 +221,7 @@ fun CitelDetailWorkspace(model: CitelModel, fileGateway: HomeworkFileGateway, on
                         scope.launch {
                             exportBusy = true
                             try {
-                                val saved = fileGateway.saveFile(HomeworkFileContent(safeExportFileName("CITEL-${task.id}.md"),
+                                val saved = fileGateway.saveFile(FileContent(safeExportFileName("CITEL-${task.id}.md"),
                                     "text/markdown", markdown.orEmpty().encodeToByteArray()))
                                 exportMessage = saved.citelExportMessage()
                             } catch (_: Exception) { exportMessage = "保存失败，请重试。"
@@ -331,8 +331,8 @@ internal fun ProgrammingJudgeResult(result: CitelProgrammingResult, autoRefreshi
     }
 }
 
-private fun HomeworkFileSaveResult.citelExportMessage(): String? = when (this) {
-    HomeworkFileSaveResult.Saved -> "已保存"
-    HomeworkFileSaveResult.Cancelled -> null
-    is HomeworkFileSaveResult.Failed -> "无法保存，请重试。"
+private fun FileSaveResult.citelExportMessage(): String? = when (this) {
+    FileSaveResult.Saved -> "已保存"
+    FileSaveResult.Cancelled -> null
+    is FileSaveResult.Failed -> "无法保存，请重试。"
 }

@@ -6,7 +6,7 @@ import com.fleeksoft.ksoup.nodes.Node
 import com.fleeksoft.ksoup.nodes.TextNode
 import io.ktor.http.Url
 import kotlinx.coroutines.CancellationException
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.time.formatDeadlineEpoch
 import team.bjtuss.bjtuselfservice.shared.files.*
 
@@ -92,29 +92,29 @@ fun citelProblemMarkdown(task: CitelTask, cached: CitelCachedProblem): String = 
     }
 }
 
-fun citelProblemFiles(task: CitelTask, cached: CitelCachedProblem): List<CoursewareDirectoryFile> = buildList {
-    add(CoursewareDirectoryFile(emptyList(), HomeworkFileContent("problem.md", "text/markdown", citelProblemMarkdown(task, cached).encodeToByteArray())))
+fun citelProblemFiles(task: CitelTask, cached: CitelCachedProblem): List<DirectoryFile> = buildList {
+    add(DirectoryFile(emptyList(), FileContent("problem.md", "text/markdown", citelProblemMarkdown(task, cached).encodeToByteArray())))
     cached.problem.cases.forEachIndexed { index, test ->
-        test.input?.let { add(CoursewareDirectoryFile(listOf("tests"), HomeworkFileContent("${index + 1}.in", "text/plain", it.encodeToByteArray()))) }
-        test.expected?.let { add(CoursewareDirectoryFile(listOf("tests"), HomeworkFileContent("${index + 1}.out", "text/plain", it.encodeToByteArray()))) }
+        test.input?.let { add(DirectoryFile(listOf("tests"), FileContent("${index + 1}.in", "text/plain", it.encodeToByteArray()))) }
+        test.expected?.let { add(DirectoryFile(listOf("tests"), FileContent("${index + 1}.out", "text/plain", it.encodeToByteArray()))) }
     }
 }
 
-suspend fun exportCitelProblem(task: CitelTask, cached: CitelCachedProblem, gateway: CoursewareDirectoryGateway): HomeworkFileSaveResult {
+suspend fun exportCitelProblem(task: CitelTask, cached: CitelCachedProblem, gateway: DirectoryGateway): FileSaveResult {
     val opened = gateway.openDirectory(safeExportPathSegment("CITEL-${task.id}-${task.title}"))
     return when (opened) {
-        CoursewareDirectoryOpenResult.Cancelled -> HomeworkFileSaveResult.Cancelled
-        is CoursewareDirectoryOpenResult.Failed -> HomeworkFileSaveResult.Failed(opened.reason)
-        is CoursewareDirectoryOpenResult.Opened -> {
+        DirectoryOpenResult.Cancelled -> FileSaveResult.Cancelled
+        is DirectoryOpenResult.Failed -> FileSaveResult.Failed(opened.reason)
+        is DirectoryOpenResult.Opened -> {
             var committed = false
             try {
                 for (file in citelProblemFiles(task, cached)) {
                     val result = opened.session.write(file)
-                    if (result != HomeworkFileSaveResult.Saved) return result
+                    if (result != FileSaveResult.Saved) return result
                 }
-                opened.session.commit().also { committed = it == HomeworkFileSaveResult.Saved }
+                opened.session.commit().also { committed = it == FileSaveResult.Saved }
             } catch (e: CancellationException) { throw e
-            } catch (_: Exception) { HomeworkFileSaveResult.Failed(HomeworkFileGatewayFailure.IO)
+            } catch (_: Exception) { FileSaveResult.Failed(FileGatewayFailure.IO)
             } finally { if (!committed) opened.session.abort() }
         }
     }

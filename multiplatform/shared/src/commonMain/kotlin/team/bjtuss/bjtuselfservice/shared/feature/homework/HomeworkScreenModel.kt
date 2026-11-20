@@ -21,7 +21,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.domain.change.recordSafely
 import team.bjtuss.bjtuselfservice.shared.domain.homework.Homework
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkDetail
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferences
 import team.bjtuss.bjtuselfservice.shared.domain.time.displayTimeZone
 import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFilterPreferencesStore
@@ -375,7 +375,7 @@ class HomeworkScreenModel(
 
     suspend fun downloadTeacherAttachment(
         attachmentId: Int,
-    ): HomeworkOperationResult<HomeworkFileContent> {
+    ): HomeworkOperationResult<FileContent> {
         val state = mutableState.value
         val homework = state.selectedHomework
             ?: return HomeworkOperationResult.Failure(HomeworkSyncFailure.MALFORMED_RESPONSE)
@@ -391,7 +391,7 @@ class HomeworkScreenModel(
 
     suspend fun downloadSubmittedAttachment(
         attachmentId: String,
-    ): HomeworkOperationResult<HomeworkFileContent> {
+    ): HomeworkOperationResult<FileContent> {
         val state = mutableState.value
         val attachment = state.submittedAttachments.firstOrNull { it.id == attachmentId }
             ?: return HomeworkOperationResult.Failure(HomeworkSyncFailure.MALFORMED_RESPONSE)
@@ -405,7 +405,7 @@ class HomeworkScreenModel(
 
     suspend fun submitHomework(
         content: String,
-        files: List<HomeworkFileContent>,
+        files: List<FileContent>,
     ): HomeworkOperationResult<Unit> {
         val selected = mutableState.value.selectedHomework
             ?: return HomeworkOperationResult.Failure(HomeworkSyncFailure.MALFORMED_RESPONSE)

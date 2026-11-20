@@ -3,7 +3,7 @@ package team.bjtuss.bjtuselfservice.shared.data.moodle
 import com.fleeksoft.ksoup.Ksoup
 import io.ktor.http.Url
 import kotlinx.serialization.json.*
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.network.*
 
 data class AssignmentFile(val name: String, val path: String = "/")
@@ -102,7 +102,7 @@ class MoodleAssignmentClient(
     }.getOrDefault(false)
     suspend fun status(id: Int): MoodleAssignmentStatus = parseMoodleAssignmentStatus(read(url(id)).bodyText())
 
-    suspend fun saveFiles(id: Int, added: List<HomeworkFileContent>, removed: Set<String> = emptySet()): MoodleAssignmentStatus {
+    suspend fun saveFiles(id: Int, added: List<FileContent>, removed: Set<String> = emptySet()): MoodleAssignmentStatus {
         require(added.isNotEmpty() || removed.isNotEmpty())
         val before = status(id)
         if (!before.editable) throw MoodleAssignmentFailure("此作业已锁定或不允许修改。")

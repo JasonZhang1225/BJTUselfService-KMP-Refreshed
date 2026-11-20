@@ -79,10 +79,10 @@ import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabActivity
 import team.bjtuss.bjtuselfservice.shared.domain.phyvlab.PhyVlabCourse
 import team.bjtuss.bjtuselfservice.shared.feature.shell.AppleSheet
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
-import team.bjtuss.bjtuselfservice.shared.domain.homework.HomeworkFileContent
+import team.bjtuss.bjtuselfservice.shared.files.FileContent
 import team.bjtuss.bjtuselfservice.shared.domain.homework.deadlineInScope
-import team.bjtuss.bjtuselfservice.shared.files.HomeworkFileGateway
-import team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway
+import team.bjtuss.bjtuselfservice.shared.files.FileGateway
+import team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway
 import team.bjtuss.bjtuselfservice.shared.PlatformFamily
 import team.bjtuss.bjtuselfservice.shared.currentPlatform
 
@@ -93,7 +93,7 @@ fun PhyVlabWorkspace(
     modifier: Modifier = Modifier,
     // 静默自动登录期间不能抢先用空的 Ktor Cookie jar 建立 Moodle 会话。
     holdNetwork: Boolean = false,
-    fileGateway: HomeworkFileGateway = UnavailableHomeworkFileGateway,
+    fileGateway: FileGateway = UnavailableFileGateway,
     /** 紧凑端详情走原生二级页时，根列表不再挂出 ModalBottomSheet。 */
     showDetailSheet: Boolean = true,
     onOpenCourse: (String) -> Unit = {},
@@ -306,7 +306,7 @@ fun PhyVlabWorkspace(
 @Composable
 fun PhyVlabDetailWorkspace(
     model: PhyVlabScreenModel,
-    fileGateway: HomeworkFileGateway,
+    fileGateway: FileGateway,
     onOpenActivity: (String) -> Unit,
     /** 由应用壳提供会话感知的详情重试；独立预览/测试时回退到模型重试。 */
     onRetry: (() -> Unit)? = null,
@@ -531,9 +531,9 @@ private fun PhyVlabAssignmentDetailContent(
     onOpenWeb: () -> Unit,
     fullScreen: Boolean = false,
     modifier: Modifier = Modifier,
-    fileGateway: HomeworkFileGateway = team.bjtuss.bjtuselfservice.shared.files.UnavailableHomeworkFileGateway,
+    fileGateway: FileGateway = team.bjtuss.bjtuselfservice.shared.files.UnavailableFileGateway,
     isSubmitting: Boolean = false,
-    onSaveFiles: (List<HomeworkFileContent>, Set<String>) -> Unit = { _, _ -> },
+    onSaveFiles: (List<FileContent>, Set<String>) -> Unit = { _, _ -> },
     onFinalize: () -> Unit = {},
     onPrepareFinalization: suspend () -> Boolean = { true },
     finalizationStatement: String? = null,
