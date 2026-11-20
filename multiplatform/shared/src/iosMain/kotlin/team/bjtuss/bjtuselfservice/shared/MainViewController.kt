@@ -1,6 +1,5 @@
 package team.bjtuss.bjtuselfservice.shared
 
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.window.ComposeUIViewController
 import kotlin.native.ref.WeakReference
 import team.bjtuss.bjtuselfservice.shared.runtime.AppRuntime
@@ -180,7 +179,11 @@ private fun createDestinationViewController(
     return controller
 }
 
-@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, ExperimentalComposeUiApi::class)
+@OptIn(
+    kotlinx.cinterop.ExperimentalForeignApi::class,
+    ExperimentalComposeUiApi::class,
+    kotlin.experimental.ExperimentalNativeApi::class,
+)
 private fun createMainViewController(
     nativeNavigationEnabled: Boolean,
     nativeTabBarEnabled: Boolean,
