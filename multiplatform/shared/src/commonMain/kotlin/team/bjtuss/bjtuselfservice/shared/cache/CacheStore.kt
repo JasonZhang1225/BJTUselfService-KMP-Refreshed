@@ -372,6 +372,10 @@ class CacheStore(
             .executeAsOneOrNull()
             ?.let(protector::unprotect)
 
+    internal fun deleteMetadata(accountScope: String, key: String) = mutate {
+        queries.deleteMetadata(protectedAccountScope(accountScope), protectedKey(key))
+    }
+
     fun putMetadata(accountScope: String, key: String, value: String) = mutate { putMetadataInAccount(accountScope = accountScope, key = key, value = value) }
 
     private fun putMetadataInAccount(accountScope: String, key: String, value: String) {

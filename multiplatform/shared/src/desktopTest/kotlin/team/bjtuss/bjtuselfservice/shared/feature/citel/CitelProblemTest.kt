@@ -215,6 +215,127 @@ class CitelProblemTest {
         } finally { cache.close() }
     }
 
+    @Test fun batchCachesOnlyMissingProgrammingProblemsInTheSelectedCourseAndSubmissionState() = runBlocking {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        CacheDatabaseSql.Schema.create(driver)
+        val cache = CacheStore(driver)
+        val cached = task.copy(id = 1, status = "AC: Accepted")
+        val failedJudge = task.copy(id = 2, status = "WA: Wrong Answer")
+        val awaitingJudge = task.copy(id = 3, programmingSubmitCount = 1)
+        val unsubmitted = task.copy(id = 4, status = "未提交", programmingSubmitCount = 0)
+        val otherCourse = task.copy(id = 5, courseId = 100, status = "AC: Accepted")
+        val written = task.copy(id = 6, programming = false, submitted = true)
+        val tasks = listOf(cached, failedJudge, awaitingJudge, unsubmitted, otherCourse, written)
+        val requests = mutableListOf<Int>()
+        var failOnce = true
+        val remote = object : CitelDataSource {
+            override suspend fun fetch(credentials: Credentials) = tasks
+            override suspend fun problem(credentials: Credentials, task: CitelTask, withResults: Boolean): CitelProblem {
+                assertTrue(withResults)
+                requests += task.id
+                if (task == awaitingJudge && failOnce) {
+                    failOnce = false
+                    throw CitelFailure("fixture failure")
+                }
+                return CitelProblem(task.title, "", "<p>测试题面</p>")
+            }
+        }
+        val model = CitelModel("scope", cache, null, remote)
+        try {
+            model.configure("fixture", "fixture", false, true)
+            model.remoteProblem(cached.id, fetch = true)
+            requests.clear()
+            val submitted = CitelProblemSubmission.SUBMITTED
+            assertEquals(listOf(2, 3, 4, 5), model.state.value.missingProblems().map { it.id })
+            assertEquals(listOf(2, 3), model.state.value.missingProblems(task.courseId, submitted).map { it.id })
+            assertEquals(listOf(4), model.state.value.missingProblems(task.courseId, CitelProblemSubmission.NOT_SUBMITTED).map { it.id })
+
+            assertEquals(CitelBatchCacheResult(1, 1, "fixture failure"),
+                model.cacheMissingProblems(task.courseId, submitted))
+            assertEquals(listOf(2, 3), requests)
+            assertNotNull(cache.citelProblem("scope", "fixture", 2))
+            assertNull(cache.citelProblem("scope", "fixture", 3))
+            assertEquals(listOf(3), model.state.value.missingProblems(task.courseId, submitted).map { it.id })
+
+            assertEquals(CitelBatchCacheResult(saved = 1), model.cacheMissingProblems(task.courseId, submitted))
+            assertEquals(listOf(2, 3, 3), requests)
+            assertNotNull(cache.citelProblem("scope", "fixture", 3))
+
+            val restored = CitelModel("scope", cache, null, remote)
+            restored.initialize()
+            assertEquals(listOf(4, 5), restored.state.value.missingProblems().map { it.id })
+            model.setEnabled(false)
+            assertNotNull(model.cacheMissingProblems(null, CitelProblemSubmission.ALL).message)
+            assertEquals(listOf(2, 3, 3), requests)
+        } finally { cache.close() }
+    }
+
+    @Test fun batchStopsAfterAConfirmedLoginFailure() = runBlocking {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        CacheDatabaseSql.Schema.create(driver)
+        val cache = CacheStore(driver)
+        val requests = mutableListOf<Int>()
+        val model = CitelModel("scope", cache, null, object : CitelDataSource {
+            override suspend fun fetch(credentials: Credentials) = listOf(task, task.copy(id = 2))
+            override suspend fun problem(credentials: Credentials, task: CitelTask, withResults: Boolean): CitelProblem {
+                requests += task.id
+                throw CitelFailure("fixture login failure", sessionExpired = true)
+            }
+        })
+        try {
+            model.configure("fixture", "fixture", false, true)
+            assertEquals(CitelBatchCacheResult(0, 1, "fixture login failure"),
+                model.cacheMissingProblems(null, CitelProblemSubmission.ALL))
+            assertEquals(listOf(task.id), requests)
+            assertEquals(2, model.state.value.missingProblems().size)
+        } finally { cache.close() }
+    }
+
+    @Test fun updateFailurePreservesTheCacheAndDeletingOneEntrySurvivesReload() = runBlocking {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        CacheDatabaseSql.Schema.create(driver)
+        val cache = CacheStore(driver)
+        val other = task.copy(id = 2)
+        var statement = "原题面"
+        var fail = false
+        val remote = object : CitelDataSource {
+            override suspend fun fetch(credentials: Credentials) = listOf(task, other)
+            override suspend fun problem(credentials: Credentials, task: CitelTask, withResults: Boolean): CitelProblem {
+                if (fail) throw CitelFailure("fixture failure")
+                return CitelProblem(task.title, "", statement)
+            }
+        }
+        val model = CitelModel("scope", cache, null, remote)
+        try {
+            model.configure("fixture", "fixture", false, true)
+            val before = assertNotNull(model.remoteProblem(task.id, fetch = true))
+            val otherEntry = assertNotNull(model.remoteProblem(other.id, fetch = true))
+            cache.saveCitelProblem("other-scope", before)
+
+            fail = true
+            assertEquals("fixture failure", model.updateCachedProblem(before))
+            assertEquals(before, cache.citelProblem("scope", "fixture", task.id))
+
+            fail = false
+            statement = "更新后的题面"
+            assertNull(model.updateCachedProblem(before))
+            val updated = model.state.value.problems.getValue(task.id)
+            assertEquals(statement, updated.problem.statementHtml)
+            assertEquals(updated, cache.citelProblem("scope", "fixture", task.id))
+
+            assertNotNull(model.deleteCachedProblem(before))
+            assertNull(model.deleteCachedProblem(updated))
+            assertEquals(listOf(task.id), model.state.value.missingProblems().map { it.id })
+            assertNull(cache.metadata("scope", "citel.problem.${task.id}"))
+            assertEquals(otherEntry, cache.citelProblem("scope", "fixture", other.id))
+            assertEquals(before, cache.citelProblem("other-scope", "fixture", task.id))
+
+            val restored = CitelModel("scope", cache, null, remote)
+            restored.initialize()
+            assertEquals(mapOf(other.id to otherEntry), restored.state.value.problems)
+        } finally { cache.close() }
+    }
+
     private fun response(url: String, html: String, type: String = "text/html") =
         SchoolHttpResponse(200, url, mapOf("Content-Type" to listOf(type)), html.encodeToByteArray())
 }

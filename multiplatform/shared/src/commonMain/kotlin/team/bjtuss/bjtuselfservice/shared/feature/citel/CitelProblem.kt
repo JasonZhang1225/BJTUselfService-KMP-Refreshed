@@ -38,13 +38,18 @@ data class CitelProblem(
 @Serializable
 data class CitelCachedProblem(val username: String, val moduleId: Int, val fetchedAt: Long, val problem: CitelProblem)
 
+private fun citelProblemKey(moduleId: Int) = "citel.problem.$moduleId"
+
 private val problemJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 fun CacheStore.citelProblem(scope: String, username: String, moduleId: Int): CitelCachedProblem? = runCatching {
-    problemJson.decodeFromString<CitelCachedProblem>(metadata(scope, "citel.problem.$moduleId").orEmpty())
+    problemJson.decodeFromString<CitelCachedProblem>(metadata(scope, citelProblemKey(moduleId)).orEmpty())
 }.getOrNull()?.takeIf { it.username == username && it.moduleId == moduleId }
 
 fun CacheStore.saveCitelProblem(scope: String, value: CitelCachedProblem) =
-    putMetadata(scope, "citel.problem.${value.moduleId}", problemJson.encodeToString(value))
+    putMetadata(scope, citelProblemKey(value.moduleId), problemJson.encodeToString(value))
+
+internal fun CacheStore.deleteCitelProblem(scope: String, moduleId: Int) =
+    deleteMetadata(scope, citelProblemKey(moduleId))
 
 /** Only use an I/O link actually found in this cell, with the expected type. */
 internal fun citelIoLink(cell: com.fleeksoft.ksoup.nodes.Element?, type: String): String? {
