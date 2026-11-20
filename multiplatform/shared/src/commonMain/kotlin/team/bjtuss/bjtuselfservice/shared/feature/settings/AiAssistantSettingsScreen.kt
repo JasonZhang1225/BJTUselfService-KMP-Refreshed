@@ -19,7 +19,12 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollColumn
 
 /** 设置与状态分别滚动；进入只读取本机状态，不安装、不配对、不触发学校刷新。 */
 @Composable
-internal fun AiAssistantSettingsScreen(model: SettingsScreenModel, platform: PlatformInfo, modifier: Modifier = Modifier) {
+internal fun AiAssistantSettingsScreen(
+    model: SettingsScreenModel,
+    platform: PlatformInfo,
+    modifier: Modifier = Modifier,
+    onOpenCitelCache: (() -> Unit)? = null,
+) {
     val preferences by model.state.collectAsState()
     val integration = remember(platform.family) {
         if (platform.family == PlatformFamily.MacOS) platformAgentIntegration() else null
@@ -29,6 +34,7 @@ internal fun AiAssistantSettingsScreen(model: SettingsScreenModel, platform: Pla
     var localLoading by remember(integration) { mutableStateOf(integration != null) }
     var statusRefreshKey by remember { mutableStateOf(0) }
 
+    val openCitelCache by rememberUpdatedState(onOpenCitelCache)
     val settings = remember(integration, remote, model) { movableContentOf {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         integration?.let {
@@ -37,6 +43,11 @@ internal fun AiAssistantSettingsScreen(model: SettingsScreenModel, platform: Pla
                 onStatusChange = { status -> localStatus = status; localLoading = false })
         }
         remote?.let { RemoteAgentCard(it, showStatus = false) }
+        openCitelCache?.let { open ->
+            StatusPanel("CITEL 题面缓存") {
+                OutlinedButton(onClick = open) { Text("查看并拉取未缓存题目") }
+            }
+        }
         if (integration == null && remote == null) {
             Text("当前平台暂不提供本机 AI 接入或远程同步设置。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

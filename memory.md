@@ -1,12 +1,21 @@
 # BJTUselfService 实时工作记忆
 
-> **当前状态（2026-11-13）**
-> - **当前分支**：`fix/phyvlab-manual-captcha`，从 `origin/main` `b6e9f358`（PR #100）开独立工作树，跟踪 `origin/fix/phyvlab-manual-captcha`，已完成 iOS 物理在线验证码弹层修复与 `2.0.0-KMP` 发版准备，推送并准备 PR 合入 `main`。
-> - **源码版本**：`2.0.0-KMP` / Build 45（最新已发布 Release：`v1.8.6-KMP` / Build 44）
-> - **远端活跃分支**：`main`、`feat/mac-swift`（macOS 原生 SwiftUI 探索）；原 `feat/homework-submit-cli-drop`、`feat/agent-assignment-detail` 已合入并删除。
+> **当前状态（2026-11-20）**
+> - **当前分支**：`feat/citel-batch-cache`，基于已快进至 `e8e44f34` 的本地 `main`（与 `origin/main` 一致）。CITEL 批量缓存由本分支交付。
+> - **源码版本**：`2.0.0-KMP` / Build 45。
+> - **本地分支整理**：已删除合入 `main` 的 `chore/docs-cleanup`、`feat/phyvlab-auto-captcha`、`fix/phyvlab-manual-captcha`。原两个物理在线工作树已切换为 detached HEAD，保留原提交和未提交文件。
 > - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（课程回放、macOS/Windows 硬件合成、作业忽略与筛选拆分、全应用设备时区、离线更新日志、`DESIGN.md` / `AppleAlert` / `AppleMenuPickerCard`、物理实验 IP 备用路径、上传文件拖放、本机 CLI 交作业、统一作业详情与远程增量同步等，PR #68–#99）均已移入 `history_full.md`。
 
 ---
+
+## 进行中：CITEL 题面批量缓存
+
+- CITEL 启用后，可从「Agent 和 ChatGPT 插件」进入题面缓存页，按课程和实际提交状态筛选，查看剩余题数并批量下载题面及用例到本机。
+- 复用现有账号缓存与详情下载路径，批次逐题落盘，跳过已有缓存。单题失败可重试，明确登录失败结束当前批次。
+- 脱敏用例覆盖筛选、跳过缓存、部分失败后的重试、重新初始化后的缓存恢复及 Android 原生路由。`:shared:desktopTest` 共 1461 项，0 失败、1 跳过。`:androidApp:assembleDebug`、`:desktopApp:compileKotlin`、`:windowsApp:compileKotlinWindows`、`:shared:compileKotlinIosArm64`、`:shared:compileKotlinIosSimulatorArm64` 均通过。
+- 桌面渲染已目视检查窄屏深色 1.5 倍字体、宽屏浅色和空状态。iOS arm64 签名模拟器构建及 `codesign --verify --deep --strict` 通过，iPhone 17 Pro 与 iPhone Air 模拟器均在安装离线测试包时超时。iOS 页面、玻璃滚动及真实 CITEL 账号未实测。
+
+- CI 打包使用本分支的 `KMP package` 手动入口，生成 Android、iOS、macOS 和 Windows Actions 产物。
 
 ## 进行中 / 待处理：物理在线相关检查
 

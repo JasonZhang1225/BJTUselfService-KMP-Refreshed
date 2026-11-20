@@ -24,6 +24,8 @@ import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.otherfunction.OtherFunctionScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabScreenModel
 import team.bjtuss.bjtuselfservice.shared.feature.settings.SettingsScreenModel
+import team.bjtuss.bjtuselfservice.shared.feature.shell.AI_ASSISTANT_SETTINGS_ROUTE_ID
+import team.bjtuss.bjtuselfservice.shared.feature.shell.CITEL_BATCH_CACHE_ROUTE_ID
 import team.bjtuss.bjtuselfservice.shared.feature.shell.PHYSICS_DEMO_ROUTE_ID
 import team.bjtuss.bjtuselfservice.shared.feature.shell.PHYSICS_DEMO_SETTINGS_ROUTE_ID
 import team.bjtuss.bjtuselfservice.shared.feature.shell.PHYVLAB_SETTINGS_ROUTE_ID
@@ -211,6 +213,8 @@ fun isNativeDetailRoute(routeId: String): Boolean =
         routeId == "MAILBOX_COMPOSE" ||
         routeId == "CITEL_DETAIL" ||
         routeId == "CITEL_SETTINGS" ||
+        routeId == CITEL_BATCH_CACHE_ROUTE_ID ||
+        routeId == AI_ASSISTANT_SETTINGS_ROUTE_ID ||
         routeId == "PHYVLAB_DETAIL" ||
         routeId == PHYVLAB_SETTINGS_ROUTE_ID ||
         routeId == PHYSICS_DEMO_SETTINGS_ROUTE_ID ||

@@ -614,7 +614,7 @@ fun AuthenticatedAppShell(
         PhyVlabDetailRoute -> AppSection.PHYVLAB
         CitelDetailRoute -> AppSection.CITEL
         PlaybackDetailRoute -> AppSection.PLAYBACK
-        CitelSettingsRoute -> AppSection.CITEL
+        CitelSettingsRoute, CitelBatchCacheRoute -> AppSection.CITEL
         MailboxDetailRoute -> AppSection.MAILBOX
         MailboxComposeRoute -> AppSection.MAILBOX
         PhysicsLabSettingsRoute -> AppSection.PHYSICS_LAB
@@ -2352,7 +2352,27 @@ fun AuthenticatedAppShell(
             ) {
                 CompositionLocalProvider(team.bjtuss.bjtuselfservice.shared.feature.settings.LocalRemoteAgentController provides remoteAgent) {
                     team.bjtuss.bjtuselfservice.shared.feature.settings.AiAssistantSettingsScreen(
-                        settingsModel, platform, Modifier.fillMaxSize())
+                        settingsModel, platform, Modifier.fillMaxSize(),
+                        onOpenCitelCache = if (citelEnabled && citelState.enabled) ({
+                            if (useNativeSecondaryRoutes) onOpenNativeRoute(CITEL_BATCH_CACHE_ROUTE_ID)
+                            else backStack.add(CitelBatchCacheRoute)
+                        }) else null,
+                    )
+                }
+            }
+            CitelBatchCacheRoute -> DestinationPage(
+                title = nativeRouteTitle(CITEL_BATCH_CACHE_ROUTE_ID),
+                expanded = expanded,
+                refreshable = citelEnabled && citelState.enabled && !entryLoggingIn,
+                isRefreshing = citelState.refreshing,
+                showBack = true,
+                modifier = modifier,
+                scrollUnderTopBar = true,
+            ) {
+                session.citelModel?.let { model ->
+                    team.bjtuss.bjtuselfservice.shared.feature.citel.CitelBatchCacheScreen(
+                        model, Modifier.fillMaxSize(), holdNetwork = entryLoggingIn,
+                    )
                 }
             }
             PhysicsDemoSettingsRoute -> DestinationPage(
@@ -2608,6 +2628,10 @@ fun AuthenticatedAppShell(
                             usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family),
                         )
                     }
+                    entry<CitelBatchCacheRoute> {
+                        SectionDestination(route = CitelBatchCacheRoute, expanded = false, modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family))
+                    }
                     entry<AiAssistantSettingsRoute> {
                         SectionDestination(route = AiAssistantSettingsRoute, expanded = false, modifier = Modifier.fillMaxSize(),
                             usesLegacySmartTransport = usesLegacySmartTransportFor(platform.family))
@@ -2852,6 +2876,10 @@ fun AuthenticatedAppShell(
                             modifier = Modifier.fillMaxSize(),
                             usesLegacySmartTransport = false,
                         )
+                    }
+                    entry<CitelBatchCacheRoute> {
+                        SectionDestination(route = CitelBatchCacheRoute, expanded = false, modifier = Modifier.fillMaxSize(),
+                            usesLegacySmartTransport = false)
                     }
                     entry<AiAssistantSettingsRoute> {
                         SectionDestination(route = AiAssistantSettingsRoute, expanded = false, modifier = Modifier.fillMaxSize(),

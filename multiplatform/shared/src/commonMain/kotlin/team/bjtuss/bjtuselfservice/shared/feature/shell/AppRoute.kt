@@ -280,6 +280,8 @@ internal data object PlaybackDetailRoute : AppRoute
 const val PLAYBACK_DETAIL_ROUTE_ID = "PLAYBACK_DETAIL"
 internal data object CitelSettingsRoute : AppRoute
 const val CITEL_SETTINGS_ROUTE_ID = "CITEL_SETTINGS"
+internal data object CitelBatchCacheRoute : AppRoute
+const val CITEL_BATCH_CACHE_ROUTE_ID = "CITEL_BATCH_CACHE"
 
 /** 邮箱详情的二级路由：紧凑端使用平台原生 push，宽屏留在三栏阅读区。 */
 internal data object MailboxDetailRoute : AppRoute
@@ -322,6 +324,8 @@ internal fun String.toAppRoute(): AppRoute? =
         PlaybackDetailRoute
     } else if (this == CITEL_SETTINGS_ROUTE_ID) {
         CitelSettingsRoute
+    } else if (this == CITEL_BATCH_CACHE_ROUTE_ID) {
+        CitelBatchCacheRoute
     } else if (this == MAILBOX_DETAIL_ROUTE_ID) {
         MailboxDetailRoute
     } else if (this == MAILBOX_COMPOSE_ROUTE_ID) {
