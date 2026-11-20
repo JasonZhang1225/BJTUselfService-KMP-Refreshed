@@ -1,13 +1,21 @@
 package team.bjtuss.bjtuselfservice.shared.feature.physicslab
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withTimeout
 import kotlin.test.*
 import team.bjtuss.bjtuselfservice.shared.auth.Credentials
 import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.cache.db.CacheDatabaseSql
 import team.bjtuss.bjtuselfservice.shared.network.*
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
 import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
 
 class PhysicsLabModelTest {
@@ -208,6 +216,54 @@ class PhysicsLabModelTest {
             model.refresh()
             assertEquals(2, model.state.value.labs.single().weekCount)
         } finally { cache.close() }
+    }
+
+    @Test fun experimentRefreshWithoutScopeDoesNotCancelSecondCallerAndScopedSharesCleanly() = runBlocking {
+        val unsharedEntered = CompletableDeferred<Unit>()
+        val releaseUnshared = CompletableDeferred<Unit>()
+        var unsharedCalls = 0
+        val unshared = ExperimentRefresh(scope = null, operationMutex = Mutex()) {
+            if (++unsharedCalls == 1) {
+                unsharedEntered.complete(Unit)
+                releaseUnshared.await()
+            }
+        }
+        val first = launch { unshared.run() }
+        withTimeout(5_000) { unsharedEntered.await() }
+        var secondJoined = true
+        val second = launch(start = CoroutineStart.UNDISPATCHED) { secondJoined = unshared.run() }
+        first.cancelAndJoin()
+        withTimeout(5_000) { second.join() }
+        assertEquals(2, unsharedCalls)
+        assertFalse(secondJoined)
+
+        val account = AccountWork()
+        try {
+            val sharedEntered = CompletableDeferred<Unit>()
+            val releaseShared = CompletableDeferred<Unit>()
+            var sharedCalls = 0
+            val shared = ExperimentRefresh(
+                scope = account.scope(Dispatchers.Unconfined),
+                operationMutex = Mutex(),
+            ) {
+                if (++sharedCalls == 1) {
+                    sharedEntered.complete(Unit)
+                    releaseShared.await()
+                }
+            }
+            val scopedFirst = launch { shared.run() }
+            withTimeout(5_000) { sharedEntered.await() }
+            var scopedSecondJoined = false
+            val scopedSecond = launch(start = CoroutineStart.UNDISPATCHED) { scopedSecondJoined = shared.run() }
+            scopedFirst.cancelAndJoin()
+            releaseShared.complete(Unit)
+            withTimeout(5_000) { scopedSecond.join() }
+            assertEquals(1, sharedCalls)
+            assertTrue(scopedSecondJoined)
+        } finally {
+            account.stop()
+            account.join()
+        }
     }
 
     private fun store(): CacheStore {

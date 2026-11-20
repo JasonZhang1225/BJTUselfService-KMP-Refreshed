@@ -4,6 +4,7 @@ import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
 import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
 import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +20,7 @@ import team.bjtuss.bjtuselfservice.shared.cache.CacheStore
 import team.bjtuss.bjtuselfservice.shared.security.CredentialVault
 import team.bjtuss.bjtuselfservice.shared.domain.change.DataChangeRecorder
 import team.bjtuss.bjtuselfservice.shared.domain.change.recordSafely
+import team.bjtuss.bjtuselfservice.shared.feature.physicslab.ExperimentRefresh
 
 data class PhysicsDemoState(val username: String = "", val configured: Boolean = false, val enabled: Boolean = false,
     val bookings: List<PhysicsDemoBooking> = emptyList(), val refreshing: Boolean = false, val fromCache: Boolean = false,
@@ -28,16 +30,21 @@ class PhysicsDemoModel(private val scope: String, private val cache: CacheStore,
     private val vault: CredentialVault?, private val remote: PhysicsDemoRemote,
     private val changeRecorder: DataChangeRecorder<PhysicsDemoBooking>? = null,
     private val accountWork: AccountWork? = null,
+    refreshScope: CoroutineScope? = null,
 ) {
     private val mutableState = accountWork.accountState(PhysicsDemoState(username = scope))
     val state = mutableState.asStateFlow()
     private val mutex = Mutex()
+    private val initializationMutex = Mutex()
+    private val refreshRequest = ExperimentRefresh(refreshScope, mutex, isUpToDate = { state.value.synced }) {
+        if (state.value.enabled && state.value.configured) fetchBookings()
+    }
     private var initialized = false
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     suspend fun initialize() = accountWork.inAccount { initializeInAccount() }
 
-    private suspend fun initializeInAccount() = mutex.withLock {
+    private suspend fun initializeInAccount() = initializationMutex.withLock {
         if (initialized) return@withLock
         val configured = cache.metadata(scope, "phydemo.configured") != "false"
         val creds = try { if (configured) vault?.load() else null }
@@ -94,27 +101,29 @@ class PhysicsDemoModel(private val scope: String, private val cache: CacheStore,
     suspend fun refresh(onlyIfUnsynced: Boolean = false) = accountWork.inAccount { refreshInAccount(onlyIfUnsynced = onlyIfUnsynced) }
 
     private suspend fun refreshInAccount(onlyIfUnsynced: Boolean = false) {
-        initialize()
-        mutex.withLock {
-            if (!state.value.enabled || !state.value.configured) return@withLock
-            if (onlyIfUnsynced && state.value.synced) return@withLock
-            mutableState.value = state.value.copy(refreshing = true,failed = false,message = null)
-            try {
-                val creds = vault?.load() ?: throw PhysicsDemoFailure("请配置演示实验账号。")
-                val bookings = withTimeout(40_000) { remote.fetch(creds) }
-                val before = state.value.bookings
-                cache.putMetadata(scope,"phydemo.results",json.encodeToString(bookings))
-                val updated = Clock.System.now().toLocalDateTime(TimeZone.of("Asia/Shanghai")).toString()
-                cache.putMetadata(scope,"phydemo.lastSync",updated)
-                mutableState.value = state.value.copy(bookings = bookings,fromCache = false,synced = true,lastSync = updated,message = "已查询 ${bookings.size} 个预约。")
-                changeRecorder.recordSafely(before, bookings)
-            } catch (e: TimeoutCancellationException) {
-                mutableState.value = state.value.copy(fromCache = true, failed = true,message = "连接超时，显示上次查询结果。")
-            } catch (e: CancellationException) { throw e }
-            catch (e: Exception) {
-                mutableState.value = state.value.copy(fromCache = true,failed = true,message = (e as? PhysicsDemoFailure)?.message ?: "请连接校园网，显示上次查询结果。")
-            } finally { mutableState.value = state.value.copy(refreshing = false) }
-        }
+        initializeInAccount()
+        val joined = refreshRequest.run(onlyIfUnsynced)
+        // First-entry callers still get one chance to fill missing data after a failed round.
+        if (joined && onlyIfUnsynced && !state.value.synced) refreshRequest.run(onlyIfUnsynced = true)
+    }
+
+    private suspend fun fetchBookings() {
+        mutableState.value = state.value.copy(refreshing = true,failed = false,message = null)
+        try {
+            val creds = vault?.load() ?: throw PhysicsDemoFailure("请配置演示实验账号。")
+            val bookings = withTimeout(40_000) { remote.fetch(creds) }
+            val before = state.value.bookings
+            cache.putMetadata(scope,"phydemo.results",json.encodeToString(bookings))
+            val updated = Clock.System.now().toLocalDateTime(TimeZone.of("Asia/Shanghai")).toString()
+            cache.putMetadata(scope,"phydemo.lastSync",updated)
+            mutableState.value = state.value.copy(bookings = bookings,fromCache = false,synced = true,lastSync = updated,message = "已查询 ${bookings.size} 个预约。")
+            changeRecorder.recordSafely(before, bookings)
+        } catch (e: TimeoutCancellationException) {
+            mutableState.value = state.value.copy(fromCache = true, failed = true,message = "连接超时，显示上次查询结果。")
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) {
+            mutableState.value = state.value.copy(fromCache = true,failed = true,message = (e as? PhysicsDemoFailure)?.message ?: "请连接校园网，显示上次查询结果。")
+        } finally { mutableState.value = state.value.copy(refreshing = false) }
     }
 
     suspend fun setEnabled(enabled: Boolean) = accountWork.inAccount { setEnabledInAccount(enabled = enabled) }

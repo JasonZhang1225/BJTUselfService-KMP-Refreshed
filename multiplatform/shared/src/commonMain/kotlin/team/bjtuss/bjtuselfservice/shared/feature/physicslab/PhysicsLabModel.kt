@@ -4,6 +4,7 @@ import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
 import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
 import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,17 +37,22 @@ class PhysicsLabModel(
     private val remote: PhysicsLabRemote,
     private val changeRecorder: DataChangeRecorder<PhysicsLab>? = null,
     private val accountWork: AccountWork? = null,
+    refreshScope: CoroutineScope? = null,
 ) {
     private val mutableState = accountWork.accountState(PhysicsLabState(username = scope))
     val state = mutableState.asStateFlow()
     private val mutex = Mutex()
+    private val initializationMutex = Mutex()
+    private val refreshRequest = ExperimentRefresh(refreshScope, mutex) {
+        if (state.value.enabled) fetchLabs()
+    }
     private var initialized = false
     private var resetChangeBaseline = false
     private var twoWeekOverrides: Map<String, Boolean> = emptyMap()
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     suspend fun initialize() = accountWork.inAccount { initializeInAccount() }
 
-    private suspend fun initializeInAccount() = mutex.withLock {
+    private suspend fun initializeInAccount() = initializationMutex.withLock {
         if (initialized) return@withLock
         val enabled = cache.metadata(scope, "physicslab.enabled") == "true"
         resetChangeBaseline = cache.metadata(scope, "physicslab.changeBaselinePending") == "true"
@@ -117,7 +123,8 @@ class PhysicsLabModel(
     suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
 
     private suspend fun refreshInAccount() {
-        refresh(includeDisabled = false)
+        initializeInAccount()
+        refreshRequest.run()
     }
 
     suspend fun saveAccountAndSync(username: String, password: String): Boolean = accountWork.inAccount { saveAccountAndSyncInAccount(username = username, password = password) }
@@ -126,7 +133,7 @@ class PhysicsLabModel(
         initialize()
         configure(username, password, state.value.enabled)
         if (state.value.failed || !state.value.configured) return false
-        if (!state.value.enabled) refresh(includeDisabled = true)
+        if (!state.value.enabled) mutex.withLock { fetchLabs() }
         return !state.value.failed && state.value.configured
     }
 
@@ -154,27 +161,23 @@ class PhysicsLabModel(
         }
     }
 
-    private suspend fun refresh(includeDisabled: Boolean) {
-        initialize()
-        mutex.withLock {
-            if (!includeDisabled && !mutableState.value.enabled) return@withLock
-            mutableState.value = mutableState.value.copy(refreshing = true, message = null, failed = false)
-            try {
-                val credentials = vault?.load() ?: throw PhysicsLabFailure("请在应用设置中配置物理实验账号和密码。")
-                val labs = applyWeekOverrides(withTimeout(25_000) { remote.fetch(credentials) })
-                val before = mutableState.value.labs
-                cache.putMetadata(scope, "physicslab.results", json.encodeToString(labs))
-                if (resetChangeBaseline) cache.putMetadata(scope, "physicslab.changeBaselinePending", "false")
-                mutableState.value = mutableState.value.copy(labs = labs, username = credentials.username, fromCache = false, failed = false, synced = true, message = "已同步 ${labs.size} 个实验。")
-                changeRecorder.recordSafely(if (resetChangeBaseline) labs else before, labs)
-                resetChangeBaseline = false
-            } catch (e: TimeoutCancellationException) {
-                mutableState.value = mutableState.value.copy(fromCache = true, failed = true, message = "连接超时，请连接校园网；继续使用缓存。")
-            } catch (e: CancellationException) { throw e
-            } catch (e: Exception) {
-                mutableState.value = mutableState.value.copy(fromCache = true, failed = true, message = (e as? PhysicsLabFailure)?.userMessage ?: "无法连接实验系统，请连接校园网；继续使用缓存。")
-            } finally { mutableState.value = mutableState.value.copy(refreshing = false) }
-        }
+    private suspend fun fetchLabs() {
+        mutableState.value = mutableState.value.copy(refreshing = true, message = null, failed = false)
+        try {
+            val credentials = vault?.load() ?: throw PhysicsLabFailure("请在应用设置中配置物理实验账号和密码。")
+            val labs = applyWeekOverrides(withTimeout(25_000) { remote.fetch(credentials) })
+            val before = mutableState.value.labs
+            cache.putMetadata(scope, "physicslab.results", json.encodeToString(labs))
+            if (resetChangeBaseline) cache.putMetadata(scope, "physicslab.changeBaselinePending", "false")
+            mutableState.value = mutableState.value.copy(labs = labs, username = credentials.username, fromCache = false, failed = false, synced = true, message = "已同步 ${labs.size} 个实验。")
+            changeRecorder.recordSafely(if (resetChangeBaseline) labs else before, labs)
+            resetChangeBaseline = false
+        } catch (e: TimeoutCancellationException) {
+            mutableState.value = mutableState.value.copy(fromCache = true, failed = true, message = "连接超时，请连接校园网；继续使用缓存。")
+        } catch (e: CancellationException) { throw e
+        } catch (e: Exception) {
+            mutableState.value = mutableState.value.copy(fromCache = true, failed = true, message = (e as? PhysicsLabFailure)?.userMessage ?: "无法连接实验系统，请连接校园网；继续使用缓存。")
+        } finally { mutableState.value = mutableState.value.copy(refreshing = false) }
     }
     private fun applyWeekOverrides(labs: List<PhysicsLab>): List<PhysicsLab> = labs.map { lab ->
         val twoWeeks = twoWeekOverrides[lab.durationSettingKey] ?: (physicsLabWeekCount(lab.name) == 2)

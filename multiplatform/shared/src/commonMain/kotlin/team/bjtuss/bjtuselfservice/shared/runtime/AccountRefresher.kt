@@ -9,17 +9,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import team.bjtuss.bjtuselfservice.shared.AuthenticatedSession
-import team.bjtuss.bjtuselfservice.shared.data.classroomoccupancy.ClassroomOccupancySyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.course.CourseScheduleSyncFailure
-import team.bjtuss.bjtuselfservice.shared.data.courseware.CoursewareSyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.exam.ExamScheduleSyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.grade.GradeSyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.homework.HomeworkSyncFailure
 import team.bjtuss.bjtuselfservice.shared.data.phyvlab.PhyVlabSyncFailure
 import team.bjtuss.bjtuselfservice.shared.feature.assignment.AssignmentSource
-import team.bjtuss.bjtuselfservice.shared.feature.classroomoccupancy.ClassroomOccupancyQueryState
-import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxFailure
-import team.bjtuss.bjtuselfservice.shared.feature.mailbox.MailboxUiState
 import team.bjtuss.bjtuselfservice.shared.feature.phyvlab.PhyVlabContentSource
 import team.bjtuss.bjtuselfservice.shared.sync.AppRefreshCoordinator
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshOrigin
@@ -40,6 +35,15 @@ internal class AccountRefresher(
     val recoveryInProgress = recoveryState.asStateFlow()
     internal fun setRecoveryState(active: Boolean) { recoveryState.value = active }
     private val onRecoveryStateChanged: (Boolean) -> Unit = ::setRecoveryState
+    private val homeAndGradesProbe = RefreshSessionProbe(session.probeSession)
+    private val assignmentProbe = RefreshSessionProbe(session.probeSession)
+
+    private fun pageSession(probeSession: (suspend () -> Boolean)? = session.probeSession) =
+        SessionRefreshCoordinator(
+            reauthenticate = session.reauthenticateSession,
+            probeSession = probeSession,
+            onRecoveryStateChanged = onRecoveryStateChanged,
+        )
 
     /** 全局刷新统一交给公共刷新服务；无协调器的探针会话使用空适配器，不访问网络。 */
     val refreshCoordinator: AppRefreshCoordinator = session.refreshCoordinator ?: AppRefreshCoordinator(
@@ -53,9 +57,12 @@ internal class AccountRefresher(
     suspend fun refreshGlobal(forceReauthenticate: Boolean) {
         coroutineScope {
             launch {
-                refreshCoordinator.refresh(
-                    RefreshRequest(origin = RefreshOrigin.APP, forceReauthenticate = forceReauthenticate),
-                )
+                val request = RefreshRequest(origin = RefreshOrigin.APP, forceReauthenticate = forceReauthenticate)
+                if (forceReauthenticate) {
+                    refreshCoordinator.refresh(request)
+                } else {
+                    refreshCoordinator.refresh(request, homeAndGradesProbe)
+                }
             }
             // 图书馆与学校业务会话独立、不在公共刷新协调器里：全局刷新时一并重取借阅（失败保留旧数据）。
             launch { session.libraryModel.refresh(silent = true) }
@@ -72,11 +79,7 @@ internal class AccountRefresher(
                 session.phyVlabModel?.loadSelectedActivityDetail(force = true)
                 return@launch
             }
-            val sessionRefresh = SessionRefreshCoordinator(
-                reauthenticate = session.reauthenticateSession,
-                probeSession = session.probeSession,
-                onRecoveryStateChanged = onRecoveryStateChanged,
-            )
+            val sessionRefresh by lazy { pageSession() }
             suspend fun refreshModule(
                 operation: suspend () -> Unit,
                 sessionExpired: () -> Boolean,
@@ -90,10 +93,12 @@ internal class AccountRefresher(
             val coursewareModel = session.coursewareModel
             when (section) {
                 AppSection.HOME -> refreshGlobal(false)
-                AppSection.GRADES -> refreshModule(
-                    operation = gradeModel::refresh,
-                    sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
-                )
+                AppSection.GRADES -> homeAndGradesProbe.use { probe ->
+                    pageSession(probe).run(
+                        operation = gradeModel::refresh,
+                        sessionExpired = { gradeModel.state.value.failure == GradeSyncFailure.SESSION_EXPIRED },
+                    )
+                }
                 AppSection.SCHEDULE -> coroutineScope {
                     launch { session.physicsLabModel?.refresh() }
                     launch { session.physicsDemoModel?.refresh() }
@@ -121,28 +126,10 @@ internal class AccountRefresher(
                     operation = homeworkModel::refresh,
                     sessionExpired = { homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED },
                 )
-                AppSection.COURSEWARE, AppSection.PLAYBACK -> refreshModule(
-                    operation = coursewareModel::refresh,
-                    sessionExpired = { coursewareModel.state.value.failure == CoursewareSyncFailure.SESSION_EXPIRED },
-                )
+                AppSection.COURSEWARE, AppSection.PLAYBACK -> coursewareModel.refreshWithSession(sessionRefresh)
                 AppSection.CLASSROOMS -> session.classroomModel.refresh()
-                AppSection.CLASSROOM_OCCUPANCY -> refreshModule(
-                    operation = session.classroomOccupancyModel::refresh,
-                    sessionExpired = {
-                        (session.classroomOccupancyModel.state.value.queryState as? ClassroomOccupancyQueryState.Failed)
-                            ?.reason == ClassroomOccupancySyncFailure.SESSION_EXPIRED
-                    },
-                )
-                AppSection.MAILBOX -> refreshModule(
-                    operation = session.mailboxModel::refresh,
-                    sessionExpired = {
-                        when (val current = session.mailboxModel.state.value) {
-                            MailboxUiState.SessionUnavailable -> true
-                            is MailboxUiState.Ready -> current.failure == MailboxFailure.SESSION_EXPIRED
-                            else -> false
-                        }
-                    },
-                )
+                AppSection.CLASSROOM_OCCUPANCY -> session.classroomOccupancyModel.refreshWithSession(sessionRefresh)
+                AppSection.MAILBOX -> session.mailboxModel.refreshWithSession(sessionRefresh)
                 AppSection.LIBRARY -> session.libraryModel.refresh()
                 AppSection.PHYVLAB -> if (session.settingsModel.state.value.preferences.isPhyVlabEnabled) {
                     session.phyVlabModel?.refresh()
@@ -160,16 +147,10 @@ internal class AccountRefresher(
                     }
                 }
                 AppSection.ASSIGNMENTS -> {
-                    val homeworkModelLocal = session.homeworkModel
                     val phyVlabEnabled = session.settingsModel.state.value.preferences.isPhyVlabEnabled
                     val citelEnabled = session.settingsModel.state.value.preferences.isCitelEnabled
                     coroutineScope {
-                        launch {
-                            refreshModule(
-                                operation = homeworkModelLocal::refresh,
-                                sessionExpired = { homeworkModelLocal.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED },
-                            )
-                        }
+                        launch { refreshCoursePlatformAssignments() }
                         if (phyVlabEnabled) launch { session.phyVlabModel?.refresh() }
                         if (citelEnabled) launch { session.citelModel?.refresh() }
                     }
@@ -204,14 +185,7 @@ internal class AccountRefresher(
 
     private suspend fun refreshAssignmentSourceInAccount(source: AssignmentSource) {
         when (source) {
-            AssignmentSource.COURSE_PLATFORM -> SessionRefreshCoordinator(
-                reauthenticate = session.reauthenticateSession,
-                probeSession = session.probeSession,
-                onRecoveryStateChanged = onRecoveryStateChanged,
-            ).run(
-                session.homeworkModel::refresh,
-                { session.homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED },
-            )
+            AssignmentSource.COURSE_PLATFORM -> refreshCoursePlatformAssignments()
             AssignmentSource.PHYVLAB -> if (session.settingsModel.state.value.preferences.isPhyVlabEnabled) {
                 session.phyVlabModel?.refresh()
             }
@@ -219,6 +193,13 @@ internal class AccountRefresher(
                 session.citelModel?.refresh()
             }
         }
+    }
+
+    private suspend fun refreshCoursePlatformAssignments() = assignmentProbe.use { probe ->
+        pageSession(probe).run(
+            operation = session.homeworkModel::refresh,
+            sessionExpired = { session.homeworkModel.state.value.failure == HomeworkSyncFailure.SESSION_EXPIRED },
+        )
     }
 
     fun retryPhyVlabDetail() {

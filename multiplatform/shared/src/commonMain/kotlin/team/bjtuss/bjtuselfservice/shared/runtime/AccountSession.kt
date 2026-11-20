@@ -178,7 +178,7 @@ internal fun AppRuntime.obtainAccountSession(
         val libraryModel = LibraryModel(DefaultLibraryRepository(
             remote = SchoolLibraryRemoteDataSource(graph.transport),
             authenticator = libraryProtocol,
-        ), accountWork = graphWork)
+        ), accountWork = graphWork, refreshScope = graphWork.scope(taskDispatcher))
         val presentation = AuthenticatedSession(
             profile = profile,
             entryLoggingIn = entryLoggingIn,

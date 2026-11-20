@@ -1,17 +1,27 @@
 package team.bjtuss.bjtuselfservice.shared.feature.classroom
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import team.bjtuss.bjtuselfservice.shared.data.classroom.ClassroomFetchFailure
 import team.bjtuss.bjtuselfservice.shared.data.classroom.ClassroomFetchResult
+import team.bjtuss.bjtuselfservice.shared.data.classroom.ClassroomRemoteDataSource
 import team.bjtuss.bjtuselfservice.shared.data.classroom.ClassroomRepository
+import team.bjtuss.bjtuselfservice.shared.data.classroom.DefaultClassroomRepository
+import team.bjtuss.bjtuselfservice.shared.domain.classroom.CLASSROOM_BUILDINGS
 import team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomBuildingInfo
 import team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomCapacity
 import team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomSortDirection
 import team.bjtuss.bjtuselfservice.shared.domain.classroom.ClassroomSortField
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
 
 class ClassroomScreenModelTest {
     @Test
@@ -76,6 +86,82 @@ class ClassroomScreenModelTest {
         val before = model.state.value
         model.setNameQuery("SY102")
         assertEquals(before, model.state.value)
+    }
+
+    @Test
+    fun slowBuildingRequestDoesNotBlockAnotherBuildingInRepository() = runBlocking {
+        val account = AccountWork()
+        val syEntered = CompletableDeferred<Unit>()
+        val releaseSy = CompletableDeferred<Unit>()
+        try {
+            val remote = object : ClassroomRemoteDataSource {
+                override suspend fun fetchBuildingInfo(buildingName: String): ClassroomBuildingInfo {
+                    if (buildingName == "思源楼") {
+                        syEntered.complete(Unit)
+                        releaseSy.await()
+                    }
+                    return successInfo().copy(buildingName = buildingName)
+                }
+            }
+            val repository = DefaultClassroomRepository(
+                remote = remote,
+                refreshScope = account.scope(Dispatchers.Default),
+            )
+            val slowCaller = launch { repository.fetchBuildingInfo("思源楼") }
+            withTimeout(5_000) { syEntered.await() }
+            slowCaller.cancelAndJoin()
+
+            val fastResult = withTimeout(5_000) { repository.fetchBuildingInfo("逸夫楼") }
+            val loaded = assertIs<ClassroomFetchResult.Success>(fastResult)
+            assertEquals("逸夫楼", loaded.info.buildingName)
+        } finally {
+            releaseSy.complete(Unit)
+            account.stop()
+            account.join()
+        }
+    }
+
+    @Test
+    fun olderCompletedResultCannotOverwriteNewerSnapshotOrCache() = runBlocking {
+        val oldInfo = successInfo().copy(
+            classrooms = listOf(ClassroomCapacity("SY101", 10.0, 9, 90)),
+        )
+        val newInfo = successInfo().copy(
+            classrooms = listOf(ClassroomCapacity("SY999", 90.0, 81, 90)),
+        )
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+        var calls = 0
+        val repository = object : ClassroomRepository {
+            override suspend fun fetchBuildingInfo(buildingName: String): ClassroomFetchResult {
+                return if (++calls == 1) {
+                    firstEntered.complete(Unit)
+                    releaseFirst.await()
+                    ClassroomFetchResult.Success(oldInfo)
+                } else {
+                    ClassroomFetchResult.Success(newInfo)
+                }
+            }
+        }
+        val model = ClassroomScreenModel(repository)
+        val first = launch { model.selectBuilding("思源楼") }
+        withTimeout(5_000) { firstEntered.await() }
+
+        model.refresh()
+        val loadedAfterSecond = assertIs<ClassroomBuildingState.Loaded>(model.state.value.buildingState)
+        assertEquals("SY999", loadedAfterSecond.info.classrooms.single().name)
+
+        releaseFirst.complete(Unit)
+        first.join()
+
+        val loadedFinal = assertIs<ClassroomBuildingState.Loaded>(model.state.value.buildingState)
+        assertEquals("SY999", loadedFinal.info.classrooms.single().name)
+        assertEquals(listOf("SY999"), model.state.value.visibleClassrooms.map { it.name })
+
+        model.clearSelection()
+        model.selectBuilding("思源楼")
+        val cachedLoaded = assertIs<ClassroomBuildingState.Loaded>(model.state.value.buildingState)
+        assertEquals("SY999", cachedLoaded.info.classrooms.single().name)
     }
 }
 

@@ -1,13 +1,20 @@
 package team.bjtuss.bjtuselfservice.shared.feature.courseware
 
 import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountMutationLock
 import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
 import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,6 +49,7 @@ import team.bjtuss.bjtuselfservice.shared.files.FileSaveResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingDestinationResult
 import team.bjtuss.bjtuselfservice.shared.files.StreamingFileSink
 import team.bjtuss.bjtuselfservice.shared.files.StreamingSinkIoException
+import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
 
 enum class CoursewareContentSource {
     CACHE,
@@ -97,22 +105,104 @@ class CoursewareScreenModel(
     /** 会话过期时在当前 App 会话内重新建立学校登录态，不跳回登录页。 */
     private val reauthenticate: (suspend () -> Boolean)? = null,
     private val accountWork: AccountWork? = null,
+    private val refreshScope: CoroutineScope? = null,
 ) {
     private val mutableState = accountWork.accountState(CoursewareUiState())
     val state: StateFlow<CoursewareUiState> = mutableState.asStateFlow()
 
-    private val refreshMutex = Mutex()
+    private val refreshLock = AccountMutationLock()
+    private var pendingRefresh: Refresh? = null
     private val operationMutex = Mutex()
     private val prefetchMutex = Mutex()
     private val freshCourseIds = mutableSetOf<Int>()
     private var initialized = false
+    private var catalogSessionExpired = false
     private var navigationGeneration = 0L
 
-    suspend fun initialize() = accountWork.inAccount { initializeInAccount() }
+    private class Refresh(val firstLoad: Boolean, var session: SessionRefreshCoordinator?) {
+        lateinit var completion: Deferred<Unit>
+    }
 
-    private suspend fun initializeInAccount() {
-        if (initialized) return
-        initialized = true
+    suspend fun initialize() = accountWork.inAccount { requestRefresh(firstLoad = true) }
+
+    suspend fun refresh() = accountWork.inAccount { requestRefresh() }
+
+    internal suspend fun refreshWithSession(session: SessionRefreshCoordinator) =
+        accountWork.inAccount { requestRefresh(session = session) }
+
+    private suspend fun requestRefresh(
+        firstLoad: Boolean = false,
+        session: SessionRefreshCoordinator? = null,
+    ) {
+        var checked = false
+        while (true) {
+            val restarted = coroutineScope {
+                val completion = refreshLock.withLock {
+                    if (!checked) {
+                        checked = true
+                        if (firstLoad) {
+                            if (initialized) return@withLock null
+                            initialized = true
+                        }
+                    }
+                    val active = pendingRefresh
+                    if (active != null && !active.completion.isCompleted) {
+                        if (active.session == null) active.session = session
+                        return@withLock active.completion
+                    }
+                    val next = Refresh(firstLoad, session)
+                    next.completion = (refreshScope ?: this).async(start = CoroutineStart.LAZY) { runRefresh(next) }
+                    pendingRefresh = next
+                    next.completion
+                } ?: return@coroutineScope false
+                try {
+                    completion.await()
+                    false
+                } catch (error: CancellationException) {
+                    if (refreshScope != null || !currentCoroutineContext().isActive) throw error
+                    refreshLock.withLock {
+                        if (pendingRefresh?.completion === completion) pendingRefresh = null
+                    }
+                    true
+                }
+            }
+            if (!restarted) return
+        }
+    }
+
+    private suspend fun runRefresh(request: Refresh) {
+        try {
+            if (request.firstLoad) {
+                loadCachedCourses()
+                fetchCatalogAndDirectories()
+                // 首次读取后补拉失败或仅有缓存的顶层目录。
+                ensureCourseRootsLoadedInAccount()
+            } else {
+                val session = refreshLock.withLock { request.session }
+                if (session != null) {
+                    session.run(::fetchCatalogAndDirectories, ::sessionExpired)
+                    return
+                }
+                fetchCatalogAndDirectories()
+            }
+            // 手动刷新若加入了已经开始的首次读取，仍可处理这轮返回的会话过期。
+            val session = refreshLock.withLock {
+                request.session?.takeIf { sessionExpired() }.also {
+                    if (it == null && pendingRefresh === request) pendingRefresh = null
+                }
+            }
+            session?.retryAfterExpiry(::fetchCatalogAndDirectories, ::sessionExpired)
+        } finally {
+            refreshLock.withLock {
+                if (pendingRefresh === request) pendingRefresh = null
+            }
+        }
+    }
+
+    private fun sessionExpired() =
+        state.value.failure == CoursewareSyncFailure.SESSION_EXPIRED || catalogSessionExpired
+
+    private fun loadCachedCourses() {
         val cached = runCatching(repository::load).getOrNull()
         if (cached != null) {
             applySnapshot(
@@ -126,57 +216,58 @@ class CoursewareScreenModel(
                 failure = CoursewareSyncFailure.CACHE,
             )
         }
-        refresh()
-        // 列表同步后（或失败仅有缓存）仍补拉未加载课程的顶层数量。
-        ensureCourseRootsLoaded()
     }
 
-    suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
-
-    private suspend fun refreshInAccount() {
-        refreshMutex.withLock {
-            var reloadLoaded = false
-            operationMutex.withLock {
-                val before = mutableState.value
-                mutableState.value = before.copy(
-                    isLoading = before.courses.isEmpty(),
-                    isRefreshing = before.courses.isNotEmpty(),
-                    failure = null,
-                )
-                try {
-                    when (val result = repository.refresh()) {
-                        is CoursewareRefreshResult.Success -> {
-                            freshCourseIds.clear()
-                            applySnapshot(
-                                result.snapshot,
-                                CoursewareContentSource.NETWORK,
-                                null,
-                            )
-                            reloadLoaded = true
-                        }
-                        is CoursewareRefreshResult.Failure -> applySnapshot(
+    private suspend fun fetchCatalogAndDirectories() {
+        var reloadLoaded = false
+        operationMutex.withLock {
+            catalogSessionExpired = false
+            val before = mutableState.value
+            mutableState.value = before.copy(
+                isLoading = before.courses.isEmpty(),
+                isRefreshing = before.courses.isNotEmpty(),
+                failure = null,
+            )
+            try {
+                when (val result = repository.refresh()) {
+                    is CoursewareRefreshResult.Success -> {
+                        freshCourseIds.clear()
+                        applySnapshot(
+                            result.snapshot,
+                            CoursewareContentSource.NETWORK,
+                            null,
+                        )
+                        reloadLoaded = true
+                    }
+                    is CoursewareRefreshResult.Failure -> {
+                        catalogSessionExpired = result.reason == CoursewareSyncFailure.SESSION_EXPIRED
+                        applySnapshot(
                             result.snapshot,
                             if (result.snapshot.courses.isEmpty()) null else CoursewareContentSource.CACHE,
                             result.reason,
                         )
                     }
-                } finally {
-                    val current = mutableState.value
-                    if (current.isRefreshing || current.isLoading) {
-                        mutableState.value = current.copy(isRefreshing = false, isLoading = false)
-                    }
+                }
+            } finally {
+                val current = mutableState.value
+                if (current.isRefreshing || current.isLoading) {
+                    mutableState.value = current.copy(isRefreshing = false, isLoading = false)
                 }
             }
-            // 目录刷新成功后才重拉顶层；失败时留下已有子树，只补还没加载的课。
-            ensureCourseRootsLoaded(reloadLoaded = reloadLoaded)
         }
+        // 目录刷新成功后才重拉顶层；失败时留下已有子树，只补还没加载的课。
+        ensureCourseRootsLoadedInAccount(reloadLoaded = reloadLoaded)
     }
 
     /**
      * 并发补拉尚未加载顶层目录的课程（有界并发）。
      * 打开选课列表 / 初始化 / 手动同步后都会调用；已在加载中则跳过。
      */
-    suspend fun ensureCourseRootsLoaded(reloadLoaded: Boolean = false) = accountWork.inAccount { ensureCourseRootsLoadedInAccount(reloadLoaded = reloadLoaded) }
+    suspend fun ensureCourseRootsLoaded(reloadLoaded: Boolean = false) = accountWork.inAccount {
+        val active = refreshLock.withLock { pendingRefresh?.completion?.takeUnless { it.isCompleted } }
+        if (active != null) active.await()
+        else ensureCourseRootsLoadedInAccount(reloadLoaded)
+    }
 
     private suspend fun ensureCourseRootsLoadedInAccount(reloadLoaded: Boolean = false) {
         val ids = mutableState.value.courses
@@ -836,7 +927,11 @@ class CoursewareScreenModel(
                 is CoursewareOperationResult.Failure -> {
                     // 课件目录刷新失败时保留旧内容，但必须明确提示用户，避免把旧目录
                     // 误认为已经同步成功；再次刷新或重新选择课程都会重试。
-                    mutableState.value = mutableState.value.copy(failure = result.reason)
+                    if (mutableState.value.failure != CoursewareSyncFailure.SESSION_EXPIRED ||
+                        result.reason == CoursewareSyncFailure.SESSION_EXPIRED
+                    ) {
+                        mutableState.value = mutableState.value.copy(failure = result.reason)
+                    }
                 }
             }
         } finally {

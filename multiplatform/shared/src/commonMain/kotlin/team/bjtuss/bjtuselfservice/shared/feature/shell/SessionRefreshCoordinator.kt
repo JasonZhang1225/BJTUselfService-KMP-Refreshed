@@ -44,6 +44,14 @@ internal class SessionRefreshCoordinator(
         // itself failed, instead of silently doing nothing on the current page.
         ensureSessionBeforeOperation()
         operation()
+        retryAfterExpiry(operation, sessionExpired)
+    }
+
+    /** Retry an operation that already ran, for example a first load shared with a manual refresh. */
+    suspend fun retryAfterExpiry(
+        operation: suspend () -> Unit,
+        sessionExpired: () -> Boolean,
+    ) {
         if (!sessionExpired()) return
 
         repeat(maxRecoveryAttempts) {

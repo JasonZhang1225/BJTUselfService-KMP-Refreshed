@@ -1,13 +1,21 @@
 package team.bjtuss.bjtuselfservice.shared.feature.mailbox
 
+import team.bjtuss.bjtuselfservice.shared.runtime.AccountMutationLock
 import team.bjtuss.bjtuselfservice.shared.runtime.AccountWork
 import team.bjtuss.bjtuselfservice.shared.runtime.inAccount
 import team.bjtuss.bjtuselfservice.shared.runtime.accountState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import team.bjtuss.bjtuselfservice.shared.data.mailbox.MailboxRemoteDataSource
@@ -18,6 +26,7 @@ import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailAttachment
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailComposeDraft
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailMessage
 import team.bjtuss.bjtuselfservice.shared.domain.mailbox.MailSummary
+import team.bjtuss.bjtuselfservice.shared.feature.shell.SessionRefreshCoordinator
 import team.bjtuss.bjtuselfservice.shared.network.SchoolHttpTransport
 import team.bjtuss.bjtuselfservice.shared.webview.SchoolWebDomainPolicy
 import team.bjtuss.bjtuselfservice.shared.webview.WebCookie
@@ -115,6 +124,7 @@ class MailboxScreenModel(
     private val transport: SchoolHttpTransport,
     private val remote: MailboxRemoteDataSource = SchoolMailboxRemoteDataSource(transport),
     private val accountWork: AccountWork? = null,
+    private val refreshScope: CoroutineScope? = null,
 ) {
     private val mutableState = accountWork.accountState<MailboxUiState>(MailboxUiState.Idle)
     val state: StateFlow<MailboxUiState> = mutableState.asStateFlow()
@@ -133,27 +143,103 @@ class MailboxScreenModel(
     private suspend fun fetchMessageForAgentInAccount(messageId: String): MailMessage = remote.readMessage(messageId)
 
     private val operationMutex = Mutex()
+    private val refreshLock = AccountMutationLock()
+    private var unreadProbe: Deferred<Boolean>? = null
+    private var pageRefresh: PageRefresh? = null
+    // 首次加载按原时机执行。手动刷新若已在检查 MIS，检查后接用这次列表结果。
+    private var firstLoad: FirstLoad? = null
+    private var currentFolders: List<MailboxFolderUi> = defaultMailboxFolders
+    private var currentFolderId: Int = INBOX_FOLDER_ID
+
+    private class FirstLoad {
+        var completed = false
+        lateinit var completion: Deferred<Unit>
+    }
+
+    private class PageRefresh(
+        var session: SessionRefreshCoordinator?,
+        var firstLoad: FirstLoad?,
+    ) {
+        lateinit var completion: Deferred<Unit>
+    }
     // 详情页可能在上一次读取尚未返回时被退出并重新打开；只允许当前消息的结果落地。
     private var messageRequestId: String? = null
     // 每次 prepare/open 递增。原生详情页 onDispose 必须带上打开时的代次，
     // 否则快速返回后再打开下一封时，上一页迟到的 clear 会把新详情打成空页。
     private var messageGeneration = 0
 
-    suspend fun initialize() = accountWork.inAccount { initializeInAccount() }
-
-    private suspend fun initializeInAccount() {
-        if (mutableState.value == MailboxUiState.Idle) refresh()
+    suspend fun initialize() = accountWork.inAccount {
+        while (true) {
+            val restarted = coroutineScope {
+                val completion = refreshLock.withLock {
+                    if (mutableState.value != MailboxUiState.Idle) return@withLock null
+                    val active = firstLoad?.takeUnless { it.completion.isCompleted }
+                    if (active != null) return@withLock active.completion
+                    val next = FirstLoad()
+                    next.completion = sharedAsync {
+                        var ran = false
+                        operationMutex.withLock {
+                            if (mutableState.value == MailboxUiState.Idle) {
+                                refreshFolder()
+                                ran = true
+                            }
+                        }
+                        if (ran) {
+                            refreshLock.withLock { next.completed = true }
+                        }
+                    }
+                    firstLoad = next
+                    next.completion
+                } ?: return@coroutineScope false
+                try {
+                    completion.await()
+                    false
+                } catch (error: CancellationException) {
+                    if (refreshScope != null || !currentCoroutineContext().isActive) throw error
+                    refreshLock.withLock {
+                        if (firstLoad?.completion === completion) firstLoad = null
+                    }
+                    true
+                }
+            }
+            if (!restarted) return@inAccount
+        }
     }
 
     /**
      * 轻量探测收件箱未读数供首页徽标使用（Coremail 无未读计数字段，只能拉一页消息数未读）。
      * 会话失效或网络错误时保留上一次成功值，不清零，避免首页在偶发失败时回退到误导数字。
      */
-    /** 只探测收件箱前几封的未读数；返回是否成功取得（失败时保留上次的计数）。 */
-    suspend fun refreshUnreadInboxCount(): Boolean = accountWork.inAccount { refreshUnreadInboxCountInAccount() }
+    suspend fun refreshUnreadInboxCount(): Boolean = accountWork.inAccount {
+        var outcome = false
+        while (true) {
+            var retry = false
+            val result = coroutineScope {
+                val completion = refreshLock.withLock {
+                    unreadProbe?.takeUnless { it.isCompleted }
+                        ?: sharedAsync(::refreshUnreadInboxCountInAccount).also { unreadProbe = it }
+                }
+                try {
+                    completion.await()
+                } catch (error: CancellationException) {
+                    if (refreshScope != null || !currentCoroutineContext().isActive) throw error
+                    refreshLock.withLock {
+                        if (unreadProbe === completion) unreadProbe = null
+                    }
+                    retry = true
+                    false
+                }
+            }
+            if (!retry) {
+                outcome = result
+                break
+            }
+        }
+        outcome
+    }
 
     private suspend fun refreshUnreadInboxCountInAccount(): Boolean {
-        val summary = runCatching {
+        val summary = try {
             val page = remote.listMessages(
                 folderId = INBOX_FOLDER_ID,
                 start = 0,
@@ -163,55 +249,146 @@ class MailboxScreenModel(
             lastInboxProbe = page.messages
             val unread = page.messages.count { !it.isRead }
             MailboxUnreadSummary(count = unread, capped = unread >= UNREAD_PROBE_LIMIT)
-        }.getOrNull()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
         if (summary != null) _unreadSummary.value = summary
         return summary != null
     }
 
-    suspend fun refresh() = accountWork.inAccount { refreshInAccount() }
+    suspend fun refresh(): Unit = requestRefresh()
 
-    private suspend fun refreshInAccount() {
-        operationMutex.withLock {
-            val previous = mutableState.value as? MailboxUiState.Ready
-            messageRequestId = null
-            messageGeneration += 1
-            mutableState.value = MailboxUiState.Preparing
-            val cookies = runCatching { transport.sessionCookiesFor(MAILBOX_URL) }
-                .getOrElse {
-                    mutableState.value = MailboxUiState.SessionUnavailable
-                    return
+    internal suspend fun refreshWithSession(session: SessionRefreshCoordinator): Unit = requestRefresh(session)
+
+    private suspend fun requestRefresh(session: SessionRefreshCoordinator? = null): Unit = accountWork.inAccount {
+        while (true) {
+            val restarted = coroutineScope {
+                val completion = refreshLock.withLock {
+                    val active = pageRefresh?.takeUnless { it.completion.isCompleted }
+                    if (active != null) {
+                        if (active.session == null) active.session = session
+                        return@withLock active.completion
+                    }
+                    // 已结束的首次加载只供当时已发起的刷新接用。之后点重试会重新查询。
+                    val activeFirstLoad = firstLoad?.takeUnless { it.completion.isCompleted }
+                    if (activeFirstLoad == null) firstLoad = null
+                    val next = PageRefresh(session, activeFirstLoad)
+                    next.completion = sharedAsync { runPageRefresh(next) }
+                    pageRefresh = next
+                    next.completion
                 }
-            if (cookies.isEmpty()) {
-                mutableState.value = MailboxUiState.SessionUnavailable
-                return
+                try {
+                    completion.await()
+                    false
+                } catch (error: CancellationException) {
+                    if (refreshScope != null || !currentCoroutineContext().isActive) throw error
+                    refreshLock.withLock {
+                        if (pageRefresh?.completion === completion) pageRefresh = null
+                    }
+                    true
+                }
             }
+            if (!restarted) return@inAccount
+        }
+    }
 
-            // 只导出对目标 URL 生效的 Cookie，并把 Domain 收窄到当前 MIS host。
-            val request = WebPageRequest(
-                url = MAILBOX_URL,
-                title = "校内邮箱",
-                cookies = cookies.map { cookie ->
-                    WebCookie(
-                        name = cookie.name,
-                        value = cookie.value,
-                        domain = MAILBOX_HOST,
-                        path = cookie.path,
-                        secure = cookie.secure,
-                    )
-                },
-            )
-            if (SchoolWebDomainPolicy.validate(request) != WebPageValidation.Allowed) {
-                mutableState.value = MailboxUiState.SessionUnavailable
+    private fun <T> CoroutineScope.sharedAsync(block: suspend () -> T): Deferred<T> =
+        (refreshScope ?: this).async(start = CoroutineStart.LAZY) { block() }
+
+    private suspend fun runPageRefresh(request: PageRefresh) {
+        suspend fun refresh() = operationMutex.withLock {
+            val alreadyLoaded = refreshLock.withLock {
+                val reusable = request.firstLoad?.completed == true
+                request.firstLoad = null
+                reusable && currentFolderId == INBOX_FOLDER_ID
+            }
+            if (!alreadyLoaded) refreshFolder()
+        }
+        try {
+            val session = refreshLock.withLock { request.session }
+            if (session != null) {
+                session.run(::refresh, ::sessionExpired)
                 return
             }
-            val ready = MailboxUiState.Ready(
-                request = request,
-                folders = previous?.folders ?: defaultMailboxFolders,
-                selectedFolderId = previous?.selectedFolderId ?: INBOX_FOLDER_ID,
-                isListLoading = true,
-            )
-            mutableState.value = ready
-            loadMessages(ready.selectedFolderId)
+            refresh()
+            // 在途无协调器的刷新若加入了一位带协调器的等待方，在共享任务内完成恢复并让所有加入方等待同一结果。
+            val lateSession = refreshLock.withLock {
+                request.session?.takeIf { sessionExpired() }.also {
+                    if (it == null && pageRefresh === request) pageRefresh = null
+                }
+            }
+            lateSession?.retryAfterExpiry(::refresh, ::sessionExpired)
+        } finally {
+            refreshLock.withLock {
+                if (pageRefresh === request) pageRefresh = null
+            }
+        }
+    }
+
+    private fun sessionExpired(): Boolean = when (val current = state.value) {
+        MailboxUiState.SessionUnavailable -> true
+        is MailboxUiState.Ready -> current.failure == MailboxFailure.SESSION_EXPIRED
+        else -> false
+    }
+
+    private suspend fun refreshFolder() {
+        val previous = mutableState.value
+        (previous as? MailboxUiState.Ready)?.let { ready ->
+            currentFolders = ready.folders
+            currentFolderId = ready.selectedFolderId
+        }
+        messageRequestId = null
+        messageGeneration += 1
+        mutableState.value = MailboxUiState.Preparing
+        val cookies = try {
+            transport.sessionCookiesFor(MAILBOX_URL)
+        } catch (error: CancellationException) {
+            restoreAfterPrepareCancel(previous)
+            throw error
+        } catch (_: Exception) {
+            mutableState.value = MailboxUiState.SessionUnavailable
+            return
+        }
+        if (cookies.isEmpty()) {
+            mutableState.value = MailboxUiState.SessionUnavailable
+            return
+        }
+
+        // 只导出对目标 URL 生效的 Cookie，并把 Domain 收窄到当前 MIS host。
+        val request = WebPageRequest(
+            url = MAILBOX_URL,
+            title = "校内邮箱",
+            cookies = cookies.map { cookie ->
+                WebCookie(
+                    name = cookie.name,
+                    value = cookie.value,
+                    domain = MAILBOX_HOST,
+                    path = cookie.path,
+                    secure = cookie.secure,
+                )
+            },
+        )
+        if (SchoolWebDomainPolicy.validate(request) != WebPageValidation.Allowed) {
+            mutableState.value = MailboxUiState.SessionUnavailable
+            return
+        }
+        val ready = MailboxUiState.Ready(
+            request = request,
+            folders = currentFolders,
+            selectedFolderId = currentFolderId,
+            isListLoading = true,
+        )
+        mutableState.value = ready
+        loadMessages(ready.selectedFolderId)
+    }
+
+    private fun restoreAfterPrepareCancel(previous: MailboxUiState) {
+        mutableState.value = when (previous) {
+            is MailboxUiState.Ready -> previous.copy(isListLoading = false, isLoadingMore = false)
+            MailboxUiState.Preparing -> MailboxUiState.Idle
+            MailboxUiState.Idle, MailboxUiState.SessionUnavailable -> previous
         }
     }
 
@@ -220,6 +397,13 @@ class MailboxScreenModel(
     private suspend fun selectFolderInAccount(folderId: Int) {
         operationMutex.withLock {
             val current = mutableState.value as? MailboxUiState.Ready ?: return
+            refreshLock.withLock {
+                firstLoad?.completed = false
+                firstLoad = null
+                pageRefresh?.firstLoad = null
+            }
+            currentFolderId = folderId
+            currentFolders = current.folders
             mutableState.value = current.copy(
                 selectedFolderId = folderId,
                 messages = emptyList(),
@@ -534,6 +718,9 @@ class MailboxScreenModel(
                 failure = null,
             ) ?: return
         } catch (error: CancellationException) {
+            (mutableState.value as? MailboxUiState.Ready)?.let { latest ->
+                mutableState.value = latest.copy(isListLoading = false)
+            }
             throw error
         } catch (error: MailboxRemoteException) {
             mutableState.value = (mutableState.value as? MailboxUiState.Ready)?.copy(
