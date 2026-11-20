@@ -81,7 +81,7 @@ internal class FakeSiteClient : RemoteSiteClient {
         return RemoteCall.Ok(Unit)
     }
 
-    override suspend fun poll(): RemoteCall<RemotePollResponse> {
+    override suspend fun poll(pollIntervalSeconds: Int?): RemoteCall<RemotePollResponse> {
         polls.incrementAndGet()
         return pollResponses.removeFirstOrNull() ?: RemoteCall.Ok(RemotePollResponse(1, 0, 0, null))
     }

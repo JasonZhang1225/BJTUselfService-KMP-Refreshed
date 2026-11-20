@@ -28,6 +28,7 @@ test("重建服务对象并重新打开数据库后，绑定、快照、任务�
     assert.equal(read.body.device.deviceId, device.deviceId);
     const task = await restarted.call("GET", `/api/v1/owner/tasks/${queued.body.requestId}`, { owner: true });
     assert.equal(task.body.status, "running");
+    assert.equal(task.body.polling.lastPollAt, leased.body.serverTime);
     assert.equal((await restarted.call("POST", "/api/v1/device/poll", { token: device.deviceToken })).body.task, null);
     assert.equal((await restarted.call("POST", `/api/v1/device/tasks/${queued.body.requestId}/result`, {
       token: device.deviceToken, body: { leaseId: leased.body.task.leaseId, status: "succeeded", result: { items: [] } },

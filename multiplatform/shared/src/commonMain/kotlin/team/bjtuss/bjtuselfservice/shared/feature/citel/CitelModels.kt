@@ -30,6 +30,7 @@ data class CitelTask(
     val status: String = "",
     val submitted: Boolean = false,
     val grade: String? = null,
+    val programmingSubmitCount: Int? = null,
 )
 
 /** 编程作业只有个人评测 AC 才算完成，不以提交记录或旧缓存布尔值判断。 */

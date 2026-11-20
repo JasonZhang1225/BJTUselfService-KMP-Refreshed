@@ -8,6 +8,28 @@ internal data class ChangelogRelease(val tag: String, val label: String, val sec
 
 internal object BundledChangelog {
     val entries: List<ChangelogRelease> = listOf(
+        ChangelogRelease("v2.0.1-KMP", "2.0.1-KMP（发布草稿）", listOf(
+            ChangelogSection("新增", listOf(
+                ChangelogItem("CITEL 题面批量缓存", "启用 CITEL 后，可在「Agent 和 ChatGPT 插件 → CITEL 题面缓存」按课程与实际提交状态筛选编程题，一键批量拉取缺失题面全文与公开样例到本机，单个失败不影响其余题目。"),
+                ChangelogItem("已缓存题面管理", "同页面可查看每道已缓存编程题的缓存时间，支持单题手动更新或确认删除，便于离线阅读或为本地与远程 AI 助手补充上下文。"),
+                ChangelogItem("已缓存 CITEL 题面进快照", "远端作业快照在通用详情缺失时，直接补充同一 CITEL 账号在本机缓存的编程题题面与公开测试样例（不含私有样例），绕过通用详情补齐的批次上限与退避。"),
+                ChangelogItem("私人 Site 任务轮询记录", "Site 新增独立轮询时间与周期持久化（迁移 0004_device_polling.sql），即时任务只派发给近期仍在轮询的电脑；未轮询时明确提示 device_not_polling 并引导改读已有快照。"),
+                ChangelogItem("统一文件与目录网关", "收拢各平台 FileGateway 与 DirectoryGateway 接口并解除跨功能模块耦合，统一课程平台、物理在线、CITEL 与课件导出的保存与浏览入口。"),
+            )),
+            ChangelogSection("优化", listOf(
+                ChangelogItem("账号生命周期与写保护", "统一账号作用域并发控制（AccountWork）与 SQLite 写护栏（CacheStore.mutate），注销或切换账号后旧会话与延迟请求不再覆盖新账号缓存、配置或远程绑定状态。"),
+                ChangelogItem("课程类别色彩收敛", "将各页面重复定义的课程性质配色统一收敛至共享 CourseCategoryPalette，减少页面级耦合。"),
+                ChangelogItem("iOS 原生导航与顶栏架构", "拆分原生标签栏、导航控制器与液体玻璃顶栏桥接组件与共享路由模块，使原生导航状态与窗口尺寸变更可响应式更新，并使用 pushOrOpen 避免详情页重复压栈。"),
+                ChangelogItem("远程助手查询指引与工具说明", "明确仅查缓存时按问题选用对应查询工具、避免误触发即时任务，并在 request_assignment_detail 说明中补全“存在不超过 5 MB 附件尚未同步到 Site”的触发条件。"),
+            )),
+            ChangelogSection("修复", listOf(
+                ChangelogItem(null, "修复私人 Site 设备历史记录（含已撤销设备）超过 20 条时，status 接口遗漏较早活跃轮询电脑与源同步时间的问题。"),
+                ChangelogItem(null, "修复桌面与移动窄窗口从作业详情页返回列表时滚动位置丢失的问题，并在课程平台作业列表切换「截止至指定日期」（untilEpoch）筛选时正确回到顶部。"),
+                ChangelogItem(null, "修复 CITEL 题面缓存页同步期间个别课程暂缺时误回落为「全部课程」的问题，并为批量拉取结果补充当前课程与提交状态范围提示。"),
+                ChangelogItem(null, "修复 iOS 原生顶栏搜索展开/收起与 applyAction 同时触发时的重入风险，以及 CITEL 删除缓存异常捕获遗漏 CancellationException 的问题。"),
+                ChangelogItem(null, "修复正式发版工作流手动触发与镜像配合问题，默认仅自动响应 debug-* 标签打包，正式 Release 需显式启用 publish_release 后再同步镜像。"),
+            )),
+        )),
         ChangelogRelease("v2.0.0-KMP", "2.0.0-KMP", listOf(
             ChangelogSection("新增", listOf(
                 ChangelogItem("课程回放", "在「应用 → 课程回放」选择课程和课节，观看教师、屏幕或课件画面；可两路同步播放，选择声音、调整倍速、跳转和全屏，横屏并排观看。Windows 和 macOS 还可下载录像，单独保存或合成为左右并排的 MP4（高、中、低三档清晰度），下载可暂停、继续，中断后恢复。Android 和 iOS 仅在线播放。"),

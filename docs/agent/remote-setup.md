@@ -1,4 +1,4 @@
-# Windows 本地开发与私人 Site 搭建（模板 2.0.0-KMP / 协议 1 / 快照 schema 2）
+# Windows 本地开发与私人 Site 搭建（模板 2.0.1-Alpha / 协议 1 / 快照 schema 2）
 
 维护源：[main 分支模板目录](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/tree/main/multiplatform/remote-site-template)，安装指导见其中的 [SETUP.md](https://github.com/JasonZhang1225/BJTUselfService-KMP-Refreshed/blob/main/multiplatform/remote-site-template/SETUP.md)。该目录与 Gradle 工程独立，无第三方 Node 依赖，要求 Node ≥22.5。
 MCP 工具、Skill 与本机 CLI 共用的查询参数和返回结构见同目录 `agent-query-contract.md`；工具与 Skill 的唯一维护源是模板的 `src/mcp.js` 与 `plugin/skills/bjtuss-remote/SKILL.md`，不要另存副本。

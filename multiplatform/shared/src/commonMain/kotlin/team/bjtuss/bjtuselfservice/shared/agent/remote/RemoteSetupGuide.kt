@@ -16,7 +16,7 @@ $REMOTE_TEMPLATE_URL
 
 请直接完成准备、构建、发布和插件配置，最后统一交付一次，搭建或升级中途不要让我反复登录、取码或配对：
 1. 使用模板 $REMOTE_TEMPLATE_RELEASE 的服务代码、DB 绑定与增量迁移（migrations/ 与 drizzle/），不重写查询和日期换算。Site 只允许我访问，不保存学校密码。
-2. 我没有提供旧 Site 时新建一份；若明确提供已有 Site，则保留其身份（project_id、已有拥有者）、已有数据、设备绑定与 canonical 插件，按 SETUP.md 增量更新代码、先查 schema_migration 再只按顺序补跑尚未执行的增量迁移（如从 1.8.6-KMP 升至 2.0.0-KMP 只补跑 0003_attachments.sql）并更新同插件，不重建或清空库表（已配对设备继续有效，无需重配）。创建、发布响应不明确时先核实原操作，不重复创建。
+2. 我没有提供旧 Site 时新建一份；若明确提供已有 Site，则保留其身份（project_id、已有拥有者）、已有数据、设备绑定与 canonical 插件，按 SETUP.md 增量更新代码、先查 schema_migration 再只按顺序补跑尚未执行的增量迁移（如从 2.0.0-KMP 升至 $REMOTE_TEMPLATE_RELEASE 只补跑 0004_device_polling.sql，从 1.8.6-KMP 升级依次补跑 0003_attachments.sql 与 0004_device_polling.sql）并更新同插件，不重建或清空库表（已配对设备继续有效，无需重配）。创建、发布响应不明确时先核实原操作，不重复创建。
 3. 发布前确认 owner-private，按 SETUP.md 配置首次可信用户身份固定和本站设备访问机密（已有 Site 升级时保留已有有效配置，不无故轮换机密）。使用插件工具完成配置，不要求我提前登录 Site 取用户 ID，也不操作我的本机系统存储。
 4. 复用 Sites 自动生成的 canonical 私人插件，通过 Plugin Creator 保留 App 绑定并附加或更新模板查询 Skill。核对模板的 13 个工具；需要安装时只在最终交付时展示一次安装/连接入口，不另建插件，不执行额外 MCP 登录。
 5. 开发侧完成可自动执行的检查（包括健康检查版本、工具列表）。会话尚未加载工具或设备尚未配对时，明确区分状态，不要求我重建、重装或反复授权。

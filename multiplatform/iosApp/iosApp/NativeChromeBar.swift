@@ -36,6 +36,7 @@ final class NativeChromeBinding {
     private var searchPresented = false
     private var lastSearchPresented = false
     private var lastAppliedAction: NativeBarAction?
+    private var isApplyingAction = false
 
     func apply(_ title: String) {
         guard !title.isEmpty else { return }
@@ -232,7 +233,17 @@ final class NativeChromeBinding {
     }
 
     private func applyAction(_ action: NativeBarAction?) {
-        guard let controller else { return }
+        guard !isApplyingAction, let controller else { return }
+        isApplyingAction = true
+        lastAppliedAction = action
+        defer {
+            isApplyingAction = false
+            if let currentAction = lastAppliedAction, lastSearchPresented != searchPresented {
+                pendingAction = currentAction
+                hasPendingAction = true
+                scheduleFlush()
+            }
+        }
         (controller as? SafeAreaComposeHost)?.setScrollController(action?.scrollController)
         applySearch(action, to: controller)
         guard let action else {
@@ -242,7 +253,6 @@ final class NativeChromeBinding {
             systemActionItems.removeAll()
             lastActionLayoutKey = nil
             lastActionVisualKey = nil
-            lastAppliedAction = nil
             UIView.performWithoutAnimation {
                 controller.navigationItem.leftBarButtonItems = nil
                 controller.navigationItem.leftItemsSupplementBackButton = false
@@ -252,7 +262,6 @@ final class NativeChromeBinding {
             applyGlassProgress(0)
             return
         }
-        lastAppliedAction = action
         let layoutKey = NativeBarActionLayoutKey(action)
         let vertical = usesSystemBars && nativeBarIsVertical(in: controller.traitCollection)
         if layoutKey == lastActionLayoutKey && lastActionVertical == vertical && lastSearchPresented == searchPresented {
@@ -412,6 +421,7 @@ final class NativeChromeBinding {
     private func setSearchPresented(_ presented: Bool) {
         guard searchPresented != presented else { return }
         searchPresented = presented
+        guard !isApplyingAction else { return }
         if let lastAppliedAction { applyAction(lastAppliedAction) }
     }
 

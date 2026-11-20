@@ -162,8 +162,8 @@ export async function handle(request, env, options = {}) {
         return json(200, await service.updateScopes(device, body));
       }
       if (path === "/api/v1/device/poll" && method === "POST") {
-        await readBody(request, LIMITS.requestBytes);
-        return json(200, await service.poll(device));
+        const { body } = await readBody(request, LIMITS.requestBytes);
+        return json(200, await service.poll(device, body));
       }
       const renew = /^\/api\/v1\/device\/tasks\/([^/]+)\/renew$/.exec(path);
       if (renew && method === "POST") {

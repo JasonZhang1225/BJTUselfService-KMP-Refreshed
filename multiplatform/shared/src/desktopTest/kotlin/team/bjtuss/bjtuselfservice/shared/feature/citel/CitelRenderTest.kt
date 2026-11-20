@@ -45,7 +45,7 @@ class CitelRenderTest {
             })
             runBlocking { model.configure("fixture", "fixture", false, true) }
             try {
-                listOf("compact-light", "compact-dark", "large-font", "wide-light", "settings", "settings-large", "detail-report", "detail-report-large", "detail-programming", "detail-programming-dark", "detail-programming-large", "detail-programming-cached").forEach { name ->
+                listOf("compact-light", "compact-dark", "large-font", "wide-light", "settings", "settings-large", "detail-report", "detail-report-large", "detail-programming", "detail-programming-dark", "detail-programming-large", "batch-compact", "batch-compact-dark-large", "wide-batch", "detail-programming-cached", "batch-empty").forEach { name ->
                     if (name.startsWith("detail")) model.showTask(if (name.contains("programming")) tasks[0] else tasks[1]) else model.dismissTask()
                     if (name.endsWith("cached")) runBlocking { model.fetchProblem() }
                     val scene = ImageComposeScene(width = if (name.startsWith("wide")) 1000 else 390, height = 844,
@@ -53,6 +53,7 @@ class CitelRenderTest {
                         PlatformAppTheme(useDarkTheme = name.contains("dark"), dynamicColorEnabled = false) {
                             Surface(Modifier.fillMaxSize()) {
                                 if (name.startsWith("detail")) CitelDetailWorkspace(model, UnavailableFileGateway, {})
+                                else if ("batch" in name) CitelBatchCacheScreen(model, Modifier.fillMaxSize())
                                 else if (name.startsWith("settings")) CitelSettingsWorkspace(model)
                                 else CitelWorkspace(model, false, {})
                             }

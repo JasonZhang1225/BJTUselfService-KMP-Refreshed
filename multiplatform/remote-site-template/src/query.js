@@ -49,6 +49,7 @@ export function querySnapshot(payload, command, args, now) {
   if (!commandAllowed(command, scopes)) throw new ProtocolError(403, "scope_denied", "这类数据没有授权上云；请在电脑端“允许上云的数据”里开启");
   const remote = {
     device: payload.device ? { name: payload.device.deviceName, lastSeen: clock(payload.device.lastSeenAt) } : null,
+    taskPollingAvailable: payload.devices?.some(d => d.polling?.state === "active") ?? false,
     snapshotReceived: clock(payload.snapshot?.receivedAt),
     snapshotScopes: payload.snapshot?.scopes ?? [],
     // 每类数据来自哪台设备（电脑或手机，谁的同步更新就用谁的）。
