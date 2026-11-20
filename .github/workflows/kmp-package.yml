@@ -1,18 +1,18 @@
 name: KMP package
 
 on:
+  # 正式 Release 可以在 GitHub 页面独立发布，包括新建 v* 标签。
+  # 这里只保留调试标签自动打包，其他构建从 Actions 显式启动。
   push:
     tags:
-      # 含 v*-KMP*、v*-Liquid* 等历史格式。v1.7.0 是历史上冻结根 Android 的标签
-      # （工程已于 1.8.6 移除并存档），各打包任务仍跳过它。
-      - "v*"
-      # debug-* 只打包并上传 Actions 产物，不创建 GitHub Release / pre-release，
-      # 因此应用内更新检查不会把它当成全量更新。
       - "debug-*"
-  # 不再响应 pull_request：此前 iOS 任务未排除 PR，修改 iosApp/** 的 PR 会打 iOS IPA。
-  # 需要打包时推 debug-* 标签或手动 workflow_dispatch。
   workflow_dispatch:
     inputs:
+      publish_release:
+        description: 从正式版本标签打包并发布 GitHub Release（成功后同步到 Gitee）
+        required: false
+        default: false
+        type: boolean
       mirror_tag:
         description: 仅重试已有Release的Gitee镜像（留空则正常四端打包）
         required: false
@@ -42,7 +42,7 @@ env:
 jobs:
   android:
     name: Android arm64 release APK
-    if: ${{ !inputs.mirror_tag && (github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0') }}
+    if: ${{ !inputs.mirror_tag }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -134,7 +134,7 @@ jobs:
 
   windows:
     name: Windows MSI
-    if: ${{ !inputs.mirror_tag && (github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0') }}
+    if: ${{ !inputs.mirror_tag }}
     runs-on: windows-latest
     defaults:
       run:
@@ -223,7 +223,7 @@ jobs:
 
   macos:
     name: macOS DMG
-    if: ${{ !inputs.mirror_tag && (github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0') }}
+    if: ${{ !inputs.mirror_tag }}
     # 原生启动器需要 macOS 27 SDK 重编译（见 docs/build/macos-sdk-launcher.md），
     # 必须用 xcode-27 镜像；macos-15 默认 Xcode 的 SDK 低于 27，脚本会直接拒绝。
     runs-on: xcode-27
@@ -341,7 +341,7 @@ jobs:
     # Duo / 系统栏用了 iOS 27.1 API（axisBehavior、verticalBarEdge、
     # navigationBarMinimization）。macos-26 默认 Xcode 26.6 / iPhoneOS 26.5，
     # `#available` 挡不住编译。必须用 xcode-27 镜像并选 27.1+ SDK。
-    if: ${{ !inputs.mirror_tag && (github.event_name == 'workflow_dispatch' || github.ref_name != 'v1.7.0') }}
+    if: ${{ !inputs.mirror_tag }}
     runs-on: xcode-27
     timeout-minutes: 90
     defaults:
@@ -466,9 +466,13 @@ jobs:
     permissions:
       contents: write
     needs: [android, windows, macos, ios]
-    # 只给正式 v* 标签发 GitHub Release。debug-* / alpha / beta 标签只保留 Actions 产物，
-    # 避免应用内更新检查把调试包当成全量更新或 pre-release。
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && !startsWith(github.ref_name, 'debug-') && !contains(github.ref_name, 'alpha') && !contains(github.ref_name, 'beta') && needs.android.result == 'success' && needs.windows.result == 'success' && needs.macos.result == 'success' && needs.ios.result == 'success' }}
+    # 仅在明确请求、从正式标签运行且四端打包成功时发布。
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release &&
+          startsWith(github.ref, 'refs/tags/v') &&
+          !contains(github.ref_name, 'alpha') && !contains(github.ref_name, 'beta') &&
+          needs.android.result == 'success' && needs.windows.result == 'success' &&
+          needs.macos.result == 'success' && needs.ios.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout release notes

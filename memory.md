@@ -1,7 +1,7 @@
 # BJTUselfService 实时工作记忆
 
 > **当前状态（2026-11-20）**
-> - **当前分支**：`feat/citel-batch-cache`，基于已快进至 `e8e44f34` 的本地 `main`（与 `origin/main` 一致）。CITEL 批量缓存已推送至 `bd2e1876` 并触发 CI #155，已缓存题目管理在同一分支继续开发。
+> - **当前分支**：`feat/citel-batch-cache`，基于已快进至 `e8e44f34` 的本地 `main`（与 `origin/main` 一致）。CITEL 批量缓存已推送至 `bd2e1876` 并触发 CI #155，本分支续做已缓存题目管理、窄窗口作业滚动修复和发布触发调整。
 > - **源码版本**：`2.0.0-KMP` / Build 45。
 > - **本地分支整理**：已删除合入 `main` 的 `chore/docs-cleanup`、`feat/phyvlab-auto-captcha`、`fix/phyvlab-manual-captcha`。原两个物理在线工作树已切换为 detached HEAD，保留原提交和未提交文件。
 > - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（课程回放、macOS/Windows 硬件合成、作业忽略与筛选拆分、全应用设备时区、离线更新日志、`DESIGN.md` / `AppleAlert` / `AppleMenuPickerCard`、物理实验 IP 备用路径、上传文件拖放、本机 CLI 交作业、统一作业详情与远程增量同步等，PR #68–#99）均已移入 `history_full.md`。
@@ -21,6 +21,11 @@
 
 - 聚合作业与课程平台作业列表恢复 Navigation 3 保存的滚动位置，筛选、排序和搜索变化仍回到首项。
 - 桌面回归测试用实际列表与 Navigation 3 验证从详情返回保持同一位置、改搜索后回顶。修复前可复现回到第 0 项，修复后两种列表通过。
+
+## 进行中：发布触发调整
+
+- `KMP package` 只自动响应 `debug-*` 标签。GitHub 手动发 Release 与创建正式标签可单独执行。CI 正式发版需要从正式标签显式运行 `publish_release=true`，发布成功后才调用 Gitee 镜像。手动镜像入口保留。
+- 发布工作流回归断言、`actionlint`（排除原有 runner 标签和两条 ShellCheck 告警）及镜像脚本 16 项单测通过。整分支 `:shared:desktopTest :desktopApp:packageDmg` 通过，共 1463 项、0 失败、1 跳过。未创建测试 Release。
 
 ## 进行中 / 待处理：物理在线相关检查
 
