@@ -1,12 +1,18 @@
 # BJTUselfService 实时工作记忆
 
-> **当前状态（2026-11-13）**
-> - **当前分支**：`fix/phyvlab-manual-captcha`，从 `origin/main` `b6e9f358`（PR #100）开独立工作树，跟踪 `origin/fix/phyvlab-manual-captcha`，已完成 iOS 物理在线验证码弹层修复与 `2.0.0-KMP` 发版准备，推送并准备 PR 合入 `main`。
+> **当前状态（2026-11-20）**
+> - **当前分支**：`fix/remote-polling-and-citel-cache`，基于 `origin/main` `e8e44f34`，远端轮询和 CITEL 题面同步修复待 Draft PR 验证。
 > - **源码版本**：`2.0.0-KMP` / Build 45（最新已发布 Release：`v1.8.6-KMP` / Build 44）
 > - **远端活跃分支**：`main`、`feat/mac-swift`（macOS 原生 SwiftUI 探索）；原 `feat/homework-submit-cli-drop`、`feat/agent-assignment-detail` 已合入并删除。
 > - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（课程回放、macOS/Windows 硬件合成、作业忽略与筛选拆分、全应用设备时区、离线更新日志、`DESIGN.md` / `AppleAlert` / `AppleMenuPickerCard`、物理实验 IP 备用路径、上传文件拖放、本机 CLI 交作业、统一作业详情与远程增量同步等，PR #68–#99）均已移入 `history_full.md`。
 
 ---
+
+## 进行中：远端轮询与 CITEL 题面快照
+
+- Site 单独持久化任务轮询，MCP 据此决定是否入队和继续等待。手动上传快照仍然可读，设备有效执行租约仍可等待。
+- 作业快照可以直接读取同 CITEL 账号的本机题面缓存，绕开通用详情补齐的批次上限与退避。新增回归覆盖手动上传、轮询恢复/超时及账号隔离。
+- 本地 Site 测试 85 项通过，构建通过。当前环境无法连接 Gradle 分发站，Kotlin 回归由 PR CI 验证。原 Site 增量升级需补跑 `0004_device_polling.sql`。
 
 ## 进行中 / 待处理：物理在线相关检查
 

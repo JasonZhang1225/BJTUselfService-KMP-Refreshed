@@ -24,8 +24,8 @@ Windows 上的交大自由行主动连接它，上报快照、领取即时任务
 ## 多设备（0.4.0）
 
 一个 Site 可同时绑定电脑（desktop）和手机/平板（mobile）。电脑定时上传快照并轮询执行即时任务；手机只在 App 里每次刷新后上传快照，不领取任务。
-查询时每个上云范围取“该范围同步时间最新”的设备快照（`remote.dataFrom` 标出来源）；即时任务只派给最近在线的电脑，没有电脑时返回 `no_device`。
-从旧版增量升级时，先检查 `template_meta.schema_migration`（当前最新为 `0003`），只按顺序补跑尚未执行的迁移（`migrations/0002_multi_device.sql` → `migrations/0003_attachments.sql`，`drizzle/` 同步提供），已有绑定、快照、任务与设备令牌不受影响；从 1.8.6-KMP（`0002`）升级至 2.0.0-KMP 只需补跑 `0003_attachments.sql`（详见 [SETUP.md](SETUP.md)）。
+查询时每个上云范围取“该范围同步时间最新”的设备快照（`remote.dataFrom` 标出来源）；MCP 即时任务要求有近期轮询的电脑，否则返回 `device_not_polling`；没有绑定电脑时返回 `no_device`。手动上传快照不产生轮询记录。
+从旧版增量升级时，先检查 `template_meta.schema_migration`（当前最新为 `0004`），按序补跑尚未执行的迁移文件（`migrations/` 与 `drizzle/` 对应）；已有绑定、快照、任务及设备令牌可继续使用（详见 [SETUP.md](SETUP.md)）。
 
 ## 身份分层
 
@@ -51,7 +51,7 @@ Windows 上的交大自由行主动连接它，上报快照、领取即时任务
 | `PUT /api/v1/device/attachments/{key}/chunks/{n}` | 电脑/手机 | 上传一个分块（≤1 MiB，二进制） |
 | `DELETE /api/v1/device/attachments/{key}` | 电脑/手机 | 删除本设备的附件 |
 | `PUT /api/v1/device/scopes` | 电脑 | 立即更新允许上云的范围；Site 按此再次过滤已存快照 |
-| `POST /api/v1/device/poll` | 电脑 | 原子领取最早一条任务并设置 120 秒租约；无任务返回 `task: null`；心跳最多约每分钟落库一次 |
+| `POST /api/v1/device/poll` | 电脑 | 原子领取最早一条任务并设置 120 秒租约；无任务返回 `task: null`；支持上报 `pollIntervalSeconds`，Site 单独记录最近的任务轮询 |
 | `POST /api/v1/device/tasks/{id}/renew` | 电脑 | 续租（总执行预算约 10 分钟） |
 | `POST /api/v1/device/tasks/{id}/result` | 电脑 | 提交结果（≤256 KiB）；同租约重复提交幂等；旧租约提交 `stale_lease` |
 | `GET /api/v1/owner/status` | 拥有者 | 设备、最近在线、快照元数据与逐源同步时间、任务计数 |

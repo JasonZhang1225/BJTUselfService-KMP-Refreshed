@@ -26,7 +26,8 @@
    - `0001_init.sql`：基础表（`template_meta`、`pairing_codes`、`devices`、`snapshots`、`tasks`）
    - `0002_multi_device.sql`：多设备支持（`devices.device_kind` 列）
    - `0003_attachments.sql`：作业附件与分块表（`attachments`、`attachment_chunks`、`attachments_lookup` 索引）
-   - 例：当前为 `0002`（`1.8.6-KMP`）升级至 `2.0.0-KMP`，**只需补跑 `0003_attachments.sql`**；当前为 `0001` 则依次补跑 `0002_multi_device.sql` 和 `0003_attachments.sql`。确认 `template_meta.schema_migration` 已更新为 `'0003'`。切勿删除、重建或清空已有表，原有 `devices`、`snapshots`、`tasks` 与设备令牌必须完整保留。
+   - `0004_device_polling.sql`：独立记录设备最近轮询时间和轮询周期。
+   - 例：当前为 `0003` 时只需补跑 `0004_device_polling.sql`；当前为 `0002` 时先跑 `0003_attachments.sql`，再跑 `0004_device_polling.sql`。确认 `template_meta.schema_migration` 已更新为 `'0004'`。原有设备、快照、任务和令牌保留。
 4. **验证、部署原 Site 并同步升级同一个 canonical 插件**：按第 3 节运行 `npm test`、`npm run build` 并部署回原 Site；验证 `GET /api/v1/health` 返回 `releaseVersion: "2.0.0-KMP"`（`templateVersion: "2.0.0"`）。随后按第 4 节打开同一个 canonical `plugin_id`，保留原 App 绑定，增量更新 `plugin/skills/bjtuss-remote/SKILL.md` 与插件版本并核对 `/mcp` 的 13 个工具，不新建第二个插件。
 5. **无需重新配对已绑设备**：增量升级不会失效既有设备令牌与快照；告知用户原有已配对的电脑和手机可继续直接同步，只有新加设备时才需到 Site 重新生成配对信息。
 

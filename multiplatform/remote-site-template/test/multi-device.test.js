@@ -28,6 +28,7 @@ test("电脑与手机同时绑定：手机配对不撤销电脑，查询取同�
   assert.ok(!homework.items.some((i) => i.title === "电脑上的旧作业"));
   assert.equal(homework.remote.dataFrom.assignments, "示例手机（Android）");
 
+  await site.call("POST", "/api/v1/device/poll", { token: desktop.deviceToken });
   const task = await rpc(site, "request_live_query", { command: "homework", freshness: "local", idempotencyKey: "multi_device_01" });
   assert.equal(task.deviceId, desktop.deviceId);
   assert.equal((await site.call("POST", "/api/v1/device/poll", { token: phone.deviceToken })).body.task, null, "手机不领取任务");
@@ -71,6 +72,7 @@ for (const platform of ['iOS', 'Android']) {
     assert.equal(registered.deviceName, `fixture ${platform}`);
     assert.equal(registered.deviceKind, 'mobile');
     assert.equal(status.taskDeviceId, desktop.deviceId);
+    await site.call('POST', '/api/v1/device/poll', { token: desktop.deviceToken });
     const task = await rpc(site, 'request_refresh_all', { idempotencyKey: 'long_code_refresh01' });
     assert.equal(task.deviceId, desktop.deviceId);
     assert.equal((await site.call('POST', '/api/v1/device/poll', { token: phone.deviceToken })).body.task, null);

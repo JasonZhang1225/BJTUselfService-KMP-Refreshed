@@ -11,6 +11,10 @@ import { SCOPE_SOURCES, commandAllowed, permittedSources } from "./query.js";
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const PAIR_FAILURE_WINDOW_SECONDS = 10 * 60;
 const PAIR_FAILURE_LIMIT = 10;
+const POLL_PERSIST_SECONDS = 15;
+const POLL_GRACE_SECONDS = 30;
+// 旧客户端不报周期，按其配置允许的最长间隔判断。
+const MAX_POLL_INTERVAL_SECONDS = 300;
 const TERMINAL = ["succeeded", "partial", "failed"];
 
 function base64url(bytes) {
@@ -57,6 +61,16 @@ function parseJson(text, fallback) {
 function latestMeta(snaps) {
   const row = [...snaps].sort((x, y) => y.row.received_at - x.row.received_at)[0].row;
   return { snapshotId: row.snapshot_id, sequence: row.sequence, generatedAt: row.generated_at, uploadedAt: row.uploaded_at, receivedAt: row.received_at };
+}
+
+function pollingView(device, now) {
+  const lastPollAt = device.last_poll_at ?? null;
+  const intervalSeconds = device.poll_interval_seconds ?? null;
+  if (device.device_kind === "mobile") return { state: "unsupported", lastPollAt, intervalSeconds };
+  const elapsed = lastPollAt == null ? null : now - lastPollAt;
+  const freshFor = (intervalSeconds ?? MAX_POLL_INTERVAL_SECONDS) + POLL_GRACE_SECONDS;
+  const state = elapsed == null ? "never" : elapsed >= 0 && elapsed <= freshFor ? "active" : "stale";
+  return { state, lastPollAt, intervalSeconds };
 }
 
 function taskView(row) {
@@ -324,9 +338,18 @@ export class RemoteService {
   }
 
   /** 轮询：原子领取最早一条可执行任务并设置租约；没有任务时只搭载心跳。 */
-  async poll(device) {
+  async poll(device, body = {}) {
+    requireObject(body, "body");
+    const interval = body.pollIntervalSeconds == null ? null : requireInt(body.pollIntervalSeconds,
+      "pollIntervalSeconds", 1, MAX_POLL_INTERVAL_SECONDS);
     const now = this.now();
     await this.heartbeat(device);
+    if (device.device_kind === "desktop" &&
+        (device.last_poll_at == null || now - device.last_poll_at >= POLL_PERSIST_SECONDS || interval !== device.poll_interval_seconds)) {
+      await this.q(`UPDATE devices SET last_poll_at = ?, poll_interval_seconds = ?
+        WHERE device_id = ? AND revoked_at IS NULL AND (last_poll_at IS NULL OR last_poll_at <= ?)`,
+        now, interval, device.device_id, now).run();
+    }
     const leaseId = `lease_${randomId(12)}`;
     const row = await this.q(`UPDATE tasks SET status = 'running', lease_id = ?, lease_until = ?, attempt = attempt + 1
         WHERE request_id = (
@@ -410,28 +433,60 @@ export class RemoteService {
   }
 
   /** 创建即时任务；相同幂等键返回已有任务，不重复入队。 */
-  async createTask(body) {
+  async createTask(body, { requirePolling = false } = {}) {
     await this.ensureQueriesAllowed();
     const input = validateTaskRequest(body);
-    const device = await this.taskDevice();
+    const now = this.now();
+    const desktops = requirePolling ? (await this.activeDevices()).filter(d => d.device_kind === "desktop") : [];
+    const pollingDesktops = desktops.filter(d => pollingView(d, now).state === "active")
+      .sort((a, b) => b.last_poll_at - a.last_poll_at);
+    const currentPoller = pollingDesktops.find(d => taskAllowed(input.operation, input.arguments, parseJson(d.scopes_json, [])))
+      ?? pollingDesktops[0];
+    const argsJson = JSON.stringify(input.arguments);
+    // 普通拥有者 API 保留按设备排队。MCP 的幂等键在有效电脑间可复用，避免更换轮询目标时重复执行。
+    const keyFilter = requirePolling
+      ? "idempotency_key = ? AND device_id IN (SELECT device_id FROM devices WHERE revoked_at IS NULL AND device_kind = 'desktop')"
+      : "idempotency_key = ? AND device_id = ?";
+    const findExisting = (...keys) => this.q(`SELECT * FROM tasks WHERE ${keyFilter} ORDER BY created_at, rowid LIMIT 1`, ...keys).first();
+    const reused = async (row) => {
+      if (!row) throw new ProtocolError(409, "task_conflict", "任务状态已变化，请重新查看设备状态");
+      if (row.operation !== input.operation || row.arguments_json !== argsJson) {
+        throw new ProtocolError(409, "idempotency_conflict", "相同幂等键对应不同的请求");
+      }
+      const view = requirePolling ? await this.getTask(row.request_id) : taskView(row);
+      return { ...view, created: false };
+    };
+    if (requirePolling) {
+      const existing = await findExisting(input.idempotencyKey);
+      if (existing) return reused(existing);
+    }
+    const device = currentPoller ?? await this.taskDevice();
     if (!device) throw new ProtocolError(409, "no_device", "还没有绑定可以执行即时查询的电脑（手机只在刷新时上传快照）");
     const scopes = parseJson(device.scopes_json, DEFAULT_SCOPES);
     if (!taskAllowed(input.operation, input.arguments, scopes)) {
       throw new ProtocolError(403, "scope_denied", "查询超出设备授权范围，请在电脑端“允许上云的数据”里开启");
     }
-    const now = this.now();
+    if (requirePolling && !currentPoller) {
+      throw new ProtocolError(409, "device_not_polling", "Site 未收到电脑的近期任务轮询，未创建即时任务。已同步的快照仍可直接读取。");
+    }
+    const keys = requirePolling ? [input.idempotencyKey] : [input.idempotencyKey, device.device_id];
     const requestId = `req_${randomId(12)}`;
     const inserted = await this.q(`INSERT INTO tasks (request_id, idempotency_key, device_id, account_binding_id, operation, arguments_json, created_at, expires_at, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued')
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'queued' WHERE NOT EXISTS (SELECT 1 FROM tasks WHERE ${keyFilter})
         ON CONFLICT(device_id, idempotency_key) DO NOTHING RETURNING *`,
       requestId, input.idempotencyKey, device.device_id, device.account_binding_id, input.operation,
-      JSON.stringify(input.arguments), now, now + LIMITS.taskQueueTtlSeconds).first();
-    if (inserted) return { ...taskView(inserted), created: true };
-    const existing = await this.q("SELECT * FROM tasks WHERE device_id = ? AND idempotency_key = ?", device.device_id, input.idempotencyKey).first();
-    if (existing.operation !== input.operation || existing.arguments_json !== JSON.stringify(input.arguments)) {
-      throw new ProtocolError(409, "idempotency_conflict", "相同幂等键对应不同的请求");
-    }
-    return { ...taskView(existing), created: false };
+      argsJson, now, now + LIMITS.taskQueueTtlSeconds, ...keys).first();
+    if (!inserted) return reused(await findExisting(...keys));
+    return { ...(requirePolling ? this.taskPollingView(inserted, device) : taskView(inserted)), created: true };
+  }
+
+  taskPollingView(row, device) {
+    const now = this.now();
+    const polling = pollingView(device, now);
+    const leaseActive = row.status === "running" && row.lease_until >= now;
+    const canBeClaimed = (row.status === "queued" || row.status === "running") &&
+      row.expires_at > now && row.attempt < LIMITS.maxAttempts && polling.state === "active";
+    return { ...taskView(row), polling, waitForResult: leaseActive || canBeClaimed };
   }
 
   async getTask(requestId) {
@@ -440,11 +495,11 @@ export class RemoteService {
     const row = await this.q("SELECT * FROM tasks WHERE request_id = ?", requestId).first();
     if (!row) throw new ProtocolError(404, "not_found", "任务不存在或已清理");
     const device = (await this.activeDevices()).find((d) => d.device_id === row.device_id);
-    if (!device) return { ...taskView({ ...row, result_json: null }), status: "revoked" };
+    if (!device) return { ...taskView({ ...row, result_json: null }), status: "revoked", waitForResult: false };
     const scopes = parseJson(device.scopes_json, []);
     const args = parseJson(row.arguments_json, {});
     if (!taskAllowed(row.operation, args, scopes)) throw new ProtocolError(403, "scope_denied", "任务数据范围已撤销");
-    return taskView(row);
+    return this.taskPollingView(row, device);
   }
 
   /**
@@ -499,6 +554,7 @@ export class RemoteService {
       createdAt: device.created_at,
       revokedAt: device.revoked_at ?? null,
       lastSeenAt: device.last_seen_at ?? null,
+      polling: pollingView(device, this.now()),
       scopes: parseJson(device.scopes_json, []),
       scopesRevision: device.scopes_revision,
     };
@@ -529,6 +585,7 @@ export class RemoteService {
       queriesPaused: await this.queriesPaused(),
       devices: devices.map((d) => this.deviceView(d)),
       taskDeviceId: taskDevice?.device_id ?? null,
+      taskPollingAvailable: active.some(d => pollingView(d, this.now()).state === "active"),
       snapshot: newest ? {
         snapshotId: newest.snapshot_id,
         sequence: newest.sequence,

@@ -2,8 +2,11 @@ package team.bjtuss.bjtuselfservice.shared.agent.remote
 
 import java.io.File
 import java.nio.file.Files
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,8 +22,14 @@ import kotlinx.datetime.LocalDate
 import kotlin.time.Instant
 import team.bjtuss.bjtuselfservice.shared.agent.loadAgentSnapshot
 import team.bjtuss.bjtuselfservice.shared.auth.StudentProfile
+import team.bjtuss.bjtuselfservice.shared.cache.AppPreferences
 import team.bjtuss.bjtuselfservice.shared.cache.JvmAesCacheValueProtector
 import team.bjtuss.bjtuselfservice.shared.cache.openDesktopCacheStore
+import team.bjtuss.bjtuselfservice.shared.feature.citel.CitelCachedProblem
+import team.bjtuss.bjtuselfservice.shared.feature.citel.CitelProblem
+import team.bjtuss.bjtuselfservice.shared.feature.citel.CitelProblemCase
+import team.bjtuss.bjtuselfservice.shared.feature.citel.CitelTask
+import team.bjtuss.bjtuselfservice.shared.feature.citel.saveCitelProblem
 import team.bjtuss.bjtuselfservice.shared.sync.RefreshSource
 
 private class MemorySecrets : RemoteSecretStore {
@@ -121,6 +130,36 @@ class RemoteAgentControllerTest {
         assertFalse(controller.config.value.paired)
         assertEquals(60, controller.config.value.uploadIntervalSeconds, "解除绑定保留间隔偏好")
         assertFalse(controller.keepRunningInBackground)
+    }
+
+    @Test
+    fun snapshotIncludesCachedCitelStatementsWithoutASeparateAssignmentDetail() {
+        val account = "20990001"
+        val citelUsername = "citel-fixture"
+        val tasks = listOf(41, 42).map { id ->
+            CitelTask(id, 1, "示例课程", "编程题 $id", "https://citel.bjtu.edu.cn/mlsv3/mod/programming/view.php?id=$id", true)
+        }
+        cache.savePreferences(AppPreferences(citelEnabled = true))
+        cache.putMetadata(account, "citel.username", citelUsername)
+        cache.putMetadata(account, "citel.tasks", Json.encodeToString(tasks))
+        val instant = Instant.fromEpochSeconds(1_792_540_800)
+        val publicCase = CitelProblemCase(1, "公开样例", input = "fixture input", expected = "fixture output")
+        val privateCase = CitelProblemCase(2, "fixture private", public = false)
+        val problem = CitelProblem("示例", "", "<p>题面已在本机缓存</p>", listOf(publicCase),
+            cases = listOf(publicCase, privateCase), withResults = true)
+        cache.saveCitelProblem(account, CitelCachedProblem(citelUsername, 41, instant.epochSeconds, problem))
+        cache.saveCitelProblem(account, CitelCachedProblem("other-citel-user", 42, instant.epochSeconds, problem))
+
+        val snapshot = loadAgentSnapshot(cache, account, LocalDate(2026, 10, 21))
+        val remote = buildRemoteSnapshotContent(snapshot, setOf(RemoteScope.ASSIGNMENTS), emptyMap(), { null }, instant)
+        val items = remote.data.getValue("assignments").jsonObject.getValue("items").jsonArray.associateBy {
+            it.jsonObject.getValue("id").jsonPrimitive.content
+        }
+        val statement = items.getValue("citel:41").jsonObject.getValue("content").jsonPrimitive.content
+        assertTrue("题面已在本机缓存" in statement)
+        assertTrue("fixture input" in statement)
+        assertFalse("fixture private" in statement)
+        assertNull(items.getValue("citel:42").jsonObject["content"], "不上传其他 CITEL 账号的缓存")
     }
 
     @Test
