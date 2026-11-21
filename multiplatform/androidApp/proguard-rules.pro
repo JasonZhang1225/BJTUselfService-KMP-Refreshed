@@ -5,4 +5,5 @@
 # android.net.http.X509TrustManagerExtensions, which calls this 3-arg overload reflectively.
 -keepclassmembers class team.bjtuss.bjtuselfservice.shared.network.AndroidSchoolTlsTrustManager {
     public java.util.List checkServerTrusted(java.security.cert.X509Certificate[], java.lang.String, java.lang.String);
+    public boolean isSameTrustConfiguration(java.lang.String, java.lang.String);
 }

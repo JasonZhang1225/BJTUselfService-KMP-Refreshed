@@ -14,7 +14,8 @@ internal class AndroidSchoolTlsTrustManager(
     delegate: X509TrustManager = systemDefaultX509TrustManager(),
     supplementaryIntermediates: List<X509Certificate> = defaultSchoolSupplementaryIntermediates(),
 ) : SchoolTlsTrustManager(delegate, supplementaryIntermediates) {
-    private val delegateExtensions = X509TrustManagerExtensions(delegate)
+    private val delegateExtensions: X509TrustManagerExtensions? =
+        runCatching { X509TrustManagerExtensions(delegate) }.getOrNull()
 
     /**
      * OkHttp 的 AndroidCertificateChainCleaner 会将自定义 TrustManager 包装在
@@ -26,8 +27,22 @@ internal class AndroidSchoolTlsTrustManager(
         authType: String,
         host: String,
     ): List<X509Certificate> = verifyWithCompletion(chain) { candidate ->
-        delegateExtensions.checkServerTrusted(candidate, authType, host)
+        val extensions = delegateExtensions
+        if (extensions != null) {
+            extensions.checkServerTrusted(candidate, authType, host)
+        } else {
+            delegate.checkServerTrusted(candidate, authType)
+            candidate.toList()
+        }
     }
+
+    /**
+     * 某些 Android / 定制 ROM 上的 [X509TrustManagerExtensions] 会反射探测此方法
+     * 以比较不同主机是否共享同一信任配置（API 24+）。
+     */
+    @Suppress("unused")
+    fun isSameTrustConfiguration(hostname1: String?, hostname2: String?): Boolean =
+        delegateExtensions?.isSameTrustConfiguration(hostname1, hostname2) ?: true
 
     companion object {
         private val sharedDefault by lazy { AndroidSchoolTlsTrustManager() }

@@ -65,6 +65,38 @@ class SchoolTlsTrustManagerTest {
     }
 
     @Test
+    fun bundledPemStartsWithDashAndParserNormalizesPreambleAndDer() {
+        // 旧版 Android Conscrypt 严格要求 PEM 流第 0 字节是 '-'，不能有前导换行或空白。
+        assertTrue(GEOTRUST_G2_TLS_CN_2022_CA1_PEM.startsWith("-----BEGIN CERTIFICATE-----\n"))
+        assertEquals('-', GEOTRUST_G2_TLS_CN_2022_CA1_PEM.first())
+        assertFalse('\r' in GEOTRUST_G2_TLS_CN_2022_CA1_PEM)
+
+        val expected = defaultSchoolSupplementaryIntermediates().single()
+        val pemWithPreamble = (
+            "\uFEFF\n  \r\n# leading comment before PEM\r\n" +
+                GEOTRUST_G2_TLS_CN_2022_CA1_PEM.replace("\n", "\r\n") +
+                "\r\n# trailing text\r\n"
+            ).toByteArray(Charsets.UTF_8)
+        val normalized = normalizeX509CertificateBytes(pemWithPreamble)
+        assertEquals('-'.code.toByte(), normalized.first())
+        val parsedPem = parseX509Certificates(pemWithPreamble)
+        assertEquals(1, parsedPem.size)
+        assertTrue(expected.encoded.contentEquals(parsedPem.single().encoded))
+
+        // 原始 DER 字节（以 ASN.1 SEQUENCE 0x30 开头）与多段 PEM 均应正常解析。
+        val derBytes = expected.encoded
+        assertEquals(0x30.toByte(), derBytes.first())
+        val parsedDer = parseX509Certificates(derBytes)
+        assertEquals(1, parsedDer.size)
+        assertTrue(expected.encoded.contentEquals(parsedDer.single().encoded))
+
+        val twoPem = (
+            "\n# cert 1\n$GEOTRUST_G2_TLS_CN_2022_CA1_PEM\n# cert 2\n$GEOTRUST_G2_TLS_CN_2022_CA1_PEM"
+            ).toByteArray(Charsets.UTF_8)
+        assertEquals(2, parseX509Certificates(twoPem).size)
+    }
+
+    @Test
     fun completesEligibleBjtuChainAndRejectsUntrustedOrForeignOrInvalidCertificates() {
         val dir = Files.createTempDirectory("school-tls-test").toFile()
         try {
