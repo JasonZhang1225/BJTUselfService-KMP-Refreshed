@@ -74,7 +74,7 @@ class MobileRemoteAgentTest {
 
     @Test fun setupPromptUsesCurrentTemplateRelease() {
         assertTrue(REMOTE_SETUP_PROMPT.contains("使用模板 $REMOTE_TEMPLATE_RELEASE"))
-        assertTrue(REMOTE_SETUP_PROMPT.contains("使用模板 2.0.1-KMP"))
+        assertTrue(REMOTE_SETUP_PROMPT.contains("使用模板 2.0.2-Alpha-fix"))
         assertTrue(REMOTE_SETUP_PROMPT.contains("13 个工具"))
         assertTrue(REMOTE_SETUP_PROMPT.contains("0003_attachments.sql"))
         assertTrue(REMOTE_SETUP_PROMPT.contains("0004_device_polling.sql"))

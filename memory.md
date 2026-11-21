@@ -1,14 +1,28 @@
 # BJTUselfService 实时工作记忆
 
-> **当前状态（2026-11-20）**
-> - **当前分支**：`fix/bjtu-tls-chain-and-login-update`；发布提交 `43aaf0bc` 已直接推送 `origin/main`，后续提交同步双平台实测下载链接。
-> - **源码版本**：`2.0.1-KMP` / Build 46（发布说明 `docs/releases/v2.0.1-KMP.md`；iOS 与桌面安装器数值版本 `2.0.1`；正式标签 `v2.0.1-KMP` 已在 GitHub 与 Gitee 发布，四端安装包均可公开下载）。
+> **当前状态（2026-11-21）**
+> - **当前分支**：`fix/android-tls-pem-conscrypt`（从 `origin/main` `b798e136` 切出，已推送并开 PR 到 `main`）。
+> - **源码版本**：`2.0.2-Alpha-fix` / Build 47（热修 PR 分支；已合入 `origin/main` 的最新正式版为 `v2.0.1-KMP` / Build 46，iOS 与桌面数值版本同步为 `2.0.2`）。
 > - **远端活跃分支**：`main`、`feat/mac-swift`（macOS 原生 SwiftUI 探索）。
 > - **已完成事项归档**：2.0 开发期已合入 `main` 的全部功能（PR #68–#99）及架构拆分、账号生命周期收口、CITEL 批量缓存与远端轮询、物理在线验证码补刷与 2.0.1 文档对齐（PR #102–#111）及 2.0.1 正式版的 TLS 自动补链与未登录检查更新均已移入 `history_full.md`。
 
 ---
 
-## 进行中 / 待处理：物理在线相关检查
+## 进行中 / 待处理
+
+### 0. Android 旧版 Conscrypt 内置 PEM 解析崩溃热修（`2.0.2-Alpha-fix` / Build 47，待实机验证）
+
+- **现象与根因**：`v2.0.1-KMP`（Build 46）在小米平板与荣耀设备上可用，但在部分 vivo 设备及华为纯血鸿蒙「卓易通」容器内登录和检查更新（含 GitHub/Gitee）全部失败，提示「无法连接学校登录服务」与「检查更新失败」。反汇编线上 Release APK DEX 确认：`SchoolTlsTrustManager.kt` 中 `GEOTRUST_G2_TLS_CN_2022_CA1_PEM` 使用三引号字符串未 trim，编入常量首字节为 `\n`（`0x0A`）。上游 Conscrypt 在 2025-06-10（commit `acb13a9082`）之前仅按 `buffer[0] == '-'` 区分 PEM 与 DER，导致旧版 Conscrypt 在 `AndroidSchoolTlsTrustManager.default()` 初始化时抛 `ParsingException`，进而拖垮 `OkHttp` 全量 HTTPS 请求。
+- **本分支改动**：
+  - `SchoolTlsTrustManager.kt`：`GEOTRUST_G2_TLS_CN_2022_CA1_PEM` 改为直接以 `"-----BEGIN CERTIFICATE-----\n"` 开头的编译期拼接常量（零前导换行）；新增 `normalizeX509CertificateBytes` / `parseX509Certificates` 剥离 PEM 前导空白/BOM/注释并保留 DER（`0x30`）直通，应用于 `bundledIntermediates`（带 `runCatching` 降级保护）和 AIA 拉取路径。
+  - `KtorEngine.android.kt` & `proguard-rules.pro`：`delegateExtensions` 改为 `runCatching { X509TrustManagerExtensions(delegate) }.getOrNull()` 容错降级，并补齐/keep `isSameTrustConfiguration(String?, String?)`。
+  - 同步各端及 `remote-site-template` 版本号至 `2.0.2-Alpha-fix` / Build 47，补充 `SchoolTlsTrustManagerTest` 与版本测试。
+- **本地验证与测试包**：
+  - `python3 scripts/sync-bundled-changelog.py --check` 通过；`remote-site-template` `npm test` 86/86 通过；`:shared:desktopTest` 1620 项（1619 通过、0 失败、1 项 Windows 专属测试跳过）。
+  - `:androidApp:assembleDebug`、`:androidApp:assembleRelease`、`:desktopApp:compileKotlin`、`:windowsApp:compileKotlinWindows`、`:shared:compileKotlinIosArm64`、`:shared:compileKotlinIosSimulatorArm64` 全部 `BUILD SUCCESSFUL`。
+  - Release APK 校验：`aapt2 dump badging` 确认 `versionCode='47'`、`versionName='2.0.2-Alpha-fix'`；`apksigner verify --verbose --print-certs` v2 签名通过且证书 SHA-256（`5d0dabc3...466c773`）与正式版 `v2.0.1-KMP` 一致，可直接覆盖安装；`dexdump` 确认 DEX 中 `GEOTRUST_G2_TLS_CN_2022_CA1_PEM` 常量以 `"-----BEGIN CERTIFICATE-----\n"` 开头且 `AndroidSchoolTlsTrustManager` 保留了反射方法。
+  - 本地签名测试包：`~/Downloads/BJTUSelfService-KMP-2.0.2-Alpha-fix-build47-arm64-v8a.apk`（SHA-256 `2c7f5ad740cf5ab24a49e6401defd93a7ebd66b3e91f3f7743b5197dbc590cbf`）。
+- **未验证边界**：尚无 vivo 与鸿蒙「卓易通」真机环境，需用户将本地 Build 47 APK 发给反馈同学实机验证登录与 Gitee 更新检查。
 
 ### 1. 物理在线登录恢复（2026-11-06 CDP 取证）
 
@@ -86,5 +100,6 @@
 
 ## 接下来
 
-1. 物理在线登录修复通过验收后，用真实页面核对作业详情与老师附件解析。
-2. 重新部署私人远程 Site 模板并执行迁移 `0003_attachments.sql`，推进 2.0.0 发版前验收。
+1. 用户将 `~/Downloads/BJTUSelfService-KMP-2.0.2-Alpha-fix-build47-arm64-v8a.apk` 发给 vivo 与华为鸿蒙「卓易通」用户实机验证登录与 Gitee 检查更新；确认通过后决定最终正式版本号（如 `2.0.2-KMP`）、发布说明、提交 PR 与发版。
+2. 物理在线登录修复通过验收后，用真实页面核对作业详情与老师附件解析。
+3. 重新部署私人远程 Site 模板并执行迁移 `0004_device_polling.sql`。

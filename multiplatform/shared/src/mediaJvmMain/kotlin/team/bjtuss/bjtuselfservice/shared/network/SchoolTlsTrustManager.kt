@@ -385,10 +385,48 @@ internal fun defaultAiaCertificateFetcher(
             out.toByteArray()
         }
         if (bytes.isEmpty()) return@fetch emptyList()
-        val factory = CertificateFactory.getInstance("X.509")
-        factory.generateCertificates(ByteArrayInputStream(bytes)).filterIsInstance<X509Certificate>()
+        parseX509Certificates(bytes)
     } finally {
         connection.disconnect()
+    }
+}
+
+private val PEM_BLOCK_REGEX = Regex("-----BEGIN [^-]+-----[\\s\\S]*?-----END [^-]+-----")
+
+/**
+ * 规范化 X.509 证书字节流：旧版 Android Conscrypt 的 `OpenSSLX509CertificateFactory`
+ * 会仅凭首字节是否为 `'-'` 区分 PEM 与 DER，若 PEM 前存在换行、空格、BOM 或注释会直接抛出解析异常。
+ */
+internal fun normalizeX509CertificateBytes(bytes: ByteArray): ByteArray {
+    if (bytes.isEmpty()) return bytes
+    // ASN.1 DER SEQUENCE（X.509 证书与 PKCS#7 均以 0x30 开头）保持原样。
+    if (bytes[0] == 0x30.toByte()) return bytes
+
+    val text = String(bytes, Charsets.ISO_8859_1)
+    val firstBegin = text.indexOf("-----BEGIN ")
+    if (firstBegin < 0) return bytes
+
+    val normalizedText = text.substring(firstBegin)
+        .replace("\r\n", "\n")
+        .replace('\r', '\n')
+    val blocks = PEM_BLOCK_REGEX.findAll(normalizedText)
+        .map { it.value.trim() }
+        .filter { it.isNotEmpty() }
+        .toList()
+    val canonicalPem = if (blocks.isNotEmpty()) {
+        blocks.joinToString(separator = "\n", postfix = "\n")
+    } else {
+        normalizedText
+    }
+    return canonicalPem.toByteArray(Charsets.US_ASCII)
+}
+
+internal fun parseX509Certificates(bytes: ByteArray): List<X509Certificate> {
+    val normalized = normalizeX509CertificateBytes(bytes)
+    if (normalized.isEmpty()) return emptyList()
+    val factory = CertificateFactory.getInstance("X.509")
+    return ByteArrayInputStream(normalized).use { input ->
+        factory.generateCertificates(input).filterIsInstance<X509Certificate>()
     }
 }
 
@@ -540,10 +578,9 @@ internal fun systemDefaultX509TrustManager(): X509TrustManager {
 }
 
 private val bundledIntermediates by lazy {
-    val factory = CertificateFactory.getInstance("X.509")
-    GEOTRUST_G2_TLS_CN_2022_CA1_PEM.byteInputStream().use { input ->
-        listOf(factory.generateCertificate(input) as X509Certificate)
-    }
+    runCatching {
+        parseX509Certificates(GEOTRUST_G2_TLS_CN_2022_CA1_PEM.toByteArray(Charsets.US_ASCII))
+    }.getOrDefault(emptyList())
 }
 
 internal fun defaultSchoolSupplementaryIntermediates(): List<X509Certificate> = bundledIntermediates
@@ -554,37 +591,36 @@ internal fun defaultSchoolSupplementaryIntermediates(): List<X509Certificate> = 
  * Serial: 0F06BB09306148267FCA1B71C1DB807D
  * SHA-256: 05:DC:9E:DC:0F:DD:FA:97:5A:14:32:EF:80:6E:C7:80:07:8B:53:62:AD:45:AF:76:DB:15:C9:07:63:0D:B2:5D
  */
-private const val GEOTRUST_G2_TLS_CN_2022_CA1_PEM = """
------BEGIN CERTIFICATE-----
-MIIFxjCCBK6gAwIBAgIQDwa7CTBhSCZ/yhtxwduAfTANBgkqhkiG9w0BAQsFADBh
-MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
-d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBH
-MjAeFw0yMjEyMTUwMDAwMDBaFw0zMjEyMTQyMzU5NTlaMFsxCzAJBgNVBAYTAlVT
-MRcwFQYDVQQKEw5EaWdpQ2VydCwgSW5jLjEzMDEGA1UEAxMqR2VvVHJ1c3QgRzIg
-VExTIENOIFJTQTQwOTYgU0hBMjU2IDIwMjIgQ0ExMIICIjANBgkqhkiG9w0BAQEF
-AAOCAg8AMIICCgKCAgEAn1dxOo4OzYa4O1EJd0nhFI5QB/kXAJTHRI6C1J2Gz86B
-Ge9+DD8R4vexG7/QnUvV+5887o+G4enlkDwJV1Pehq4i0n+X6VKIPg5cThCx6/o0
-3bUkLWld7slhi3Hli/MaosZZuytdU1uCzQlGpaLB2TiTZbDImiVaykdfwl8V6AXP
-0Ab4wIcvPggl4qlwyPsBY6NODbP884BmL1ntdXfzecGst30FnAtm4w+PTo0I1T3F
-ITYXaNuIJnKonD1xXaN4Ar/rvcpKpntxVyZQ2T1Lb7vlfYISqNF+1ugpTzKnI1z7
-xV7tSqXd2vs6Csy6yFN+QLWwMnGWuQkvrO1m+F7V85S9ECpbqn9qNtKl8gIQ7JeZ
-BmBdLroW+4j1PDzBWmSWKB+gvRubVSTuoDR3VCtlI4G/Uh+ObF4UStbhKjr1SNCW
-JcrB1oF+wWBl8Bvozm4xflyyGDY47KCP/Fn9X5GHDNLQA9R0zqDKRumipp1UXswF
-uzH0I+gOuqSdZSsYID9XSVq6adcJ3rIMAcTuODcrPrJssOFKGFUbmY/VxbxMgYHI
-/07Zfdxoa+q0osWpofbMhLPZz9UuJFBCLsjgSckkSU02/4itmLm9e3lt6E/4q9Mc
-MCaS8+qrLWKG9wQtviC8zGynEXpxjEQE8WyrfeYKyXwZFCPB4rpTw1joJmGFeLUC
-AwEAAaOCAX4wggF6MBIGA1UdEwEB/wQIMAYBAf8CAQAwHQYDVR0OBBYEFEFOjmmd
-9G4l7HgUHH7XzR2Zz/lrMB8GA1UdIwQYMBaAFE4iVCAYlebjbuYP+vq5Eu0GF485
-MA4GA1UdDwEB/wQEAwIBhjAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIw
-dAYIKwYBBQUHAQEEaDBmMCMGCCsGAQUFBzABhhdodHRwOi8vb2NzcC5kaWdpY2VydC5jbjA/BggrBgEFBQcwAoYzaHR0cDovL2NhY2VydHMuZGlnaWNlcnQuY24vRGln
-aUNlcnRHbG9iYWxSb290RzIuY3J0MEAGA1UdHwQ5MDcwNaAzoDGGL2h0dHA6Ly9j
-cmwuZGlnaWNlcnQuY24vRGlnaUNlcnRHbG9iYWxSb290RzIuY3JsMD0GA1UdIAQ2
-MDQwCwYJYIZIAYb9bAIBMAcGBWeBDAEBMAgGBmeBDAECATAIBgZngQwBAgIwCAYG
-Z4EMAQIDMA0GCSqGSIb3DQEBCwUAA4IBAQAkpDVI+nCKnAEEpDfldytHXUYOr2ys
-aGeboE3d1KAN4Gt+eioRvgNdmDKbVFCYY0C6ErIXIvSGXafsprU2dclka/kmH+9U
-4q3v5Acx6KwcnEuYLN0QOtrlQ9s3Z4IbIzdYUv8IauXC27a3x99x2WMVxNu1KGJy
-0r1Z+Xya1adf9/e1LFj1CGdq9HfQ/HFWP2khzxQZ4u62sOHuZdPgtNidFOhQLC+2
-5cNsPgqsaCrGLbSjzni7VN7NhAbTsLhA1oz41vHHB+q4ZzNlC01elmPBOtupe2HM
-/lqMA/J/nTxc718THdxpszFllAET1/lFEolnqihpUFPaPjRwU7yZIseS
------END CERTIFICATE-----
-"""
+internal const val GEOTRUST_G2_TLS_CN_2022_CA1_PEM =
+    "-----BEGIN CERTIFICATE-----\n" +
+        "MIIFxjCCBK6gAwIBAgIQDwa7CTBhSCZ/yhtxwduAfTANBgkqhkiG9w0BAQsFADBh\n" +
+        "MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3\n" +
+        "d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBH\n" +
+        "MjAeFw0yMjEyMTUwMDAwMDBaFw0zMjEyMTQyMzU5NTlaMFsxCzAJBgNVBAYTAlVT\n" +
+        "MRcwFQYDVQQKEw5EaWdpQ2VydCwgSW5jLjEzMDEGA1UEAxMqR2VvVHJ1c3QgRzIg\n" +
+        "VExTIENOIFJTQTQwOTYgU0hBMjU2IDIwMjIgQ0ExMIICIjANBgkqhkiG9w0BAQEF\n" +
+        "AAOCAg8AMIICCgKCAgEAn1dxOo4OzYa4O1EJd0nhFI5QB/kXAJTHRI6C1J2Gz86B\n" +
+        "Ge9+DD8R4vexG7/QnUvV+5887o+G4enlkDwJV1Pehq4i0n+X6VKIPg5cThCx6/o0\n" +
+        "3bUkLWld7slhi3Hli/MaosZZuytdU1uCzQlGpaLB2TiTZbDImiVaykdfwl8V6AXP\n" +
+        "0Ab4wIcvPggl4qlwyPsBY6NODbP884BmL1ntdXfzecGst30FnAtm4w+PTo0I1T3F\n" +
+        "ITYXaNuIJnKonD1xXaN4Ar/rvcpKpntxVyZQ2T1Lb7vlfYISqNF+1ugpTzKnI1z7\n" +
+        "xV7tSqXd2vs6Csy6yFN+QLWwMnGWuQkvrO1m+F7V85S9ECpbqn9qNtKl8gIQ7JeZ\n" +
+        "BmBdLroW+4j1PDzBWmSWKB+gvRubVSTuoDR3VCtlI4G/Uh+ObF4UStbhKjr1SNCW\n" +
+        "JcrB1oF+wWBl8Bvozm4xflyyGDY47KCP/Fn9X5GHDNLQA9R0zqDKRumipp1UXswF\n" +
+        "uzH0I+gOuqSdZSsYID9XSVq6adcJ3rIMAcTuODcrPrJssOFKGFUbmY/VxbxMgYHI\n" +
+        "/07Zfdxoa+q0osWpofbMhLPZz9UuJFBCLsjgSckkSU02/4itmLm9e3lt6E/4q9Mc\n" +
+        "MCaS8+qrLWKG9wQtviC8zGynEXpxjEQE8WyrfeYKyXwZFCPB4rpTw1joJmGFeLUC\n" +
+        "AwEAAaOCAX4wggF6MBIGA1UdEwEB/wQIMAYBAf8CAQAwHQYDVR0OBBYEFEFOjmmd\n" +
+        "9G4l7HgUHH7XzR2Zz/lrMB8GA1UdIwQYMBaAFE4iVCAYlebjbuYP+vq5Eu0GF485\n" +
+        "MA4GA1UdDwEB/wQEAwIBhjAdBgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIw\n" +
+        "dAYIKwYBBQUHAQEEaDBmMCMGCCsGAQUFBzABhhdodHRwOi8vb2NzcC5kaWdpY2VydC5jbjA/BggrBgEFBQcwAoYzaHR0cDovL2NhY2VydHMuZGlnaWNlcnQuY24vRGln\n" +
+        "aUNlcnRHbG9iYWxSb290RzIuY3J0MEAGA1UdHwQ5MDcwNaAzoDGGL2h0dHA6Ly9j\n" +
+        "cmwuZGlnaWNlcnQuY24vRGlnaUNlcnRHbG9iYWxSb290RzIuY3JsMD0GA1UdIAQ2\n" +
+        "MDQwCwYJYIZIAYb9bAIBMAcGBWeBDAEBMAgGBmeBDAECATAIBgZngQwBAgIwCAYG\n" +
+        "Z4EMAQIDMA0GCSqGSIb3DQEBCwUAA4IBAQAkpDVI+nCKnAEEpDfldytHXUYOr2ys\n" +
+        "aGeboE3d1KAN4Gt+eioRvgNdmDKbVFCYY0C6ErIXIvSGXafsprU2dclka/kmH+9U\n" +
+        "4q3v5Acx6KwcnEuYLN0QOtrlQ9s3Z4IbIzdYUv8IauXC27a3x99x2WMVxNu1KGJy\n" +
+        "0r1Z+Xya1adf9/e1LFj1CGdq9HfQ/HFWP2khzxQZ4u62sOHuZdPgtNidFOhQLC+2\n" +
+        "5cNsPgqsaCrGLbSjzni7VN7NhAbTsLhA1oz41vHHB+q4ZzNlC01elmPBOtupe2HM\n" +
+        "/lqMA/J/nTxc718THdxpszFllAET1/lFEolnqihpUFPaPjRwU7yZIseS\n" +
+        "-----END CERTIFICATE-----\n"

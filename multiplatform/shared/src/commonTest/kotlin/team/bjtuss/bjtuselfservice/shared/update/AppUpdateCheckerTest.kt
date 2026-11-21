@@ -23,17 +23,21 @@ class AppUpdateCheckerTest {
     }
 
     @Test
-    fun formalVersionOnlyOffersNewerReleases() {
-        assertTrue(AppUpdateChecker.CURRENT_VERSION == "2.0.1-KMP")
-        assertTrue(AppUpdateChecker.CURRENT_BUILD == 46)
+    fun alphaFixVersionOnlyOffersNewerReleases() {
+        assertTrue(AppUpdateChecker.CURRENT_VERSION == "2.0.2-Alpha-fix")
+        assertTrue(AppUpdateChecker.CURRENT_BUILD == 47)
+        assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "2.0.1-KMP") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "2.0.0-KMP") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "2.0.0-Alpha") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "2.0.0-Beta") > 0)
         assertFalse(AppUpdateChecker.isNewer(AppUpdateChecker.Release("v2.0.0-KMP", htmlUrl = "https://github.com/release")))
         assertFalse(AppUpdateChecker.isNewer(AppUpdateChecker.Release("v2.0.1-Alpha", htmlUrl = "https://github.com/release")))
         assertFalse(AppUpdateChecker.isNewer(AppUpdateChecker.Release("v2.0.1-KMP", htmlUrl = "https://github.com/release")))
+        assertFalse(AppUpdateChecker.isNewer(AppUpdateChecker.Release("v2.0.2-Alpha-fix", htmlUrl = "https://github.com/release")))
+        assertTrue(AppUpdateChecker.isNewer(AppUpdateChecker.Release("v2.0.2-KMP", htmlUrl = "https://github.com/release")))
+        assertTrue(AppUpdateChecker.compareVersions("2.0.1-KMP", AppUpdateChecker.CURRENT_VERSION) < 0)
         assertTrue(AppUpdateChecker.compareVersions("2.0.1-Beta", AppUpdateChecker.CURRENT_VERSION) < 0)
-        assertTrue(AppUpdateChecker.compareVersions("v2.0.1-KMP", AppUpdateChecker.CURRENT_VERSION) == 0)
+        assertTrue(AppUpdateChecker.compareVersions("v2.0.2-Alpha-fix", AppUpdateChecker.CURRENT_VERSION) == 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.6-KMP") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.6-Alpha") > 0)
         assertTrue(AppUpdateChecker.compareVersions(AppUpdateChecker.CURRENT_VERSION, "1.8.6-Beta2") > 0)
