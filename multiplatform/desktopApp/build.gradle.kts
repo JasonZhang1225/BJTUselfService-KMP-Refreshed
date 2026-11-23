@@ -12,6 +12,7 @@ import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.TaskAction
 import org.gradle.process.ExecOperations
 import org.gradle.work.DisableCachingByDefault
+import java.io.ByteArrayOutputStream
 import java.io.File
 import javax.inject.Inject
 
@@ -320,6 +321,7 @@ abstract class FinalizeMacDmg : DefaultTask() {
             )
         }.assertNormalExitValue()
 
+        val attachStdout = ByteArrayOutputStream()
         execOperations.exec {
             commandLine(
                 "hdiutil",
@@ -330,7 +332,24 @@ abstract class FinalizeMacDmg : DefaultTask() {
                 "-mountpoint",
                 mountPoint.absolutePath,
             )
+            standardOutput = attachStdout
         }.assertNormalExitValue()
+        val attachOutput = attachStdout.toString(Charsets.UTF_8.name())
+        if (attachOutput.isNotBlank()) {
+            logger.lifecycle(attachOutput.trimEnd())
+        }
+        val attachLines = attachOutput.lines()
+        val diskDevice = attachLines.firstNotNullOfOrNull { line ->
+            Regex("""^(/dev/disk\d+)\b""").find(line.trim())?.groupValues?.get(1)
+        }
+        val volumeDevice = attachLines.firstNotNullOfOrNull { line ->
+            val trimmed = line.trim()
+            if (trimmed.contains(mountPoint.absolutePath) || trimmed.contains("Apple_HFS") || trimmed.contains("APFS")) {
+                Regex("""^(/dev/disk\d+s\d+)\b""").find(trimmed)?.groupValues?.get(1)
+            } else {
+                null
+            }
+        }
 
         try {
             val oldApp = mountPoint.resolve(sourceAppFileName.get())
@@ -396,6 +415,21 @@ abstract class FinalizeMacDmg : DefaultTask() {
             }.assertNormalExitValue()
 
             mountPoint.resolve(".DS_Store").delete()
+            // 先按设备节点重命名卷标（osascript 打开 Finder 后可能触发挂载点查找竞争）。
+            val renameTarget = volumeDevice ?: mountPoint.absolutePath
+            var renameResult = execOperations.exec {
+                commandLine("diskutil", "rename", renameTarget, volumeName.get())
+                isIgnoreExitValue = true
+            }
+            if (renameResult.exitValue != 0) {
+                Thread.sleep(500)
+                renameResult = execOperations.exec {
+                    commandLine("diskutil", "rename", mountPoint.absolutePath, volumeName.get())
+                    isIgnoreExitValue = true
+                }
+            }
+            renameResult.assertNormalExitValue()
+
             val layoutScript = File(work, "layout.applescript")
             layoutScript.writeText(
                 """
@@ -426,14 +460,17 @@ abstract class FinalizeMacDmg : DefaultTask() {
                 commandLine("osascript", layoutScript.absolutePath)
                 isIgnoreExitValue = true
             }
-
-            execOperations.exec {
-                commandLine("diskutil", "rename", mountPoint.absolutePath, volumeName.get())
-            }.assertNormalExitValue()
         } finally {
-            execOperations.exec {
-                commandLine("hdiutil", "detach", mountPoint.absolutePath, "-force")
+            val detachTarget = diskDevice ?: mountPoint.absolutePath
+            val detachResult = execOperations.exec {
+                commandLine("hdiutil", "detach", detachTarget, "-force")
                 isIgnoreExitValue = true
+            }
+            if (detachResult.exitValue != 0) {
+                execOperations.exec {
+                    commandLine("diskutil", "eject", "force", detachTarget)
+                    isIgnoreExitValue = true
+                }
             }
         }
 
