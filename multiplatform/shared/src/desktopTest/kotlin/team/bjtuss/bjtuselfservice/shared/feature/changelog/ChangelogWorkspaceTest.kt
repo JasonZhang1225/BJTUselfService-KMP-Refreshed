@@ -21,6 +21,7 @@ import team.bjtuss.bjtuselfservice.shared.update.BundledChangelog
 
 class ChangelogWorkspaceTest {
     @Test fun nativeScrollingRespectsBarsAndReportsGlassProgress() = SwingUtilities.invokeAndWait {
+        val release = BundledChangelog.entries.first { it.sections.sumOf { section -> section.items.size } >= 6 }
         for ((width, dark, scale) in listOf(Triple(390, false, 1f), Triple(390, true, 1.6f), Triple(960, false, 1f))) {
             var controller: NativeScrollController? = null
             val reports = mutableListOf<Float>()
@@ -35,7 +36,7 @@ class ChangelogWorkspaceTest {
                         LocalNativeScrollControllerReporter provides { controller = it },
                         LocalReportTopScroll provides { reports += it },
                     ) {
-                        Surface(Modifier.fillMaxSize()) { ChangelogWorkspace(Modifier.fillMaxSize()) }
+                        Surface(Modifier.fillMaxSize()) { ChangelogWorkspace(Modifier.fillMaxSize(), initialTag = release.tag) }
                     }
                 }
             }
@@ -71,7 +72,7 @@ class ChangelogWorkspaceTest {
                 assertTrue(controller!!.consumeScroll(100_000f) > 0f)
                 settle()
                 assertFalse(controller!!.canScrollForward)
-                val lastNote = BundledChangelog.entries.first().sections.last().items.last().body
+                val lastNote = release.sections.last().items.last().body
                 assertTrue(node(lastNote).boundsInRoot.bottom <= 844f - 84f - 16f + 1f,
                     "The final note must be fully above the bottom bar")
                 assertTrue(reports.any { it > 0f }, "Scrolling must update glass-bar progress")

@@ -6,8 +6,9 @@ class BundledChangelogTest {
     @Test fun versionsRemainDistinctIncludingTestAndDebugBuilds() {
         val entries = BundledChangelog.entries
         assertEquals(entries.size, entries.map { it.tag }.distinct().size)
-        assertEquals("v2.0.1-KMP", entries.first().tag)
-        assertEquals("2.0.1-KMP", entries.first().label)
+        assertEquals("v2.0.2-fix", entries.first().tag)
+        assertEquals("2.0.2-fix", entries.first().label)
+        assertTrue(entries.any { it.tag == "v2.0.1-KMP" })
         assertTrue(entries.any { it.tag == "v2.0.0-KMP" })
         assertTrue(entries.any { it.tag == "v1.8.6-KMP" })
         assertTrue(entries.any { it.tag == "v1.8.5-EmergencyFix2" })
@@ -24,8 +25,8 @@ class BundledChangelogTest {
     }
 
     @Test fun boldLeadInBecomesItemTitle() {
-        val latestFirst = BundledChangelog.entries.first().sections.first().items.first()
-        assertEquals("CITEL 题面批量缓存", latestFirst.title)
-        assertFalse(latestFirst.body.startsWith("CITEL 题面批量缓存"))
+        val latestFix = BundledChangelog.entries.first().sections.last().items.first()
+        assertEquals("修复因学校缺失中间证书导致的无法登录与同步问题，以及2.0.1修复时的Bug。", latestFix.title)
+        assertFalse(latestFix.body.startsWith("修复因学校缺失中间证书"))
     }
 }

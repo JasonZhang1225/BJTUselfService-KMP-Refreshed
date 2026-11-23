@@ -36,8 +36,11 @@ import team.bjtuss.bjtuselfservice.shared.feature.shell.TopScrollLazyColumn
 import team.bjtuss.bjtuselfservice.shared.feature.scroll.desktopTouchScroll
 
 @Composable
-internal fun ChangelogWorkspace(modifier: Modifier = Modifier) {
-    var selectedTag by rememberSaveable { mutableStateOf(BundledChangelog.entries.first().tag) }
+internal fun ChangelogWorkspace(
+    modifier: Modifier = Modifier,
+    initialTag: String = BundledChangelog.entries.first().tag,
+) {
+    var selectedTag by rememberSaveable(initialTag) { mutableStateOf(initialTag) }
     val release = BundledChangelog.entries.first { it.tag == selectedTag }
     val topClearance = LocalTopBarClearance.current
     val bottomClearance = LocalBottomBarClearance.current

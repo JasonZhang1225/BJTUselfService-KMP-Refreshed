@@ -8,6 +8,17 @@ internal data class ChangelogRelease(val tag: String, val label: String, val sec
 
 internal object BundledChangelog {
     val entries: List<ChangelogRelease> = listOf(
+        ChangelogRelease("v2.0.2-fix", "2.0.2-fix", listOf(
+            ChangelogSection("新增", listOf(
+                ChangelogItem(null, "无。"),
+            )),
+            ChangelogSection("优化", listOf(
+                ChangelogItem(null, "无。"),
+            )),
+            ChangelogSection("修复", listOf(
+                ChangelogItem("修复因学校缺失中间证书导致的无法登录与同步问题，以及2.0.1修复时的Bug。", "学校于 2026-11-17 换发 *.bjtu.edu.cn 新证书（由 GeoTrust G2 TLS CN RSA4096 SHA256 2022 CA1 签发），但 mis.bjtu.edu.cn 与 mail.bjtu.edu.cn 部署时只下发了叶子证书、漏发中间证书；浏览器与 iOS 会通过证书 AIA 自动补链，而 Android（OkHttp）与电脑端（macOS/Windows JVM CIO）默认不做 AIA 补链，导致 PKIX 证书链校验失败、登录卡在跳转 MIS 一环且无法同步首页账户状态与邮件。现已升级为三层安全自动补链（内置官方中间证书与被动缓存 + 同校公开 HTTPS 节点自动学习新中间证书 + 桌面端受限 AIA 动态拉取补链），并继续交由系统默认信任锚（DigiCert Global Root G2）完成完整证书链与域名校验，不放宽任何 TLS 安全校验。"),
+            )),
+        )),
         ChangelogRelease("v2.0.1-KMP", "2.0.1-KMP", listOf(
             ChangelogSection("新增", listOf(
                 ChangelogItem("CITEL 题面批量缓存", "启用 CITEL 后，可在「Agent 和 ChatGPT 插件 → CITEL 题面缓存」按课程与实际提交状态筛选编程题，一键批量拉取缺失题面全文与公开样例到本机，单个失败不影响其余题目。"),
